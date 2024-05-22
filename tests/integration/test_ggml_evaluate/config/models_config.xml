@@ -1,0 +1,7 @@
+<clickhouse>
+    <ggml>
+        <gpt2>
+            <path>/etc/clickhouse-server/model/gpt2.ggml</path>
+        </gpt2>
+    </ggml>
+</clickhouse>

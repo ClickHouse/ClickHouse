@@ -56,13 +56,36 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments", getName());
+            throw Exception(
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments. Got {}", getName(), arguments.size());
         if (arguments.size() > 3)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments", getName());
-        // TODO : validate types
-        // const auto * name_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-        // if (!name_col)
-        //     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument of function {} must be a string", getName());
+            throw Exception(
+                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "Function {} expects exactly 3 arguments. Got {}",
+                getName(),
+                arguments.size());
+        if (!isString(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a string.",
+                arguments[0].type->getName(),
+                getName());
+        const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!name_col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a constant string", getName());
+        if (!isMap(arguments[1].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected a map.",
+                arguments[1].type->getName(),
+                getName());
+        if (!isString(arguments[2].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of third argument of function {}, expected a string.",
+                arguments[2].type->getName(),
+                getName());
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -160,8 +183,8 @@ private:
 
 REGISTER_FUNCTION(GGMLEvaluate)
 {
-    factory.registerFunction<FunctionGGMLEvaluate>(FunctionDocumentation
-        {
+    factory.registerFunction<FunctionGGMLEvaluate>(
+        FunctionDocumentation{
             .description = R"(
 Evaluates ggml-compatible model.
 
@@ -191,12 +214,11 @@ The result of this function is a string that represents a continuation of the va
 
 [example:walrus]
             )",
-            .examples = {
-                {"walrus", "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses')", "Did you know that walruses are actually mammals?"}
-            }
-        },
-        FunctionFactory::CaseInsensitive
-    );
+            .examples
+            = {{"walrus",
+                "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses')",
+                "Did you know that walruses are actually mammals?"}}},
+        FunctionFactory::CaseInsensitive);
 }
 
 }
