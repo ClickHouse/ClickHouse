@@ -1088,7 +1088,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
             catch (const NetException &)
             {
-                // We still want to attempt to process whatever we already recieved or can recieve (socket receive buffer can be not empty)
+                // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
                 throw;
             }
