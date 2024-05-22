@@ -14,17 +14,12 @@ namespace DB
 namespace
 {
 
-bool isEqual(const IColumn & column, size_t lhs, size_t rhs)
-{
-    return column.compareAt(lhs, rhs, column, 1) == 0;
-}
-
 bool isEqual(const Block & block, const SortDescription & description, size_t lhs, size_t rhs)
 {
     for (const auto & column_description : description)
     {
         const auto & column = *block.getByName(column_description.column_name).column;
-        if (!isEqual(column, lhs, rhs))
+        if (column.compareAt(lhs, rhs, column, 1) != 0)
             return false;
     }
     return true;
