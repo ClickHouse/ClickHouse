@@ -532,8 +532,6 @@ std::vector<GptVocab::id> GptJModel::predict(const GgmlModelParams & user_params
     size_t mem_per_token = 0;
     evalInternal(gpt_params.n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
 
-    std::string result;
-
     for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++)
     {
         // predict
