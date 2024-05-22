@@ -61,9 +61,11 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # Sanitizers are too heavy
-    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
-       set (RLIMIT_DATA 10000000000) # 10G
+    # Sanitizers are too heavy. Some architectures too.
+    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
+        # Twice as large
+        set (RLIMIT_DATA 10000000000)
+        set (RLIMIT_AS 20000000000)
     endif()
 
     # For some files currently building RISCV64 might be too slow. TODO: Improve compilation times per file
