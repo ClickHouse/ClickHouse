@@ -300,21 +300,32 @@ void copyAzureBlobStorageFile(
 
         if (size < settings->max_single_part_copy_size)
         {
+            LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copy blob sync {} -> {}", src_blob, dest_blob);
             block_blob_client_dest.CopyFromUri(source_uri);
         }
         else
         {
             Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri);
 
-            // Wait for the operation to finish, checking for status every 100 second.
             auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
             auto properties_model = copy_response.Value;
 
-            if (properties_model.CopySource.HasValue())
-            {
-                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy failed");
-            }
+            auto copy_status = properties_model.CopyStatus;
+            auto copy_status_description = properties_model.CopyStatusDescription;
 
+
+            if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+            {
+                LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+            }
+            else
+            {
+                if (copy_status.HasValue())
+                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                    src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
+                else
+                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with success status (operation is done {})", src_blob, dest_blob, operation.IsDone());
+            }
         }
     }
     else
