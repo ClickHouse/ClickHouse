@@ -197,7 +197,8 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-        if (res != nullptr) {
+        if (res != nullptr)
+        {
             CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
         }
     }

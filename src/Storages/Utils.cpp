@@ -25,4 +25,4 @@ namespace DB {
             return CurrentMetrics::AttachedTable;
         }
     }
-}    
+}
