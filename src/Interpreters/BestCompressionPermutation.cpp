@@ -36,7 +36,7 @@ void getBestCompressionPermutationImpl(
     {
         const auto column = block.getByPosition(i).column;
         // TODO: improve with sampling
-        estimate_unique_count[i] = column->estimateNumberOfDifferent(permutation, range, -1);
+        estimate_unique_count[i] = column->getCardinalityInPermutedRange(permutation, range);
     }
 
     std::vector<size_t> order(not_already_sorted_columns.size());
