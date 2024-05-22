@@ -1,10 +1,10 @@
 #include <Interpreters/BestCompressionPermutation.h>
 
-#include <base/sort.h>
 #include <Columns/IColumn.h>
-#include <Common/iota.h>
-#include <Common/PODArray.h>
 #include <Interpreters/sortBlock.h>
+#include <base/sort.h>
+#include <Common/PODArray.h>
+#include <Common/iota.h>
 
 #include <numeric>
 
@@ -101,16 +101,16 @@ std::vector<size_t> getNotAlreadySortedColumnsIndex(const Block & block, const S
 EqualRanges getEqualRanges(const Block & block, const SortDescription & description, const IColumn::Permutation & permutation)
 {
     EqualRanges ranges;
-    const ssize_t rows = block.rows();
+    const size_t rows = block.rows();
     if (description.empty())
     {
         ranges.push_back({0, rows});
     }
     else
     {
-        for (ssize_t i = 0; i < rows;)
+        for (size_t i = 0; i < rows;)
         {
-            ssize_t j = i;
+            size_t j = i;
             for (; j < rows && isEqual(block, description, permutation[i], permutation[j]); ++j)
             {
             }
