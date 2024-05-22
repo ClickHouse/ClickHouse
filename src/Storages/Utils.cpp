@@ -1,12 +1,14 @@
 #include <Storages/Utils.h>
 #include <Storages/IStorage.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric AttachedTable;
     extern const Metric AttachedView;
     extern const Metric AttachedDictionary;
 }
+
 
 namespace DB {
 
