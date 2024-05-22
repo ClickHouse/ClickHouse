@@ -189,6 +189,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
+    , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
 {
     setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
@@ -586,11 +587,11 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
 {
     if (getSettings().optimize_for_bulk_insert)
     {
-        LOG_DEBUG(getLogger("StorageEmbeddedRocksDB"), "Using bulk insert");
+        LOG_DEBUG(log, "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
     }
 
-    LOG_DEBUG(getLogger("StorageEmbeddedRocksDB"), "Using regular insert");
+    LOG_DEBUG(log, "Using regular insert");
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
