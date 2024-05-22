@@ -68,8 +68,9 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         set (RLIMIT_AS 20000000000)
     endif()
 
-    # For some files currently building RISCV64 might be too slow. TODO: Improve compilation times per file
-    if (ARCH_RISCV64)
+    # For some files currently building RISCV64/LOONGARCH64 might be too slow.
+    # TODO: Improve compilation times per file
+    if (ARCH_RISCV64 OR ARCH_LOONGARCH64)
         set (RLIMIT_CPU 1800)
     endif()
 
