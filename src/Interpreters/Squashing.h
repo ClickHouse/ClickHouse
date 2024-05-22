@@ -100,7 +100,7 @@ private:
     bool isEnoughSize(const std::vector<Chunk> & chunks);
     bool isEnoughSize(size_t rows, size_t bytes) const;
 
-    Chunk convertToChunk(std::vector<Chunk> &chunks);
+    Chunk convertToChunk(std::vector<Chunk> && chunks);
 };
 
 }

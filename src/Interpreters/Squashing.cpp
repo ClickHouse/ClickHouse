@@ -1,6 +1,7 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -197,7 +198,7 @@ PlanSquashing::PlanSquashing(Block header_, size_t min_block_size_rows_, size_t 
 
 Chunk PlanSquashing::flush()
 {
-    return convertToChunk(chunks_to_merge_vec);
+    return convertToChunk(std::move(chunks_to_merge_vec));
 }
 
 Chunk PlanSquashing::add(Chunk && input_chunk)
@@ -210,21 +211,49 @@ Chunk PlanSquashing::addImpl(Chunk && input_chunk)
     if (!input_chunk)
         return {};
 
-    if (isEnoughSize(chunks_to_merge_vec))
+    /// Just read block is already enough.
+    if (isEnoughSize(input_chunk.getNumRows(), input_chunk.bytes()))
+    {
+        /// If no accumulated data, return just read block.
+        if (chunks_to_merge_vec.empty())
+        {
+            chunks_to_merge_vec.push_back(std::move(input_chunk));
+            Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+            chunks_to_merge_vec.clear();
+            return res_chunk;
+        }
+
+        /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
+        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
         chunks_to_merge_vec.clear();
-
-    if (input_chunk)
         chunks_to_merge_vec.push_back(std::move(input_chunk));
+        return res_chunk;
+    }
 
+    /// Accumulated block is already enough.
     if (isEnoughSize(chunks_to_merge_vec))
     {
-        Chunk res_chunk = convertToChunk(chunks_to_merge_vec);
+        /// Return accumulated data and place new block to accumulated data.
+        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+        chunks_to_merge_vec.clear();
+        chunks_to_merge_vec.push_back(std::move(input_chunk));
+        return res_chunk;
+    }
+
+    /// Pushing data into accumulating vector
+    chunks_to_merge_vec.push_back(std::move(input_chunk));
+
+    /// If accumulated data is big enough, we send it
+    if (isEnoughSize(chunks_to_merge_vec))
+    {
+        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+        chunks_to_merge_vec.clear();
         return res_chunk;
     }
     return {};
 }
 
-Chunk PlanSquashing::convertToChunk(std::vector<Chunk> &chunks)
+Chunk PlanSquashing::convertToChunk(std::vector<Chunk> && chunks)
 {
     if (chunks.empty())
         return {};
@@ -254,6 +283,7 @@ bool PlanSquashing::isEnoughSize(const std::vector<Chunk> & chunks)
 
 bool PlanSquashing::isEnoughSize(size_t rows, size_t bytes) const
 {
+    LOG_TRACE(getLogger("Planning"), "rows: {}, bytes: {}", rows, bytes);
     return (!min_block_size_rows && !min_block_size_bytes)
         || (min_block_size_rows && rows >= min_block_size_rows)
         || (min_block_size_bytes && bytes >= min_block_size_bytes);
