@@ -12,9 +12,9 @@ The following operations are available:
 
 -   `ALTER TABLE [db].table MODIFY STATISTICS (columns list) TYPE (type list)` - Modifies statistic description to tables metadata.
 
--   `ALTER TABLE [db].table DROP STATISTICS (columns list)` - Removes statistic description from tables metadata and deletes statistic files from disk.
+-   `ALTER TABLE [db].table DROP STATISTICS (columns list)` - Removes statistics from the metadata of the specified columns and deletes all statistics objects in all parts for the specified columns.
 
--   `ALTER TABLE [db].table CLEAR STATISTICS (columns list)` - Deletes statistic files from disk.
+-   `ALTER TABLE [db].table CLEAR STATISTICS (columns list)` - Deletes all statistics objects in all parts for the specified columns. Statistics objects can be rebuild using `ALTER TABLE MATERIALIZE STATISTICS`.
 
 -   `ALTER TABLE [db.]table MATERIALIZE STATISTICS (columns list)` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations). 
 

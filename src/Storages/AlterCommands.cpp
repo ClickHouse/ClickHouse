@@ -712,7 +712,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(statistics_column_name))
+            if (!metadata.columns.has(statistics_column_name)
+                || metadata.columns.get(statistics_column_name).statistics.empty())
             {
                 if (if_exists)
                     return;
