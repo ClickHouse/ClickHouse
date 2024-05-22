@@ -36,6 +36,11 @@
                 <allow_experimental_object_type>
                     <readonly/>
                 </allow_experimental_object_type>
+
+                <!-- Prevent stack overflow -->
+                <max_ast_depth>
+                    <readonly/>
+                </max_ast_depth>
             </constraints>
         </default>
     </profiles>

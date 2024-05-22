@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames, StatusNames
+from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -34,20 +34,17 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
     set_status_comment,
-    update_mergeable_check,
-    update_upstream_sync_status,
 )
 from digest_helper import DockerDigester, JobDigester
 from env_helper import (
     CI,
     GITHUB_JOB_API_URL,
-    GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
-    GITHUB_UPSTREAM_REPOSITORY,
     REPO_COPY,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
+    GITHUB_RUN_ID,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
@@ -56,7 +53,7 @@ from github_helper import GitHub
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
-from synchronizer_utils import SYNC_BRANCH_PREFIX
+from ci_metadata import CiMetadata
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -71,12 +68,12 @@ class PendingState:
 class CiCache:
     """
     CI cache is a bunch of records. Record is a file stored under special location on s3.
-    The file name has the following format
+    The file name has a format:
 
         <RECORD_TYPE>_[<ATTRIBUTES>]--<JOB_NAME>_<JOB_DIGEST>_<BATCH>_<NUM_BATCHES>.ci
 
     RECORD_TYPE:
-        SUCCESSFUL - for successfully finished jobs
+        SUCCESSFUL - for successful jobs
         PENDING - for pending jobs
 
     ATTRIBUTES:
@@ -891,9 +888,9 @@ class CiOptions:
                     for job in job_with_parents:
                         if job in jobs_to_do and job not in jobs_to_do_requested:
                             jobs_to_do_requested.append(job)
-            assert (
-                jobs_to_do_requested
-            ), f"Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+            print(
+                f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+            )
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
@@ -993,7 +990,11 @@ def normalize_check_name(check_name: str) -> str:
 
 
 def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
-    # FIXME: consider switching to sub_parser for configure, pre, run, post actions
+    parser.add_argument(
+        "--cancel-previous-run",
+        action="store_true",
+        help="Action that cancels previous running PR workflow if PR added into the Merge Queue",
+    )
     parser.add_argument(
         "--configure",
         action="store_true",
@@ -1002,7 +1003,8 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     parser.add_argument(
         "--update-gh-statuses",
         action="store_true",
-        help="Action that recreate success GH statuses for jobs that finished successfully in past and will be skipped this time",
+        help="Action that recreate success GH statuses for jobs that finished successfully in past and will be "
+        "skipped this time",
     )
     parser.add_argument(
         "--pre",
@@ -1012,7 +1014,8 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     parser.add_argument(
         "--run",
         action="store_true",
-        help="Action that executes run action for specified --job-name. run_command must be configured for a given job name.",
+        help="Action that executes run action for specified --job-name. run_command must be configured for a given "
+        "job name.",
     )
     parser.add_argument(
         "--post",
@@ -1090,7 +1093,8 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--rebuild-all-binaries",
         action="store_true",
         default=False,
-        help="[DEPRECATED. to be removed, once no wf use it] will create run config without skipping build jobs in any case, used in --configure action (for release branches)",
+        help="[DEPRECATED. to be removed, once no wf use it] will create run config without skipping build jobs in "
+        "any case, used in --configure action (for release branches)",
     )
     parser.add_argument(
         "--commit-message",
@@ -1903,6 +1907,15 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
+def _cancel_pr_wf(s3: S3Helper, pr_number: int) -> None:
+    run_id = CiMetadata(s3, pr_number).fetch_meta().run_id
+    if not run_id:
+        print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
+    else:
+        print(f"Canceling PR workflow run_id: [{run_id}], pr: [{pr_number}]")
+        GitHub.cancel_wf(run_id)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
     exit_code = 0
@@ -1931,6 +1944,12 @@ def main() -> int:
 
     ### CONFIGURE action: start
     if args.configure:
+        if CI and pr_info.is_pr:
+            # store meta on s3 (now we need it only for PRs)
+            meta = CiMetadata(s3, pr_info.number)
+            meta.run_id = int(GITHUB_RUN_ID)
+            meta.push_meta()
+
         ci_options = CiOptions.create_from_pr_message(
             args.commit_message or None, update_from_api=True
         )
@@ -2185,39 +2204,6 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
-                if not pr_info.is_merge_queue:
-                    # in the merge queue mergeable status must be set only in FinishCheck (last job in wf)
-                    mergeable_status = update_mergeable_check(
-                        commit,
-                        pr_info,
-                        job_report.check_name or _get_ext_check_name(args.job_name),
-                    )
-
-                    # Process upstream StatusNames.SYNC
-                    if (
-                        pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-                        and mergeable_status
-                        and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-                    ):
-                        upstream_pr_number = int(
-                            pr_info.head_ref.split("/pr/", maxsplit=1)[1]
-                        )
-                        update_upstream_sync_status(
-                            upstream_pr_number, pr_info.number, gh, mergeable_status
-                        )
-                        prepared_events = prepare_tests_results_for_clickhouse(
-                            pr_info,
-                            [],
-                            job_report.status,
-                            0,
-                            job_report.start_time,
-                            f"https://github.com/ClickHouse/ClickHouse/pull/{upstream_pr_number}",
-                            StatusNames.SYNC,
-                        )
-                        prepared_events[0]["test_context_raw"] = args.job_name
-                        ch_helper.insert_events_into(
-                            db="default", table="checks", events=prepared_events
-                        )
 
             print(f"Job report url: [{check_url}]")
             prepared_events = prepare_tests_results_for_clickhouse(
@@ -2255,6 +2241,13 @@ def main() -> int:
     elif args.update_gh_statuses:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
+
+    ### CANCEL PREVIOUS WORKFLOW RUN
+    elif args.cancel_previous_run:
+        assert (
+            pr_info.is_merge_queue
+        ), "Currently it's supposed to be used in MQ wf to cancel running PR wf if any"
+        _cancel_pr_wf(s3, pr_info.merged_pr)
 
     ### print results
     _print_results(result, args.outfile, args.pretty)
