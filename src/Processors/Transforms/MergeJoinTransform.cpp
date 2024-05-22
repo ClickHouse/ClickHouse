@@ -45,8 +45,8 @@ FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns, 
 
 bool isNullAt(const IColumn & column, size_t row)
 {
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column))
-        return nullable->isNullAt(row);
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
+        return nullable_column->isNullAt(row);
     return false;
 }
 
