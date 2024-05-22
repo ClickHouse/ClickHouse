@@ -41,7 +41,7 @@ struct EqualRange
     size_t from;
     size_t to; /// exclusive
     EqualRange() = default;
-    EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from < to); }
+    EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from <= to); }
     size_t size() const { return to - from; }
 };
 
