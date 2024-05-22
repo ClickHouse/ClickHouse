@@ -499,10 +499,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_improve_compression_rows_order)
+    if (data.getSettings()->allow_experimental_optimized_row_order)
     {
-        LOG_DEBUG(
-            log, "allow_experimental_improve_compression_rows_order=true");
+        LOG_DEBUG(log, "allow_experimental_optimized_row_order=true");
 
         getBestCompressionPermutation(block, sort_description, perm);
         perm_ptr = &perm;
@@ -728,10 +727,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_improve_compression_rows_order)
+    if (data.getSettings()->allow_experimental_optimized_row_order)
     {
-        LOG_DEBUG(
-            log, "allow_experimental_improve_compression_rows_order=true");
+        LOG_DEBUG(log, "allow_experimental_optimized_row_order=true");
 
         getBestCompressionPermutation(block, sort_description, perm);
         perm_ptr = &perm;
