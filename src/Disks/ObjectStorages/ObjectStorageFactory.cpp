@@ -305,7 +305,6 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
         AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
-        std::string endpoint_string = endpoint.getEndpoint();
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
