@@ -69,34 +69,26 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         .withSendTimeout(1)
         .withReceiveTimeout(1);
 
-    try
-    {
-        const auto proxy_host = fetcher->fetch(endpoint, timeouts);
+    const auto proxy_host = fetcher->fetch(endpoint, timeouts);
 
-        LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol_string, proxy_host, proxy_port);
+    LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol_string, proxy_host, proxy_port);
 
-        auto proxy_protocol = ProxyConfiguration::protocolFromString(proxy_protocol_string);
+    auto proxy_protocol = ProxyConfiguration::protocolFromString(proxy_protocol_string);
 
-        bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
-            request_protocol,
-            proxy_protocol,
-            disable_tunneling_for_https_requests_over_http_proxy);
+    bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
+        request_protocol,
+        proxy_protocol,
+        disable_tunneling_for_https_requests_over_http_proxy);
 
-        cached_config.protocol = proxy_protocol;
-        cached_config.host = proxy_host;
-        cached_config.port = proxy_port;
-        cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
-        cached_config.original_request_protocol = request_protocol;
-        cache_timestamp = std::chrono::system_clock::now();
-        cache_valid = true;
+    cached_config.protocol = proxy_protocol;
+    cached_config.host = proxy_host;
+    cached_config.port = proxy_port;
+    cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
+    cached_config.original_request_protocol = request_protocol;
+    cache_timestamp = std::chrono::system_clock::now();
+    cache_valid = true;
 
-        return cached_config;
-    }
-    catch (...)
-    {
-        tryLogCurrentException("RemoteProxyConfigurationResolver", "Failed to obtain proxy");
-        return {};
-    }
+    return cached_config;
 }
 
 void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & config)
