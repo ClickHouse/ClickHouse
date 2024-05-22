@@ -723,7 +723,7 @@ private:
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
-    enum class CreateMergeEntryResult { Ok, MissingPart, LogUpdated, Other };
+    enum class CreateMergeEntryResult : uint8_t { Ok, MissingPart, LogUpdated, Other };
 
     CreateMergeEntryResult createLogEntryToMergeParts(
         zkutil::ZooKeeperPtr & zookeeper,

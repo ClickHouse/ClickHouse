@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ class CIStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     TESTS_1 = "Tests_1"
     TESTS_2 = "Tests_2"
+    TESTS_3 = "Tests_3"
 
 
 class Runners(metaclass=WithIter):
@@ -79,6 +81,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
     BINARY_S390X = "binary_s390x"
+    BINARY_LOONGARCH64 = "binary_loongarch64"
     FUZZERS = "fuzzers"
 
 
@@ -579,7 +582,6 @@ class CIConfig:
         elif job_name == JobNames.BUILD_CHECK_SPECIAL:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
-            stage_type = CIStages.TESTS_1
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
                 assert required_build
@@ -591,6 +593,8 @@ class CIConfig:
                     stage_type = CIStages.TESTS_2
             else:
                 stage_type = CIStages.TESTS_1
+            if job_name not in REQUIRED_CHECKS:
+                stage_type = CIStages.TESTS_3
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -915,63 +919,63 @@ CI_CONFIG = CIConfig(
     build_config={
         Build.PACKAGE_RELEASE: BuildConfig(
             name=Build.PACKAGE_RELEASE,
-            compiler="clang-17",
+            compiler="clang-18",
             package_type="deb",
             static_binary_name="amd64",
             additional_pkgs=True,
         ),
         Build.PACKAGE_AARCH64: BuildConfig(
             name=Build.PACKAGE_AARCH64,
-            compiler="clang-17-aarch64",
+            compiler="clang-18-aarch64",
             package_type="deb",
             static_binary_name="aarch64",
             additional_pkgs=True,
         ),
         Build.PACKAGE_ASAN: BuildConfig(
             name=Build.PACKAGE_ASAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="address",
             package_type="deb",
         ),
         Build.PACKAGE_UBSAN: BuildConfig(
             name=Build.PACKAGE_UBSAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="undefined",
             package_type="deb",
         ),
         Build.PACKAGE_TSAN: BuildConfig(
             name=Build.PACKAGE_TSAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="thread",
             package_type="deb",
         ),
         Build.PACKAGE_MSAN: BuildConfig(
             name=Build.PACKAGE_MSAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="memory",
             package_type="deb",
         ),
         Build.PACKAGE_DEBUG: BuildConfig(
             name=Build.PACKAGE_DEBUG,
-            compiler="clang-17",
+            compiler="clang-18",
             debug_build=True,
             package_type="deb",
             sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         Build.PACKAGE_RELEASE_COVERAGE: BuildConfig(
             name=Build.PACKAGE_RELEASE_COVERAGE,
-            compiler="clang-17",
+            compiler="clang-18",
             coverage=True,
             package_type="deb",
         ),
         Build.BINARY_RELEASE: BuildConfig(
             name=Build.BINARY_RELEASE,
-            compiler="clang-17",
+            compiler="clang-18",
             package_type="binary",
         ),
         Build.BINARY_TIDY: BuildConfig(
             name=Build.BINARY_TIDY,
-            compiler="clang-17",
+            compiler="clang-18",
             debug_build=True,
             package_type="binary",
             static_binary_name="debug-amd64",
@@ -980,69 +984,75 @@ CI_CONFIG = CIConfig(
         ),
         Build.BINARY_DARWIN: BuildConfig(
             name=Build.BINARY_DARWIN,
-            compiler="clang-17-darwin",
+            compiler="clang-18-darwin",
             package_type="binary",
             static_binary_name="macos",
         ),
         Build.BINARY_AARCH64: BuildConfig(
             name=Build.BINARY_AARCH64,
-            compiler="clang-17-aarch64",
+            compiler="clang-18-aarch64",
             package_type="binary",
         ),
         Build.BINARY_AARCH64_V80COMPAT: BuildConfig(
             name=Build.BINARY_AARCH64_V80COMPAT,
-            compiler="clang-17-aarch64-v80compat",
+            compiler="clang-18-aarch64-v80compat",
             package_type="binary",
             static_binary_name="aarch64v80compat",
             comment="For ARMv8.1 and older",
         ),
         Build.BINARY_FREEBSD: BuildConfig(
             name=Build.BINARY_FREEBSD,
-            compiler="clang-17-freebsd",
+            compiler="clang-18-freebsd",
             package_type="binary",
             static_binary_name="freebsd",
         ),
         Build.BINARY_DARWIN_AARCH64: BuildConfig(
             name=Build.BINARY_DARWIN_AARCH64,
-            compiler="clang-17-darwin-aarch64",
+            compiler="clang-18-darwin-aarch64",
             package_type="binary",
             static_binary_name="macos-aarch64",
         ),
         Build.BINARY_PPC64LE: BuildConfig(
             name=Build.BINARY_PPC64LE,
-            compiler="clang-17-ppc64le",
+            compiler="clang-18-ppc64le",
             package_type="binary",
             static_binary_name="powerpc64le",
         ),
         Build.BINARY_AMD64_COMPAT: BuildConfig(
             name=Build.BINARY_AMD64_COMPAT,
-            compiler="clang-17-amd64-compat",
+            compiler="clang-18-amd64-compat",
             package_type="binary",
             static_binary_name="amd64compat",
             comment="SSE2-only build",
         ),
         Build.BINARY_AMD64_MUSL: BuildConfig(
             name=Build.BINARY_AMD64_MUSL,
-            compiler="clang-17-amd64-musl",
+            compiler="clang-18-amd64-musl",
             package_type="binary",
             static_binary_name="amd64musl",
             comment="Build with Musl",
         ),
         Build.BINARY_RISCV64: BuildConfig(
             name=Build.BINARY_RISCV64,
-            compiler="clang-17-riscv64",
+            compiler="clang-18-riscv64",
             package_type="binary",
             static_binary_name="riscv64",
         ),
         Build.BINARY_S390X: BuildConfig(
             name=Build.BINARY_S390X,
-            compiler="clang-17-s390x",
+            compiler="clang-18-s390x",
             package_type="binary",
             static_binary_name="s390x",
         ),
+        Build.BINARY_LOONGARCH64: BuildConfig(
+            name=Build.BINARY_LOONGARCH64,
+            compiler="clang-18-loongarch64",
+            package_type="binary",
+            static_binary_name="loongarch64",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
-            compiler="clang-17",
+            compiler="clang-18",
             package_type="fuzzers",
             job_config=fuzzer_build_job_config,
         ),
@@ -1070,6 +1080,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
                 Build.BINARY_S390X,
+                Build.BINARY_LOONGARCH64,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1385,6 +1396,17 @@ REQUIRED_CHECKS = [
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
 ]
+
+BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
+
+
+def is_required(check_name: str) -> bool:
+    """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
+    if check_name in REQUIRED_CHECKS:
+        return True
+    if batch := BATCH_REGEXP.search(check_name):
+        return check_name[: batch.start()] in REQUIRED_CHECKS
+    return False
 
 
 @dataclass

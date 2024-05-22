@@ -149,6 +149,7 @@ def parse_env_variables(
     PPC_SUFFIX = "-ppc64le"
     RISCV_SUFFIX = "-riscv64"
     S390X_SUFFIX = "-s390x"
+    LOONGARCH_SUFFIX = "-loongarch64"
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
     AMD64_MUSL_SUFFIX = "-amd64-musl"
 
@@ -167,6 +168,7 @@ def parse_env_variables(
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
     is_cross_s390x = compiler.endswith(S390X_SUFFIX)
+    is_cross_loongarch = compiler.endswith(LOONGARCH_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
     is_amd64_musl = compiler.endswith(AMD64_MUSL_SUFFIX)
@@ -234,6 +236,11 @@ def parse_env_variables(
         cc = compiler[: -len(S390X_SUFFIX)]
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
+        )
+    elif is_cross_loongarch:
+        cc = compiler[: -len(LOONGARCH_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-loongarch64.cmake"
         )
     elif is_amd64_compat:
         cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
@@ -403,19 +410,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-17",
-            "clang-17-darwin",
-            "clang-17-darwin-aarch64",
-            "clang-17-aarch64",
-            "clang-17-aarch64-v80compat",
-            "clang-17-ppc64le",
-            "clang-17-riscv64",
-            "clang-17-s390x",
-            "clang-17-amd64-compat",
-            "clang-17-amd64-musl",
-            "clang-17-freebsd",
+            "clang-18",
+            "clang-18-darwin",
+            "clang-18-darwin-aarch64",
+            "clang-18-aarch64",
+            "clang-18-aarch64-v80compat",
+            "clang-18-ppc64le",
+            "clang-18-riscv64",
+            "clang-18-s390x",
+            "clang-18-loongarch64",
+            "clang-18-amd64-compat",
+            "clang-18-amd64-musl",
+            "clang-18-freebsd",
         ),
-        default="clang-17",
+        default="clang-18",
         help="a compiler to use",
     )
     parser.add_argument(

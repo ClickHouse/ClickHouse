@@ -7,6 +7,7 @@ sidebar_label: Map(K, V)
 # Map(K, V)
 
 `Map(K, V)` data type stores `key:value` pairs.
+The Map datatype is implemented as `Array(Tuple(key T1, value T2))`, which means that the order of keys in each map does not change, i.e., this data type maintains insertion order.
 
 **Parameters**
 

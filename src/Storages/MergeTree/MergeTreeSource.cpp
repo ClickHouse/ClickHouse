@@ -11,7 +11,7 @@ namespace DB
 struct MergeTreeSource::AsyncReadingState
 {
     /// NotStarted -> InProgress -> IsFinished -> NotStarted ...
-    enum class Stage
+    enum class Stage : uint8_t
     {
         NotStarted,
         InProgress,
