@@ -3,9 +3,7 @@ from helpers.cluster import ClickHouseCluster
 import logging
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node", main_configs=["configs/clusters.xml"]
-)
+node = cluster.add_instance("node", main_configs=["configs/clusters.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -31,4 +29,11 @@ def test_distributed_table_with_alias(start_cluster):
         SET prefer_localhost_replica = 1;
     """
     )
-    assert str(node.query("WITH 'Hello' AS `alias` SELECT `alias` FROM default.dist GROUP BY `alias`;")) == 'Hello'
+    assert (
+        str(
+            node.query(
+                "WITH 'Hello' AS `alias` SELECT `alias` FROM default.dist GROUP BY `alias`;"
+            )
+        )
+        == "Hello"
+    )
