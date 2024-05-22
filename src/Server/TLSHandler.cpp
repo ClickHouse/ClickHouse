@@ -1,18 +1,24 @@
 #include <Server/TLSHandler.h>
 
+#include <Poco/SharedPtr.h>
+#include <Common/Exception.h>
+
 #if USE_SSL
-
-#include <Poco/Net/Utility.h>
-#include <Poco/StringTokenizer.h>
-
+#    include <Poco/Net/Utility.h>
+#    include <Poco/StringTokenizer.h>
+#    include <Server/CertificateReloader.h>
 #endif
 
 DB::TLSHandler::TLSHandler(
     const StreamSocket & socket,
-    [[maybe_unused]] const LayeredConfiguration & config,
-    [[maybe_unused]] const std::string & prefix,
+    const LayeredConfiguration & config_,
+    const std::string & prefix_,
     TCPProtocolStackData & stack_data_)
     : Poco::Net::TCPServerConnection(socket)
+#if USE_SSL
+    , config(config_)
+    , prefix(prefix_)
+#endif
     , stack_data(stack_data_)
 {
 #if USE_SSL
@@ -73,5 +79,27 @@ DB::TLSHandler::TLSHandler(
         extended_verification = config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false);
         prefer_server_ciphers = config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
     }
+#endif
+}
+
+
+void DB::TLSHandler::run()
+{
+#if USE_SSL
+    auto ctx = SSLManager::instance().defaultServerContext();
+    if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
+    {
+        ctx = new Context(usage, params);
+        ctx->disableProtocols(disabled_protocols);
+        ctx->enableExtendedCertificateVerification(extended_verification);
+        if (prefer_server_ciphers)
+            ctx->preferServerCiphers();
+        CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
+    }
+    socket() = SecureStreamSocket::attach(socket(), ctx);
+    stack_data.socket = socket();
+    stack_data.certificate = params.certificateFile;
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
 }

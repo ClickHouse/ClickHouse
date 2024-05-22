@@ -6,6 +6,9 @@
 
 #include <string>
 #include <filesystem>
+#include <list>
+#include <unordered_map>
+#include <mutex>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -31,6 +34,20 @@ class CertificateReloader
 public:
     using stat_t = struct stat;
 
+    struct Data
+    {
+        Poco::Crypto::X509Certificate::List certs_chain;
+        Poco::Crypto::EVPPKey key;
+
+        Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+    };
+
+    struct MultiData
+    {
+        MultiVersion<Data> data;
+        bool init_was_not_made = true;
+    };
+
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
@@ -40,17 +57,20 @@ public:
         return instance;
     }
 
-    /// Initialize the callback and perform the initial cert loading
-    void init();
-
-    /// Handle configuration reload
+    /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
+    /// Handle configuration reload
+    void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
+
     /// A callback for OpenSSL
-    int setCertificate(SSL * ssl);
+    int setCertificate(SSL * ssl, const MultiData * pdata);
 
 private:
     CertificateReloader() = default;
+
+    /// Initialize the callback and perform the initial cert loading
+    void init(MultiData * pdata, SSL_CTX * ctx);
 
     LoggerPtr log = getLogger("CertificateReloader");
 
@@ -68,16 +88,9 @@ private:
     File cert_file{"certificate"};
     File key_file{"key"};
 
-    struct Data
-    {
-        Poco::Crypto::X509Certificate::List certs_chain;
-        Poco::Crypto::EVPPKey key;
-
-        Data(std::string cert_path, std::string key_path, std::string pass_phrase);
-    };
-
-    MultiVersion<Data> data;
-    bool init_was_not_made = true;
+    std::mutex data_mutex;
+    std::list<MultiData> data;
+    std::unordered_map<std::string, std::list<MultiData>::iterator> data_index;
 };
 
 }
