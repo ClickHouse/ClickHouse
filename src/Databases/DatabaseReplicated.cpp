@@ -873,7 +873,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::vector<RenameEdge> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
-    for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
+    for (auto existing_tables_it = getTablesIterator(getContext(), {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
          existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
@@ -935,6 +935,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
         query_context->setSetting("allow_experimental_map_type", 1);
+        query_context->setSetting("allow_deprecated_functions", 1);
 
         query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
         query_context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -943,6 +944,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_hyperscan", 1);
         query_context->setSetting("allow_simdjson", 1);
         query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
+        query_context->setSetting("allow_suspicious_primary_key", 1);
+        query_context->setSetting("allow_suspicious_ttl_expressions", 1);
+        query_context->setSetting("allow_suspicious_variant_types", 1);
+        query_context->setSetting("enable_deflate_qpl_codec", 1);
+        query_context->setSetting("enable_zstd_qat_codec", 1);
+        query_context->setSetting("allow_create_index_without_type", 1);
+        query_context->setSetting("allow_experimental_s3queue", 1);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -1098,8 +1106,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
-    auto create_tables_runner = threadPoolCallbackRunner<void>(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
-    std::vector<std::future<void>> create_table_futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
 
     for (const auto & tables_to_create : tables_to_create_by_level)
     {
@@ -1131,25 +1138,19 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             };
 
             if (allow_concurrent_table_creation)
-                create_table_futures.push_back(create_tables_runner(task, Priority{0}));
+                runner(std::move(task));
             else
                 task();
         }
 
-        /// First wait for all tasks to finish.
-        for (auto & future : create_table_futures)
-            future.wait();
-
-        /// Now rethrow the first exception if any.
-        for (auto & future : create_table_futures)
-            future.get();
-
-        create_table_futures.clear();
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
     LOG_INFO(log, "All tables are created successfully");
 
-    chassert(max_log_ptr_at_creation || our_log_ptr);
     UInt32 first_entry_to_mark_finished = new_replica ? max_log_ptr_at_creation : our_log_ptr;
+    /// NOTE first_entry_to_mark_finished can be 0 if our replica has crashed just after creating its nodes in ZK,
+    /// so it's a new replica, but after restarting we don't know max_log_ptr_at_creation anymore...
+    /// It's a very rare case, and it's okay if some queries throw TIMEOUT_EXCEEDED when waiting for all replicas
     if (first_entry_to_mark_finished)
     {
         /// If the replica is new and some of the queries applied during recovery
@@ -1324,7 +1325,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1718,9 +1718,18 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = args.context->getMacros()->expand(zookeeper_path);
-        shard_name = args.context->getMacros()->expand(shard_name);
-        replica_name = args.context->getMacros()->expand(replica_name);
+        /// Expand macros.
+        Macros::MacroExpansionInfo info;
+        info.table_id.database_name = args.database_name;
+        info.table_id.uuid = args.uuid;
+        zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        shard_name = args.context->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = args.context->getMacros()->expand(replica_name, info);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)

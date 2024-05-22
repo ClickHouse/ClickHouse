@@ -8,10 +8,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
@@ -225,9 +222,11 @@ def main():
         parent_version = (
             None
             if not image.parent
-            else image_tags[image.parent]
-            if not args.suffix
-            else f"{image_tags[image.parent]}-{args.suffix}"
+            else (
+                image_tags[image.parent]
+                if not args.suffix
+                else f"{image_tags[image.parent]}-{args.suffix}"
+            )
         )
 
         res = process_single_image(

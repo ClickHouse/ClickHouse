@@ -22,7 +22,7 @@ namespace DB
   */
 
 /// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
-enum class PoolMode
+enum class PoolMode : uint8_t
 {
     /// Return exactly one connection.
     GET_ONE = 0,

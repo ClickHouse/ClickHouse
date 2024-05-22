@@ -92,8 +92,8 @@ private:
     void findRootPathsInBackup();
 
     void findDatabasesAndTablesInBackup();
-    void findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
-    void findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
+    void findTableInBackup(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions);
+    void findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions);
     void findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
@@ -130,7 +130,7 @@ private:
 
     /// Waits until all tasks are processed (including the tasks scheduled while we're waiting).
     /// Throws an exception if any of the tasks throws an exception.
-    void waitFutures();
+    void waitFutures(bool throw_if_error = true);
 
     /// Throws an exception if the RESTORE query was cancelled.
     void checkIsQueryCancelled() const;

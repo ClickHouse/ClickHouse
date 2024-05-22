@@ -82,6 +82,8 @@ $CLICKHOUSE_CLIENT -q "optimize table $success_replica final settings optimize_t
 
 $CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
     insert into $success_replica (key) values (2); -- part all_2_2_0
+    -- Avoid 'Cannot select parts for optimization: Entry for part all_2_2_0 hasn't been read from the replication log yet'
+    system sync replica $success_replica pull;
     optimize table $success_replica final settings optimize_throw_if_noop=1, alter_sync=1; -- part all_0_2_2_1
     system sync replica $failed_replica pull;
 "

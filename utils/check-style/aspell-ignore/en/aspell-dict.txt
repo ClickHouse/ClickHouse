@@ -29,6 +29,13 @@ Alexey
 AnyEvent
 AppleClang
 Approximative
+arrayDotProduct
+arrayEnumerateDenseRanked
+arrayEnumerateUniqRanked
+arrayFirstOrNull
+arrayLastOrNull
+arrayPartialShuffle
+arrayShuffle
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -46,6 +53,8 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+analysisOfVariance
+ANOVA
 BIGINT
 BIGSERIAL
 BORO
@@ -176,6 +185,8 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
+composable
 ConcurrencyControlAcquired
 ConcurrencyControlSoftLimit
 Config
@@ -265,8 +276,8 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
-FFFFFFFF
 FFFD
+FFFFFFFF
 FIPS
 FOSDEM
 FQDN
@@ -387,6 +398,8 @@ InterserverThreads
 IsPentagon
 IsResClassIII
 IsValid
+isNotDistinctFrom
+isNullable
 JBOD
 JOINed
 JOINs
@@ -454,6 +467,9 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
+kostik
+kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -463,7 +479,9 @@ LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
+LOONGARCH
 LONGLONG
+LoongArch
 Levenshtein
 Liao
 LibFuzzer
@@ -553,9 +571,19 @@ MinIO
 MinMax
 MindsDB
 Mongodb
-mortonDecode
-mortonEncode
+Monotonicity
 MsgPack
+multiSearchAllPositionsCaseInsensitive
+multiSearchAllPositionsCaseInsensitiveUTF
+multiSearchAnyCaseInsensitive
+multiSearchAnyCaseInsensitiveUTF
+multiSearchAnyUTF
+multiSearchFirstIndexCaseInsensitive
+multiSearchFirstIndexCaseInsensitiveUTF
+multiSearchFirstIndexUTF
+multiSearchFirstPositionCaseInsensitive
+multiSearchFirstPositionCaseInsensitiveUTF
+multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -595,6 +623,7 @@ NetworkSendErrors
 NetworkSendPackets
 Noaa
 NodeJs
+NonMonotonic
 NuRaft
 NumHexagons
 NumPy
@@ -657,6 +686,7 @@ OTLP
 OUTFILE
 ObjectId
 Observability
+Oblakov
 Octonica
 Ok
 OnTime
@@ -677,6 +707,7 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -856,12 +887,14 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+sigmoid
 Smirnov's
 Smirnov'test
 Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -900,6 +933,7 @@ TAVG
 TCPConnection
 TCPThreads
 TDigest
+ThreadMonotonic
 TINYINT
 TLSv
 TMAX
@@ -925,6 +959,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+tanh
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -976,6 +1011,7 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
 URLHash
 URLHierarchy
@@ -983,7 +1019,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -991,6 +1029,7 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unshuffled
 Updatable
 Uppercased
 Uptime
@@ -1017,6 +1056,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1034,6 +1075,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZCurve
 ZSTDQAT
 Zabbix
 Zipkin
@@ -1063,6 +1105,8 @@ addQuarters
 addSeconds
 addWeeks
 addYears
+addInterval
+addTupleOfIntervals
 addr
 addressToLine
 addressToLineWithInlines
@@ -1336,6 +1380,7 @@ configs
 congruential
 conjuction
 conjuctive
+connectionId
 const
 contrib
 convertCharset
@@ -1346,6 +1391,8 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1552,6 +1599,7 @@ firstSignificantSubdomainCustom
 fixedstring
 flamegraph
 flatbuffers
+flattenTuple
 flink
 fluentd
 fmtlib
@@ -1682,6 +1730,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1818,6 +1867,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -1866,6 +1916,7 @@ logTrace
 logagent
 loghouse
 london
+loongarch
 lookups
 lowcardinality
 lowerUTF
@@ -1911,6 +1962,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
@@ -1936,8 +1989,12 @@ mmap
 mmapped
 modularization
 moduloOrZero
+moduli
 mongodb
+monotonicity
 monthName
+mortonDecode
+mortonEncode
 moscow
 msgpack
 msgpk
@@ -1986,6 +2043,9 @@ nestjs
 netloc
 ngram
 ngramDistance
+ngramDistanceCaseInsensitive
+ngramDistanceCaseInsensitiveUTF
+ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -1995,6 +2055,9 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
+ngramSearchCaseInsensitive
+ngramSearchCaseInsensitiveUTF
+ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
@@ -2281,9 +2344,11 @@ retentions
 rethrow
 retransmit
 retriable
+rewritable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2311,10 +2376,13 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
+rustc
+rustup
 rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
@@ -2337,6 +2405,7 @@ sharded
 sharding
 shortcircuit
 shortkeys
+showCertificate
 shoutout
 simdjson
 simpleJSON
@@ -2352,6 +2421,8 @@ simpleaggregatefunction
 simplelinearregression
 simpod
 singlepart
+singleValueOrNull
+singlevalueornull
 sinh
 sipHash
 siphash
@@ -2398,6 +2469,10 @@ stddevPop
 stddevSamp
 stddevpop
 stddevsamp
+stddevpopstable
+stddevPopStable
+stddevsampstable
+stddevSampStable
 stderr
 stdin
 stdout
@@ -2467,6 +2542,8 @@ subtractQuarters
 subtractSeconds
 subtractWeeks
 subtractYears
+subtractInterval
+subtractTupleOfIntervals
 subtree
 subtrees
 subtype
@@ -2479,6 +2556,9 @@ sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
+sumMapWithOverflow
+sumMapFilteredWithOverflow
 summingmergetree
 sumwithoverflow
 superaggregates
@@ -2549,6 +2629,7 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
+toMillisecond
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -2565,7 +2646,6 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
-toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2641,6 +2721,12 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
+tupleModulo
+tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2693,6 +2779,7 @@ uptime
 uptrace
 uring
 url
+urlencoded
 urlCluster
 urls
 usearch
@@ -2700,6 +2787,7 @@ userspace
 userver
 utils
 uuid
+uuidv
 varPop
 varPopStable
 varSamp
@@ -2712,6 +2800,7 @@ varpop
 varsamp
 vectorized
 vectorscan
+vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree
@@ -2755,6 +2844,7 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
+wyHash
 xcode
 xeus
 xkcd
@@ -2765,7 +2855,6 @@ xz
 yaml
 yandex
 youtube
-ZCurve
 zLib
 zLinux
 zabbix

@@ -210,7 +210,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+        auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
         if (save_marks_in_cache)
         {
             auto callback = [this] { return loadMarksImpl(); };
@@ -239,7 +239,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
-    return scheduleFromThreadPool<MarkCache::MappedPtr>(
+    return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);

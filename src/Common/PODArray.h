@@ -424,7 +424,7 @@ public:
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        new (t_end()) T(std::forward<U>(x));
+        new (reinterpret_cast<void*>(t_end())) T(std::forward<U>(x));
         this->c_end += sizeof(T);
     }
 

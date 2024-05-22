@@ -8,10 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
-# isort: off
 import requests
-
-# isort: on
 
 import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
@@ -20,6 +17,10 @@ DOWNLOAD_RETRIES_COUNT = 5
 
 
 class DownloadException(Exception):
+    pass
+
+
+class APIException(Exception):
     pass
 
 
@@ -109,7 +110,7 @@ def get_gh_api(
             logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
-    raise exc
+    raise APIException("Unable to request data from GH API") from exc
 
 
 def get_build_name_for_check(check_name: str) -> str:

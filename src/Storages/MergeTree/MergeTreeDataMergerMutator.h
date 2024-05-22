@@ -20,14 +20,14 @@ namespace DB
 
 class MergeProgressCallback;
 
-enum class SelectPartsDecision
+enum class SelectPartsDecision : uint8_t
 {
     SELECTED = 0,
     CANNOT_SELECT = 1,
     NOTHING_TO_MERGE = 2,
 };
 
-enum class ExecuteTTLType
+enum class ExecuteTTLType : uint8_t
 {
     NONE = 0,
     NORMAL = 1,
@@ -43,7 +43,7 @@ public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
                                                         const MergeTreeData::DataPartPtr &,
                                                         const MergeTreeTransaction *,
-                                                        String &)>;
+                                                        PreformattedMessage &)>;
 
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
@@ -92,7 +92,7 @@ public:
         const MergeTreeData::DataPartsVector & data_parts,
         const AllowedMergingPredicate & can_merge_callback,
         const MergeTreeTransactionPtr & txn,
-        String & out_disable_reason) const;
+        PreformattedMessage & out_disable_reason) const;
 
     /// The third step of selecting parts to merge: takes ranges that we can merge, and selects parts that we want to merge
     SelectPartsDecision selectPartsToMergeFromRanges(
@@ -103,7 +103,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const IMergeSelector::PartsRanges & parts_ranges,
         const time_t & current_time,
-        String & out_disable_reason,
+        PreformattedMessage & out_disable_reason,
         bool dry_run = false);
 
     String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
@@ -129,7 +129,7 @@ public:
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
         const MergeTreeTransactionPtr & txn,
-        String & out_disable_reason,
+        PreformattedMessage & out_disable_reason,
         const PartitionIdsHint * partitions_hint = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
@@ -144,7 +144,7 @@ public:
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        String & out_disable_reason,
+        PreformattedMessage & out_disable_reason,
         bool optimize_skip_merged_partitions = false);
 
     /** Creates a task to merge parts.

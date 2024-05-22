@@ -18,7 +18,7 @@
 #include <Poco/NumberParser.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
@@ -731,8 +731,20 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
+            fs::path p(include_from_path);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                include_from = YAMLParser::parse(include_from_path);
+            }
+            else
+            {
+                include_from = dom_parser.parse(include_from_path);
+            }
+
             contributing_files.push_back(include_from_path);
-            include_from = dom_parser.parse(include_from_path);
         }
 
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);

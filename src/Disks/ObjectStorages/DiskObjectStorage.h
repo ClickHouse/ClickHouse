@@ -4,8 +4,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Common/re2.h>
+
 
 namespace CurrentMetrics
 {
@@ -47,11 +47,6 @@ public:
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
-
-    void getRemotePathsRecursive(
-        const String & local_path,
-        std::vector<LocalPathWithObjectStoragePaths> & paths_map,
-        const std::function<bool(const String &)> & skip_predicate) override;
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
@@ -117,7 +112,7 @@ public:
 
     void clearDirectory(const String & path) override;
 
-    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
+    void moveDirectory(const String & from_path, const String & to_path) override;
 
     void removeDirectory(const String & path) override;
 
@@ -188,6 +183,8 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
+    bool supportsHardLinks() const override;
+
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
@@ -233,6 +230,7 @@ private:
     std::mutex reservation_mutex;
 
     bool tryReserve(UInt64 bytes);
+    void sendMoveMetadata(const String & from_path, const String & to_path);
 
     const bool send_metadata;
 

@@ -643,6 +643,7 @@ date_diff('unit', startdate, enddate, [timezone])
 -   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
     可能的值：
 
+    - `nanosecond`
     - `microsecond`
     - `millisecond`
     - `second`

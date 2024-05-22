@@ -1,7 +1,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/types.h>
 #include <functional>
 
@@ -888,7 +888,7 @@ void TestKeeper::multi(
         const Requests & requests,
         MultiCallback callback)
 {
-    return multi(std::span(requests), std::move(callback));
+    multi(std::span(requests), std::move(callback));
 }
 
 void TestKeeper::multi(

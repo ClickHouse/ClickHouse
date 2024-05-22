@@ -1100,11 +1100,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == INVERTED_INDEX_NAME)
+        if (index.type == FULL_TEXT_INDEX_NAME)
             return true;
     }
     return false;
@@ -1143,7 +1143,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         {
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer().visit(partition_key.get());
+            FunctionNameNormalizer::visit(partition_key.get());
             auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
                 metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));
@@ -1224,7 +1224,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
             if (has_column)
             {
-                auto column_from_table = columns.get(command.column_name);
+                const auto & column_from_table = columns.get(command.column_name);
                 if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
@@ -1566,7 +1566,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
-                auto column_in_table = all_columns.get(column_name);
+                const auto & column_in_table = all_columns.get(column_name);
                 /// Column doesn't have a default, nothing to check
                 if (!column_in_table.default_desc.expression)
                     continue;

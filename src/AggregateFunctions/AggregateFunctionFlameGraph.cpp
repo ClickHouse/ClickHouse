@@ -269,9 +269,9 @@ struct AggregateFunctionFlameGraphData
 
     using Entries = HashMap<UInt64, Pair>;
 
-    AggregateFunctionFlameGraphTree tree;
     Entries entries;
     Entry * free_list = nullptr;
+    AggregateFunctionFlameGraphTree tree;
 
     Entry * alloc(Arena * arena)
     {
@@ -559,7 +559,7 @@ public:
             ptr = ptrs[row_num];
         }
 
-        this->data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
+        data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
     }
 
     void addManyDefaults(
@@ -572,7 +572,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        data(place).merge(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t> /* version */) const override
@@ -590,7 +590,7 @@ public:
         auto & array = assert_cast<ColumnArray &>(to);
         auto & str = assert_cast<ColumnString &>(array.getData());
 
-        this->data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
+        data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
 
         array.getOffsets().push_back(str.size());
     }

@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ACCESS_DENIED;
+    extern const int DEPRECATED_FUNCTION;
 };
 
 enum class FunctionOrigin : int8_t
@@ -152,7 +153,8 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
                 || e.code() == ErrorCodes::FUNCTION_NOT_ALLOWED
                 || e.code() == ErrorCodes::NOT_IMPLEMENTED
                 || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
-                || e.code() == ErrorCodes::ACCESS_DENIED)
+                || e.code() == ErrorCodes::ACCESS_DENIED
+                || e.code() == ErrorCodes::DEPRECATED_FUNCTION)
             {
                 /// Ignore exception, show is_deterministic = NULL.
             }
@@ -179,7 +181,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
-    const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context);
+    const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
         fillRow(res_columns, function_name, 0, {0}, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);

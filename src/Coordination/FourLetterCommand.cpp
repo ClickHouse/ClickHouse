@@ -8,7 +8,7 @@
 #include <Poco/Path.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
@@ -592,7 +592,7 @@ String RecalculateCommand::run()
 
 String CleanResourcesCommand::run()
 {
-    keeper_dispatcher.cleanResources();
+    KeeperDispatcher::cleanResources();
     return "ok";
 }
 

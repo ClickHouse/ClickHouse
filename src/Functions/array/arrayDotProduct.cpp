@@ -66,13 +66,13 @@ struct DotProduct
     };
 
     template <typename Type>
-    static void accumulate(State<Type> & state, Type x, Type y)
+    static NO_SANITIZE_UNDEFINED void accumulate(State<Type> & state, Type x, Type y)
     {
         state.sum += x * y;
     }
 
     template <typename Type>
-    static void combine(State<Type> & state, const State<Type> & other_state)
+    static NO_SANITIZE_UNDEFINED void combine(State<Type> & state, const State<Type> & other_state)
     {
         state.sum += other_state.sum;
     }
