@@ -126,8 +126,8 @@ void getBestCompressionPermutation(const Block & block, const SortDescription & 
         permutation.resize(size);
         iota(permutation.data(), size, IColumn::Permutation::value_type(0));
     }
-    const auto equal_ranges = getEqualRanges(block, description, permutation);
-    const auto not_already_sorted_columns = getNotAlreadySortedColumnsIndex(block, description);
+    const EqualRanges equal_ranges = getEqualRanges(block, description, permutation);
+    const std::vector<size_t> not_already_sorted_columns = getNotAlreadySortedColumnsIndex(block, description);
     for (const auto & range : equal_ranges)
     {
         if (getRangeSize(range) <= 1)
