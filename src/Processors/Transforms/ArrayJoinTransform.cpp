@@ -38,14 +38,14 @@ void ArrayJoinTransform::consume(Chunk chunk)
 }
 
 
-bool ArrayJoinTransform::canGenerate(bool)
+bool ArrayJoinTransform::canGenerate()
 {
     return result_iterator && result_iterator->hasNext();
 }
 
 Chunk ArrayJoinTransform::generate()
 {
-    if (!canGenerate(false))
+    if (!canGenerate())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in ArrayJoinTransform");
 
     auto block = result_iterator->next();

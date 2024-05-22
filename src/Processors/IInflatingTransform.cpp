@@ -76,17 +76,24 @@ void IInflatingTransform::work()
 
         current_chunk = generate();
         generated = true;
-        can_generate = canGenerate(is_finished);
+        can_generate = canGenerate();
+    }
+    else if (is_finished)
+    {
+        if (can_generate || generated || has_input)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IInflatingTransform cannot finish work because it has generated data or has input data");
+
+        current_chunk = getRemaining();
+        generated = !current_chunk.empty();
     }
     else
     {
-        if (has_input)
-        {
-            consume(std::move(current_chunk));
-            has_input = false;
-        }
+        if (!has_input)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IInflatingTransform cannot consume chunk because it wasn't read");
 
-        can_generate = canGenerate(is_finished);
+        consume(std::move(current_chunk));
+        has_input = false;
+        can_generate = canGenerate();
     }
 }
 

@@ -16,8 +16,8 @@ namespace DB
 ///            ... (process transformed chunk)
 ///        }
 ///    }
-///    while (transform.canGenerate(true))
-///        ... (process remaining data)
+///    transformed_chunk = transform.getRemaining();
+///    ... (process remaining data)
 ///
 class IInflatingTransform : public IProcessor
 {
@@ -31,8 +31,9 @@ protected:
     bool can_generate = false;
 
     virtual void consume(Chunk chunk) = 0;
-    virtual bool canGenerate(bool is_read_finished) = 0;
+    virtual bool canGenerate() = 0;
     virtual Chunk generate() = 0;
+    virtual Chunk getRemaining() { return {}; }
 
 public:
     IInflatingTransform(Block input_header, Block output_header);
