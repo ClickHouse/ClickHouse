@@ -46,6 +46,8 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+analysisOfVariance
+ANOVA
 BIGINT
 BIGSERIAL
 BORO

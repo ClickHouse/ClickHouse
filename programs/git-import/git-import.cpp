@@ -14,7 +14,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
 #include <base/find_symbols.h>
