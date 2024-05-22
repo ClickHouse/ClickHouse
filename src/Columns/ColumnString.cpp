@@ -482,9 +482,8 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
-size_t ColumnString::estimateNumberOfDifferent(const Permutation & perm, const EqualRange & range, size_t /*samples*/) const
+size_t ColumnString::getCardinalityInPermutedRange(const Permutation & perm, const EqualRange & range) const
 {
-    // TODO: sample random elements
     size_t range_size = getRangeSize(range);
     if (range_size <= 1ULL)
         return range_size;

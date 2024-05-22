@@ -266,9 +266,8 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 }
 
 template <is_decimal T>
-size_t ColumnDecimal<T>::estimateNumberOfDifferent(const IColumn::Permutation & perm, const EqualRange & range, size_t /*samples*/) const
+size_t ColumnDecimal<T>::getCardinalityInPermutedRange(const IColumn::Permutation & perm, const EqualRange & range) const
 {
-    // TODO: sample random elements
     size_t range_size = getRangeSize(range);
     if (range_size <= 1ULL)
         return range_size;

@@ -402,7 +402,7 @@ public:
                         "or for Array or Tuple, containing them.");
     }
 
-    virtual size_t estimateNumberOfDifferent(const Permutation & /*perm*/, const EqualRange & range, size_t /*samples*/) const;
+    virtual size_t getCardinalityInPermutedRange(const Permutation & /*perm*/, const EqualRange & range) const;
 
     virtual void updatePermutationForCompression(Permutation & /*perm*/, EqualRanges & /*ranges*/) const;
 
