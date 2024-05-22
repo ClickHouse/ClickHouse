@@ -132,3 +132,7 @@ SELECT * FROM merge_table ORDER BY id, val;
 2	a
 2	b
 3	c
+select sum(number) from numbers(10) settings final=1;
+45
+select sum(number) from remote('127.0.0.{1,2}', numbers(10)) settings final=1;
+90
