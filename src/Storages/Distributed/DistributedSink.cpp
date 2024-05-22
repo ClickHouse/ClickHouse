@@ -173,7 +173,10 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
+        {
+            writeSplitAsync(block);
+            return;
+        }
 
         writeAsyncImpl(block);
         ++inserted_blocks;

@@ -798,7 +798,7 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
         {
             if (restore_settings.storage_policy.value().empty())
                 /// it has been set to "" deliberately, so the source storage policy is erased
-                storage->settings->changes.removeSetting(setting_name);
+                storage->settings->changes.removeSetting(setting_name); // NOLINT
             else
                 /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
                 storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
@@ -838,7 +838,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         return true; /// Exclude this dependency.
     };
 
-    tables_dependencies.removeTablesIf(need_exclude_dependency);
+    tables_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
     if (tables_dependencies.getNumberOfTables() != table_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");

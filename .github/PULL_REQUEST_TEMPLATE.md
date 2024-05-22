@@ -85,4 +85,4 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---batch_2--> 3
 - [ ] <!---batch_3--> 4
 
-<details>
+</details>

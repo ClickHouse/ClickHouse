@@ -103,7 +103,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -808,12 +807,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool is_create_parameterized_view = false;
         if (const auto * create_query = ast->as<ASTCreateQuery>())
+        {
             is_create_parameterized_view = create_query->isParameterizedView();
+        }
         else if (const auto * explain_query = ast->as<ASTExplainQuery>())
         {
-            assert(!explain_query->children.empty());
-            if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
-                is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            if (!explain_query->children.empty())
+                if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                    is_create_parameterized_view = create_of_explain_query->isParameterizedView();
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -1253,34 +1254,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 }
             }
-        }
-        // Here we check if our our projections contain force_optimize_projection_name
-        if (!settings.force_optimize_projection_name.value.empty())
-        {
-            bool found = false;
-            std::set<std::string> projections;
-            {
-                const auto & access_info = context->getQueryAccessInfo();
-                std::lock_guard lock(access_info.mutex);
-                projections = access_info.projections;
-            }
-
-            for (const auto &projection : projections)
-            {
-                // projection value has structure like: <db_name>.<table_name>.<projection_name>
-                // We need to get only the projection name
-                size_t last_dot_pos = projection.find_last_of('.');
-                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
-                if (settings.force_optimize_projection_name.value == projection_name)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
-                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
