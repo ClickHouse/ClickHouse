@@ -4,15 +4,11 @@
 #include <Common/XMLUtils.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
-#include "Disks/DiskType.h"
-#include "IO/ReadBufferFromFile.h"
+#include <Disks/DiskType.h>
+#include <IO/ReadBufferFromFile.h>
 #include "IO/ReadHelpers.h"
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/Node.h>
-#include <fstream>
-#include <string>
-#include <sstream>
-
 #include <Poco/Util/XMLConfiguration.h>
 
 #include "MetadataStorageFromBackupFile.h"
