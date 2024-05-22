@@ -1,0 +1,29 @@
+SELECT '-- generateSnowflakeID --';
+SELECT bitShiftLeft(toUInt64(generateSnowflakeID()), 52) = 0; -- check machine sequence number is zero
+SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeID()), 63), 1) = 0; -- check first bit is zero
+
+SELECT generateSnowflakeID(1) = generateSnowflakeID(2);
+SELECT generateSnowflakeID() = generateSnowflakeID(1);
+SELECT generateSnowflakeID(1) = generateSnowflakeID(1);
+
+SELECT generateSnowflakeID(1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT count(*)
+FROM
+(
+    SELECT DISTINCT generateSnowflakeID()
+    FROM numbers(100)
+);
+
+SELECT '-- generateSnowflakeIDThreadMonotonic --';
+SELECT bitShiftLeft(toUInt64(generateSnowflakeIDThreadMonotonic()), 52) = 0; -- check machine sequence number is zero
+SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeIDThreadMonotonic()), 63), 1) = 0; -- check first bit is zero
+
+SELECT generateSnowflakeIDThreadMonotonic(1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT count(*)
+FROM
+(
+    SELECT DISTINCT generateSnowflakeIDThreadMonotonic()
+    FROM numbers(100)
+);

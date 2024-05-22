@@ -1,8 +1,11 @@
+#include "Common/Exception.h"
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -14,6 +17,9 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
 }
 
+constexpr auto function_node_name = "/serial_ids/";
+constexpr size_t MAX_SERIES_NUMBER = 1000; // ?
+
 class FunctionSerial : public IFunction
 {
 private:
@@ -21,7 +27,7 @@ private:
     ContextPtr context;
 
 public:
-    static constexpr auto name = "serial";
+    static constexpr auto name = "generateSerialID";
 
     explicit FunctionSerial(ContextPtr context_) : context(context_)
     {
@@ -48,16 +54,12 @@ public:
     bool hasInformationAboutMonotonicity() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                getName(), arguments.size());
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Type of argument for function {} doesn't match: passed {}, should be string",
-                getName(), arguments[0]->getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"series identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -71,12 +73,19 @@ public:
         if (zk->expired())
             zk = context->getZooKeeper();
 
+        // slow?
+        if (zk->exists(function_node_name) && zk->getChildren(function_node_name).size() == MAX_SERIES_NUMBER) {
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+            "At most {} serial nodes can be created",
+            MAX_SERIES_NUMBER);
+        }
+
         auto col_res = ColumnVector<Int64>::create();
         typename ColumnVector<Int64>::Container & vec_to = col_res->getData();
 
         vec_to.resize(input_rows_count);
 
-        const auto & serial_path = "/serials/" + arguments[0].column->getDataAt(0).toString();
+        const auto & serial_path = function_node_name + arguments[0].column->getDataAt(0).toString();
 
         /// CAS in ZooKeeper
         /// `get` value and version, `trySet` new with version check
@@ -130,28 +139,28 @@ Generates and returns sequential numbers starting from the previous counter valu
 This function takes a constant string argument - a series identifier.
 The server should be configured with a ZooKeeper.
 )",
-        .syntax = "serial(identifier)",
+        .syntax = "generateSerialID(identifier)",
         .arguments{
-            {"series identifier", "Series identifier (String)"}
+            {"series identifier", "Series identifier (String or FixedString)"}
         },
         .returned_value = "Sequential numbers of type Int64 starting from the previous counter value",
         .examples{
-            {"first call", "SELECT serial('id1')", R"(
-┌─serial('id1')──┐
-│              1 │
-└────────────────┘)"},
-            {"second call", "SELECT serial('id1')", R"(
-┌─serial('id1')──┐
-│              2 │
-└────────────────┘)"},
-            {"column call", "SELECT *, serial('id1') FROM test_table", R"(
-┌─CounterID─┬─UserID─┬─ver─┬─serial('id1')──┐
-│         1 │      3 │   3 │              3 │
-│         1 │      1 │   1 │              4 │
-│         1 │      2 │   2 │              5 │
-│         1 │      5 │   5 │              6 │
-│         1 │      4 │   4 │              7 │
-└───────────┴────────┴─────┴────────────────┘
+            {"first call", "SELECT generateSerialID('id1')", R"(
+┌─generateSerialID('id1')──┐
+│                        1 │
+└──────────────────────────┘)"},
+            {"second call", "SELECT generateSerialID('id1')", R"(
+┌─generateSerialID('id1')──┐
+│                        2 │
+└──────────────────────────┘)"},
+            {"column call", "SELECT *, generateSerialID('id1') FROM test_table", R"(
+┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')──┐
+│         1 │      3 │   3 │                        3 │
+│         1 │      1 │   1 │                        4 │
+│         1 │      2 │   2 │                        5 │
+│         1 │      5 │   5 │                        6 │
+│         1 │      4 │   4 │                        7 │
+└───────────┴────────┴─────┴──────────────────────────┘
                   )"}},
         .categories{"Unique identifiers"}
     });

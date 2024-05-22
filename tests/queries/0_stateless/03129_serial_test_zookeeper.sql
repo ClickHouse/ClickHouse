@@ -1,12 +1,12 @@
 -- Tags: zookeeper
 
-SELECT serial('x');
-SELECT serial('x');
-SELECT serial('y');
-SELECT serial('x') FROM numbers(5);
+SELECT generateSerialID('x');
+SELECT generateSerialID('x');
+SELECT generateSerialID('y');
+SELECT generateSerialID('x') FROM numbers(5);
 
-SELECT serial(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT serial('x', 'y'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT serial(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT generateSerialID(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT generateSerialID('x', 'y'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT generateSerialID(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT serial('z'), serial('z') FROM numbers(5);
+SELECT generateSerialID('z'), generateSerialID('z') FROM numbers(5);
