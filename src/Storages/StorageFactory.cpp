@@ -3,7 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
 
