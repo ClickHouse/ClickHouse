@@ -3,6 +3,7 @@
 #include <Poco/SharedPtr.h>
 #include <Common/Exception.h>
 
+
 #if USE_SSL
 #    include <Poco/Net/Utility.h>
 #    include <Poco/StringTokenizer.h>
@@ -96,12 +97,17 @@ void DB::TLSHandler::run()
     auto ctx = SSLManager::instance().defaultServerContext();
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
-        ctx = new Context(usage, params);
-        ctx->disableProtocols(disabled_protocols);
-        ctx->enableExtendedCertificateVerification(extended_verification);
-        if (prefer_server_ciphers)
-            ctx->preferServerCiphers();
-        CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
+        ctx = SSLManager::instance().getCustomServerContext(prefix);
+        if (!ctx)
+        {
+            ctx = new Context(usage, params);
+            ctx->disableProtocols(disabled_protocols);
+            ctx->enableExtendedCertificateVerification(extended_verification);
+            if (prefer_server_ciphers)
+                ctx->preferServerCiphers();
+            CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
+            ctx = SSLManager::instance().setCustomServerContext(prefix, ctx);
+        }
     }
     socket() = SecureStreamSocket::attach(socket(), ctx);
     stack_data.socket = socket();

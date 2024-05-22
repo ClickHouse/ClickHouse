@@ -1359,14 +1359,26 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+    std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
     std::vector<std::string> extra_paths = {include_from_path};
     if (!cert_path.empty())
         extra_paths.emplace_back(cert_path);
     if (!key_path.empty())
         extra_paths.emplace_back(key_path);
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config().keys("protocols", protocols);
+    for (const auto & protocol : protocols)
+    {
+        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
+        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
+        if (!cert_path.empty())
+            extra_paths.emplace_back(cert_path);
+        if (!key_path.empty())
+            extra_paths.emplace_back(key_path);
+    }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
@@ -1602,7 +1614,7 @@ try
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
+            CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
 

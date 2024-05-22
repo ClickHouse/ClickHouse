@@ -42,10 +42,27 @@ public:
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
 
+    struct File
+    {
+        const char * description;
+        explicit File(const char * description_) : description(description_) {}
+
+        std::string path;
+        std::filesystem::file_time_type modification_time;
+
+        bool changeIfModified(std::string new_path, LoggerPtr logger);
+    };
+
     struct MultiData
     {
+        SSL_CTX * ctx;
         MultiVersion<Data> data;
         bool init_was_not_made = true;
+
+        File cert_file{"certificate"};
+        File key_file{"key"};
+
+        explicit MultiData(SSL_CTX * ctx_) : ctx(ctx_) {}
     };
 
     /// Singleton
@@ -63,6 +80,9 @@ public:
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
+    /// Handle configuration reload for all contexts
+    void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
+
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
 
@@ -70,23 +90,12 @@ private:
     CertificateReloader() = default;
 
     /// Initialize the callback and perform the initial cert loading
-    void init(MultiData * pdata, SSL_CTX * ctx);
+    void init(MultiData * pdata);
+
+    /// Unsafe implementation
+    void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
     LoggerPtr log = getLogger("CertificateReloader");
-
-    struct File
-    {
-        const char * description;
-        explicit File(const char * description_) : description(description_) {}
-
-        std::string path;
-        std::filesystem::file_time_type modification_time;
-
-        bool changeIfModified(std::string new_path, LoggerPtr logger);
-    };
-
-    File cert_file{"certificate"};
-    File key_file{"key"};
 
     std::mutex data_mutex;
     std::list<MultiData> data;

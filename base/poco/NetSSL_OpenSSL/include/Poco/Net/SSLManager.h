@@ -17,6 +17,7 @@
 #ifndef NetSSL_SSLManager_INCLUDED
 #define NetSSL_SSLManager_INCLUDED
 
+#include <unordered_map>
 
 #include <openssl/ssl.h>
 #include "Poco/BasicEvent.h"
@@ -219,6 +220,13 @@ namespace Net
         /// Unless initializeClient() has been called, the first call to this method initializes the default Context
         /// from the application configuration.
 
+        Context::Ptr getCustomServerContext(const std::string & name);
+        /// Return custom Context used by the server.
+
+        Context::Ptr setCustomServerContext(const std::string & name, Context::Ptr ctx);
+        /// Set custom Context used by the server.
+        /// Return pointer on inserted Context or on old Context if exists.
+
         PrivateKeyPassphraseHandlerPtr serverPassphraseHandler();
         /// Returns the configured passphrase handler of the server. If none is set, the method will create a default one
         /// from an application configuration.
@@ -347,6 +355,8 @@ namespace Net
         PrivateKeyPassphraseHandlerPtr _ptrClientPassphraseHandler;
         InvalidCertificateHandlerPtr _ptrClientCertificateHandler;
         Poco::FastMutex _mutex;
+
+        std::unordered_map<std::string, Context::Ptr> _mapPtrServerContexts;
 
         friend class Poco::SingletonHolder<SSLManager>;
         friend class Context;
