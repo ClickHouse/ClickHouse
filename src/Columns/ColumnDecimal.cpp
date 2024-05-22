@@ -268,11 +268,11 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 template <is_decimal T>
 size_t ColumnDecimal<T>::getCardinalityInPermutedRange(const IColumn::Permutation & perm, const EqualRange & range) const
 {
-    size_t range_size = getRangeSize(range);
+    size_t range_size = range.size();
     if (range_size <= 1ULL)
         return range_size;
     HashSet<T> elements;
-    for (size_t i = range.first; i < range.second; ++i)
+    for (size_t i = range.from; i < range.to; ++i)
         elements.insert(data[perm[i]]);
     return elements.size();
 }

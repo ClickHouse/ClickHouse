@@ -129,7 +129,7 @@ void getBestCompressionPermutation(const Block & block, const SortDescription & 
     const std::vector<size_t> not_already_sorted_columns = getNotAlreadySortedColumnsIndex(block, description);
     for (const auto & range : equal_ranges)
     {
-        if (getRangeSize(range) <= 1)
+        if (range.size() <= 1)
             continue;
         getBestCompressionPermutationImpl(block, not_already_sorted_columns, permutation, range);
     }

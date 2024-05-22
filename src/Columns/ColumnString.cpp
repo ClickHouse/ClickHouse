@@ -484,13 +484,13 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
 
 size_t ColumnString::getCardinalityInPermutedRange(const Permutation & perm, const EqualRange & range) const
 {
-    size_t range_size = getRangeSize(range);
+    size_t range_size = range.size();
     if (range_size <= 1ULL)
         return range_size;
 
     StringHashSet elements;
     size_t unique_elements = 0;
-    for (size_t i = range.first; i < range.second; ++i)
+    for (size_t i = range.from; i < range.to; ++i)
     {
         size_t id = perm[i];
         StringRef ref = getDataAt(id);

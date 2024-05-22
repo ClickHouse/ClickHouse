@@ -621,7 +621,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     if (unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
-            ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
+            ::sort(std::ranges::next(res.begin(), null_range.from), std::ranges::next(res.begin(), null_range.to));
     }
 
     if (is_nulls_last || null_ranges.empty())

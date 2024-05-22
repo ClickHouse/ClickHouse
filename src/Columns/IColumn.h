@@ -36,14 +36,19 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 
+struct EqualRange {
+    size_t from;
+    size_t to; /// exclusive
+    EqualRange() = default;
+    EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from < to); }
+    size_t size() const { return to - from; }
+};
+
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
  * Used in sorting by tuples.
  * */
-using EqualRange = std::pair<size_t, size_t>;
 using EqualRanges = std::vector<EqualRange>;
-
-size_t getRangeSize(const EqualRange & range);
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
