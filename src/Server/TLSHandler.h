@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 class TLSHandler : public Poco::Net::TCPServerConnection
 {
 #if USE_SSL
@@ -41,8 +36,8 @@ private:
     int disabled_protocols = 0;
     bool extended_verification = false;
     bool prefer_server_ciphers = false;
-    const LayeredConfiguration & config;
-    std::string prefix;
+    const LayeredConfiguration & config [[maybe_unused]];
+    std::string prefix [[maybe_unused]];
 #endif
     TCPProtocolStackData & stack_data [[maybe_unused]];
 };

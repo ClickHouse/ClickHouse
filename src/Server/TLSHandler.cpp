@@ -9,10 +9,17 @@
 #    include <Server/CertificateReloader.h>
 #endif
 
+#if !defined(USE_SSL) || USE_SSL == 0
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+#endif
+
 DB::TLSHandler::TLSHandler(
     const StreamSocket & socket,
-    const LayeredConfiguration & config_,
-    const std::string & prefix_,
+    [[maybe_unused]] const LayeredConfiguration & config_,
+    [[maybe_unused]] const std::string & prefix_,
     TCPProtocolStackData & stack_data_)
     : Poco::Net::TCPServerConnection(socket)
 #if USE_SSL
