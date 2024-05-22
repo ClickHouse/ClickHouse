@@ -6,6 +6,7 @@ from env_helper import (
     TEMP_PATH,
 )
 from s3_helper import S3Helper
+from ci_utils import GHActions
 
 
 # pylint: disable=too-many-lines
@@ -83,7 +84,10 @@ class CiMetadata:
         Uploads meta on s3
         """
         assert self.run_id
-        print("Storing workflow meta on s3")
+        GHActions.print_in_group(
+            f"Storing workflow metadata: PR [{self.pr_number}]",
+            [f"run_id: {self.run_id}"],
+        )
 
         local_file = self._LOCAL_PATH / self._FILENAME_RUN_ID
         with open(local_file, "w", encoding="utf-8") as file:

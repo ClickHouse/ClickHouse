@@ -1912,9 +1912,9 @@ def _get_ext_check_name(check_name: str) -> str:
 
 
 def _cancel_pr_wf(s3: S3Helper, pr_number: int) -> None:
-    run_id = CiMetadata(s3, pr_number).run_id
+    run_id = CiMetadata(s3, pr_number).fetch_meta().run_id
     if not run_id:
-        print("ERROR: FIX IT: Run id has not been found!")
+        print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
     else:
         print(f"Canceling PR workflow run_id: [{run_id}], pr: [{pr_number}]")
         GitHub.cancel_wf(run_id)
