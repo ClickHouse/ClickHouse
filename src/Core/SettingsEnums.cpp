@@ -229,4 +229,8 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
+
+IMPLEMENT_SETTING_ENUM(IonOutputWriterType, ErrorCodes::BAD_ARGUMENTS,
+                       {{"text", FormatSettings::IonOutputWriterType::TEXT},
+                        {"binary", FormatSettings::IonOutputWriterType::BINARY}})
 }
