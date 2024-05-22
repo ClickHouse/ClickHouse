@@ -768,14 +768,15 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestsForSess
     /// Pure local request, just process it with storage
     std::lock_guard lock(process_and_responses_lock);
     std::vector<KeeperStorage::ResponsesForSessions> all_responses;
-    if (request_for_session.size() > 50)
+    if (request_for_session.size() > 100)
     {
         all_responses.resize(request_for_session.size());
         //LOG_INFO(getLogger("Keeper"), "Has read requests {}", request_queue_it->second.size());
         for (size_t i = 0; i < request_for_session.size(); ++i)
         {
-            read_pool.scheduleOrThrowOnError([&, i, read_request = request_for_session[i]]
+            read_pool.scheduleOrThrowOnError([&, i]
             {
+                const auto & read_request = request_for_session[i];
                 all_responses[i] = storage->processRequest(
                     read_request.request, read_request.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
             });

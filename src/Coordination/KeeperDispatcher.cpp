@@ -448,10 +448,18 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
                         request_queue_it != xid_to_request_queue.end())
                     {
+                        Stopwatch watch;
                         if (server->isLeaderAlive())
                             server->putLocalReadRequest(request_queue_it->second);
                         else
                             addErrorResponses(request_queue_it->second, Coordination::Error::ZCONNECTIONLOSS);
+
+                        if (request_queue_it->second.size() > 500)
+                            LOG_INFO(
+                                getLogger("Speed"),
+                                "It took {}ms for {} requests",
+                                watch.elapsedMilliseconds(),
+                                request_queue_it->second.size());
 
                         xid_to_request_queue.erase(request_queue_it);
                     }
