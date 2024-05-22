@@ -63,6 +63,7 @@ struct AzureObjectStorageSettings
     bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
     size_t max_inflight_parts_for_one_file = 20;
+    size_t max_blocks_in_multipart_upload = 50000;
     size_t strict_upload_part_size = 0;
     size_t upload_part_size_multiply_factor = 2;
     size_t upload_part_size_multiply_parts_count_threshold = 500;
