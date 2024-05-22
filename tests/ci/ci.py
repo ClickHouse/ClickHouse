@@ -505,7 +505,7 @@ class CiCache:
         self, job: str, batch: int, num_batches: int, release_branch: bool
     ) -> bool:
         """
-        checks if a given job have already been done successfuly
+        checks if a given job have already been done successfully
         """
         return self.exist(
             self.RecordType.SUCCESSFUL, job, batch, num_batches, release_branch
@@ -746,7 +746,7 @@ class CiOptions:
     # list of specified jobs to run
     ci_jobs: Optional[List[str]] = None
 
-    # btaches to run for all multi-batch jobs
+    # batches to run for all multi-batch jobs
     job_batches: Optional[List[int]] = None
 
     do_not_test: bool = False
@@ -950,7 +950,7 @@ class CiOptions:
                     jobs_params[job] = {
                         "batches": list(range(num_batches)),
                         "num_batches": num_batches,
-                        "run_if_ci_option_include_set": job_config.run_by_ci_option
+                        "run_by_ci_option": job_config.run_by_ci_option
                         and pr_info.is_pr,
                     }
 
@@ -965,10 +965,7 @@ class CiOptions:
 
         for job in jobs_to_do[:]:
             job_param = jobs_params[job]
-            if (
-                job_param["run_if_ci_option_include_set"]
-                and job not in jobs_to_do_requested
-            ):
+            if job_param["run_by_ci_option"] and job not in jobs_to_do_requested:
                 print(
                     f"Erasing job '{job}' from list because it's not in included set, but will run only by include"
                 )
@@ -1083,7 +1080,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--skip-jobs",
         action="store_true",
         default=False,
-        help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
+        help="skip fetching data about job runs, used in --configure action (for debugging and nightly ci)",
     )
     parser.add_argument(
         "--force",
@@ -1302,7 +1299,7 @@ def _configure_docker_jobs(docker_digest_or_latest: bool) -> Dict:
     missing_amd64 = []
     missing_aarch64 = []
     if not docker_digest_or_latest:
-        # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
+        # look for missing arm and amd images only among missing multi-arch manifests @missing_multi_dict
         # to avoid extra dockerhub api calls
         missing_amd64 = list(
             check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
@@ -1400,7 +1397,7 @@ def _configure_jobs(
         ):
             continue
 
-        # fill job randomization buckets (for jobs with configured @random_bucket property))
+        # fill job randomization buckets (for jobs with configured @random_bucket property)
         if job_config.random_bucket:
             if not job_config.random_bucket in randomization_buckets:
                 randomization_buckets[job_config.random_bucket] = set()
@@ -1449,8 +1446,7 @@ def _configure_jobs(
             jobs_params[job] = {
                 "batches": batches_to_do,
                 "num_batches": num_batches,
-                "run_if_ci_option_include_set": job_config.run_by_ci_option
-                and pr_info.is_pr,
+                "run_by_ci_option": job_config.run_by_ci_option and pr_info.is_pr,
             }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
@@ -1494,8 +1490,8 @@ def _configure_jobs(
 def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     populates GH Actions' workflow with real jobs
-    "Builds_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
-    "Tests_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    "Builds_1": [{"job_name": NAME, "runner_type": RUNNER_TYPE}]
+    "Tests_1": [{"job_name": NAME, "runner_type": RUNNER_TYPE}]
     ...
     """
     result = {}  # type: Dict[str, Any]
@@ -1586,7 +1582,7 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
         for match in matches
         if match in CILabels or match.startswith("job_") or match.startswith("batch_")
     ]
-    print(f"CI modifyers from commit message: [{res}]")
+    print(f"CI modifiers from commit message: [{res}]")
     res_2 = []
     if pr_info.is_pr:
         matches = [match[-1] for match in re.findall(pattern, pr_info.body)]
@@ -1597,7 +1593,7 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
             or match.startswith("job_")
             or match.startswith("batch_")
         ]
-        print(f"CI modifyers from PR body: [{res_2}]")
+        print(f"CI modifiers from PR body: [{res_2}]")
     return list(set(res + res_2))
 
 
@@ -1663,7 +1659,7 @@ def _upload_build_artifacts(
     report_url = ci_cache.upload_build_report(build_result)
     print(f"Report file has been uploaded to [{report_url}]")
 
-    # Upload head master binaries
+    # Upload master head's binaries
     static_bin_name = CI_CONFIG.build_config[build_name].static_binary_name
     if pr_info.is_master and static_bin_name:
         # Full binary with debug info:
