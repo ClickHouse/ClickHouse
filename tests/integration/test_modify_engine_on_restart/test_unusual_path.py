@@ -6,7 +6,7 @@ cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
     "ch1",
     main_configs=[
-        "configs/config.d/clusters_unusual.xml",
+        "configs/config.d/clusters_zk_path.xml",
         "configs/config.d/distributed_ddl.xml",
     ],
     with_zookeeper=True,
@@ -63,7 +63,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            "ReplicatedReplacingMergeTree(\\'/lol/kek/\\\\\\'/{uuid}\\', \\'{replica}\\', D)"
+            "ReplicatedReplacingMergeTree(\\'/clickhouse/\\\\\\'/{database}/{table}/{uuid}\\', \\'{replica}\\', D)"
         )
     )
     assert (
@@ -73,7 +73,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            "ReplicatedVersionedCollapsingMergeTree(\\'/lol/kek/\\\\\\'/{uuid}\\', \\'{replica}\\', Sign, Version)"
+            "ReplicatedVersionedCollapsingMergeTree(\\'/clickhouse/\\\\\\'/{database}/{table}/{uuid}\\', \\'{replica}\\', Sign, Version)"
         )
     )
 

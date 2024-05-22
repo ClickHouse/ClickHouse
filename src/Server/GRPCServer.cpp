@@ -596,7 +596,7 @@ namespace
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
-            BufferBase::set(static_cast<BufferBase::Position>(const_cast<void *>(new_pos)), new_size, 0);
+            BufferBase::set(static_cast<BufferBase::Position>(const_cast<char *>(static_cast<const char *>(new_pos))), new_size, 0);
             return true;
         }
 
@@ -639,7 +639,7 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-    class Call
+    class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
     public:
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
@@ -873,7 +873,7 @@ namespace
             query_context->getClientInfo().client_trace_context,
             query_context->getSettingsRef(),
             query_context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();

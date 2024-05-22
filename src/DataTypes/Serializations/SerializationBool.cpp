@@ -28,7 +28,7 @@ constexpr char str_false[6] = "false";
 const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 {
     const auto * col = checkAndGetColumn<ColumnUInt8>(&column);
-    if (!checkAndGetColumn<ColumnUInt8>(&column))
+    if (!col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only serialize columns of type UInt8.{}", column.getName());
     return col;
 }
@@ -36,7 +36,7 @@ const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 ColumnUInt8 * checkAndGetDeserializeColumnType(IColumn & column)
 {
     auto * col =  typeid_cast<ColumnUInt8 *>(&column);
-    if (!checkAndGetColumn<ColumnUInt8>(&column))
+    if (!col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only deserialize columns of type UInt8.{}",
                         column.getName());
     return col;

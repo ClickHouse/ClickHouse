@@ -84,7 +84,7 @@ public:
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
-    void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
+    void putLocalReadRequest(const KeeperStorage::RequestsForSessions & request);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
@@ -128,7 +128,13 @@ public:
 
     int getServerID() const { return server_id; }
 
-    enum class ConfigUpdateState { Accepted, Declined, WaitBeforeChangingLeader };
+    enum class ConfigUpdateState : uint8_t
+    {
+        Accepted,
+        Declined,
+        WaitBeforeChangingLeader
+    };
+
     ConfigUpdateState applyConfigUpdate(
         const ClusterUpdateAction& action,
         bool last_command_was_leader_change = false);

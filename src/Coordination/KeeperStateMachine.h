@@ -100,7 +100,7 @@ public:
     ClusterConfigPtr getClusterConfig() const;
 
     /// Process local read request
-    void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
+    void processReadRequest(const KeeperStorage::RequestsForSessions & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
 
@@ -177,6 +177,7 @@ private:
     mutable std::mutex cluster_config_lock;
     ClusterConfigPtr cluster_config;
 
+    ThreadPool read_pool;
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 

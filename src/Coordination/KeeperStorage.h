@@ -259,14 +259,14 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
 
-    mutable std::mutex storage_mutex;
+    mutable std::shared_mutex storage_mutex;
 
-    SessionAndAuth session_and_auth TSA_GUARDED_BY(storage_mutex);
+    SessionAndAuth session_and_auth;
 
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
     /// container.
-    Container container TSA_GUARDED_BY(storage_mutex);
+    Container container;
 
     // Applying ZooKeeper request to storage consists of two steps:
     //  - preprocessing which, instead of applying the changes directly to storage,
@@ -429,7 +429,7 @@ public:
     // with zxid > last_zxid
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
-    Coordination::Error commit(std::list<Delta> deltas) TSA_REQUIRES(storage_mutex);
+    Coordination::Error commit(std::list<Delta> deltas);
 
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
@@ -438,12 +438,12 @@ public:
         const std::string & path,
         String data,
         const Coordination::Stat & stat,
-        Coordination::ACLs node_acls) TSA_REQUIRES(storage_mutex);
+        Coordination::ACLs node_acls);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version) TSA_REQUIRES(storage_mutex);
+    bool removeNode(const std::string & path, int32_t version);
 
     bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
 
@@ -485,7 +485,7 @@ public:
 
     std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
 
-    uint64_t nodes_digest TSA_GUARDED_BY(storage_mutex) = 0;
+    uint64_t nodes_digest = 0;
 
     std::atomic<bool> finalized{false};
 
@@ -562,7 +562,7 @@ public:
     void clearGarbageAfterSnapshot();
 
     /// Get all active sessions
-    const SessionAndTimeout & getActiveSessions() const;
+    SessionAndTimeout getActiveSessions() const;
 
     /// Get all dead sessions
     std::vector<int64_t> getDeadSessions() const;
@@ -591,8 +591,8 @@ public:
 private:
     uint64_t getSessionWithEphemeralNodesCountLocked() const TSA_REQUIRES(ephemerals_mutex);
 
-    void removeDigest(const Node & node, std::string_view path) TSA_REQUIRES(storage_mutex);
-    void addDigest(const Node & node, std::string_view path) TSA_REQUIRES(storage_mutex);
+    void removeDigest(const Node & node, std::string_view path);
+    void addDigest(const Node & node, std::string_view path);
 };
 
 using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;

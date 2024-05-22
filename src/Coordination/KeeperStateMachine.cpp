@@ -32,6 +32,11 @@ namespace ProfileEvents
     extern const Event KeeperSaveSnapshot;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric KeeperAliveConnections;
+}
+
 namespace DB
 {
 
@@ -58,6 +63,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
     , log(getLogger("KeeperStateMachine"))
+    , read_pool(CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, 100, 10000, 10000)
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
     , snapshot_manager_s3(snapshot_manager_s3_)
@@ -755,17 +761,41 @@ int KeeperStateMachine::read_logical_snp_obj(
     return 1;
 }
 
-void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSession & request_for_session)
+void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestsForSessions & request_for_session)
 {
     std::shared_lock storage_lock(storage_mutex);
 
     /// Pure local request, just process it with storage
     std::lock_guard lock(process_and_responses_lock);
-    auto responses = storage->processRequest(
-        request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
-    for (const auto & response : responses)
-        if (!responses_queue.push(response))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
+    std::vector<KeeperStorage::ResponsesForSessions> all_responses;
+    if (request_for_session.size() > 50)
+    {
+        all_responses.resize(request_for_session.size());
+        //LOG_INFO(getLogger("Keeper"), "Has read requests {}", request_queue_it->second.size());
+        for (size_t i = 0; i < request_for_session.size(); ++i)
+        {
+            read_pool.scheduleOrThrowOnError([&, i, read_request = request_for_session[i]]
+            {
+                all_responses[i] = storage->processRequest(
+                    read_request.request, read_request.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
+            });
+        }
+        read_pool.wait();
+    }
+    else
+    {
+        all_responses.reserve(request_for_session.size());
+        for (const auto & read_request : request_for_session)
+        {
+            all_responses.push_back(storage->processRequest(
+                read_request.request, read_request.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/));
+        }
+    }
+
+    for (const auto & responses : all_responses)
+        for (const auto & response : responses)
+            if (!responses_queue.push(response))
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()

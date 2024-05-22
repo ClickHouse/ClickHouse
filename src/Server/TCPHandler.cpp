@@ -100,6 +100,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -347,6 +348,7 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
+        bool user_expired = false;
         bool query_duration_already_logged = false;
         auto log_query_duration = [this, &query_duration_already_logged]()
         {
@@ -382,7 +384,7 @@ void TCPHandler::runImpl()
                 query_context->getClientInfo().client_trace_context,
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {
@@ -412,6 +414,9 @@ void TCPHandler::runImpl()
                 state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
+
+            if (!is_interserver_mode)
+                session->checkIfUserIsStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
@@ -637,7 +642,10 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
 
-            if (network_error)
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+                user_expired = true;
+
+            if (network_error || user_expired)
                 LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
@@ -747,7 +755,7 @@ void TCPHandler::runImpl()
             session.reset();
         }
 
-        if (network_error)
+        if (network_error || user_expired)
             break;
     }
 }
@@ -1099,7 +1107,7 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
-        /// In interserver mode session context does not exists, because authentication is done for each query.
+        /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
         ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
@@ -1235,6 +1243,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1246,6 +1255,11 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
+
+        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+        if (elapsed_milliseconds > 100)
+            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 
@@ -1858,7 +1872,7 @@ void TCPHandler::receiveQuery()
     if (state.part_uuids_to_ignore)
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
     query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///

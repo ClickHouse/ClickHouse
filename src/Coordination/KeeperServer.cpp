@@ -533,9 +533,10 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
 
 }
 
-void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & request_for_session)
+void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestsForSessions & request_for_session)
 {
-    if (!request_for_session.request->isReadRequest())
+    if (std::any_of(
+            request_for_session.begin(), request_for_session.end(), [](const auto & request) { return !request.request->isReadRequest(); }))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
 
     state_machine->processReadRequest(request_for_session);
@@ -1029,9 +1030,9 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(add->id) != nullptr)
-                return applied();
+                return applied(); // NOLINT
             if (!isLeader())
-                return not_leader();
+                return not_leader(); // NOLINT
             if (!raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted())
                 backoff_on_refusal(i);
         }
@@ -1044,15 +1045,16 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
                 "Trying to remove leader node (ourself), so will yield leadership and some other node "
                 "(new leader) will try to remove us. "
                 "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
-            return raft_instance->yield_leadership();
+            raft_instance->yield_leadership();
+            return;
         }
 
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(remove->id) == nullptr)
-                return applied();
+                return applied(); // NOLINT
             if (!isLeader())
-                return not_leader();
+                return not_leader(); // NOLINT
             if (!raft_instance->remove_srv(remove->id)->get_accepted())
                 backoff_on_refusal(i);
         }

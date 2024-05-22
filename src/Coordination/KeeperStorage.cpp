@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -9,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -512,7 +514,7 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, 
 
     if (is_local)
     {
-        std::lock_guard lock(storage.storage_mutex);
+        std::shared_lock lock(storage.storage_mutex);
         return check_auth(storage.session_and_auth[session_id]);
     }
 
@@ -822,7 +824,7 @@ Coordination::Error KeeperStorage::commit(std::list<Delta> deltas)
     for (auto & delta : deltas)
     {
         auto result = std::visit(
-            [&, &path = delta.path]<typename DeltaType>(DeltaType & operation) TSA_REQUIRES(storage_mutex) -> Coordination::Error
+            [&, &path = delta.path]<typename DeltaType>(DeltaType & operation) -> Coordination::Error
             {
                 if constexpr (std::same_as<DeltaType, KeeperStorage::CreateNodeDelta>)
                 {
@@ -1225,7 +1227,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
@@ -1286,7 +1288,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
@@ -1330,12 +1332,12 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1425,7 +1427,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
@@ -1458,7 +1460,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
@@ -1491,12 +1493,12 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1558,7 +1560,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         auto & container = storage.container;
 
@@ -1611,7 +1613,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
@@ -1645,7 +1647,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
 
-            const auto add_child = [&](const auto child) TSA_REQUIRES(storage.storage_mutex)
+            const auto add_child = [&](const auto child) 
             {
                 using enum Coordination::ListRequestType;
 
@@ -1678,12 +1680,12 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex) TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override  
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex) TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override  
     {
         ProfileEvents::increment(ProfileEvents::KeeperListRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1730,7 +1732,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
@@ -1776,12 +1778,12 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1841,7 +1843,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
@@ -1884,7 +1886,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
@@ -1917,12 +1919,12 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         return processImpl<true>(storage, std::move(deltas));
     }
@@ -2167,7 +2169,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override TSA_REQUIRES(storage.storage_mutex)
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override 
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperAuthResponse & auth_response = dynamic_cast<Coordination::ZooKeeperAuthResponse &>(*response_ptr);
@@ -2494,6 +2496,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     }
 
     std::list<Delta> deltas;
+    if (!is_local)
     {
         std::lock_guard lock(uncommitted_state.deltas_mutex);
         auto it = uncommitted_state.deltas.begin();
@@ -2573,6 +2576,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
             }
             else
             {
+                std::shared_lock lock(storage_mutex);
                 response = request_processor->processLocal(*this, std::move(deltas));
             }
         }
@@ -2723,8 +2727,9 @@ std::vector<int64_t> KeeperStorage::getDeadSessions() const
     return session_expiry_queue.getExpiredSessions();
 }
 
-const SessionAndTimeout & KeeperStorage::getActiveSessions() const
+SessionAndTimeout KeeperStorage::getActiveSessions() const
 {
+    std::lock_guard lock(session_mutex);
     return session_and_timeout;
 }
 
@@ -2941,3 +2946,5 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
