@@ -36,7 +36,7 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 
-struct EqualRange 
+struct EqualRange
 {
     size_t from;
     size_t to; /// exclusive
