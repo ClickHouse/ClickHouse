@@ -30,7 +30,7 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr virtual_columns_,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const MergeTreeWriterSettings & settings_,
         const MergeTreeIndexGranularity & index_granularity_ = {});
 
@@ -82,7 +82,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr virtual_columns_,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const Statistics & stats_to_recalc_,
         const String & marks_file_extension,
