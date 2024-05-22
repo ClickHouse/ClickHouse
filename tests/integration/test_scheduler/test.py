@@ -54,7 +54,7 @@ def set_default_configs():
 
 
 def update_workloads_config(**settings):
-    xml=''
+    xml = ""
     for name in settings:
         xml += f"<{name}>{settings[name]}</{name}>"
     print(xml)
@@ -161,19 +161,35 @@ def test_merge_workload():
     """
     )
 
-    reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'").strip())
-    writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'").strip())
+    reads_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
+        ).strip()
+    )
+    writes_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
+        ).strip()
+    )
 
     node.query(f"insert into data select * from numbers(1e4)")
     node.query(f"insert into data select * from numbers(2e4)")
     node.query(f"insert into data select * from numbers(3e4)")
     node.query(f"optimize table data final")
 
-    reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'").strip())
-    writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'").strip())
+    reads_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
+        ).strip()
+    )
+    writes_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
+        ).strip()
+    )
 
-    assert (reads_before < reads_after)
-    assert (writes_before < writes_after)
+    assert reads_before < reads_after
+    assert writes_before < writes_after
 
 
 def test_merge_workload_override():
@@ -186,10 +202,26 @@ def test_merge_workload_override():
     """
     )
 
-    prod_reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'").strip())
-    prod_writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'").strip())
-    dev_reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'").strip())
-    dev_writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'").strip())
+    prod_reads_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
+        ).strip()
+    )
+    prod_writes_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
+        ).strip()
+    )
+    dev_reads_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
+        ).strip()
+    )
+    dev_writes_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
+        ).strip()
+    )
 
     node.query(f"insert into prod_data select * from numbers(1e4)")
     node.query(f"insert into prod_data select * from numbers(2e4)")
@@ -200,15 +232,31 @@ def test_merge_workload_override():
     node.query(f"optimize table prod_data final")
     node.query(f"optimize table dev_data final")
 
-    prod_reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'").strip())
-    prod_writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'").strip())
-    dev_reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'").strip())
-    dev_writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'").strip())
+    prod_reads_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
+        ).strip()
+    )
+    prod_writes_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
+        ).strip()
+    )
+    dev_reads_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
+        ).strip()
+    )
+    dev_writes_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
+        ).strip()
+    )
 
-    assert (prod_reads_before < prod_reads_after)
-    assert (prod_writes_before < prod_writes_after)
-    assert (dev_reads_before < dev_reads_after)
-    assert (dev_writes_before < dev_writes_after)
+    assert prod_reads_before < prod_reads_after
+    assert prod_writes_before < prod_writes_after
+    assert dev_reads_before < dev_reads_after
+    assert dev_writes_before < dev_writes_after
 
 
 def test_mutate_workload():
@@ -222,17 +270,33 @@ def test_mutate_workload():
     node.query(f"insert into data select * from numbers(1e4)")
     node.query(f"optimize table data final")
 
-    reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'").strip())
-    writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'").strip())
+    reads_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
+        ).strip()
+    )
+    writes_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
+        ).strip()
+    )
 
     node.query(f"alter table data update key = 1 where key = 42")
     node.query(f"optimize table data final")
 
-    reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'").strip())
-    writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'").strip())
+    reads_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
+        ).strip()
+    )
+    writes_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
+        ).strip()
+    )
 
-    assert (reads_before < reads_after)
-    assert (writes_before < writes_after)
+    assert reads_before < reads_after
+    assert writes_before < writes_after
 
 
 def test_mutation_workload_override():
@@ -250,25 +314,57 @@ def test_mutation_workload_override():
     node.query(f"insert into dev_data select * from numbers(1e4)")
     node.query(f"optimize table dev_data final")
 
-    prod_reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'").strip())
-    prod_writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'").strip())
-    dev_reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'").strip())
-    dev_writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'").strip())
+    prod_reads_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
+        ).strip()
+    )
+    prod_writes_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
+        ).strip()
+    )
+    dev_reads_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
+        ).strip()
+    )
+    dev_writes_before = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
+        ).strip()
+    )
 
     node.query(f"alter table prod_data update key = 1 where key = 42")
     node.query(f"optimize table prod_data final")
     node.query(f"alter table dev_data update key = 1 where key = 42")
     node.query(f"optimize table dev_data final")
 
-    prod_reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'").strip())
-    prod_writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'").strip())
-    dev_reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'").strip())
-    dev_writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'").strip())
+    prod_reads_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
+        ).strip()
+    )
+    prod_writes_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
+        ).strip()
+    )
+    dev_reads_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
+        ).strip()
+    )
+    dev_writes_after = int(
+        node.query(
+            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
+        ).strip()
+    )
 
-    assert (prod_reads_before < prod_reads_after)
-    assert (prod_writes_before < prod_writes_after)
-    assert (dev_reads_before < dev_reads_after)
-    assert (dev_writes_before < dev_writes_after)
+    assert prod_reads_before < prod_reads_after
+    assert prod_writes_before < prod_writes_after
+    assert dev_reads_before < dev_reads_after
+    assert dev_writes_before < dev_writes_after
 
 
 def test_merge_workload_change():
@@ -279,22 +375,39 @@ def test_merge_workload_change():
     """
     )
 
-    for env in ['prod', 'dev']:
+    for env in ["prod", "dev"]:
         update_workloads_config(merge_workload=f"{env}_merges")
 
-        reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_merges'").strip())
-        writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_merges'").strip())
+        reads_before = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_merges'"
+            ).strip()
+        )
+        writes_before = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_merges'"
+            ).strip()
+        )
 
         node.query(f"insert into data select * from numbers(1e4)")
         node.query(f"insert into data select * from numbers(2e4)")
         node.query(f"insert into data select * from numbers(3e4)")
         node.query(f"optimize table data final")
 
-        reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_merges'").strip())
-        writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_merges'").strip())
+        reads_after = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_merges'"
+            ).strip()
+        )
+        writes_after = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_merges'"
+            ).strip()
+        )
 
-        assert (reads_before < reads_after)
-        assert (writes_before < writes_after)
+        assert reads_before < reads_after
+        assert writes_before < writes_after
+
 
 def test_mutation_workload_change():
     node.query(
@@ -304,22 +417,38 @@ def test_mutation_workload_change():
     """
     )
 
-    for env in ['prod', 'dev']:
+    for env in ["prod", "dev"]:
         update_workloads_config(mutation_workload=f"{env}_mutations")
 
         node.query(f"insert into data select * from numbers(1e4)")
         node.query(f"optimize table data final")
 
-        reads_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_mutations'").strip())
-        writes_before = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_mutations'").strip())
+        reads_before = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_mutations'"
+            ).strip()
+        )
+        writes_before = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_mutations'"
+            ).strip()
+        )
 
         node.query(f"alter table data update key = 1 where key = 42")
         node.query(f"optimize table data final")
 
-        reads_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_mutations'").strip())
-        writes_after = int(node.query(f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_mutations'").strip())
+        reads_after = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_mutations'"
+            ).strip()
+        )
+        writes_after = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_mutations'"
+            ).strip()
+        )
 
         breakpoint()
 
-        assert (reads_before < reads_after)
-        assert (writes_before < writes_after)
+        assert reads_before < reads_after
+        assert writes_before < writes_after
