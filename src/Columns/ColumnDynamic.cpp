@@ -9,7 +9,7 @@
 #include <Common/SipHash.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/castColumn.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -662,8 +662,8 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
                 all_variants.push_back(source_variants[i]);
                 it = total_sizes.emplace(variant_name, 0).first;
             }
-
-            size_t size = source_statistics.data.empty() ? source_variant_column.getVariantByGlobalDiscriminator(i).size() : source_statistics.data.at(variant_name);
+            auto statistics_it = source_statistics.data.find(variant_name);
+            size_t size = statistics_it == source_statistics.data.end() ? source_variant_column.getVariantByGlobalDiscriminator(i).size() : statistics_it->second;
             it->second += size;
         }
     }
