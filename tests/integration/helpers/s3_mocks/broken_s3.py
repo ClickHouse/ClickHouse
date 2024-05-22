@@ -266,7 +266,9 @@ class _ServerRuntime:
             elif self.action == "slow_down":
                 self.error_handler = _ServerRuntime.SlowDownAction(*self.action_args)
             elif self.action == "qps_limit_exceeded":
-                self.error_handler = _ServerRuntime.QpsLimitExceededAction(*self.action_args)
+                self.error_handler = _ServerRuntime.QpsLimitExceededAction(
+                    *self.action_args
+                )
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 

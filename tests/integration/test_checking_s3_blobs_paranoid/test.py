@@ -201,12 +201,16 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
 
 
 @pytest.mark.parametrize(
-    "action_and_message", [
+    "action_and_message",
+    [
         ("slow_down", "DB::Exception: Slow Down."),
         ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
-        ("connection_refused", "Poco::Exception. Code: 1000, e.code() = 111, Connection refused"),
+        (
+            "connection_refused",
+            "Poco::Exception. Code: 1000, e.code() = 111, Connection refused",
+        ),
     ],
-    ids=lambda x: x[0]
+    ids=lambda x: x[0],
 )
 def test_when_error_is_retried(cluster, broken_s3, action_and_message):
     node = cluster.instances["node"]
@@ -267,9 +271,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
     )
 
     assert "Code: 499" in error, error
-    assert (
-        message in error
-    ), error
+    assert message in error, error
 
 
 def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
