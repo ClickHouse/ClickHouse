@@ -1,7 +1,7 @@
 #include <Core/Defines.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -241,6 +241,18 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
+}
+
+void readStringUntilAmpersand(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'&'>(s, buf);
+}
+
+void readStringUntilEquals(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'='>(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);

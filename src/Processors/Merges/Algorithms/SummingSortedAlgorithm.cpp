@@ -6,7 +6,7 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
@@ -224,7 +224,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
-        if (column.name == BlockNumberColumn::name)
+        if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
         {
             def.column_numbers_not_to_aggregate.push_back(i);
             continue;

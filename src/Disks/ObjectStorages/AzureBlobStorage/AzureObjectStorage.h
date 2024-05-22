@@ -81,7 +81,8 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_,
-        const String & object_namespace_);
+        const String & object_namespace_,
+        const String & description_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
@@ -93,7 +94,7 @@ public:
 
     std::string getCommonKeyPrefix() const override { return ""; }
 
-    std::string getDescription() const override { return client.get()->GetUrl(); }
+    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -164,11 +165,17 @@ public:
     }
 
 private:
+    using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
+    void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);
+
     const String name;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
     const String object_namespace; /// container + prefix
+
+    /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
+    const String description;
 
     LoggerPtr log;
 };

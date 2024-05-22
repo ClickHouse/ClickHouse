@@ -19,7 +19,8 @@ public:
         size_t max_elements_,
         double size_ratio_,
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
-        LRUFileCachePriority::StatePtr protected_state_ = nullptr);
+        LRUFileCachePriority::StatePtr protected_state_ = nullptr,
+        const std::string & description_ = "none");
 
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
@@ -57,6 +58,14 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
+    bool collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        const CachePriorityGuard::Lock &) override;
+
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
@@ -67,7 +76,7 @@ private:
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
-    LoggerPtr log = getLogger("SLRUFileCachePriority");
+    LoggerPtr log;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 

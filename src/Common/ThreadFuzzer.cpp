@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/thread_local_rng.h>
 
 #include <Common/ThreadFuzzer.h>
@@ -50,15 +51,16 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
+    if (needsSetup())
+        setup();
+
     if (!isEffective())
     {
         /// It has no effect - disable it
         stop();
         return;
     }
-    setup();
 }
-
 
 template <typename T>
 static void initFromEnv(T & what, const char * name)
@@ -132,10 +134,16 @@ void ThreadFuzzer::initConfiguration()
 }
 
 
+bool ThreadFuzzer::needsSetup() const
+{
+    return cpu_time_period_us != 0
+        && (yield_probability > 0 || migrate_probability > 0 || (sleep_probability > 0 && sleep_time_us_max > 0));
+}
+
 bool ThreadFuzzer::isEffective() const
 {
-    if (!isStarted())
-        return false;
+    if (needsSetup())
+        return true;
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
@@ -162,10 +170,13 @@ bool ThreadFuzzer::isEffective() const
 #    undef INIT_WRAPPER_PARAMS
 #endif
 
-    return cpu_time_period_us != 0
-        && (yield_probability > 0
-            || migrate_probability > 0
-            || (sleep_probability > 0 && sleep_time_us_max > 0));
+    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0)
+        return true;
+
+    if (explicit_memory_exception_probability > 0)
+        return true;
+
+    return false;
 }
 
 void ThreadFuzzer::stop()
@@ -219,11 +230,9 @@ static void injectionImpl(
     UNUSED(migrate_probability);
 #endif
 
-    if (sleep_probability > 0
-        && sleep_time_us_max > 0
-        && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
+    if (sleep_probability > 0 && sleep_time_us_max > 0.001 && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max)) * 1000); /*may sleep(0)*/
+        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max * 1000)));
     }
 }
 
@@ -360,7 +369,7 @@ void ThreadFuzzer::setup() const
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL)
+#if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
@@ -382,7 +391,8 @@ void ThreadFuzzer::setup() const
     GLIBC_COMPAT_SYMBOL(__pthread_mutex_lock)
 #endif
 
-#if defined(ADDRESS_SANITIZER)
+/// The loongarch64's glibc_version is 2.36
+#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
 #endif
