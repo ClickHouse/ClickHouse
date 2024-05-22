@@ -32,7 +32,7 @@ class HTTPHandler : public HTTPRequestHandler
 {
 public:
     HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
-    virtual ~HTTPHandler() override;
+    ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -75,6 +75,7 @@ private:
         bool finalized = false;
 
         bool exception_is_written = false;
+        std::function<void(WriteBuffer &, const String &)> exception_writer;
 
         inline bool hasDelayed() const
         {
@@ -143,6 +144,12 @@ private:
 
     void trySendExceptionToClient(
         const std::string & s,
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
+
+    void formatExceptionForClient(
         int exception_code,
         HTTPServerRequest & request,
         HTTPServerResponse & response,

@@ -1,5 +1,5 @@
 <clickhouse>
-    <max_table_num_to_warn>10</max_table_num_to_warn>
-    <max_database_num_to_warn>10</max_database_num_to_warn>
+    <max_table_num_to_warn>5</max_table_num_to_warn>
+    <max_database_num_to_warn>2</max_database_num_to_warn>
     <max_part_num_to_warn>10</max_part_num_to_warn>
 </clickhouse>

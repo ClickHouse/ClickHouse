@@ -22,10 +22,8 @@
 #include <linux/taskstats.h>
 #include <linux/capability.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-    #pragma clang diagnostic ignored "-Wnested-anon-types"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
@@ -114,7 +112,7 @@ struct NetlinkMessage
 
             if (bytes_sent <= 0)
             {
-                if (errno == EAGAIN)
+                if (bytes_sent < 0 && errno == EAGAIN)
                     continue;
                 else
                     throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");

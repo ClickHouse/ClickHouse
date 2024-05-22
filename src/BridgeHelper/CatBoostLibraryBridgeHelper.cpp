@@ -58,8 +58,12 @@ bool CatBoostLibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
-        readString(result, buf);
+        auto buf = BuilderRWBufferFromHTTP(getPingURI())
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withTimeouts(http_timeouts)
+                       .create(credentials);
+
+        readString(result, *buf);
     }
     catch (...)
     {
@@ -79,29 +83,29 @@ ExternalModelInfos CatBoostLibraryBridgeHelper::listModels()
 {
     startBridgeSync();
 
-    ReadWriteBufferFromHTTP buf(
-        createRequestURI(CATBOOST_LIST_METHOD),
-        Poco::Net::HTTPRequest::HTTP_POST,
-        [](std::ostream &) {},
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_LIST_METHOD))
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .create(credentials);
 
     ExternalModelInfos result;
 
     UInt64 num_rows;
-    readIntBinary(num_rows, buf);
+    readIntBinary(num_rows, *buf);
 
     for (UInt64 i = 0; i < num_rows; ++i)
     {
         ExternalModelInfo info;
 
-        readStringBinary(info.model_path, buf);
-        readStringBinary(info.model_type, buf);
+        readStringBinary(info.model_path, *buf);
+        readStringBinary(info.model_type, *buf);
 
         UInt64 t;
-        readIntBinary(t, buf);
+        readIntBinary(t, *buf);
         info.loading_start_time = std::chrono::system_clock::from_time_t(t);
 
-        readIntBinary(t, buf);
+        readIntBinary(t, *buf);
         info.loading_duration = std::chrono::milliseconds(t);
 
         result.push_back(info);
@@ -116,17 +120,19 @@ void CatBoostLibraryBridgeHelper::removeModel()
 
     assert(model_path);
 
-    ReadWriteBufferFromHTTP buf(
-        createRequestURI(CATBOOST_REMOVEMODEL_METHOD),
-        Poco::Net::HTTPRequest::HTTP_POST,
-        [this](std::ostream & os)
-        {
-            os << "model_path=" << escapeForFileName(*model_path);
-        },
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_REMOVEMODEL_METHOD))
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .withOutCallback(
+                       [this](std::ostream & os)
+                       {
+                           os << "model_path=" << escapeForFileName(*model_path);
+                       })
+                   .create(credentials);
 
     String result;
-    readStringBinary(result, buf);
+    readStringBinary(result, *buf);
     assert(result == "1");
 }
 
@@ -134,14 +140,14 @@ void CatBoostLibraryBridgeHelper::removeAllModels()
 {
     startBridgeSync();
 
-    ReadWriteBufferFromHTTP buf(
-        createRequestURI(CATBOOST_REMOVEALLMODELS_METHOD),
-        Poco::Net::HTTPRequest::HTTP_POST,
-        [](std::ostream &){},
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_REMOVEALLMODELS_METHOD))
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .create(credentials);
 
     String result;
-    readStringBinary(result, buf);
+    readStringBinary(result, *buf);
     assert(result == "1");
 }
 
@@ -151,18 +157,20 @@ size_t CatBoostLibraryBridgeHelper::getTreeCount()
 
     assert(model_path && library_path);
 
-    ReadWriteBufferFromHTTP buf(
-        createRequestURI(CATBOOST_GETTREECOUNT_METHOD),
-        Poco::Net::HTTPRequest::HTTP_POST,
-        [this](std::ostream & os)
-        {
-            os << "library_path=" << escapeForFileName(*library_path) << "&";
-            os << "model_path=" << escapeForFileName(*model_path);
-        },
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_GETTREECOUNT_METHOD))
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .withOutCallback(
+                        [this](std::ostream & os)
+                        {
+                           os << "library_path=" << escapeForFileName(*library_path) << "&";
+                           os << "model_path=" << escapeForFileName(*model_path);
+                        })
+                   .create(credentials);
 
     size_t result;
-    readIntBinary(result, buf);
+    readIntBinary(result, *buf);
     return result;
 }
 
@@ -177,17 +185,19 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
 
     assert(model_path);
 
-    ReadWriteBufferFromHTTP buf(
-        createRequestURI(CATBOOST_LIB_EVALUATE_METHOD),
-        Poco::Net::HTTPRequest::HTTP_POST,
-        [this, serialized = string_write_buf.str()](std::ostream & os)
-        {
-            os << "model_path=" << escapeForFileName(*model_path) << "&";
-            os << "data=" << escapeForFileName(serialized);
-        },
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_LIB_EVALUATE_METHOD))
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .withOutCallback(
+                       [this, serialized = string_write_buf.str()](std::ostream & os)
+                       {
+                           os << "model_path=" << escapeForFileName(*model_path) << "&";
+                           os << "data=" << escapeForFileName(serialized);
+                       })
+                   .create(credentials);
 
-    NativeReader deserializer(buf, /*server_revision*/ 0);
+    NativeReader deserializer(*buf, /*server_revision*/ 0);
     Block block_read = deserializer.read();
 
     return block_read.getColumns()[0];

@@ -9,10 +9,7 @@ import sys
 import traceback
 from pathlib import Path
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from build_download_helper import download_builds_filter
 from ci_config import CI_CONFIG
@@ -155,7 +152,7 @@ def main():
     }
 
     download_builds_filter(
-        check_name, REPORT_PATH, TEMP_PATH, lambda url: "performance.tar.zst" in url
+        check_name, REPORT_PATH, temp_path, lambda url: "performance.tar.zst" in url
     )
     assert os.path.exists(f"{TEMP_PATH}/performance.tar.zst"), "Perf artifact not found"
 

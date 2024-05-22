@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
+    extern const int USER_EXPIRED;
 }
 
 
@@ -365,6 +366,17 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->current_address = address;
 }
 
+void Session::checkIfUserIsStillValid()
+{
+    if (user && user->valid_until)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        if (now > user->valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "User expired");
+    }
+}
+
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
@@ -429,18 +441,12 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Session::setHTTPClientInfo(const Poco::Net::HTTPRequest & request)
 {
     if (session_context)
-    {
-        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer);
-    }
+        session_context->setHTTPClientInfo(request);
     else
-    {
-        prepared_client_info->http_method = http_method;
-        prepared_client_info->http_user_agent = http_user_agent;
-        prepared_client_info->http_referer = http_referer;
-    }
+        prepared_client_info->setFromHTTPRequest(request);
 }
 
 void Session::setForwardedFor(const String & forwarded_for)

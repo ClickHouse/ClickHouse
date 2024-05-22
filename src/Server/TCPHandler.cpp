@@ -1,5 +1,4 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
@@ -35,12 +34,10 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -103,6 +100,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -350,6 +348,7 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
+        bool user_expired = false;
         bool query_duration_already_logged = false;
         auto log_query_duration = [this, &query_duration_already_logged]()
         {
@@ -385,7 +384,7 @@ void TCPHandler::runImpl()
                 query_context->getClientInfo().client_trace_context,
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {
@@ -415,6 +414,9 @@ void TCPHandler::runImpl()
                 state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
+
+            if (!is_interserver_mode)
+                session->checkIfUserIsStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
@@ -539,7 +541,7 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.pulling())
             {
-                processOrdinaryQueryWithProcessors();
+                processOrdinaryQuery();
                 finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
@@ -640,7 +642,10 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
 
-            if (network_error)
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+                user_expired = true;
+
+            if (network_error || user_expired)
                 LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
@@ -750,7 +755,7 @@ void TCPHandler::runImpl()
             session.reset();
         }
 
-        if (network_error)
+        if (network_error || user_expired)
             break;
     }
 }
@@ -796,6 +801,8 @@ bool TCPHandler::readDataNext()
 
             /// We accept and process data.
             read_ok = receivePacket();
+            /// Reset the timeout on Ping packet (NOTE: there is no Ping for INSERT queries yet).
+            watch.restart();
             break;
         }
 
@@ -925,7 +932,7 @@ void TCPHandler::processInsertQuery()
     Block processed_block;
     const auto & settings = query_context->getSettingsRef();
 
-    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    auto * insert_queue = query_context->tryGetAsynchronousInsertQueue();
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
 
     bool async_insert_enabled = settings.async_insert;
@@ -933,18 +940,35 @@ void TCPHandler::processInsertQuery()
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select && !settings.deduplicate_blocks_in_dependent_materialized_views)
+    if (insert_queue && async_insert_enabled && !insert_query.select)
     {
+        /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
+        /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
+        /// which was formed by concatenating several mini-INSERTs together.
+        /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
+        /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
+        /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
+        /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+        /// block may be concatenated differently.
+        /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
+        if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
+            settings.deduplicate_blocks_in_dependent_materialized_views)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Deduplication is dependent materialized view cannot work together with async inserts. "\
+                    "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
+            /// Reset pipeline because it may hold write lock for some storages.
+            state.io.pipeline.reset();
             if (settings.wait_for_async_insert)
             {
                 size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
                 auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
 
                 if (wait_status == std::future_status::deferred)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
                     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
@@ -970,14 +994,14 @@ void TCPHandler::processInsertQuery()
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor, processed_block);
+        run_executor(executor, std::move(processed_block));
     }
 
     sendInsertProfileEvents();
 }
 
 
-void TCPHandler::processOrdinaryQueryWithProcessors()
+void TCPHandler::processOrdinaryQuery()
 {
     auto & pipeline = state.io.pipeline;
 
@@ -1083,7 +1107,7 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
-        /// In interserver mode session context does not exists, because authentication is done for each query.
+        /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
         ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
@@ -1110,6 +1134,7 @@ void TCPHandler::processTablesStatusRequest()
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+            status.is_readonly = replicated_table->isTableReadOnly();
         }
         else
             status.is_replicated = false;
@@ -1218,6 +1243,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1229,6 +1255,11 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
+
+        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+        if (elapsed_milliseconds > 100)
+            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 
@@ -1356,17 +1387,6 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
-[[ maybe_unused ]] String createChallenge()
-{
-#if USE_SSL
-    pcg64_fast rng(randomSeed());
-    UInt64 rand = rng();
-    return encodeSHA256(&rand, sizeof(rand));
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
-#endif
-}
-
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1382,16 +1402,6 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientInterface(interface);
 
     return res;
-}
-
-String TCPHandler::prepareStringForSshValidation(String username, String challenge)
-{
-    String output;
-    output.append(std::to_string(client_tcp_protocol_version));
-    output.append(default_database);
-    output.append(username);
-    output.append(challenge);
-    return output;
 }
 
 void TCPHandler::receiveHello()
@@ -1451,11 +1461,9 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
-    {
-        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
-    }
+        user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
     session = makeSession();
     const auto & client_info = session->getClientInfo();
@@ -1483,7 +1491,9 @@ void TCPHandler::receiveHello()
             }
         }
     }
+#endif
 
+#if USE_SSH
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
@@ -1497,7 +1507,14 @@ void TCPHandler::receiveHello()
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
-        auto challenge = createChallenge();
+        auto create_challenge = []()
+        {
+            pcg64_fast rng(randomSeed());
+            UInt64 rand = rng();
+            return encodeSHA256(&rand, sizeof(rand));
+        };
+
+        String challenge = create_challenge();
         writeVarUInt(Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->next();
@@ -1508,7 +1525,17 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
         readStringBinary(signature, *in);
 
-        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
+        auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
+        {
+            String output;
+            output.append(std::to_string(client_tcp_protocol_version));
+            output.append(default_database);
+            output.append(username);
+            output.append(challenge_);
+            return output;
+        };
+
+        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
         return;
     }
@@ -1845,7 +1872,7 @@ void TCPHandler::receiveQuery()
     if (state.part_uuids_to_ignore)
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
     query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///
@@ -2169,7 +2196,7 @@ void TCPHandler::sendData(const Block & block)
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
-            constexpr UInt64 marker = (1ULL<<63) - 1;
+            constexpr UInt64 marker = (1ULL << 63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
                 writeVarUInt(marker, *out);

@@ -8,6 +8,8 @@
 #include <Coordination/KeeperFeatureFlags.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 
+#include <Poco/NumberParser.h>
+
 namespace DB
 {
 
@@ -39,7 +41,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
 }
 
 void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
-    const SelectQueryInfo &) const
+    const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto add_enabled_feature_flags = [&](const auto & zookeeper)
     {

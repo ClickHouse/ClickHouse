@@ -583,6 +583,15 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
+std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::currentFile(std::unique_ptr<ReadBuffer> read_buffer)
+{
+    if (!dynamic_cast<ReadBufferFromZipArchive *>(read_buffer.get()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
+    auto read_buffer_from_zip = std::unique_ptr<ReadBufferFromZipArchive>(static_cast<ReadBufferFromZipArchive *>(read_buffer.release()));
+    auto handle = std::move(*read_buffer_from_zip).releaseHandle();
+    return std::make_unique<FileEnumeratorImpl>(std::move(handle));
+}
+
 std::vector<std::string> ZipArchiveReader::getAllFiles()
 {
     return getAllFiles({});

@@ -134,9 +134,9 @@ bool DataTypeVariant::hasDynamicSubcolumns() const
     return std::any_of(variants.begin(), variants.end(), [](auto && elem) { return elem->hasDynamicSubcolumns(); });
 }
 
-std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const DataTypePtr & type) const
+std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const IDataType & type) const
 {
-    String type_name = type->getName();
+    String type_name = type.getName();
     for (size_t i = 0; i != variants.size(); ++i)
     {
         /// We don't use equals here, because it doesn't respect custom type names.
@@ -151,11 +151,7 @@ size_t DataTypeVariant::getMaximumSizeOfValueInMemory() const
 {
     size_t max_size = 0;
     for (const auto & elem : variants)
-    {
-        size_t elem_max_size = elem->getMaximumSizeOfValueInMemory();
-        if (elem_max_size > max_size)
-            max_size = elem_max_size;
-    }
+        max_size = std::max(max_size, elem->getMaximumSizeOfValueInMemory());
     return max_size;
 }
 
@@ -173,6 +169,15 @@ SerializationPtr DataTypeVariant::doGetDefaultSerialization() const
     }
 
     return std::make_shared<SerializationVariant>(std::move(serializations), std::move(variant_names), SerializationVariant::getVariantsDeserializeTextOrder(variants), getName());
+}
+
+void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const
+{
+    for (const auto & variant : variants)
+    {
+        callback(*variant);
+        variant->forEachChild(callback);
+    }
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

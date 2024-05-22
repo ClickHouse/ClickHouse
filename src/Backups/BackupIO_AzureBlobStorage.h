@@ -16,7 +16,12 @@ namespace DB
 class BackupReaderAzureBlobStorage : public BackupReaderDefault
 {
 public:
-    BackupReaderAzureBlobStorage(StorageAzureBlob::Configuration configuration_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
+    BackupReaderAzureBlobStorage(
+        StorageAzureBlob::Configuration configuration_,
+        bool allow_azure_native_copy,
+        const ReadSettings & read_settings_,
+        const WriteSettings & write_settings_,
+        const ContextPtr & context_);
     ~BackupReaderAzureBlobStorage() override;
 
     bool fileExists(const String & file_name) override;
@@ -37,7 +42,13 @@ private:
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
 {
 public:
-    BackupWriterAzureBlobStorage(StorageAzureBlob::Configuration configuration_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
+    BackupWriterAzureBlobStorage(
+        StorageAzureBlob::Configuration configuration_,
+        bool allow_azure_native_copy,
+        const ReadSettings & read_settings_,
+        const WriteSettings & write_settings_,
+        const ContextPtr & context_,
+        bool attempt_to_create_container);
     ~BackupWriterAzureBlobStorage() override;
 
     bool fileExists(const String & file_name) override;

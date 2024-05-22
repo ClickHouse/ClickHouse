@@ -2,13 +2,13 @@
 
 SET min_execution_speed = 100000000000, timeout_before_checking_execution_speed = 0;
 SELECT count() FROM system.numbers; -- { serverError 160 }
-SELECT 'Ok (1)';
 SET min_execution_speed = 0;
+SELECT 'Ok (1)';
 
 SET min_execution_speed_bytes = 800000000000, timeout_before_checking_execution_speed = 0;
 SELECT count() FROM system.numbers; -- { serverError 160 }
-SELECT 'Ok (2)';
 SET min_execution_speed_bytes = 0;
+SELECT 'Ok (2)';
 
 SET max_execution_speed = 1000000;
 SET max_block_size = 100;

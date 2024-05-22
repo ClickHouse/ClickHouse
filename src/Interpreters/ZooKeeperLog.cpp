@@ -122,49 +122,49 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"type", std::move(type_enum)},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime64>(6)},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"address", DataTypeFactory::instance().get("IPv6")},
-        {"port", std::make_shared<DataTypeUInt16>()},
-        {"session_id", std::make_shared<DataTypeInt64>()},
-        {"duration_ms", std::make_shared<DataTypeUInt64>()},
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"type", std::move(type_enum), "Event type in the ZooKeeper client. Can have one of the following values: Request — The request has been sent, Response — The response was received, Finalize — The connection is lost, no response was received."},
+        {"event_date", std::make_shared<DataTypeDate>(), "The date when the event happened."},
+        {"event_time", std::make_shared<DataTypeDateTime64>(6), "The date and time when the event happened."},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "The ID of the thread executed this request."},
+        {"query_id", std::make_shared<DataTypeString>(), "The ID of a query in scope of which this request was executed."},
+        {"address", DataTypeFactory::instance().get("IPv6"), "IP address of ZooKeeper server that was used to make the request."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The port of ZooKeeper server that was used to make the request."},
+        {"session_id", std::make_shared<DataTypeInt64>(), "The session ID that the ZooKeeper server sets for each connection."},
+        {"duration_microseconds", std::make_shared<DataTypeUInt64>(), "The time taken by ZooKeeper to execute the request."},
 
-        {"xid", std::make_shared<DataTypeInt32>()},
-        {"has_watch", std::make_shared<DataTypeUInt8>()},
-        {"op_num", op_num_enum},
-        {"path", std::make_shared<DataTypeString>()},
+        {"xid", std::make_shared<DataTypeInt32>(), "The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired response/finalize row."},
+        {"has_watch", std::make_shared<DataTypeUInt8>(), "The request whether the watch has been set."},
+        {"op_num", op_num_enum, "The type of request or response."},
+        {"path", std::make_shared<DataTypeString>(), "The path to the ZooKeeper node specified in the request, or an empty string if the request not requires specifying a path."},
 
-        {"data", std::make_shared<DataTypeString>()},
+        {"data", std::make_shared<DataTypeString>(), "The data written to the ZooKeeper node (for the SET and CREATE requests — what the request wanted to write, for the response to the GET request — what was read) or an empty string."},
 
-        {"is_ephemeral", std::make_shared<DataTypeUInt8>()},
-        {"is_sequential", std::make_shared<DataTypeUInt8>()},
+        {"is_ephemeral", std::make_shared<DataTypeUInt8>(), "Is the ZooKeeper node being created as an ephemeral."},
+        {"is_sequential", std::make_shared<DataTypeUInt8>(), "Is the ZooKeeper node being created as an sequential."},
 
-        {"version", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>())},
+        {"version", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "The version of the ZooKeeper node that the request expects when executing. This is supported for CHECK, SET, REMOVE requests (is relevant -1 if the request does not check the version or NULL for other requests that do not support version checking)."},
 
-        {"requests_size", std::make_shared<DataTypeUInt32>()},
-        {"request_idx", std::make_shared<DataTypeUInt32>()},
+        {"requests_size", std::make_shared<DataTypeUInt32>(), "The number of requests included in the multi request (this is a special request that consists of several consecutive ordinary requests and executes them atomically). All requests included in multi request will have the same xid."},
+        {"request_idx", std::make_shared<DataTypeUInt32>(), "The number of the request included in multi request (for multi request — 0, then in order from 1)."},
 
-        {"zxid", std::make_shared<DataTypeInt64>()},
-        {"error", std::make_shared<DataTypeNullable>(error_enum)},
+        {"zxid", std::make_shared<DataTypeInt64>(), "ZooKeeper transaction ID. The serial number issued by the ZooKeeper server in response to a successfully executed request (0 if the request was not executed/returned an error/the client does not know whether the request was executed)."},
+        {"error", std::make_shared<DataTypeNullable>(error_enum), "Error code. Can have many values, here are just some of them: ZOK — The request was executed successfully, ZCONNECTIONLOSS — The connection was lost, ZOPERATIONTIMEOUT — The request execution timeout has expired, ZSESSIONEXPIRED — The session has expired, NULL — The request is completed."},
 
-        {"watch_type", std::make_shared<DataTypeNullable>(watch_type_enum)},
-        {"watch_state", std::make_shared<DataTypeNullable>(watch_state_enum)},
+        {"watch_type", std::make_shared<DataTypeNullable>(watch_type_enum), "The type of the watch event (for responses with op_num = Watch), for the remaining responses: NULL."},
+        {"watch_state", std::make_shared<DataTypeNullable>(watch_state_enum), "The status of the watch event (for responses with op_num = Watch), for the remaining responses: NULL."},
 
-        {"path_created", std::make_shared<DataTypeString>()},
+        {"path_created", std::make_shared<DataTypeString>(), "The path to the created ZooKeeper node (for responses to the CREATE request), may differ from the path if the node is created as a sequential."},
 
-        {"stat_czxid", std::make_shared<DataTypeInt64>()},
-        {"stat_mzxid", std::make_shared<DataTypeInt64>()},
-        {"stat_pzxid", std::make_shared<DataTypeInt64>()},
-        {"stat_version", std::make_shared<DataTypeInt32>()},
-        {"stat_cversion", std::make_shared<DataTypeInt32>()},
-        {"stat_dataLength", std::make_shared<DataTypeInt32>()},
-        {"stat_numChildren", std::make_shared<DataTypeInt32>()},
+        {"stat_czxid", std::make_shared<DataTypeInt64>(), "The zxid of the change that caused this ZooKeeper node to be created."},
+        {"stat_mzxid", std::make_shared<DataTypeInt64>(), "The zxid of the change that last modified this ZooKeeper node."},
+        {"stat_pzxid", std::make_shared<DataTypeInt64>(), "The transaction ID of the change that last modified children of this ZooKeeper node."},
+        {"stat_version", std::make_shared<DataTypeInt32>(), "The number of changes to the data of this ZooKeeper node."},
+        {"stat_cversion", std::make_shared<DataTypeInt32>(), "The number of changes to the children of this ZooKeeper node."},
+        {"stat_dataLength", std::make_shared<DataTypeInt32>(), "The length of the data field of this ZooKeeper node."},
+        {"stat_numChildren", std::make_shared<DataTypeInt32>(), "The number of children of this ZooKeeper node."},
 
-        {"children", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"children", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of child ZooKeeper nodes (for responses to LIST request)."},
     };
 }
 
@@ -183,7 +183,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
-    columns[i++]->insert(duration_ms);
+    columns[i++]->insert(duration_microseconds);
 
     columns[i++]->insert(xid);
     columns[i++]->insert(has_watch);

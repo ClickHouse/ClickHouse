@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -9,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -18,7 +20,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
@@ -26,7 +28,6 @@
 
 #include <functional>
 #include <base/defines.h>
-#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -232,6 +233,38 @@ KeeperStorage::Node & KeeperStorage::Node::operator=(const Node & other)
 KeeperStorage::Node::Node(const Node & other)
 {
     *this = other;
+}
+
+KeeperStorage::Node & KeeperStorage::Node::operator=(Node && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    czxid = other.czxid;
+    mzxid = other.mzxid;
+    pzxid = other.pzxid;
+    acl_id = other.acl_id;
+    mtime = other.mtime;
+    is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
+    ephemeral_or_children_data = other.ephemeral_or_children_data;
+    version = other.version;
+    cversion = other.cversion;
+    aversion = other.aversion;
+
+    data_size = other.data_size;
+    data = std::move(other.data);
+
+    other.data_size = 0;
+
+    static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
+    children = std::move(other.children);
+
+    return *this;
+}
+
+KeeperStorage::Node::Node(Node && other) noexcept
+{
+    *this = std::move(other);
 }
 
 bool KeeperStorage::Node::empty() const
@@ -1141,8 +1174,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             else if (parent_cversion > node.cversion)
                 node.cversion = parent_cversion;
 
-            if (zxid > node.pzxid)
-                node.pzxid = zxid;
+            node.pzxid = std::max(zxid, node.pzxid);
             node.increaseNumChildren();
         };
 
@@ -1320,9 +1352,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     [zxid](KeeperStorage::Node & parent)
                     {
-                        if (parent.pzxid < zxid)
-                            parent.pzxid = zxid;
-                   }
+                        parent.pzxid = std::max(parent.pzxid, zxid);
+                    }
                 }
             );
         };
@@ -1583,7 +1614,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
@@ -2677,3 +2708,5 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

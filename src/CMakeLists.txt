@@ -85,7 +85,6 @@ add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
-add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/S3)
@@ -99,7 +98,6 @@ add_headers_and_sources(clickhouse_compression Core)
 #Included these specific files to avoid linking grpc
 add_glob(clickhouse_compression_headers Server/ServerType.h)
 add_glob(clickhouse_compression_sources Server/ServerType.cpp)
-add_headers_and_sources(clickhouse_compression Common/SSH)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 
@@ -173,6 +171,8 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
@@ -307,7 +307,6 @@ endif()
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
-            string_utils
             widechar_width
             ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
@@ -320,7 +319,6 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (clickhouse_compression
         PUBLIC
-            string_utils
             pcg_random
             clickhouse_parsers
         PRIVATE
@@ -368,8 +366,7 @@ if (TARGET ch_contrib::crc32-vpmsum)
  endif()
 
 if (TARGET ch_contrib::ssh)
- target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
- target_link_libraries(clickhouse_compression PUBLIC ch_contrib::ssh)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
@@ -411,7 +408,6 @@ dbms_target_link_libraries (
         clickhouse_parsers
         ch_contrib::lz4
         Poco::JSON
-        string_utils
     PUBLIC
         boost::system
         clickhouse_common_io
@@ -504,6 +500,10 @@ endif()
 
 if (TARGET ch_contrib::s2)
     dbms_target_link_libraries (PUBLIC ch_contrib::s2)
+endif()
+
+if (TARGET ch_contrib::vectorscan)
+    dbms_target_link_libraries (PRIVATE ch_contrib::vectorscan)
 endif()
 
 if (TARGET ch_contrib::brotli)
@@ -642,7 +642,6 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        string_utils
         hilite_comparator)
 
     if (TARGET ch_contrib::simdjson)
