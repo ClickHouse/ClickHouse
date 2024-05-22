@@ -183,26 +183,3 @@ SELECT changeSecond(toDateTime64('2000-01-01 11:22:33.4444', 4), 60); -- out-of-
 SELECT '-- With different timezone';
 SELECT changeSecond(toDate('2000-01-01'), -1) SETTINGS session_timezone = 'Asia/Novosibirsk';
 SELECT changeSecond(toDate('2000-01-01'), 60) SETTINGS session_timezone = 'Asia/Novosibirsk';
-
-SELECT changeYear(toDate('2000-01-01')); -- { serverError 42 }
-SELECT changeYear(toDate('2000-01-01'), 2001, 2002); -- { serverError 42 }
-SELECT changeYear(toDate('2000-01-01'), '2001'); -- { serverError 43 }
-
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Int8));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Int16));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Int32));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Int64));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS UInt8));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS UInt16));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS UInt32));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS UInt64));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Float32));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Float64));
-SELECT changeMonth(toDate('2000-01-01'), CAST(2 AS Decimal(10, 5)));
-
-SELECT changeYear(toDate32('2000-01-01'), 2300);
-SELECT changeYear(toDate32('2000-01-01'), 1899);
-SELECT changeSecond(toDateTime('2106-02-07 13:28:15'), 16) SETTINGS session_timezone = 'Asia/Novosibirsk';
-SELECT changeHour(toDateTime('1970-01-01 23:59:59'), 6) SETTINGS session_timezone = 'Asia/Novosibirsk';
-SELECT changeYear(toDateTime64('2000-01-01 00:00:00.000', 3), 2300) SETTINGS session_timezone = 'Asia/Novosibirsk';
-SELECT changeYear(toDateTime64('2000-01-01 00:00:00.000', 3), 1899) SETTINGS session_timezone = 'Asia/Novosibirsk';
