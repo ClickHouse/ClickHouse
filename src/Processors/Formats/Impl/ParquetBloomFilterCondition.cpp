@@ -64,7 +64,7 @@ ColumnPtr hash(const auto & data_column, const std::unique_ptr<parquet::BloomFil
     return hashes_column;
 }
 
-bool maybeTrueOnBloomFilter2(ColumnPtr hash_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
+bool maybeTrueOnBloomFilter(ColumnPtr hash_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
 {
     const auto * uint64_column = typeid_cast<const ColumnUInt64 *>(hash_column.get());
 
@@ -170,7 +170,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
                 {
                     const auto & filter = column_index_to_bf.at(column_index);
 
-                    match_rows = maybeTrueOnBloomFilter2(column_ptr,
+                    match_rows = maybeTrueOnBloomFilter(column_ptr,
                                                         filter,
                                                         match_all);
                 }
