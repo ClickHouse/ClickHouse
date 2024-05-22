@@ -6,7 +6,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include "Common/Exception.h"
 
-namespace DB {
+namespace DB 
+{
 
 class DiskBackup : public IDisk
 {
@@ -184,8 +185,8 @@ public:
 
     /// Involves network interaction.
     bool isRemote() const override
-    { 
-        return delegate->isRemote(); 
+    {
+        return delegate->isRemote();
     }
 
     /// Whether this disk support zero-copy replication.

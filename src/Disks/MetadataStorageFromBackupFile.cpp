@@ -21,11 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int FILE_DOESNT_EXIST;
-}
-
 MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const String & path_to_backup_file)
 {
     using namespace XMLUtils;
@@ -51,7 +46,7 @@ MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const String & path
             }
 
             uint64_t file_size = getUInt64(file_config, "size");
-            nodes[file_path] = 
+            nodes[file_path] =
             {
                 file_path.filename(),
                 file_path.string(),
@@ -66,7 +61,7 @@ MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const String & path
                 auto current_node = nodes.at(file_path);
                 if (!nodes.contains(parent_path))
                 {
-                    nodes[parent_path] = 
+                    nodes[parent_path] =
                     {parent_path.filename(),
                     parent_path.string(),
                     current_node.file_size,
@@ -99,7 +94,7 @@ const String & MetadataStorageFromBackupFile::getPath() const
 }
 
 MetadataStorageType MetadataStorageFromBackupFile::getType() const
-{ 
+{
     return MetadataStorageType::Backup;
 }
 
@@ -123,8 +118,10 @@ uint64_t MetadataStorageFromBackupFile::getFileSize(const String & path) const
     return nodes.at(path).file_size;
 }
 
-std::vector<String> MetadataStorageFromBackupFile::listDirectory(const String & path) const {
-    if (!isDirectory(path)) {
+std::vector<String> MetadataStorageFromBackupFile::listDirectory(const String & path) const
+{
+    if (!isDirectory(path))
+    {
         return {};
     }
 
