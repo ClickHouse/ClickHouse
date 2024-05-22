@@ -10,8 +10,8 @@ namespace CurrentMetrics
 }
 
 
-namespace DB {
-
+namespace DB
+{
     CurrentMetrics::Metric getAttachedCounterForStorage(const StoragePtr & storage)
     {
         if (storage->isView())
