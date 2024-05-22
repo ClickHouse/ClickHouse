@@ -1,7 +1,7 @@
 #include <Core/Defines.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>

@@ -53,6 +53,8 @@ namespace CurrentMetrics
     extern const Metric MergeTreeDataSelectExecutorThreads;
     extern const Metric MergeTreeDataSelectExecutorThreadsActive;
     extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
+    extern const Metric FilteringMarksWithPrimaryKey;
+    extern const Metric FilteringMarksWithSecondaryKeys;
 }
 
 namespace DB
@@ -664,14 +666,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
 
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
+            {
+                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, part_offset_condition, settings, log);
+            }
             else if (total_marks_count)
+            {
                 ranges.ranges = MarkRanges{{MarkRange{0, total_marks_count}}};
+            }
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
+
+            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
             for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
             {
@@ -733,6 +742,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             num_threads = std::min<size_t>(num_streams, settings.max_threads_for_indexes);
         }
 
+        LOG_TRACE(log, "Filtering marks by primary and secondary keys");
+
         if (num_threads <= 1)
         {
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -740,7 +751,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
-            /// Parallel loading of data parts.
+            /// Parallel loading and filtering of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
@@ -748,8 +759,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+            {
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
+                    setThreadName("MergeTreeIndex");
+
                     SCOPE_EXIT_SAFE(
                         if (thread_group)
                             CurrentThread::detachFromGroupIfNotDetached();
@@ -759,6 +773,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     process_part(part_index);
                 });
+            }
 
             pool.wait();
         }

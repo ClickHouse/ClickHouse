@@ -1,6 +1,6 @@
 #include "VolumeJBOD.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>

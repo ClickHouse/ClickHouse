@@ -15,7 +15,7 @@
 
 #include "config_tools.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 

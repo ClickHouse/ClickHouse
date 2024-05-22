@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/noexcept_scope.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MutationCommands.h>
 #include <base/defines.h>
