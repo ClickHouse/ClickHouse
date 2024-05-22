@@ -35,7 +35,6 @@ void getBestCompressionPermutationImpl(
     for (size_t i = 0; i < not_already_sorted_columns.size(); ++i)
     {
         const auto column = block.getByPosition(i).column;
-        // TODO: improve with sampling
         estimate_unique_count[i] = column->getCardinalityInPermutedRange(permutation, range);
     }
 
