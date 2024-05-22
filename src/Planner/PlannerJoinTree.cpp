@@ -934,6 +934,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         from_stage = QueryProcessingStage::WithMergeableState;
                         QueryPlan query_plan_parallel_replicas;
+                        QueryPlanStepPtr reading_step = std::move(node->step);
                         ClusterProxy::executeQueryWithParallelReplicas(
                             query_plan_parallel_replicas,
                             storage->getStorageID(),
@@ -941,7 +942,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             table_expression_query_info.query_tree,
                             table_expression_query_info.planner_context,
                             query_context,
-                            table_expression_query_info.storage_limits);
+                            table_expression_query_info.storage_limits,
+                            std::move(reading_step));
                         query_plan = std::move(query_plan_parallel_replicas);
 
                         const Block & query_plan_header = query_plan.getCurrentDataStream().header;

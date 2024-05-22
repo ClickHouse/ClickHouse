@@ -369,7 +369,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     LoggerPtr log_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    bool exclude_local_replica_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -382,6 +383,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
+    , exclude_local_replica(exclude_local_replica_)
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -410,6 +412,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
     const auto & shard = cluster->getShardsInfo().at(0);
     size_t all_replicas_count = current_settings.max_parallel_replicas;
+    if (exclude_local_replica)
+        --all_replicas_count;
+
     if (all_replicas_count > shard.getAllNodeCount())
     {
         LOG_INFO(
