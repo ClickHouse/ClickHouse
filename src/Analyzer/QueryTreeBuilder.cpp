@@ -957,6 +957,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
             auto array_join_expressions_list = buildExpressionList(array_join_expression.expression_list, context);
             auto array_join_node = std::make_shared<ArrayJoinNode>(std::move(last_table_expression), std::move(array_join_expressions_list), is_left_array_join);
+            array_join_node->setAlias(array_join_expression.tryGetAlias());
 
             /** Original AST is not set because it will contain only array join part and does
               * not include left table expression.
@@ -1045,7 +1046,8 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
 QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)
 {
     QueryTreeBuilder builder(std::move(query), context);
-    return builder.getQueryTreeNode();
+    auto qt = builder.getQueryTreeNode();
+    return qt;
 }
 
 }

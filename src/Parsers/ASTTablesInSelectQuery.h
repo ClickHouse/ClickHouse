@@ -95,6 +95,10 @@ struct ASTArrayJoin : public IAST
 
     /// List of array or nested names to JOIN, possible with aliases.
     ASTPtr expression_list;
+    String alias;
+
+    String tryGetAlias() const override { return alias; }
+    void setAlias(const String & to) override { alias = to; }
 
     using IAST::IAST;
     String getID(char) const override { return "ArrayJoin"; }

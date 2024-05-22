@@ -1,6 +1,8 @@
 #include <memory>
 #include <unordered_map>
 #include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -58,6 +60,38 @@ public:
                     alias = fmt::format("__table{}", ++next_id);
                     node->setAlias(alias);
                 }
+
+                if (auto * array_join = node->as<ArrayJoinNode>())
+                {
+                    //size_t counter = 0;
+                    for (auto & column : array_join->getJoinExpressions())
+                    {
+                        if (auto * column_node = column->as<ColumnNode>())
+                        {
+                            if (!column_node->hasAlias())
+                                column_node->setAlias(column_node->getColumnName());
+                        }
+                    }
+                }
+
+                // if (auto * array_join = node->as<ArrayJoinNode>())
+                // {
+                //     for (auto & column : array_join->getJoinExpressions())
+                //     {
+                //         if (auto * column_node = column->as<ColumnNode>())
+                //         {
+                //             const auto & column_alias = column_node->getAlias();
+                //             const auto & name_or_alias = column_alias.empty() ? column_node->getColumnName() : column_alias;
+
+                //             if (!name_or_alias.starts_with("__"))
+                //             {
+
+                //                 column_node->setAlias(fmt::format("{}.{}", alias, name_or_alias));
+                //             }
+                //         }
+                //     }
+                // }
+
                 break;
             }
             default:

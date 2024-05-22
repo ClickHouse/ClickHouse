@@ -24,6 +24,9 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     buffer << std::string(indent, ' ') << "ARRAY_JOIN id: " << format_state.getNodeId(this);
     buffer << ", is_left: " << is_left;
 
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
     getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
@@ -52,6 +55,8 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
     auto array_join_ast = std::make_shared<ASTArrayJoin>();
     array_join_ast->kind = is_left ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
 
+    array_join_ast->setAlias(getAlias());
+
     auto array_join_expressions_ast = std::make_shared<ASTExpressionList>();
     const auto & array_join_expressions = getJoinExpressions().getNodes();
 
@@ -65,7 +70,21 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
         else
             array_join_expression_ast = array_join_expression->toAST(options);
 
+        // QueryTreeNodePtr column_source;
+        // if (column_node)
+        //     column_source = column_node->getColumnSourceOrNull();
+
+        // if (column_source && column_source->hasAlias())
+        // {
+        //     const auto & column_alias = column_node->getAlias();
+        //     const auto & name_or_alias = column_alias.empty() ? column_node->getColumnName() : column_alias;
+
+        //     if (!name_or_alias.starts_with("__"))
+        //         array_join_expression_ast->setAlias(fmt::format("{}.{}", column_source->getAlias(), name_or_alias));
+        // }
+        // else
         array_join_expression_ast->setAlias(array_join_expression->getAlias());
+
         array_join_expressions_ast->children.push_back(std::move(array_join_expression_ast));
     }
 

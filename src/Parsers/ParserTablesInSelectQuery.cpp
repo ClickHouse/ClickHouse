@@ -98,6 +98,10 @@ bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!has_array_join)
         return false;
 
+    ASTPtr alias_node;
+    if (ParserAlias(false).parse(pos, alias_node, expected))
+        tryGetIdentifierNameInto(alias_node, res->alias);
+
     if (!ParserExpressionList(false).parse(pos, res->expression_list, expected))
         return false;
 
