@@ -1,3 +1,5 @@
+#include <Databases/DatabaseLazy.h>
+
 #include <base/sort.h>
 #include <iomanip>
 #include <filesystem>
@@ -7,7 +9,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -17,17 +18,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
+#include <Storages/Utils.h>
 
 
 namespace fs = std::filesystem;
-
-
-namespace CurrentMetrics
-{
-    extern const Metric AttachedTable;
-    extern const Metric AttachedView;
-    extern const Metric AttachedDictionary;
-}
 
 
 namespace DB
@@ -174,22 +168,6 @@ bool DatabaseLazy::empty() const
     return tables_cache.empty();
 }
 
-static CurrentMetrics::Metric get_attached_count_metric_for_storage(const StoragePtr & storage)
-{
-    if (storage->isView())
-    {
-        return CurrentMetrics::AttachedView;
-    }
-    else if (storage->isDictionary())
-    {
-        return CurrentMetrics::AttachedDictionary;
-    }
-    else
-    {
-        return CurrentMetrics::AttachedTable;
-    }
-}
-
 void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
     LOG_DEBUG(log, "Attach table {}.", backQuote(table_name));
@@ -203,7 +181,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
-    CurrentMetrics::add(get_attached_count_metric_for_storage(table), 1);
+    CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -219,7 +197,9 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-        CurrentMetrics::sub(get_attached_count_metric_for_storage(res), 1);
+        if (res != nullptr) {
+            CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
+        }
     }
     return res;
 }
