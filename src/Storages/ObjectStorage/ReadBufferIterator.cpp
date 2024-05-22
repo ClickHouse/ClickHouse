@@ -145,7 +145,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl = object_storage->readObject(StoredObject(), context->getReadSettings());
+    auto impl = object_storage->readObject(StoredObject(path), context->getReadSettings());
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
@@ -258,10 +258,10 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         std::unique_ptr<ReadBuffer> read_buf;
         CompressionMethod compression_method;
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
-        if (auto object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
+        if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
             compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
-            auto & archive_reader = object_info_in_archive->archive_reader;
+            const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else

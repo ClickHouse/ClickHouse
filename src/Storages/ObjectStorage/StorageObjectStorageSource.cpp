@@ -279,10 +279,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     else
     {
         CompressionMethod compression_method;
-        if (auto object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-            auto & archive_reader = object_info_in_archive->archive_reader;
+            const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else

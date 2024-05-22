@@ -575,7 +575,7 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto new_s3_settings = getSettings(config, config_prefix, context);
+    auto new_s3_settings = getSettings(config, config_prefix, context, context->getSettingsRef().s3_validate_request_settings);
     if (!static_headers.empty())
     {
         new_s3_settings->auth_settings.headers.insert(
