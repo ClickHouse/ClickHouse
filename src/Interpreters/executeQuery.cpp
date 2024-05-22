@@ -1392,7 +1392,16 @@ void executeQuery(
     const char * begin;
     const char * end;
 
-    istr.nextIfAtEnd();
+    try
+    {
+        istr.nextIfAtEnd();
+    }
+    catch (...)
+    {
+        /// If buffer contains invalid data and we failed to decompress, we still want to have some information about the query in the log.
+        logQuery("<cannot parse>", context, /* internal = */ false, QueryProcessingStage::Complete);
+        throw;
+    }
 
     size_t max_query_size = context->getSettingsRef().max_query_size;
 
