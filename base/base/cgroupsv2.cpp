@@ -9,11 +9,18 @@
 bool cgroupsV2Enabled()
 {
 #if defined(OS_LINUX)
-    /// This file exists iff the host has cgroups v2 enabled.
-    auto controllers_file = default_cgroups_mount / "cgroup.controllers";
-    if (!std::filesystem::exists(controllers_file))
-        return false;
-    return true;
+    try
+    {
+        /// This file exists iff the host has cgroups v2 enabled.
+        auto controllers_file = default_cgroups_mount / "cgroup.controllers";
+        if (!std::filesystem::exists(controllers_file))
+            return false;
+        return true;
+    }
+    catch (const std::filesystem::filesystem_error &) /// all "underlying OS API errors", typically: permission denied
+    {
+        return false; /// not logging the exception as most callers fall back to cgroups v1
+    }
 #else
     return false;
 #endif

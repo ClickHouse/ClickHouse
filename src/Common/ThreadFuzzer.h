@@ -52,6 +52,7 @@ public:
     }
 
     bool isEffective() const;
+    bool needsSetup() const;
 
     static void stop();
     static void start();
