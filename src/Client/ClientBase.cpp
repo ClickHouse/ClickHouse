@@ -951,6 +951,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     }
     catch (Exception & e)
     {
+        if (server_exception)
+            server_exception->rethrow();
         if (!is_interactive)
             e.addMessage("(in query: {})", full_query);
         throw;
@@ -1069,19 +1071,28 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             QueryInterruptHandler::start(signals_before_stop);
             SCOPE_EXIT({ QueryInterruptHandler::stop(); });
 
-            connection->sendQuery(
-                connection_parameters.timeouts,
-                query,
-                query_parameters,
-                global_context->getCurrentQueryId(),
-                query_processing_stage,
-                &global_context->getSettingsRef(),
-                &global_context->getClientInfo(),
-                true,
-                [&](const Progress & progress) { onProgress(progress); });
+            try {
+                connection->sendQuery(
+                    connection_parameters.timeouts,
+                    query,
+                    query_parameters,
+                    global_context->getCurrentQueryId(),
+                    query_processing_stage,
+                    &global_context->getSettingsRef(),
+                    &global_context->getClientInfo(),
+                    true,
+                    [&](const Progress & progress) { onProgress(progress); });
 
-            if (send_external_tables)
-                sendExternalTables(parsed_query);
+                if (send_external_tables)
+                    sendExternalTables(parsed_query);
+            }
+            catch (const NetException &)
+            {
+                // We still want to attempt to process whatever we already recieved or can recieve (socket receive buffer can be not empty)
+                receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
+                throw;
+            }
+
             receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
