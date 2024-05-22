@@ -14,6 +14,8 @@ namespace DB
 namespace
 {
 
+/* Checks if the 2 rows of the block lie in the same equivalence class according to description.
+ */
 bool isEqual(const Block & block, const SortDescription & description, size_t lhs, size_t rhs)
 {
     for (const auto & column_description : description)
@@ -25,37 +27,8 @@ bool isEqual(const Block & block, const SortDescription & description, size_t lh
     return true;
 }
 
-void getBestCompressionPermutationImpl(
-    const Block & block,
-    const std::vector<size_t> & not_already_sorted_columns,
-    IColumn::Permutation & permutation,
-    const EqualRange & range)
-{
-    std::vector<size_t> estimate_unique_count(not_already_sorted_columns.size());
-    for (size_t i = 0; i < not_already_sorted_columns.size(); ++i)
-    {
-        const auto column = block.getByPosition(i).column;
-        estimate_unique_count[i] = column->getCardinalityInPermutedRange(permutation, range);
-    }
-
-    std::vector<size_t> order(not_already_sorted_columns.size());
-    std::iota(order.begin(), order.end(), 0);
-
-    auto comparator = [&](size_t lhs, size_t rhs) -> bool { return estimate_unique_count[lhs] < estimate_unique_count[rhs]; };
-
-    ::sort(order.begin(), order.end(), comparator);
-
-    std::vector<EqualRange> equal_ranges{range};
-    for (size_t i : order)
-    {
-        const size_t column_id = not_already_sorted_columns[i];
-        const auto column = block.getByPosition(column_id).column;
-        column->updatePermutationForCompression(permutation, equal_ranges);
-    }
-}
-
-}
-
+/* Gets a sorted list of column indexes already sorted according to description.
+ */
 std::vector<size_t> getAlreadySortedColumnsIndex(const Block & block, const SortDescription & description)
 {
     std::vector<size_t> already_sorted_columns;
@@ -69,6 +42,8 @@ std::vector<size_t> getAlreadySortedColumnsIndex(const Block & block, const Sort
     return already_sorted_columns;
 }
 
+/* Gets a sorted list of column indexes not already sorted according to description.
+ */
 std::vector<size_t> getNotAlreadySortedColumnsIndex(const Block & block, const SortDescription & description)
 {
     std::vector<size_t> not_already_sorted_columns;
@@ -90,6 +65,44 @@ std::vector<size_t> getNotAlreadySortedColumnsIndex(const Block & block, const S
             not_already_sorted_columns.push_back(i);
     }
     return not_already_sorted_columns;
+}
+
+std::vector<size_t> getColumnsCardinalityInPermutedRange(
+    const Block & block, const std::vector<size_t> & columns, IColumn::Permutation & permutation, const EqualRange & range)
+{
+    std::vector<size_t> cardinality(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto column = block.getByPosition(i).column;
+        cardinality[i] = column->getCardinalityInPermutedRange(permutation, range);
+    }
+    return cardinality;
+}
+
+/* Reorders rows within a given range with column ordering by increasing cardinality.
+ */
+void getBestCompressionPermutationImpl(
+    const Block & block,
+    const std::vector<size_t> & not_already_sorted_columns,
+    IColumn::Permutation & permutation,
+    const EqualRange & range)
+{
+    const std::vector<size_t> cardinality = getColumnsCardinalityInPermutedRange(block, not_already_sorted_columns, permutation, range);
+
+    std::vector<size_t> order(not_already_sorted_columns.size());
+    std::iota(order.begin(), order.end(), 0);
+    auto comparator = [&](size_t lhs, size_t rhs) -> bool { return cardinality[lhs] < cardinality[rhs]; };
+    ::sort(order.begin(), order.end(), comparator);
+
+    std::vector<EqualRange> equal_ranges{range};
+    for (size_t i : order)
+    {
+        const size_t column_id = not_already_sorted_columns[i];
+        const auto column = block.getByPosition(column_id).column;
+        column->updatePermutationForCompression(permutation, equal_ranges);
+    }
+}
+
 }
 
 EqualRanges getEqualRanges(const Block & block, const SortDescription & description, const IColumn::Permutation & permutation)
