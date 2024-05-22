@@ -368,7 +368,6 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -421,7 +420,7 @@ void logQueryFinish(
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
 
-        elem.query_cache_usage = query_cache_usage;
+        elem.query_cache_usage = query_pipeline.getQueryCacheUsage();
 
         if (log_queries && elem.type >= log_queries_min_type
             && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
@@ -1089,7 +1088,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
-        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
         /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
         /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
@@ -1115,7 +1113,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        query_cache_usage = QueryCache::Usage::Read;
                         return true;
                     }
                 }
@@ -1233,7 +1230,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                              settings.query_cache_max_size_in_bytes,
                                              settings.query_cache_max_entries));
                             res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                            query_cache_usage = QueryCache::Usage::Write;
                         }
                     }
 
@@ -1285,19 +1281,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    query_cache_usage,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCache::Usage::Write)
+                if (query_pipeline.getQueryCacheUsage() == QueryCache::Usage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
 
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
