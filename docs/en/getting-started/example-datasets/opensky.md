@@ -7,9 +7,9 @@ title: "Crowdsourced air traffic data from The OpenSky Network 2020"
 
 The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic.
 
-Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
+Source: https://zenodo.org/records/5092942
 
-Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent Lenders
+Martin Strohmeier, Xavier Olive, Jannis Luebbe, Matthias Schaefer, and Vincent Lenders
 "Crowdsourced air traffic data from the OpenSky Network 2019–2020"
 Earth System Science Data 13(2), 2021
 https://doi.org/10.5194/essd-13-357-2021
@@ -19,7 +19,7 @@ https://doi.org/10.5194/essd-13-357-2021
 Run the command:
 
 ```bash
-wget -O- https://zenodo.org/record/5092942 | grep -oP 'https://zenodo.org/record/5092942/files/flightlist_\d+_\d+\.csv\.gz' | xargs wget
+wget -O- https://zenodo.org/records/5092942 | grep -oE 'https://zenodo.org/records/5092942/files/flightlist_[0-9]+_[0-9]+\.csv\.gz' | xargs wget
 ```
 
 Download will take about 2 minutes with good internet connection. There are 30 files with total size of 4.3 GB.
@@ -60,7 +60,7 @@ ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhou
 `xargs -P100` specifies to use up to 100 parallel workers but as we only have 30 files, the number of workers will be only 30.
 - For every file, `xargs` will run a script with `bash -c`. The script has substitution in form of `{}` and the `xargs` command will substitute the filename to it (we have asked it for `xargs` with `-I{}`).
 - The script will decompress the file (`gzip -c -d "{}"`) to standard output (`-c` parameter) and the output is redirected to `clickhouse-client`.
-- We also asked to parse [DateTime](../../sql-reference/data-types/datetime.md) fields with extended parser ([--date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format)) to recognize ISO-8601 format with timezone offsets.
+- We also asked to parse [DateTime](../../sql-reference/data-types/datetime.md) fields with extended parser ([--date_time_input_format best_effort](../../operations/settings/settings-formats.md#settings-date_time_input_format)) to recognize ISO-8601 format with timezone offsets.
 
 Finally, `clickhouse-client` will do insertion. It will read input data in [CSVWithNames](../../interfaces/formats.md#csvwithnames) format. 
 
@@ -127,15 +127,15 @@ Average flight distance is around 1000 km.
 Query:
 
 ```sql
-SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky;
+SELECT round(avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)), 2) FROM opensky;
 ```
 
 Result:
 
 ```text
-┌─avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2))─┐
-│                                                 1041090.6465708319 │
-└────────────────────────────────────────────────────────────────────┘
+   ┌─round(avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)), 2)─┐
+1. │                                                                   1041090.67 │ -- 1.04 million
+   └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Most busy origin airports and the average distance seen {#busy-airports-average-distance}

@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -15,6 +16,8 @@ private:
     DataTypePtr nested;
 
 public:
+    using FieldType = Array;
+    using ColumnType = ColumnArray;
     static constexpr bool is_parametric = true;
 
     explicit DataTypeArray(const DataTypePtr & nested_);
@@ -25,6 +28,8 @@ public:
     {
         return "Array(" + nested->getName() + ")";
     }
+
+    std::string doGetPrettyName(size_t indent) const override;
 
     const char * getFamilyName() const override
     {
@@ -38,6 +43,8 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
+    void forEachChild(const ChildCallback & callback) const override;
+
     Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
@@ -48,6 +55,7 @@ public:
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {

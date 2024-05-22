@@ -82,7 +82,7 @@ public:
     {
         static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
-            throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Bad scale of decimal field");
 
         Shift shift;
         if (scale_a < scale_b)
@@ -170,11 +170,11 @@ private:
 
             if (c0_is_const && c1_is_const)
             {
-                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
-                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
+                const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+                const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
 
-                A a = c0_const->template getValue<A>();
-                B b = c1_const->template getValue<B>();
+                A a = c0_const.template getValue<A>();
+                B b = c1_const.template getValue<B>();
                 UInt8 res = apply<scale_left, scale_right>(a, b, scale);
                 return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
             }
@@ -184,21 +184,21 @@ private:
 
             if (c0_is_const)
             {
-                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
-                A a = c0_const->template getValue<A>();
+                const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+                A a = c0_const.template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
-                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
             else if (c1_is_const)
             {
-                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
-                B b = c1_const->template getValue<B>();
+                const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
+                B b = c1_const.template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                     vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else
-                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
             else
             {
@@ -207,10 +207,10 @@ private:
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                         vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                     else
-                        throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
                 }
                 else
-                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
         }
 
@@ -230,7 +230,7 @@ private:
         if constexpr (is_decimal<B>)
             y = b.value;
         else
-            y = b;
+            y = static_cast<CompareInt>(b);
 
         if constexpr (_check_overflow)
         {
@@ -251,7 +251,7 @@ private:
                 overflow |= common::mulOverflow(y, scale, y);
 
             if (overflow)
-                throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Can't compare decimal number due to overflow");
         }
         else
         {

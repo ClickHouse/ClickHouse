@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
-#include <Processors/DelayedPortsProcessor.h>
 
 
 namespace DB
@@ -36,6 +35,8 @@ public:
 
     SetWithStatePtr getSet() const { return own_set; }
 
+    bool isColumnPartOfSetKey(const String & column_name) const;
+
     /// Set for another stream.
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }
 
@@ -53,7 +54,7 @@ private:
 
     JoinTableSide position;
 
-    Poco::Logger * log = &Poco::Logger::get("CreateSetAndFilterOnTheFlyStep");
+    LoggerPtr log = getLogger("CreateSetAndFilterOnTheFlyStep");
 };
 
 }

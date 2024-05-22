@@ -7,18 +7,15 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, format_settings_.xml.valid_output_on_exception, true), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());
 
-    bool need_validate_utf8 = false;
     for (size_t i = 0; i < sample.columns(); ++i)
     {
-        if (!sample.getByPosition(i).type->textCanContainOnlyValidUTF8())
-            need_validate_utf8 = true;
-
         /// As element names, we will use the column name if it has a valid form, or "field", otherwise.
         /// The condition below is more strict than the XML standard requires.
         bool is_column_name_suitable = true;
@@ -42,14 +39,6 @@ XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_
             ? fields[i].name
             : "field";
     }
-
-    if (need_validate_utf8)
-    {
-        validating_ostr = std::make_unique<WriteBufferValidUTF8>(out);
-        ostr = validating_ostr.get();
-    }
-    else
-        ostr = &out;
 }
 
 
@@ -106,11 +95,9 @@ void XMLRowOutputFormat::writeRowEndDelimiter()
     ++row_count;
 }
 
-
 void XMLRowOutputFormat::writeSuffix()
 {
     writeCString("\t</data>\n", *ostr);
-
 }
 
 
@@ -202,17 +189,24 @@ void XMLRowOutputFormat::finalizeImpl()
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);
 
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 
-    if (format_settings.write_statistics)
+    if (!exception_message.empty())
+        writeException();
+    else if (format_settings.write_statistics)
         writeStatistics();
 
     writeCString("</result>\n", *ostr);
     ostr->next();
+}
+
+void XMLRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+    row_count = 0;
+    statistics = Statistics();
 }
 
 void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
@@ -240,16 +234,21 @@ void XMLRowOutputFormat::writeStatistics()
     writeCString("\t</statistics>\n", *ostr);
 }
 
+void XMLRowOutputFormat::writeException()
+{
+    writeCString("\t<exception>", *ostr);
+    writeXMLStringForTextElement(exception_message, *ostr);
+    writeCString("</exception>\n", *ostr);
+}
 
 void registerOutputFormatXML(FormatFactory & factory)
 {
     factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, sample, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("XML");

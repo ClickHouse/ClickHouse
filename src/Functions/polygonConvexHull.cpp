@@ -3,16 +3,8 @@
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
-
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeCustomGeo.h>
 
 #include <memory>
 #include <string>
@@ -24,6 +16,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+namespace
+{
 
 template <typename Point>
 class FunctionPolygonConvexHull : public IFunction
@@ -70,7 +65,7 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<Point>>)
-                throw Exception(fmt::format("The argument of function {} must not be a Point", getName()), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must not be a Point", getName());
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -94,10 +89,10 @@ public:
     }
 };
 
-
 template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
+}
 
 REGISTER_FUNCTION(PolygonConvexHull)
 {

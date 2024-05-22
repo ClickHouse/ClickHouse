@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -37,7 +37,7 @@ DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     auto expression = config.getString(config_prefix + ".expression", "");
 
     if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
 
     const auto type_name = config.getString(config_prefix + ".type", default_type);
     return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
@@ -159,12 +159,12 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         const auto & expected_type = key_attributes_types[i];
         const auto & actual_type = key_types[i];
 
-        if (!areTypesEqual(expected_type, actual_type))
+        if (!expected_type->equals(*actual_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Key type for complex key at position {} does not match, expected {}, found {}",
-            std::to_string(i),
-            expected_type->getName(),
-            actual_type->getName());
+                "Key type for complex key at position {} does not match, expected {}, found {}",
+                i,
+                expected_type->getName(),
+                actual_type->getName());
     }
 }
 
@@ -198,7 +198,7 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string 
 {
     const auto & attribute = getAttribute(attribute_name);
 
-    if (!areTypesEqual(attribute.type, type))
+    if (!attribute.type->equals(*type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Attribute type does not match, expected {}, found {}",
             attribute.type->getName(),
@@ -284,7 +284,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     std::unordered_set<String> attribute_names;
     std::vector<DictionaryAttribute> res_attributes;
 
-    const FormatSettings format_settings;
+    const FormatSettings format_settings = {};
 
     for (const auto & config_elem : config_elems)
     {
@@ -429,9 +429,10 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
     if (!valid_range)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
-            " Actual 'range_min' and 'range_max' type is {}",
-            range_min->type->getName());
+                        "Dictionary structure type of 'range_min' and 'range_max' should "
+                        "be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
+                        " Actual 'range_min' and 'range_max' type is {}",
+                        range_min->type->getName());
     }
 
     if (!range_min->expression.empty() || !range_max->expression.empty())

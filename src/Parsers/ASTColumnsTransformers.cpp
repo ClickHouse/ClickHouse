@@ -5,18 +5,28 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <IO/Operators.h>
-#include <re2/re2.h>
 #include <stack>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
+}
+
+void ASTColumnsTransformerList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    for (const auto & child : children)
+    {
+        settings.ostr << ' ';
+        child->formatImpl(settings, state, frame);
+    }
 }
 
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
@@ -135,15 +145,15 @@ void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const
     }
 }
 
-void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
     if (parameters)
-        parameters->updateTreeHashImpl(hash_state);
+        parameters->updateTreeHashImpl(hash_state, ignore_aliases);
 
     if (lambda)
-        lambda->updateTreeHashImpl(hash_state);
+        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);
@@ -151,7 +161,7 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
     hash_state.update(column_name_prefix.size());
     hash_state.update(column_name_prefix);
 
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -170,8 +180,8 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         (*it)->formatImpl(settings, state, frame);
     }
 
-    if (!original_pattern.empty())
-        settings.ostr << quoteString(original_pattern);
+    if (pattern)
+        settings.ostr << quoteString(*pattern);
 
     if (children.size() > 1)
         settings.ostr << ")";
@@ -193,31 +203,34 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
         (*it)->appendColumnName(ostr);
     }
 
-    if (!original_pattern.empty())
-        writeQuotedString(original_pattern, ostr);
+    if (pattern)
+        writeQuotedString(*pattern, ostr);
 
     if (children.size() > 1)
         writeChar(')', ostr);
 }
 
-void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
+    if (pattern)
+    {
+        hash_state.update(pattern->size());
+        hash_state.update(*pattern);
+    }
 
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
-    if (original_pattern.empty())
+    if (!pattern)
     {
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
-        for (auto it = nodes.begin(); it != nodes.end();)
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -234,11 +247,13 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
     else
     {
-        for (auto it = nodes.begin(); it != nodes.end();)
+        auto regexp = getMatcher();
+
+        for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
-                if (isColumnMatching(id->shortName()))
+                if (RE2::PartialMatch(id->shortName(), *regexp))
                 {
                     it = nodes.erase(it);
                     continue;
@@ -254,47 +269,54 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         std::for_each(expected_columns.begin(), expected_columns.end(),
             [&](String x) { expected_columns_str += (" " + x) ; });
 
-        throw Exception(
-            "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str,
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer EXCEPT expects following column(s) :{}",
+            expected_columns_str);
     }
 }
 
-void ASTColumnsExceptTransformer::setPattern(String pattern)
+void ASTColumnsExceptTransformer::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+    pattern = std::move(pattern_);
 }
 
-bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
+std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 {
-    return RE2::PartialMatch(column_name, *column_matcher);
+    if (!pattern)
+        return {};
+
+    auto regexp = std::make_shared<re2::RE2>(*pattern, re2::RE2::Quiet);
+    if (!regexp->ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "COLUMNS pattern {} cannot be compiled: {}", *pattern, regexp->error());
+    return regexp;
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    expr->formatImpl(settings, state, frame);
+    assert(children.size() == 1);
+
+    children[0]->formatImpl(settings, state, frame);
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
 {
-    expr->appendColumnName(ostr);
+    assert(children.size() == 1);
+
+    children[0]->appendColumnName(ostr);
     writeCString(" AS ", ostr);
     writeProbablyBackQuotedString(name, ostr);
 }
 
-void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    assert(children.size() == 1);
+
     hash_state.update(name.size());
     hash_state.update(name);
-    expr->updateTreeHashImpl(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
+    children[0]->updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -336,10 +358,10 @@ void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const
         writeChar(')', ostr);
 }
 
-void ASTColumnsReplaceTransformer::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsReplaceTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)
@@ -363,10 +385,9 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     {
         auto & replacement = replace_child->as<Replacement &>();
         if (replace_map.find(replacement.name) != replace_map.end())
-            throw Exception(
-                "Expressions in columns transformer REPLACE should not contain the same replacement more than once",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        replace_map.emplace(replacement.name, replacement.expr);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
+        replace_map.emplace(replacement.name, replacement.children[0]);
     }
 
     for (auto & column : nodes)
@@ -405,9 +426,8 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
                 expected_columns += ", ";
             expected_columns += elem.first;
         }
-        throw Exception(
-            "Columns transformer REPLACE expects following column(s) : " + expected_columns,
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer REPLACE expects following column(s) : {}",
+            expected_columns);
     }
 
 }

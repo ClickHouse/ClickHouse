@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
@@ -36,11 +37,19 @@ rm -f "$tmp_file" >/dev/null 2>&1
 echo 3
 # failure at before query start
 $CLICKHOUSE_CLIENT \
-  --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
+  --query="SELECT 1 FROM system.numbers WHERE credit_card_number='find_me_TOPSECRET=TOPSECRET' FORMAT Null" \
   --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > "$tmp_file"
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 3a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 3b'
+
+echo '3.1'
+echo "SELECT 1 FROM system.numbers WHERE credit_card_number='find_me_TOPSECRET=TOPSECRET' FORMAT Null" | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @- >"$tmp_file" 2>&1
+
+grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 3.1a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 3.1b'
+
+#echo "SELECT 1 FROM system.numbers WHERE credit_card_number='find_me_TOPSECRET=TOPSECRET' FORMAT Null" | curl -sSg http://172.17.0.3:8123/ -d @-
 
 rm -f "$tmp_file" >/dev/null 2>&1
 echo 4
@@ -56,6 +65,7 @@ echo 5
 # run in background
 rm -f "$tmp_file2" >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
+  --function_sleep_max_microseconds_per_block 60000000 \
   --query=\"select sleepEachRow(1) from numbers(10) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
   --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > $tmp_file2" &
 
@@ -98,6 +108,21 @@ echo 7
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
   --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() and query like '%TOPSECRET%';"
+
+echo '7.1'
+# query_log exceptions
+$CLICKHOUSE_CLIENT \
+  --server_logs_file=/dev/null \
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() and exception like '%TOPSECRET%'"
+
+echo '7.2'
+
+# not perfect: when run in parallel with other tests that check can give false-negative result
+# because other tests can overwrite the last_error_message, where we check the absence of sensitive data.
+# But it's still good enough for CI - in case of regressions it will start flapping (normally it shouldn't)
+$CLICKHOUSE_CLIENT \
+  --server_logs_file=/dev/null \
+  --query="select * from system.errors where last_error_message like '%TOPSECRET%';"
 
 
 rm -f "$tmp_file" >/dev/null 2>&1

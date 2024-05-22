@@ -1,6 +1,6 @@
-#include "FunctionsStringSearchToString.h"
-#include "FunctionFactory.h"
-#include "Regexps.h"
+#include <Functions/FunctionsStringSearchToString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/Regexps.h>
 #include <Common/OptimizedRegularExpression.h>
 
 
@@ -21,7 +21,7 @@ struct ExtractImpl
         res_data.reserve(data.size() / 5);
         res_offsets.resize(offsets.size());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
 
         unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;

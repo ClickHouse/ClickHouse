@@ -1,7 +1,8 @@
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Interpreters/sortBlock.h>
 #include <Core/SortCursor.h>
+#include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
+#include <Common/iota.h>
 
 namespace DB
 {
@@ -36,9 +37,7 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
     else
     {
         rows_to_compare.resize(num_rows);
-
-        for (size_t i = 0; i < num_rows; ++i)
-            rows_to_compare[i] = i;
+        iota(rows_to_compare.data(), num_rows, UInt64(0));
 
         size_t size = description.size();
         for (size_t i = 0; i < size; ++i)
@@ -111,7 +110,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
         read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    size_t block_rows_before_filter = block.rows();
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
@@ -138,10 +136,8 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    size_t block_rows_after_filter = block.rows();
-
     /// Check if we can use this block for optimization.
-    if (min_limit_for_partial_sort_optimization <= limit && block_rows_after_filter > 0 && limit <= block_rows_before_filter)
+    if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
     {
         /** If we filtered more than limit rows from block take block last row.
           * Otherwise take last limit row.
@@ -149,7 +145,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
           * If current threshold value is empty, update current threshold value.
           * If min block value is less than current threshold value, update current threshold value.
           */
-        size_t min_row_to_compare = limit <= block_rows_after_filter ? (limit - 1) : (block_rows_after_filter - 1);
+        size_t min_row_to_compare = limit - 1;
         auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
@@ -162,7 +158,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
             {
                 MutableColumnPtr sort_description_threshold_column_updated = raw_block_columns[i]->cloneEmpty();
                 sort_description_threshold_column_updated->insertFrom(*raw_block_columns[i], min_row_to_compare);
-                sort_description_threshold_columns_updated[i] = std::move(sort_description_threshold_column_updated);
+                sort_description_threshold_columns_updated[i] = sort_description_threshold_column_updated->convertToFullColumnIfSparse();
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);

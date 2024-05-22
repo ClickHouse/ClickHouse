@@ -6,11 +6,7 @@
 /// It is only enabled in debug build (its intended use is for CI checks).
 #if !defined(NDEBUG)
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
-#else
-    #pragma GCC diagnostic ignored "-Wbuiltin-declaration-mismatch"
-#endif
+#pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 
 /// We cannot use libc headers here.
 long write(int, const void *, unsigned long);
@@ -31,7 +27,8 @@ TRAP(argp_state_help)
 TRAP(argp_usage)
 TRAP(asctime)
 TRAP(clearenv)
-TRAP(crypt)
+// Redefined at contrib/libbcrypt/crypt_blowfish/wrapper.c:186
+// TRAP(crypt)
 TRAP(ctime)
 TRAP(cuserid)
 TRAP(drand48)

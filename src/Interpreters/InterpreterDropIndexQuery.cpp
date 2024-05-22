@@ -1,7 +1,9 @@
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -36,11 +38,11 @@ BlockIO InterpreterDropIndexQuery::execute()
     query_ptr->as<ASTDropIndexQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (typeid_cast<DatabaseReplicated *>(database.get()) && !current_context->getClientInfo().is_replicated_database_internal)
+    if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return assert_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, current_context);
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context);
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
@@ -66,6 +68,15 @@ BlockIO InterpreterDropIndexQuery::execute()
     table->alter(alter_commands, current_context, alter_lock);
 
     return {};
+}
+
+void registerInterpreterDropIndexQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropIndexQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropIndexQuery", create_fn);
 }
 
 }

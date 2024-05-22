@@ -1,16 +1,18 @@
 #include "LibraryBridgeHelper.h"
 
+#include <IO/ConnectionTimeouts.h>
+
 namespace DB
 {
 
 LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
     : IBridgeHelper(context_)
     , config(context_->getConfigRef())
-    , log(&Poco::Logger::get("LibraryBridgeHelper"))
+    , log(getLogger("LibraryBridgeHelper"))
     , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
     , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
-    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
+    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings().keep_alive_timeout))
 {
 }
 

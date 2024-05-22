@@ -1,0 +1,10 @@
+<test>
+    <settings>
+        <max_threads>30</max_threads>
+        <max_bytes_before_external_group_by>10485760</max_bytes_before_external_group_by>
+    </settings>
+
+    <query>SELECT number, count() FROM numbers_mt(5000000) GROUP BY number FORMAT Null;</query>
+    <query>SELECT number, count() FROM numbers_mt(15000000) GROUP BY number FORMAT Null;</query>
+    <query>SELECT number, count() FROM numbers_mt(30000000) GROUP BY number FORMAT Null;</query>
+</test>

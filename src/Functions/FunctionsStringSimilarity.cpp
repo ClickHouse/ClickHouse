@@ -3,6 +3,7 @@
 #include <Functions/FunctionsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
@@ -22,6 +23,10 @@
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
 #    include <arm_acle.h>
+#endif
+
+#if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include "vec_crc32.h"
 #endif
 
 namespace DB
@@ -70,6 +75,10 @@ struct NgramDistanceImpl
         return _mm_crc32_u64(code_points[2], combined) & 0xFFFFu;
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cd(code_points[2], combined) & 0xFFFFu;
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return crc32_ppc(code_points[2], reinterpret_cast<const unsigned char *>(&combined), sizeof(combined)) & 0xFFFFu;
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        return s390x_crc32c(code_points[2], combined) & 0xFFFFu;
 #else
         return (intHashCRC32(combined) ^ intHashCRC32(code_points[2])) & 0xFFFFu;
 #endif
@@ -100,6 +109,8 @@ struct NgramDistanceImpl
 
         if constexpr (case_insensitive)
         {
+            /// Due to PODArray padding accessing more elements should be OK
+            __msan_unpoison(code_points + (N - 1), padding_offset * sizeof(CodePoint));
             /// We really need template lambdas with C++20 to do it inline
             unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
         }
@@ -128,18 +139,30 @@ struct NgramDistanceImpl
             {
                 case 1:
                     res = 0;
-                    memcpy(&res, pos, 1);
+                    if constexpr (std::endian::native == std::endian::little)
+                        memcpy(&res, pos, 1);
+                    else
+                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 1, pos, 1);
                     break;
                 case 2:
                     res = 0;
-                    memcpy(&res, pos, 2);
+                    if constexpr (std::endian::native == std::endian::little)
+                        memcpy(&res, pos, 2);
+                    else
+                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 2, pos, 2);
                     break;
                 case 3:
                     res = 0;
-                    memcpy(&res, pos, 3);
+                    if constexpr (std::endian::native == std::endian::little)
+                        memcpy(&res, pos, 3);
+                    else
+                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 3, pos, 3);
                     break;
                 default:
-                    memcpy(&res, pos, 4);
+                    if constexpr (std::endian::native == std::endian::little)
+                        memcpy(&res, pos, 4);
+                    else
+                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 4, pos, 4);
             }
 
             /// This is not a really true case insensitive utf8. We zero the 5-th bit of every byte.
@@ -277,9 +300,9 @@ struct NgramDistanceImpl
             size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats.get(), distance, nullptr);
             /// For !symmetric version we should not use first_size.
             if constexpr (symmetric)
-                res = distance * 1.f / std::max(first_size + second_size, static_cast<size_t>(1));
+                res = distance * 1.f / std::max(first_size + second_size, 1uz);
             else
-                res = 1.f - distance * 1.f / std::max(second_size, static_cast<size_t>(1));
+                res = 1.f - distance * 1.f / std::max(second_size, 1uz);
         }
         else
         {
@@ -345,9 +368,9 @@ struct NgramDistanceImpl
 
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, static_cast<size_t>(1));
+                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, static_cast<size_t>(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
             }
             else
             {
@@ -416,7 +439,7 @@ struct NgramDistanceImpl
                     for (size_t j = 0; j < needle_stats_size; ++j)
                         --common_stats[needle_ngram_storage[j]];
 
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, static_cast<size_t>(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
                 }
                 else
                 {
@@ -463,9 +486,9 @@ struct NgramDistanceImpl
                     ngram_storage.get());
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, static_cast<size_t>(1));
+                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, static_cast<size_t>(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
             }
             else
             {

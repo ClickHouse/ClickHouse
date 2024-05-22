@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -9,6 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/ParserDataType.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -23,6 +25,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
+ */
+class ParserSQLSecurity : public IParserBase
+{
+protected:
+    const char * getName() const override { return "sql security"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Storage engine or Codec. For example:
  *         Memory()
@@ -119,27 +129,35 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserKeyword s_default{Keyword::DEFAULT};
+    ParserKeyword s_null{Keyword::NULL_KEYWORD};
+    ParserKeyword s_not{Keyword::NOT};
+    ParserKeyword s_materialized{Keyword::MATERIALIZED};
+    ParserKeyword s_ephemeral{Keyword::EPHEMERAL};
+    ParserKeyword s_alias{Keyword::ALIAS};
+    ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
+    ParserKeyword s_comment{Keyword::COMMENT};
+    ParserKeyword s_codec{Keyword::CODEC};
+    ParserKeyword s_stat{Keyword::STATISTIC};
+    ParserKeyword s_ttl{Keyword::TTL};
+    ParserKeyword s_remove{Keyword::REMOVE};
+    ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_type{Keyword::TYPE};
+    ParserKeyword s_collate{Keyword::COLLATE};
+    ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
+
     NameParser name_parser;
     ParserDataType type_parser;
-    ParserKeyword s_default{"DEFAULT"};
-    ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not{"NOT"};
-    ParserKeyword s_materialized{"MATERIALIZED"};
-    ParserKeyword s_ephemeral{"EPHEMERAL"};
-    ParserKeyword s_alias{"ALIAS"};
-    ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
-    ParserKeyword s_comment{"COMMENT"};
-    ParserKeyword s_codec{"CODEC"};
-    ParserKeyword s_ttl{"TTL"};
-    ParserKeyword s_remove{"REMOVE"};
-    ParserKeyword s_type{"TYPE"};
-    ParserKeyword s_collate{"COLLATE"};
-    ParserTernaryOperatorExpression expr_parser;
+    ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
+    ParserStatisticType stat_type_parser;
     ParserExpression expression_parser;
+    ParserSetQuery settings_parser(true);
 
     /// mandatory column name
     ASTPtr name;
@@ -151,11 +169,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
-    /// doesn't check that parsed string is existing data type. In this way
-    /// REMOVE keyword can be parsed as data type and further parsing will fail.
-    /// So we just check this keyword and in case of success return column
-    /// declaration with name only.
-    if (!require_type && s_remove.checkWithoutMoving(pos, expected))
+    /// doesn't check that parsed string is existing data type. In this way,
+    /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
+    /// and further parsing will fail. So we just check these keyword and in
+    /// case of success return column declaration with name only.
+    if (!require_type
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;
@@ -170,11 +189,15 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr type;
     String default_specifier;
     std::optional<bool> null_modifier;
+    bool ephemeral_default = false;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
+    ASTPtr stat_type_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
+    ASTPtr settings;
+    bool primary_key_specifier = false;
 
     auto null_check_without_moving = [&]() -> bool
     {
@@ -196,6 +219,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
+        && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
@@ -204,11 +228,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
-        if (s_collate.ignore(pos, expected))
-        {
-            if (!collation_parser.parse(pos, collation_expression, expected))
-                return false;
-        }
+        if (s_collate.ignore(pos, expected)
+            && !collation_parser.parse(pos, collation_expression, expected))
+            return false;
     }
 
     if (allow_null_modifiers)
@@ -223,6 +245,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             null_modifier.emplace(true);
     }
 
+    /// Collate is also allowed after NULL/NOT NULL
+    if (!collation_expression && s_collate.ignore(pos, expected)
+        && !collation_parser.parse(pos, collation_expression, expected))
+        return false;
+
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
     {
@@ -235,8 +262,18 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (s_ephemeral.ignore(pos, expected))
     {
         default_specifier = s_ephemeral.getName();
-        if (!literal_parser.parse(pos, default_expression, expected) && type)
-            default_expression = std::make_shared<ASTLiteral>(Field());
+        if (!expr_parser.parse(pos, default_expression, expected) && type)
+        {
+            ephemeral_default = true;
+
+            auto default_function = std::make_shared<ASTFunction>();
+            default_function->name = "defaultValueOfTypeName";
+            default_function->arguments = std::make_shared<ASTExpressionList>();
+            // Ephemeral columns don't really have secrets but we need to format
+            // into a String, hence the strange call
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
+            default_expression = default_function;
+        }
 
         if (!default_expression && !type)
             return false;
@@ -249,11 +286,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
-            Pos tmp_pos(tokens, 0);
+            Pos tmp_pos(tokens, pos.max_depth, pos.max_backtracks);
             Expected tmp_expected;
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
     }
+    /// This will rule out unusual expressions like *, t.* that cannot appear in DEFAULT
+    if (default_expression && !dynamic_cast<const ASTWithAlias *>(default_expression.get()))
+        return false;
 
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
@@ -283,10 +323,43 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_stat.ignore(pos, expected))
+    {
+        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+            return false;
+    }
+
     if (s_ttl.ignore(pos, expected))
     {
         if (!expression_parser.parse(pos, ttl_expression, expected))
             return false;
+    }
+
+    if (s_primary_key.ignore(pos, expected))
+    {
+        primary_key_specifier = true;
+    }
+
+    auto old_pos = pos;
+    if (s_settings.ignore(pos, expected))
+    {
+        /// When the keyword `SETTINGS` appear here, it can be a column settings declaration or query settings
+        /// For example:
+        /// - Column settings: `ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS (name = value)`
+        /// - Query settings: ` ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS mutation_sync = 2`
+        /// So after parsing keyword `SETTINGS`, we check if it's followed by an `(` then it's the column
+        /// settings, otherwise it's the query settings and we need to move `pos` back to origin position.
+        ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+        if (parser_opening_bracket.ignore(pos, expected))
+        {
+            if (!settings_parser.parse(pos, settings, expected))
+                return false;
+            ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+            if (!parser_closing_bracket.ignore(pos, expected))
+                return false;
+        }
+        else
+            pos = old_pos;
     }
 
     node = column_declaration;
@@ -302,6 +375,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     column_declaration->default_specifier = default_specifier;
     if (default_expression)
     {
+        column_declaration->ephemeral_default = ephemeral_default;
         column_declaration->default_expression = default_expression;
         column_declaration->children.push_back(std::move(default_expression));
     }
@@ -318,16 +392,31 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(codec_expression));
     }
 
+    if (settings)
+    {
+        column_declaration->settings = settings;
+        column_declaration->children.push_back(std::move(settings));
+    }
+
+    if (stat_type_expression)
+    {
+        column_declaration->stat_type = stat_type_expression;
+        column_declaration->children.push_back(std::move(stat_type_expression));
+    }
+
     if (ttl_expression)
     {
         column_declaration->ttl = ttl_expression;
         column_declaration->children.push_back(std::move(ttl_expression));
     }
+
     if (collation_expression)
     {
         column_declaration->collation = collation_expression;
         column_declaration->children.push_back(std::move(collation_expression));
     }
+
+    column_declaration->primary_key_specifier = primary_key_specifier;
 
     return true;
 }
@@ -363,6 +452,16 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStatisticDeclaration : public IParserBase
+{
+public:
+    ParserStatisticDeclaration() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserConstraintDeclaration : public IParserBase
 {
 protected:
@@ -374,6 +473,13 @@ class ParserProjectionDeclaration : public IParserBase
 {
 protected:
     const char * getName() const override { return "projection declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserForeignKeyDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "foreign key declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -420,9 +526,20 @@ protected:
   */
 class ParserStorage : public IParserBase
 {
+public:
+    /// What kind of engine we're going to parse.
+    enum EngineKind
+    {
+        TABLE_ENGINE,
+        DATABASE_ENGINE,
+    };
+
+    explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+
 protected:
     const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    EngineKind engine_kind;
 };
 
 /** Query like this:
@@ -508,6 +625,14 @@ class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "CREATE DICTIONARY"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// CREATE NAMED COLLECTION name [ON CLUSTER cluster]
+class ParserCreateNamedCollectionQuery : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CREATE NAMED COLLECTION"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

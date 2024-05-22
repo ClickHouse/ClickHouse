@@ -36,9 +36,9 @@ FROM
     FROM
     (
         SELECT
-            1 AS co,
-            2 AS co2,
-            3 AS co3
+            dummy + 1 AS co,
+            dummy + 2 AS co2,
+            dummy + 3 AS co3
     )
     GROUP BY
         co,
@@ -50,12 +50,12 @@ FROM
 WHERE (co != 0) AND (co2 != 2)
 1	0	3	1
 1	0	0	1
-SELECT alias AS name
+SELECT name
 FROM
 (
-    SELECT name AS alias
+    SELECT name
     FROM system.settings
-    WHERE alias = \'enable_optimize_predicate_expression\'
+    WHERE name = \'enable_optimize_predicate_expression\'
 )
 ANY INNER JOIN
 (

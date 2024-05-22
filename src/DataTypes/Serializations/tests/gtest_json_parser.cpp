@@ -34,7 +34,7 @@ TEST(JSONDataParser, ReadJSON)
         JSONDataParser<SimdJSONParser> parser;
         ReadBufferFromString buf(json_bad);
         String res;
-        parser.readJSON(res, buf);
+        JSONDataParser<SimdJSONParser>::readJSON(res, buf);
         ASSERT_EQ(json1, res);
     }
 
@@ -44,7 +44,7 @@ TEST(JSONDataParser, ReadJSON)
         JSONDataParser<SimdJSONParser> parser;
         ReadBufferFromString buf(json_bad);
         String res;
-        parser.readJSON(res, buf);
+        JSONDataParser<SimdJSONParser>::readJSON(res, buf);
         ASSERT_EQ(json2, res);
     }
 }
@@ -69,7 +69,7 @@ static std::ostream & operator<<(std::ostream & ostr, const JSONPathAndValue & p
     bool first = true;
     for (const auto & part : path_and_value.path.getParts())
     {
-        ostr << (first ? "{" : ", {") << part.key << ", " << part.is_nested << ", " << part.anonymous_array_level << "}";
+        ostr << (first ? "{" : ", {") << part.key << ", " << part.is_nested << ", " << static_cast<uint8_t>(part.anonymous_array_level) << "}";
         first = false;
     }
 

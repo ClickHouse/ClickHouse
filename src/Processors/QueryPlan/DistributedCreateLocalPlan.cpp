@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+
+#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 namespace DB
 {
@@ -10,12 +14,14 @@ namespace DB
 namespace
 {
 
-void addConvertingActions(QueryPlan & plan, const Block & header)
+void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
 {
     if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
         return;
 
-    auto get_converting_dag = [](const Block & block_, const Block & header_)
+    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
+
+    auto get_converting_dag = [mode](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -23,7 +29,7 @@ void addConvertingActions(QueryPlan & plan, const Block & header)
         return ActionsDAG::makeConvertingActions(
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
+            mode,
             true);
     };
 
@@ -39,36 +45,43 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
-    UInt32 shard_num,
-    UInt32 shard_count,
-    size_t replica_num,
-    size_t replica_count,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator)
+    size_t shard_num,
+    size_t shard_count,
+    bool has_missing_objects)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
+    auto new_context = Context::createCopy(context);
+
+    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
     /// Do not apply AST optimizations, because query
     /// is already optimized and some optimizations
     /// can be applied only for non-distributed tables
     /// and we can produce query, inconsistent with remote plans.
-    auto interpreter = InterpreterSelectQuery(
-        query_ast, context,
-        SelectQueryOptions(processed_stage)
-            .setShardInfo(shard_num, shard_count)
-            .ignoreASTOptimizations());
+    auto select_query_options = SelectQueryOptions(processed_stage)
+        .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
+        .ignoreASTOptimizations();
 
-    interpreter.setProperClientInfo(replica_num, replica_count);
-    if (coordinator)
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
-        {
-            return coordinator->handleRequest(request);
-        });
+        /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
+        /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
+        /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+        new_context->setSetting("enable_positional_arguments", Field(false));
+        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options);
+        interpreter.buildQueryPlan(*query_plan);
     }
 
-    interpreter.buildQueryPlan(*query_plan);
-    addConvertingActions(*query_plan, header);
+    addConvertingActions(*query_plan, header, has_missing_objects);
     return query_plan;
 }
 

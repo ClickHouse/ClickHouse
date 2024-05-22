@@ -2,15 +2,15 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <memory>
 
 namespace DB
 {
 
 class MergeTreeIndexHyposesis;
 
-struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 {
+public:
     explicit MergeTreeIndexGranuleHypothesis(
         const String & index_name_);
 
@@ -31,8 +31,9 @@ struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorHypothesis : IMergeTreeIndexAggregator
+class MergeTreeIndexAggregatorHypothesis : public IMergeTreeIndexAggregator
 {
+public:
     explicit MergeTreeIndexAggregatorHypothesis(
         const String & index_name_, const String & column_name_);
 
@@ -65,15 +66,13 @@ public:
     bool isMergeable() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const override;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
 
     MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     size_t max_rows = 0;
 };

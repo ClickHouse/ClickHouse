@@ -1,7 +1,7 @@
 #pragma once
 
-#include "FunctionsURL.h"
 #include <base/find_symbols.h>
+#include <Functions/StringHelpers.h>
 
 
 namespace DB
@@ -34,4 +34,3 @@ struct ExtractQueryStringAndFragment
 };
 
 }
-

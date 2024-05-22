@@ -1,204 +1,228 @@
 #!/usr/bin/env python3
 
-from distutils.version import StrictVersion
+import argparse
 import logging
 import os
 import subprocess
 import sys
+from pathlib import Path
+from typing import List, Tuple
 
-from github import Github
+from pip._vendor.packaging.version import Version
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from build_download_helper import download_builds_filter
-from upload_result_helper import upload_results
-from docker_pull_helper import get_images_with_versions
-from commit_status_helper import post_commit_status
-from clickhouse_helper import (
-    ClickHouseHelper,
-    mark_flaky_tests,
-    prepare_tests_results_for_clickhouse,
-)
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPORT_PATH, TEMP_PATH
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
-MAX_GLIBC_VERSION = "2.4"
 DOWNLOAD_RETRIES_COUNT = 5
-CHECK_NAME = "Compatibility check"
 
 
-def process_os_check(log_path):
-    name = os.path.basename(log_path)
-    with open(log_path, "r") as log:
+def process_os_check(log_path: Path) -> TestResult:
+    name = log_path.name
+    with open(log_path, "r", encoding="utf-8") as log:
         line = log.read().split("\n")[0].strip()
         if line != "OK":
-            return (name, "FAIL")
-        else:
-            return (name, "OK")
+            return TestResult(name, "FAIL")
+        return TestResult(name, "OK")
 
 
-def process_glibc_check(log_path):
-    bad_lines = []
-    with open(log_path, "r") as log:
+def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
+    test_results = []  # type: TestResults
+    with open(log_path, "r", encoding="utf-8") as log:
         for line in log:
             if line.strip():
                 columns = line.strip().split(" ")
                 symbol_with_glibc = columns[-2]  # sysconf@GLIBC_2.2.5
                 _, version = symbol_with_glibc.split("@GLIBC_")
                 if version == "PRIVATE":
-                    bad_lines.append((symbol_with_glibc, "FAIL"))
-                elif StrictVersion(version) > MAX_GLIBC_VERSION:
-                    bad_lines.append((symbol_with_glibc, "FAIL"))
-    if not bad_lines:
-        bad_lines.append(("glibc check", "OK"))
-    return bad_lines
+                    test_results.append(TestResult(symbol_with_glibc, "FAIL"))
+                elif Version(version) > Version(max_glibc_version):
+                    test_results.append(TestResult(symbol_with_glibc, "FAIL"))
+    if not test_results:
+        test_results.append(TestResult("glibc check", "OK"))
+    return test_results
 
 
-def process_result(result_folder, server_log_folder):
-    summary = process_glibc_check(os.path.join(result_folder, "glibc.log"))
+def process_result(
+    result_directory: Path,
+    server_log_directory: Path,
+    check_glibc: bool,
+    check_distributions: bool,
+    max_glibc_version: str,
+) -> Tuple[str, str, TestResults, List[Path]]:
+    glibc_log_path = result_directory / "glibc.log"
+    test_results = process_glibc_check(glibc_log_path, max_glibc_version)
 
-    status = "success"
+    status = SUCCESS
     description = "Compatibility check passed"
-    if len(summary) > 1 or summary[0][1] != "OK":
-        status = "failure"
-        description = "glibc check failed"
 
-    if status == "success":
+    if check_glibc:
+        if len(test_results) > 1 or test_results[0].status != "OK":
+            status = FAILURE
+            description = "glibc check failed"
+
+    if status == SUCCESS and check_distributions:
         for operating_system in ("ubuntu:12.04", "centos:5"):
-            result = process_os_check(os.path.join(result_folder, operating_system))
-            if result[1] != "OK":
-                status = "failure"
+            test_result = process_os_check(result_directory / operating_system)
+            if test_result.status != "OK":
+                status = FAILURE
                 description = f"Old {operating_system} failed"
-                summary += [result]
+                test_results += [test_result]
                 break
-            summary += [result]
+            test_results += [test_result]
 
-    server_log_path = os.path.join(server_log_folder, "clickhouse-server.log")
-    stderr_log_path = os.path.join(server_log_folder, "stderr.log")
-    client_stderr_log_path = os.path.join(server_log_folder, "clientstderr.log")
-    result_logs = []
-    if os.path.exists(server_log_path):
-        result_logs.append(server_log_path)
+    result_logs = [
+        p
+        for p in [
+            server_log_directory / name
+            for name in ("clickhouse-server.log", "stderr.log", "clientstderr.log")
+        ]
+        + [glibc_log_path]
+        if p.exists()
+    ]
 
-    if os.path.exists(stderr_log_path):
-        result_logs.append(stderr_log_path)
-
-    if os.path.exists(client_stderr_log_path):
-        result_logs.append(client_stderr_log_path)
-
-    return status, description, summary, result_logs
+    return status, description, test_results, result_logs
 
 
-def get_run_commands(
-    build_path, result_folder, server_log_folder, image_centos, image_ubuntu
-):
+def get_run_commands_glibc(build_path: Path, result_directory: Path) -> List[str]:
     return [
-        f"readelf -s {build_path}/usr/bin/clickhouse | grep '@GLIBC_' > {result_folder}/glibc.log",
-        f"readelf -s {build_path}/usr/bin/clickhouse-odbc-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
-        f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
-        f"--volume={build_path}/etc/clickhouse-server:/config "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image_ubuntu} > {result_folder}/ubuntu:12.04",
-        f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
-        f"--volume={build_path}/etc/clickhouse-server:/config "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image_centos} > {result_folder}/centos:5",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse | "
+        f"grep '@GLIBC_' > {result_directory}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse-odbc-bridge | "
+        f"grep '@GLIBC_' >> {result_directory}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse-library-bridge | "
+        f"grep '@GLIBC_' >> {result_directory}/glibc.log",
     ]
 
 
-if __name__ == "__main__":
+def get_run_commands_distributions(
+    build_path: Path,
+    result_directory: Path,
+    server_log_directory: Path,
+    image_centos: DockerImage,
+    image_ubuntu: DockerImage,
+) -> List[str]:
+    return [
+        f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
+        f"--volume={build_path}/etc/clickhouse-server:/config "
+        f"--volume={server_log_directory}:/var/log/clickhouse-server {image_ubuntu} > "
+        f"{result_directory}/ubuntu:12.04",
+        f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
+        f"--volume={build_path}/etc/clickhouse-server:/config "
+        f"--volume={server_log_directory}:/var/log/clickhouse-server {image_centos} > "
+        f"{result_directory}/centos:5",
+    ]
+
+
+def parse_args():
+    parser = argparse.ArgumentParser("Check compatibility with old distributions")
+    parser.add_argument("--check-name", required=False)
+    return parser.parse_args()
+
+
+def main():
     logging.basicConfig(level=logging.INFO)
+
+    args = parse_args()
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert check_name
+    check_glibc = True
+    # currently hardcoded to x86, don't enable for ARM
+    check_distributions = (
+        "aarch64" not in check_name.lower() and "arm64" not in check_name.lower()
+    )
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path.mkdir(parents=True, exist_ok=True)
 
-    pr_info = PRInfo()
-
-    gh = Github(get_best_robot_token(), per_page=100)
-
-    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
-    docker_images = get_images_with_versions(reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU])
-
-    packages_path = os.path.join(temp_path, "packages")
-    if not os.path.exists(packages_path):
-        os.makedirs(packages_path)
+    packages_path = temp_path / "packages"
+    packages_path.mkdir(parents=True, exist_ok=True)
 
     def url_filter(url):
         return url.endswith(".deb") and (
             "clickhouse-common-static_" in url or "clickhouse-server_" in url
         )
 
-    download_builds_filter(CHECK_NAME, reports_path, packages_path, url_filter)
+    download_builds_filter(check_name, reports_path, packages_path, url_filter)
 
-    for f in os.listdir(packages_path):
-        if ".deb" in f:
-            full_path = os.path.join(packages_path, f)
+    for package in packages_path.iterdir():
+        if package.suffix == ".deb":
             subprocess.check_call(
-                f"dpkg -x {full_path} {packages_path} && rm {full_path}", shell=True
+                f"dpkg -x {package} {packages_path} && rm {package}", shell=True
             )
 
-    server_log_path = os.path.join(temp_path, "server_log")
-    if not os.path.exists(server_log_path):
-        os.makedirs(server_log_path)
+    server_log_path = temp_path / "server_log"
+    server_log_path.mkdir(parents=True, exist_ok=True)
 
-    result_path = os.path.join(temp_path, "result_path")
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "result_path"
+    result_path.mkdir(parents=True, exist_ok=True)
 
-    run_commands = get_run_commands(
-        packages_path, result_path, server_log_path, docker_images[0], docker_images[1]
-    )
+    run_commands = []
 
-    state = "success"
+    if check_glibc:
+        check_glibc_commands = get_run_commands_glibc(packages_path, result_path)
+        run_commands.extend(check_glibc_commands)
+
+    if check_distributions:
+        centos_image = pull_image(get_docker_image(IMAGE_CENTOS))
+        ubuntu_image = pull_image(get_docker_image(IMAGE_UBUNTU))
+        check_distributions_commands = get_run_commands_distributions(
+            packages_path,
+            result_path,
+            server_log_path,
+            centos_image,
+            ubuntu_image,
+        )
+        run_commands.extend(check_distributions_commands)
+
+    state = SUCCESS
     for run_command in run_commands:
         try:
             logging.info("Running command %s", run_command)
             subprocess.check_call(run_command, shell=True)
         except subprocess.CalledProcessError as ex:
             logging.info("Exception calling command %s", ex)
-            state = "failure"
+            state = FAILURE
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper()
+    # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
+    max_glibc_version = ""
+    if "amd64" in check_name:
+        max_glibc_version = "2.4"
+    elif "aarch64" in check_name:
+        max_glibc_version = "2.18"  # because of build with newer sysroot?
+    else:
+        raise RuntimeError("Can't determine max glibc version")
+
     state, description, test_results, additional_logs = process_result(
-        result_path, server_log_path
+        result_path,
+        server_log_path,
+        check_glibc,
+        check_distributions,
+        max_glibc_version,
     )
 
-    ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, CHECK_NAME, test_results)
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_logs,
+    ).dump()
 
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        additional_logs,
-        CHECK_NAME,
-    )
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, CHECK_NAME, description, state, report_url)
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        CHECK_NAME,
-    )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "error":
+    if state == FAILURE:
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

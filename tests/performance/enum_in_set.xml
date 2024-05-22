@@ -1,0 +1,18 @@
+<test>
+    <!-- high cardinality -->
+    <create_query>
+    CREATE TABLE iso_3166_1_alpha_2
+    (
+        `c` Enum8('LI' = -128, 'LT' = -127, 'LU' = -126, 'MO' = -125, 'MK' = -124, 'MG' = -123, 'MW' = -122, 'MY' = -121, 'MV' = -120, 'ML' = -119, 'MT' = -118, 'MH' = -117, 'MQ' = -116, 'MR' = -115, 'MU' = -114, 'YT' = -113, 'MX' = -112, 'FM' = -111, 'MD' = -110, 'MC' = -109, 'MN' = -108, 'ME' = -107, 'MS' = -106, 'MA' = -105, 'MZ' = -104, 'MM' = -103, 'NA' = -102, 'NR' = -101, 'NP' = -100, 'NL' = -99, 'NC' = -98, 'NZ' = -97, 'NI' = -96, 'NE' = -95, 'NG' = -94, 'NU' = -93, 'NF' = -92, 'MP' = -91, 'NO' = -90, 'OM' = -89, 'PK' = -88, 'PW' = -87, 'PS' = -86, 'PA' = -85, 'PG' = -84, 'PY' = -83, 'PE' = -82, 'PH' = -81, 'PN' = -80, 'PL' = -79, 'PT' = -78, 'PR' = -77, 'QA' = -76, 'RE' = -75, 'RO' = -74, 'RU' = -73, 'RW' = -72, 'BL' = -71, 'SH' = -70, 'KN' = -69, 'LC' = -68, 'MF' = -67, 'PM' = -66, 'VC' = -65, 'WS' = -64, 'SM' = -63, 'ST' = -62, 'SA' = -61, 'SN' = -60, 'RS' = -59, 'SC' = -58, 'SL' = -57, 'SG' = -56, 'SX' = -55, 'SK' = -54, 'SI' = -53, 'SB' = -52, 'SO' = -51, 'ZA' = -50, 'GS' = -49, 'SS' = -48, 'ES' = -47, 'LK' = -46, 'SD' = -45, 'SR' = -44, 'SJ' = -43, 'SZ' = -42, 'SE' = -41, 'CH' = -40, 'SY' = -39, 'TW' = -38, 'TJ' = -37, 'TZ' = -36, 'TH' = -35, 'TL' = -34, 'TG' = -33, 'TK' = -32, 'TO' = -31, 'TT' = -30, 'TN' = -29, 'TR' = -28, 'TM' = -27, 'TC' = -26, 'TV' = -25, 'UG' = -24, 'UA' = -23, 'AE' = -22, 'GB' = -21, 'UM' = -20, 'US' = -19, 'UY' = -18, 'UZ' = -17, 'VU' = -16, 'VE' = -15, 'VN' = -14, 'VG' = -13, 'VI' = -12, 'WF' = -11, 'EH' = -10, 'YE' = -9, 'ZM' = -8, 'ZW' = -7, 'OTHER' = 0, 'AF' = 1, 'AX' = 2, 'AL' = 3, 'DZ' = 4, 'AS' = 5, 'AD' = 6, 'AO' = 7, 'AI' = 8, 'AQ' = 9, 'AG' = 10, 'AR' = 11, 'AM' = 12, 'AW' = 13, 'AU' = 14, 'AT' = 15, 'AZ' = 16, 'BS' = 17, 'BH' = 18, 'BD' = 19, 'BB' = 20, 'BY' = 21, 'BE' = 22, 'BZ' = 23, 'BJ' = 24, 'BM' = 25, 'BT' = 26, 'BO' = 27, 'BQ' = 28, 'BA' = 29, 'BW' = 30, 'BV' = 31, 'BR' = 32, 'IO' = 33, 'BN' = 34, 'BG' = 35, 'BF' = 36, 'BI' = 37, 'CV' = 38, 'KH' = 39, 'CM' = 40, 'CA' = 41, 'KY' = 42, 'CF' = 43, 'TD' = 44, 'CL' = 45, 'CN' = 46, 'CX' = 47, 'CC' = 48, 'CO' = 49, 'KM' = 50, 'CD' = 51, 'CG' = 52, 'CK' = 53, 'CR' = 54, 'CI' = 55, 'HR' = 56, 'CU' = 57, 'CW' = 58, 'CY' = 59, 'CZ' = 60, 'DK' = 61, 'DJ' = 62, 'DM' = 63, 'DO' = 64, 'EC' = 65, 'EG' = 66, 'SV' = 67, 'GQ' = 68, 'ER' = 69, 'EE' = 70, 'ET' = 71, 'FK' = 72, 'FO' = 73, 'FJ' = 74, 'FI' = 75, 'FR' = 76, 'GF' = 77, 'PF' = 78, 'TF' = 79, 'GA' = 80, 'GM' = 81, 'GE' = 82, 'DE' = 83, 'GH' = 84, 'GI' = 85, 'GR' = 86, 'GL' = 87, 'GD' = 88, 'GP' = 89, 'GU' = 90, 'GT' = 91, 'GG' = 92, 'GN' = 93, 'GW' = 94, 'GY' = 95, 'HT' = 96, 'HM' = 97, 'VA' = 98, 'HN' = 99, 'HK' = 100, 'HU' = 101, 'IS' = 102, 'IN' = 103, 'ID' = 104, 'IR' = 105, 'IQ' = 106, 'IE' = 107, 'IM' = 108, 'IL' = 109, 'IT' = 110, 'JM' = 111, 'JP' = 112, 'JE' = 113, 'JO' = 114, 'KZ' = 115, 'KE' = 116, 'KI' = 117, 'KP' = 118, 'KR' = 119, 'KW' = 120, 'KG' = 121, 'LA' = 122, 'LV' = 123, 'LB' = 124, 'LS' = 125, 'LR' = 126, 'LY' = 127)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    SETTINGS index_granularity = 8192
+    </create_query>
+    <fill_query>INSERT INTO iso_3166_1_alpha_2 SELECT (rand(number) % 256) - 128 FROM numbers(200000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE iso_3166_1_alpha_2 FINAL</fill_query>
+
+    <query>SELECT count() FROM iso_3166_1_alpha_2 WHERE c NOT IN ('CU', 'BN', 'VI', 'US', 'AQ', 'AG', 'AR', 'AM', 'AW', 'AU', 'AT', 'AZ', 'BS', 'BH', 'BD', 'BB', 'BY', 'BE') FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS iso_3166_1_alpha_2</drop_query>
+</test>

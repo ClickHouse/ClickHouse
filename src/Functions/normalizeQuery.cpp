@@ -3,8 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Parsers/queryNormalization.h>
-#include <base/find_symbols.h>
-#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -34,10 +32,12 @@ struct Impl
         for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            normalizeQueryToPODArray<keep_names>(
+
+            normalizeQueryToPODArray(
                 reinterpret_cast<const char *>(&data[prev_src_offset]),
                 reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
-                res_data);
+                res_data, keep_names);
+
             prev_src_offset = offsets[i];
             res_offsets[i] = res_data.size();
         }
@@ -45,7 +45,7 @@ struct Impl
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Cannot apply function normalizeQuery to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function normalizeQuery to fixed string.");
     }
 };
 
@@ -58,4 +58,3 @@ REGISTER_FUNCTION(NormalizeQuery)
 }
 
 }
-

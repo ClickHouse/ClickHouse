@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SNAPPY
 
@@ -23,12 +23,13 @@ namespace DB
 class HadoopSnappyDecoder
 {
 public:
-    enum class Status : int
+    enum class Status : uint8_t
     {
         OK = 0,
         INVALID_INPUT = 1,
         BUFFER_TOO_SMALL = 2,
         NEEDS_MORE_INPUT = 3,
+        TOO_LARGE_COMPRESSED_BLOCK = 4,
     };
 
     HadoopSnappyDecoder() = default;
@@ -84,8 +85,10 @@ public:
                 return "BUFFER_TOO_SMALL";
             case Status::NEEDS_MORE_INPUT:
                 return "NEEDS_MORE_INPUT";
+            case Status::TOO_LARGE_COMPRESSED_BLOCK:
+                return "TOO_LARGE_COMPRESSED_BLOCK";
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     explicit HadoopSnappyReadBuffer(

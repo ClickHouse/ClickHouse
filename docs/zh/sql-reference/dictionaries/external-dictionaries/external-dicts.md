@@ -48,8 +48,9 @@ ClickHouse:
 
 [字典的DDL查询](../../statements/create.md#create-dictionary-query) 在服务器配置中不需要任何其他记录。 它们允许使用字典作为一流的实体，如表或视图。
 
-    :::info "注意"
-    您可以通过在一个小字典中描述它来转换小字典的值 `SELECT` 查询（见 [变换](../../../sql-reference/functions/other-functions.md) 功能）。 此功能与外部字典无关。
+:::info "注意"
+您可以通过在一个小字典中描述它来转换小字典的值 `SELECT` 查询（见 [变换](../../../sql-reference/functions/other-functions.md) 功能）。 此功能与外部字典无关。
+:::
 
 ## 另请参阅 {#ext-dicts-see-also}
 
@@ -59,5 +60,3 @@ ClickHouse:
 -   [外部字典的来源](external-dicts-dict-sources.md)
 -   [字典键和字段](external-dicts-dict-structure.md)
 -   [使用外部字典的函数](../../../sql-reference/functions/ext-dict-functions.md)
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts/) <!--hide-->

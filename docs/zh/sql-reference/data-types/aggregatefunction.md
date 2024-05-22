@@ -62,5 +62,3 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 ## 使用示例 {#shi-yong-shi-li}
 
 请参阅 [AggregatingMergeTree](../../sql-reference/data-types/aggregatefunction.md) 的说明
-
-[来源文章](https://clickhouse.com/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

@@ -5,7 +5,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/TemporaryFileLazySource.h>
-#include <Formats/TemporaryFileStream.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
@@ -28,13 +28,18 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
 TemporaryFileOnDiskHolder flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
 {
     auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, CurrentMetrics::TemporaryFilesForJoin);
-    auto write_stat = TemporaryFileStream::write(tmp_file->getPath(), header, std::move(pipeline), codec);
+    auto write_stat = TemporaryFileStreamLegacy::write(tmp_file->getAbsolutePath(), header, std::move(pipeline), codec);
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, write_stat.compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, write_stat.uncompressed_bytes);
@@ -84,10 +89,13 @@ void SortedBlocksWriter::insert(Block && block)
     size_t bytes = 0;
     size_t flush_no = 0;
 
+    if (!block.rows())
+        return;
+
     {
         std::lock_guard lock{insert_mutex};
 
-        /// insert bock into BlocksList undef lock
+        /// insert block into BlocksList under lock
         inserted_blocks.insert(std::move(block));
 
         size_t total_row_count = inserted_blocks.row_count + row_count_in_flush;
@@ -145,7 +153,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), num_rows)));
 
     if (pipes.empty())
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty block");
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
@@ -157,6 +165,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             pipeline.getNumStreams(),
             sort_description,
             rows_in_block,
+            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
@@ -212,6 +221,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             pipeline.getNumStreams(),
                             sort_description,
                             rows_in_block,
+                            /*max_block_size_bytes=*/0,
                             SortingQueueStrategy::Default);
 
                         pipeline.addTransform(std::move(transform));
@@ -246,6 +256,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             pipeline.getNumStreams(),
             sort_description,
             rows_in_block,
+            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
@@ -256,13 +267,13 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
 Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 {
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file->path(), materializeBlock(sample_block)));
+    return Pipe(std::make_shared<TemporaryFileLazySource>(file->getAbsolutePath(), materializeBlock(sample_block)));
 }
 
 
 Block SortedBlocksBuffer::exchange(Block && block)
 {
-    static constexpr const float reserve_coef = 1.2;
+    static constexpr const double reserve_coefficient = 1.2;
 
     Blocks out_blocks;
     Block empty_out = block.cloneEmpty();
@@ -282,7 +293,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
 
         /// Not saved. Return buffered.
         out_blocks.swap(buffer);
-        buffer.reserve(out_blocks.size() * reserve_coef);
+        buffer.reserve(static_cast<size_t>(out_blocks.size() * reserve_coefficient));
         current_bytes = 0;
     }
 
@@ -323,6 +334,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
                 builder.getNumStreams(),
                 sort_description,
                 num_rows,
+                /*max_block_size_bytes=*/0,
                 SortingQueueStrategy::Default);
 
             builder.addTransform(std::move(transform));

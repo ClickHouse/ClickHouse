@@ -2,6 +2,8 @@
 
 {% for engine in ["ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_3/t_json_3', 'r1') ORDER BY tuple()", "Memory"] -%}
 
+SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
+
 SET allow_experimental_object_type = 1;
 
 DROP TABLE IF EXISTS t_json_3;

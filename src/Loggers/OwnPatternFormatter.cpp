@@ -4,8 +4,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Common/CurrentThread.h>
 #include <base/terminalColors.h>
 
 
@@ -22,7 +20,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     const Poco::Message & msg = msg_ext.base;
 
     /// Change delimiters in date for compatibility with old logs.
-    DB::writeDateTimeText<'.', ':'>(msg_ext.time_seconds, wb);
+    DB::writeDateTimeText<'.', ':'>(msg_ext.time_seconds, wb, server_timezone);
 
     DB::writeChar('.', wb);
     DB::writeChar('0' + ((msg_ext.time_microseconds / 100000) % 10), wb);

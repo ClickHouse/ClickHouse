@@ -5,16 +5,21 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>
 #include <base/sort.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -27,7 +32,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int DICTIONARY_IS_EMPTY;
-    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -94,9 +98,9 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
             const auto * addr_str_end = addr_str.data() + addr_str.size();
             auto [p, ec] = std::from_chars(addr_str.data() + pos + 1, addr_str_end, prefix);
             if (p != addr_str_end)
-                throw DB::Exception("Extra characters at the end of IP address", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+                throw DB::Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Extra characters at the end of IP address");
             if (ec != std::errc())
-                throw DB::Exception("Mask for IP address is not a valid number", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw DB::Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Mask for IP address is not a valid number");
 
             addr = addr & Poco::Net::IPAddress(prefix, addr.family());
             return {addr, prefix};
@@ -107,8 +111,8 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     }
     catch (Poco::Exception & ex)
     {
-        throw DB::Exception("Can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
-            ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw DB::Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Can't parse address \"{}\": {}",
+                            std::string(addr_str), ex.what());
     }
 }
 
@@ -129,12 +133,12 @@ static void validateKeyTypes(const DataTypes & key_types)
     if (key_types.empty() || key_types.size() > 2)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a single IP address or IP with mask");
 
-    const auto * key_ipv4type = typeid_cast<const DataTypeUInt32 *>(key_types[0].get());
-    const auto * key_ipv6type = typeid_cast<const DataTypeFixedString *>(key_types[0].get());
+    TypeIndex type_id = key_types[0]->getTypeId();
+    const auto * key_string = typeid_cast<const DataTypeFixedString *>(key_types[0].get());
 
-    if (key_ipv4type == nullptr && (key_ipv6type == nullptr || key_ipv6type->getN() != 16))
+    if (type_id != TypeIndex::IPv4 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::IPv6 && !(key_string && key_string->getN() == IPV6_BINARY_LENGTH))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Key does not match, expected either `IPv4` (`UInt32`) or `IPv6` (`FixedString(16)`)");
+            "Key does not match, expected either IPv4 (or UInt32) or IPv6 (or FixedString(16))");
 
     if (key_types.size() > 1)
     {
@@ -196,15 +200,13 @@ IPAddressDictionary::IPAddressDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_)
+    IPAddressDictionary::Configuration configuration_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
-    , require_nonempty(require_nonempty_)
+    , configuration(configuration_)
     , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
-    , logger(&Poco::Logger::get("IPAddressDictionary"))
+    , logger(getLogger("IPAddressDictionary"))
 {
     createAttributes();
     loadData();
@@ -218,17 +220,20 @@ void IPAddressDictionary::convertKeyColumns(Columns &, DataTypes &) const
 
 ColumnPtr IPAddressDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr & result_type,
+    const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr & default_values_column) const
+    DefaultOrFilter default_or_filter) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+
     validateKeyTypes(key_types);
 
     ColumnPtr result;
 
     const auto & attribute = getAttribute(attribute_name);
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
 
     auto size = key_columns.front()->size();
 
@@ -239,40 +244,83 @@ ColumnPtr IPAddressDictionary::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto & null_value = std::get<AttributeType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
-
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if (is_short_circuit)
         {
-            auto * out = column.get();
+            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
+            size_t keys_found = 0;
 
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, const Array & value) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                auto * out = column.get();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
-                default_value_extractor);
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Array & value) { out->insert(value); },
+                    default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                auto * out = column.get();
+
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    default_mask);
+            }
+            else
+            {
+                auto & out = column->getData();
+
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    default_mask);
+
+                out.resize(keys_found);
+            }
         }
         else
         {
-            auto & out = column->getData();
+            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t row, const auto value) { return out[row] = value; },
-                default_value_extractor);
+            const auto & null_value = std::get<AttributeType>(attribute.null_values);
+            DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
+
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Array & value) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    default_value_extractor);
+            }
+            else
+            {
+                auto & out = column->getData();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    default_value_extractor);
+            }
         }
 
         result = std::move(column);
@@ -282,7 +330,6 @@ ColumnPtr IPAddressDictionary::getColumn(
 
     return result;
 }
-
 
 ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
@@ -296,30 +343,33 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
     size_t keys_found = 0;
 
-    if (first_column->isNumeric())
+    TypeIndex type_id = first_column->getDataType();
+
+    if (type_id == TypeIndex::IPv4 || type_id == TypeIndex::UInt32)
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
         for (const auto i : collections::range(0, rows))
         {
-            auto addrv4 = static_cast<UInt32>(first_column->get64(i));
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
             keys_found += out[i];
         }
     }
-    else
+    else if (type_id == TypeIndex::IPv6 || type_id == TypeIndex::FixedString)
     {
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (unlikely(addr.size != IPV6_BINARY_LENGTH))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected key to be FixedString(16)");
-
+            if (addr.size != IPV6_BINARY_LENGTH)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key FixedString(16)");
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             out[i] = (found != ipNotFound());
             keys_found += out[i];
         }
     }
+    else
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be IPv4 (or UInt32) or IPv6 (or FixedString(16))");
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -365,7 +415,7 @@ void IPAddressDictionary::loadData()
 
     bool has_ipv6 = false;
 
-    PullingPipelineExecutor executor(pipeline);
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
     Block block;
     while (executor.pull(block))
     {
@@ -521,7 +571,7 @@ void IPAddressDictionary::loadData()
 
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
-    if (require_nonempty && 0 == element_count)
+    if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
@@ -537,7 +587,7 @@ template <>
 void IPAddressDictionary::addAttributeSize<String>(const Attribute & attribute)
 {
     addAttributeSize<StringRef>(attribute);
-    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->allocatedBytes();
 }
 
 void IPAddressDictionary::calculateBytesAllocated()
@@ -687,6 +737,96 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     }
 }
 
+template <typename AttributeType, typename ValueSetter>
+size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    IColumn::Filter & default_mask) const
+{
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
+    default_mask.resize(rows);
+    size_t keys_found = 0;
+    auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
+
+    if (const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
+    {
+        const auto * key_ip_column_ptr = typeid_cast<const ColumnVector<UInt32> *>(&*key_columns.front());
+        if (key_ip_column_ptr == nullptr)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a UInt32 IP column");
+
+        const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
+
+        auto comp_v4 = [&](size_t elem, const IPv4Subnet & target)
+        {
+            UInt32 addr = (*ipv4_col)[elem];
+            if (addr == target.addr)
+                return mask_column[elem] < target.prefix;
+            return addr < target.addr;
+        };
+
+        for (const auto i : collections::range(0, rows))
+        {
+            UInt32 addr = key_ip_column_ptr->getElement(i);
+            UInt8 mask = key_mask_column.getElement(i);
+
+            auto range = collections::range(0, row_idx.size());
+            auto found_it = std::lower_bound(range.begin(), range.end(), IPv4Subnet{addr, mask}, comp_v4);
+
+            if (likely(found_it != range.end() &&
+                (*ipv4_col)[*found_it] == addr &&
+                mask_column[*found_it] == mask))
+            {
+                set_value(i, vec[row_idx[*found_it]]);
+                default_mask[i] = 0;
+                keys_found++;
+            }
+            else
+                default_mask[i] = 1;
+        }
+        return keys_found;
+    }
+
+    const auto * key_ip_column_ptr = typeid_cast<const ColumnFixedString *>(&*key_columns.front());
+    if (key_ip_column_ptr == nullptr || key_ip_column_ptr->getN() != IPV6_BINARY_LENGTH)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a FixedString(16) IP column");
+
+    const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
+
+    const auto * ipv6_col = std::get_if<IPv6Container>(&ip_column);
+    auto comp_v6 = [&](size_t i, const IPv6Subnet & target)
+    {
+        auto cmpres = memcmp16(getIPv6FromOffset(*ipv6_col, i), target.addr);
+        if (cmpres == 0)
+            return mask_column[i] < target.prefix;
+        return cmpres < 0;
+    };
+
+    for (const auto i : collections::range(0, rows))
+    {
+        auto addr = key_ip_column_ptr->getDataAt(i);
+        UInt8 mask = key_mask_column.getElement(i);
+
+        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data), mask};
+
+        auto range = collections::range(0, row_idx.size());
+        auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
+
+        if (likely(found_it != range.end() &&
+            memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
+            mask_column[*found_it] == mask))
+        {
+            set_value(i, vec[row_idx[*found_it]]);
+            default_mask[i] = 0;
+            keys_found++;
+        }
+        else
+            default_mask[i] = 1;
+    }
+    return keys_found;
+}
+
 template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsImpl(
     const Attribute & attribute,
@@ -709,13 +849,15 @@ void IPAddressDictionary::getItemsImpl(
 
     size_t keys_found = 0;
 
-    if (first_column->isNumeric())
+    TypeIndex type_id = first_column->getDataType();
+
+    if (type_id == TypeIndex::IPv4 || type_id == TypeIndex::UInt32)
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = static_cast<UInt32>(first_column->get64(i));
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {
@@ -726,14 +868,13 @@ void IPAddressDictionary::getItemsImpl(
                 set_value(i, default_value_extractor[i]);
         }
     }
-    else
+    else if (type_id == TypeIndex::IPv6 || type_id == TypeIndex::FixedString)
     {
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
             if (addr.size != IPV6_BINARY_LENGTH)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected key to be FixedString(16)");
-
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be FixedString(16)");
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             if (found != ipNotFound())
             {
@@ -744,9 +885,79 @@ void IPAddressDictionary::getItemsImpl(
                 set_value(i, default_value_extractor[i]);
         }
     }
+    else
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be IPv4 (or UInt32) or IPv6 (or FixedString(16))");
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+}
+
+template <typename AttributeType, typename ValueSetter>
+size_t IPAddressDictionary::getItemsShortCircuitImpl(
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    IColumn::Filter & default_mask) const
+{
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
+    default_mask.resize(rows);
+    size_t keys_found = 0;
+
+    if (unlikely(key_columns.size() == 2))
+    {
+        keys_found = getItemsByTwoKeyColumnsShortCircuitImpl<AttributeType>(
+            attribute, key_columns, std::forward<ValueSetter>(set_value), default_mask);
+        query_count.fetch_add(rows, std::memory_order_relaxed);
+        return keys_found;
+    }
+
+    auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
+
+    TypeIndex type_id = first_column->getDataType();
+
+    if (type_id == TypeIndex::IPv4 || type_id == TypeIndex::UInt32)
+    {
+        uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
+        for (const auto i : collections::range(0, rows))
+        {
+            // addrv4 has native endianness
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto found = tryLookupIPv4(addrv4, addrv6_buf);
+            if (found != ipNotFound())
+            {
+                set_value(i, vec[*found]);
+                ++keys_found;
+                default_mask[i] = 0;
+            }
+            else
+                default_mask[i] = 1;
+        }
+    }
+    else if (type_id == TypeIndex::IPv6 || type_id == TypeIndex::FixedString)
+    {
+        for (const auto i : collections::range(0, rows))
+        {
+            auto addr = first_column->getDataAt(i);
+            if (addr.size != IPV6_BINARY_LENGTH)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be FixedString(16)");
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            if (found != ipNotFound())
+            {
+                set_value(i, vec[*found]);
+                ++keys_found;
+                default_mask[i] = 0;
+            }
+            else
+                default_mask[i] = 1;
+        }
+    }
+    else
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be IPv4 (or UInt32) or IPv6 (or FixedString(16))");
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
 
 template <typename T>
@@ -771,7 +982,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         }
         else
         {
-            setAttributeValueImpl<AttributeType>(attribute, value.get<AttributeType>());
+            setAttributeValueImpl<AttributeType>(attribute, static_cast<AttributeType>(value.get<AttributeType>()));
         }
     };
 
@@ -964,7 +1175,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* global_context */,
+                             ContextPtr global_context,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
@@ -974,8 +1185,17 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+
+        IPAddressDictionary::Configuration configuration{
+            .dict_lifetime = dict_lifetime,
+            .require_nonempty = require_nonempty,
+            .use_async_executor = use_async_executor,
+        };
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

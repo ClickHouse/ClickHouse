@@ -1,9 +1,10 @@
-#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -111,14 +112,29 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
             if (value_type == Field::Types::UInt64)
             {
                 const auto & type_tuple = assert_cast<const DataTypeTuple &>(*column_type);
-                auto index = get<UInt64>(literal->value);
+                auto index = literal->value.get<UInt64>();
                 subcolumn_name = type_tuple.getNameByPosition(index);
             }
             else if (value_type == Field::Types::String)
-                subcolumn_name = get<const String &>(literal->value);
+                subcolumn_name = literal->value.get<const String &>();
             else
                 return;
 
+            ast = transformToSubcolumn(name_in_storage, subcolumn_name);
+            ast->setAlias(alias);
+        }
+        else if (function.name == "variantElement" && column_type_id == TypeIndex::Variant)
+        {
+            const auto * literal = arguments[1]->as<ASTLiteral>();
+            if (!literal)
+                return;
+
+            String subcolumn_name;
+            auto value_type = literal->value.getType();
+            if (value_type != Field::Types::String)
+                return;
+
+            subcolumn_name = literal->value.get<const String &>();
             ast = transformToSubcolumn(name_in_storage, subcolumn_name);
             ast->setAlias(alias);
         }

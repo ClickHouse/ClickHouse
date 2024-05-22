@@ -8,36 +8,20 @@ on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-  workflow_call:
 jobs:
   KeeperJepsenRelease:
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/keeper_jepsen
-          REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
-          EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-      - name: Jepsen Test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 keeper_jepsen_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH"
+    uses: ./.github/workflows/reusable_simple_job.yml
+    with:
+      test_name: Jepsen keeper check
+      runner_type: style-checker
+      report_required: true
+      run_command: |
+        python3 jepsen_check.py keeper
+  # ServerJepsenRelease:
+  #   uses: ./.github/workflows/reusable_simple_job.yml
+  #   with:
+  #     test_name: Jepsen server check
+  #     runner_type: style-checker
+  #     run_command: |
+  #       cd "$REPO_COPY/tests/ci"
+  #       python3 jepsen_check.py server

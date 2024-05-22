@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
+#include <Common/re2.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -10,7 +11,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <boost/program_options.hpp>
-#include <re2/re2.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -58,12 +58,14 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
     }
     else
     {
-        auto src_buf = createReadBufferFromFileBase(file_path, {}, fs::file_size(file_path));
+        ReadSettings read_settings{};
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        auto src_buf = createReadBufferFromFileBase(file_path, read_settings, fs::file_size(file_path));
         std::shared_ptr<WriteBuffer> dst_buf;
 
         /// test mode for integration tests.
         if (test_mode)
-            dst_buf = std::make_shared<WriteBufferFromHTTP>(Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
+            dst_buf = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
         else
             dst_buf = std::make_shared<WriteBufferFromFile>(dst_file_path);
 
@@ -86,7 +88,7 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
     {
         dst_path /= "store";
         auto files_root = dst_path / prefix;
-        root_meta = std::make_shared<WriteBufferFromHTTP>(Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+        root_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
     }
     else
     {
@@ -109,13 +111,11 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                auto files_root = dst_path / prefix;
-                directory_meta = std::make_shared<WriteBufferFromHTTP>(Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+                directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
             }
             else
             {
                 dst_path = fs::canonical(dst_path);
-                auto files_root = dst_path / prefix;
                 fs::create_directories(dst_path / directory_prefix);
                 directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
             }
@@ -146,7 +146,7 @@ try
     po::options_description description("Allowed options", getTerminalWidth());
     description.add_options()
         ("help,h", "produce help message")
-        ("metadata-path", po::value<std::string>(), "Metadata path (select data_paths from system.tables where name='table_name'")
+        ("metadata-path", po::value<std::string>(), "Metadata path (SELECT data_paths FROM system.tables WHERE name = 'table_name' AND database = 'database_name')")
         ("test-mode", "Use test mode, which will put data on given url via PUT")
         ("link", "Create symlinks instead of copying")
         ("url", po::value<std::string>(), "Web server url for test mode")

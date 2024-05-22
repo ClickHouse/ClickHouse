@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
-#include <string>
-
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <base/types.h>
 #include <Poco/DOM/Document.h>
-#include "Poco/DOM/AutoPtr.h"
-#include <Common/logger_useful.h>
+#include <Poco/DOM/AutoPtr.h>
 
 #if USE_YAML_CPP
 

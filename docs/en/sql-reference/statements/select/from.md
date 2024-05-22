@@ -7,9 +7,9 @@ sidebar_label: FROM
 
 The `FROM` clause specifies the source to read data from:
 
--   [Table](../../../engines/table-engines/index.md)
--   [Subquery](../../../sql-reference/statements/select/index.md) 
--   [Table function](../../../sql-reference/table-functions/index.md#table-functions)
+- [Table](../../../engines/table-engines/index.md)
+- [Subquery](../../../sql-reference/statements/select/index.md) 
+- [Table function](../../../sql-reference/table-functions/index.md#table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) and [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) clauses may also be used to extend the functionality of the `FROM` clause.
 
@@ -19,23 +19,50 @@ Subquery is another `SELECT` query that may be specified in parenthesis inside `
 
 ## FINAL Modifier
 
-When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
+When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from tables that use the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-engine family. Also supported for:
+It is applicable when selecting data from from tables using the following table engines:
+- `ReplacingMergeTree`
+- `SummingMergeTree`
+- `AggregatingMergeTree`
+- `CollapsingMergeTree`
+- `VersionedCollapsingMergeTree`
 
--   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) versions of `MergeTree` engines.
--   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
-
-Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. But there are drawbacks (see below). The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
 
 ### Drawbacks
 
-Queries that use `FINAL` are executed slightly slower than similar queries that do not, because:
+Queries that use `FINAL` execute slightly slower than similar queries that do not use `FINAL` because:
 
--   Data is merged during query execution.
--   Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
+- Data is merged during query execution.
+- Queries with `FINAL` may read primary key columns in addition to the columns specified in the query.
 
-**In most cases, avoid using `FINAL`.** The common approach is to use different queries that assume the background processes of the `MergeTree` engine have’t happened yet and deal with it by applying aggregation (for example, to discard duplicates).
+`FINAL` requires additional compute and memory resources because the processing that normally would occur at merge time must occur in memory at the time of the query. However, using FINAL is sometimes necessary in order to produce accurate results (as data may not yet be fully merged). It is less expensive than running `OPTIMIZE` to force a merge.
+
+As an alternative to using `FINAL`, it is sometimes possible to use different queries that assume the background processes of the `MergeTree` engine have not yet occurred and deal with it by applying an aggregation (for example, to discard duplicates). If you need to use `FINAL` in your queries in order to get the required results, it is okay to do so but be aware of the additional processing required.
+
+`FINAL` can be applied automatically using [FINAL](../../../operations/settings/settings.md#final) setting to all tables in a query using a session or a user profile.
+
+### Example Usage
+
+**Using the `FINAL` keyword**
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+**Using `FINAL` as a query-level setting**
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+**Using `FINAL` as a session-level setting**
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
 
 ## Implementation Details
 

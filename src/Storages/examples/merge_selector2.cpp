@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
-#include <Storages/MergeTree/LevelMergeSelector.h>
 #include <Common/formatReadable.h>
 
 
@@ -22,11 +21,8 @@ int main(int, char **)
     IMergeSelector::PartsRanges partitions(1);
     IMergeSelector::PartsRange & parts = partitions.back();
 
-/*    SimpleMergeSelector::Settings settings;
-    SimpleMergeSelector selector(settings);*/
-
-    LevelMergeSelector::Settings settings;
-    LevelMergeSelector selector(settings);
+    SimpleMergeSelector::Settings settings;
+    SimpleMergeSelector selector(settings);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
@@ -40,7 +36,7 @@ int main(int, char **)
         IMergeSelector::Part part;
         in >> part.size >> "\t" >> part.age >> "\t" >> part.level >> "\t" >> part_names.back() >> "\n";
         part.data = part_names.back().data();
-//        part.level = 0;
+        part.level = 0;
         parts.emplace_back(part);
         sum_parts_size += part.size;
     }
@@ -72,7 +68,7 @@ int main(int, char **)
 
         size_t sum_merged_size = 0;
         size_t start_index = 0;
-        size_t max_level = 0;
+        unsigned max_level = 0;
         bool in_range = false;
 
         for (size_t i = 0, size = parts.size(); i < size; ++i)
@@ -88,8 +84,7 @@ int main(int, char **)
             if (in_range)
             {
                 sum_merged_size += parts[i].size;
-                if (parts[i].level > max_level)
-                    max_level = parts[i].level;
+                max_level = std::max(parts[i].level, max_level);
             }
 
             if (parts[i].data == selected_parts.back().data)
@@ -115,9 +110,9 @@ int main(int, char **)
 
         double time_to_merge = sum_merged_size / (1048576 * 10.0);
 
-        age_passed += time_to_merge;
+        age_passed = static_cast<size_t>(age_passed + time_to_merge);
         for (auto & part : parts)
-            part.age += time_to_merge;
+            part.age = static_cast<time_t>(part.age + time_to_merge);
 
         std::cout << "Time passed: " << age_passed << ", num parts: " << parts.size()
             << ", merged " << selected_parts.size() << " parts, " << formatReadableSizeWithBinarySuffix(sum_merged_size)

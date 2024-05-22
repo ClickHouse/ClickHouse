@@ -1,10 +1,14 @@
 #pragma once
+
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Executors/UpgradableLock.h>
+#include <Common/SharedMutex.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <mutex>
 #include <queue>
 #include <stack>
+#include <vector>
+
 
 namespace DB
 {
@@ -60,7 +64,7 @@ public:
 
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
-    enum class ExecStatus
+    enum class ExecStatus : uint8_t
     {
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.
@@ -114,7 +118,11 @@ public:
         }
     };
 
-    using Queue = std::queue<Node *>;
+    /// This queue can grow a lot and lead to OOM. That is why we use non-default
+    /// allocator for container which throws exceptions in operator new
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+
     using NodePtr = std::unique_ptr<Node>;
     using Nodes = std::vector<NodePtr>;
     Nodes nodes;
@@ -123,9 +131,9 @@ public:
     using ProcessorsMap = std::unordered_map<const IProcessor *, uint64_t>;
     ProcessorsMap processors_map;
 
-    explicit ExecutingGraph(Processors & processors_, bool profile_processors_);
+    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
-    const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const { return *processors; }
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue);
@@ -135,7 +143,7 @@ public:
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
     bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
-    void cancel();
+    void cancel(bool cancel_all_processors = true);
 
 private:
     /// Add single edge to edges list. Check processor is known.
@@ -149,12 +157,14 @@ private:
     /// All new nodes and nodes with updated ports are pushed into stack.
     bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
-    Processors & processors;
+    std::shared_ptr<Processors> processors;
+    std::vector<bool> source_processors;
     std::mutex processors_mutex;
 
-    UpgradableMutex nodes_mutex;
+    SharedMutex nodes_mutex;
 
     const bool profile_processors;
+    bool cancelled = false;
 };
 
 }

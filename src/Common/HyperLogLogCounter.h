@@ -4,6 +4,7 @@
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/transformEndianness.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -26,7 +27,7 @@ namespace ErrorCodes
 
 
 /// Sets denominator type.
-enum class DenominatorMode
+enum class DenominatorMode : uint8_t
 {
     Compact,        /// Compact denominator.
     StableIfBig,    /// Stable denominator falling back to Compact if rank storage is not big enough.
@@ -162,7 +163,7 @@ class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType
 public:
     Denominator(DenominatorType initial_value) /// NOLINT
     {
-        rank_count[0] = initial_value;
+        rank_count[0] = static_cast<UInt32>(initial_value);
     }
 
     inline void update(UInt8 cur_rank, UInt8 new_rank)
@@ -189,7 +190,7 @@ public:
             val /= 2.0;
             val += rank_count[i];
         }
-        return val;
+        return static_cast<DenominatorType>(val);
     }
 
 private:
@@ -245,7 +246,7 @@ struct RankWidth<UInt64>
 
 
 /// Sets behavior of HyperLogLog class.
-enum class HyperLogLogMode
+enum class HyperLogLogMode : uint8_t
 {
     Raw,            /// No error correction.
     LinearCounting, /// LinearCounting error correction.
@@ -264,7 +265,8 @@ enum class HyperLogLogMode
 /// of Algorithms).
 template <
     UInt8 precision,
-    typename Hash = IntHash32<UInt64>,
+    typename Key = UInt64,
+    typename Hash = IntHash32<Key>,
     typename HashValueType = UInt32,
     typename DenominatorType = double,
     typename BiasEstimator = TrivialBiasEstimator,
@@ -329,7 +331,26 @@ public:
 
     void read(DB::ReadBuffer & in)
     {
-        in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
+        if constexpr (std::endian::native == std::endian::little)
+            in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
+        else
+        {
+            in.readStrict(reinterpret_cast<char *>(&rank_store), sizeof(RankStore));
+
+            constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
+            std::array<char, denom_size> denominator_copy;
+            in.readStrict(denominator_copy.begin(), denom_size);
+
+            for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
+            {
+                UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
+                DB::transformEndianness<std::endian::native, std::endian::little>(*cur);
+            }
+            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.begin(), denom_size);
+
+            in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
+            DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
+        }
     }
 
     void readAndMerge(DB::ReadBuffer & in)
@@ -351,7 +372,27 @@ public:
 
     void write(DB::WriteBuffer & out) const
     {
-        out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       if constexpr (std::endian::native == std::endian::little)
+            out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       else
+       {
+            out.write(reinterpret_cast<const char *>(&rank_store), sizeof(RankStore));
+
+            constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
+            std::array<char, denom_size> denominator_copy;
+            memcpy(denominator_copy.begin(), reinterpret_cast<const char *>(&denominator), denom_size);
+
+            for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
+            {
+                UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
+                DB::transformEndianness<std::endian::little, std::endian::native>(*cur);
+            }
+            out.write(denominator_copy.begin(), denom_size);
+
+            auto zeros_copy = zeros;
+            DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
+            out.write(reinterpret_cast<const char *>(&zeros_copy), sizeof(ZerosCounterType));
+       }
     }
 
     /// Read and write in text mode is suboptimal (but compatible with OLAPServer and Metrage).
@@ -409,7 +450,9 @@ private:
 
     inline HashValueType getHash(Value key) const
     {
-        return Hash::operator()(key);
+        /// NOTE: this should be OK, since value is the same as key for HLL.
+        return static_cast<HashValueType>(
+            Hash::operator()(static_cast<Key>(key)));
     }
 
     /// Update maximum rank for current bucket.
@@ -532,6 +575,7 @@ private:
 template
 <
     UInt8 precision,
+    typename Key,
     typename Hash,
     typename HashValueType,
     typename DenominatorType,
@@ -542,6 +586,7 @@ template
 details::LogLUT<precision> HyperLogLogCounter
 <
     precision,
+    Key,
     Hash,
     HashValueType,
     DenominatorType,
@@ -555,6 +600,7 @@ details::LogLUT<precision> HyperLogLogCounter
 /// Serialization format must not be changed.
 using HLL12 = HyperLogLogCounter<
     12,
+    UInt64,
     IntHash32<UInt64>,
     UInt32,
     double,

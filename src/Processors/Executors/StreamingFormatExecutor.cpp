@@ -1,6 +1,5 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <iostream>
 
 namespace DB
 {
@@ -8,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
@@ -35,6 +35,11 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 {
     format->setReadBuffer(buffer);
+
+    /// Format destructor can touch read buffer (for example when we use PeekableReadBuffer),
+    /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
+    /// we call format->resetReadBuffer() method that resets all buffers inside format.
+    SCOPE_EXIT(format->resetReadBuffer());
     return execute();
 }
 
@@ -59,21 +64,9 @@ size_t StreamingFormatExecutor::execute()
                     return new_rows;
 
                 case IProcessor::Status::PortFull:
-                {
-                    auto chunk = port.pull();
-                    if (adding_defaults_transform)
-                        adding_defaults_transform->transform(chunk);
-
-                    auto chunk_rows = chunk.getNumRows();
-                    new_rows += chunk_rows;
-
-                    auto columns = chunk.detachColumns();
-
-                    for (size_t i = 0, s = columns.size(); i < s; ++i)
-                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-
+                    new_rows += insertChunk(port.pull());
                     break;
-                }
+
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
                 case IProcessor::Status::ExpandPipeline:
@@ -86,6 +79,31 @@ size_t StreamingFormatExecutor::execute()
         format->resetParser();
         return on_error(result_columns, e);
     }
+    catch (std::exception & e)
+    {
+        format->resetParser();
+        auto exception = Exception(Exception::CreateFromSTDTag{}, e);
+        return on_error(result_columns, exception);
+    }
+    catch (...)
+    {
+        format->resetParser();
+        auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknowk exception while executing StreamingFormatExecutor with format {}", format->getName());
+        return on_error(result_columns, exception);
+    }
+}
+
+size_t StreamingFormatExecutor::insertChunk(Chunk chunk)
+{
+    size_t chunk_rows = chunk.getNumRows();
+    if (adding_defaults_transform)
+        adding_defaults_transform->transform(chunk);
+
+    auto columns = chunk.detachColumns();
+    for (size_t i = 0, s = columns.size(); i < s; ++i)
+        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+
+    return chunk_rows;
 }
 
 }

@@ -12,7 +12,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -54,7 +53,6 @@ void LimitStep::describeActions(FormatSettings & settings) const
     {
         settings.out << prefix;
 
-        String str;
         if (with_ties)
             settings.out << "WITH TIES";
 

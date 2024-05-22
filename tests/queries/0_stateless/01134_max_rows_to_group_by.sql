@@ -2,6 +2,9 @@ SET max_block_size = 1;
 SET max_rows_to_group_by = 10;
 SET group_by_overflow_mode = 'throw';
 
+-- Settings 'max_rows_to_group_by' and 'max_bytes_before_external_group_by' are mutually exclusive.
+SET max_bytes_before_external_group_by = 0;
+
 SELECT 'test1', number FROM system.numbers GROUP BY number; -- { serverError 158 }
 
 SET group_by_overflow_mode = 'break';

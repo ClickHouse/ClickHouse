@@ -1,4 +1,5 @@
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
@@ -141,7 +142,7 @@ namespace
         }
     }
 
-    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
+    void formatSettings(const ASTPtr & settings, const ASTFunction * base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
     {
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;
@@ -179,7 +180,7 @@ namespace
         if (settings)
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
 
-        boost::remove_erase_if(
+        std::erase_if(
             changes,
             [](const SettingChange & change)
             {
@@ -245,23 +246,39 @@ String ASTBackupQuery::getID(char) const
 
 ASTPtr ASTBackupQuery::clone() const
 {
-    return std::make_shared<ASTBackupQuery>(*this);
+    auto res = std::make_shared<ASTBackupQuery>(*this);
+    res->children.clear();
+
+    if (backup_name)
+        res->set(res->backup_name, backup_name->clone());
+
+    if (base_backup_name)
+        res->set(res->base_backup_name, base_backup_name->clone());
+
+    if (cluster_host_ids)
+        res->cluster_host_ids = cluster_host_ids->clone();
+
+    if (settings)
+        res->settings = settings->clone();
+
+    cloneOutputOptions(*res);
+
+    return res;
 }
 
 
-void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTBackupQuery::formatQueryImpl(const FormatSettings & fs, FormatState &, FormatStateStacked) const
 {
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ")
-                << (format.hilite ? hilite_none : "");
+    fs.ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ") << (fs.hilite ? hilite_none : "");
 
-    formatElements(elements, format);
-    formatOnCluster(format);
+    formatElements(elements, fs);
+    formatOnCluster(fs);
 
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
-    backup_name->format(format);
+    fs.ostr << (fs.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (fs.hilite ? hilite_none : "");
+    backup_name->format(fs);
 
     if (settings || base_backup_name)
-        formatSettings(settings, base_backup_name, cluster_host_ids, format);
+        formatSettings(settings, base_backup_name, cluster_host_ids, fs);
 }
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
@@ -271,6 +288,11 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
     new_query->setCurrentDatabase(new_query->elements, params.default_database);
     return new_query;
+}
+
+IAST::QueryKind ASTBackupQuery::getQueryKind() const
+{
+    return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
 }
 
 }

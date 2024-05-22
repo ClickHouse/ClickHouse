@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/ErrorHandler.h>
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 
@@ -28,7 +27,7 @@ public:
     void exception()                        override { logException(); }
 
 private:
-    Poco::Logger * log = &Poco::Logger::get("ServerErrorHandler");
+    LoggerPtr log = getLogger("ServerErrorHandler");
 
     void logException()
     {

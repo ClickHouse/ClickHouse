@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum class ColumnDefaultKind
+enum class ColumnDefaultKind : uint8_t
 {
     Default,
     Materialized,
@@ -26,6 +26,7 @@ struct ColumnDefault
 {
     ColumnDefaultKind kind = ColumnDefaultKind::Default;
     ASTPtr expression;
+    bool ephemeral_default = false;
 };
 
 

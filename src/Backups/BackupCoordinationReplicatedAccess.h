@@ -7,7 +7,7 @@
 
 namespace DB
 {
-enum class AccessEntityType;
+enum class AccessEntityType : uint8_t;
 
 /// This class is used by hosts to coordinate the access entities of ReplicatedAccessStorage they're writing to a backup.
 /// It's designed to make all hosts save the same access entities to the backup even in case the ReplicatedAccessStorage changes
@@ -28,8 +28,16 @@ public:
     BackupCoordinationReplicatedAccess();
     ~BackupCoordinationReplicatedAccess();
 
+    struct FilePathForAccessEntitry
+    {
+        String access_zk_path;
+        AccessEntityType access_entity_type;
+        String host_id;
+        String file_path;
+    };
+
     /// Adds a path to access*.txt file keeping access entities of a ReplicatedAccessStorage.
-    void addFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path);
+    void addFilePath(FilePathForAccessEntitry && file_path_for_access_entity);
 
     /// Returns all paths added by addFilePath() if `host_id` is a host chosen to store access.
     Strings getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const;

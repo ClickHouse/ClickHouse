@@ -1,4 +1,5 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
+#include <base/getPageSize.h>
 
 
 namespace DB
@@ -17,14 +18,15 @@ void MMapReadBufferFromFileWithCache::init()
     BufferBase::set(mapped->getData(), length, 0);
 
     size_t page_size = static_cast<size_t>(::getPageSize());
-    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
+    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - (PADDING_FOR_SIMD - 1));
+    ReadBufferFromFileBase::file_size = length;
 }
 
 
 MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
     MMappedFileCache & cache, const std::string & file_name, size_t offset, size_t length)
 {
-    mapped = cache.getOrSet(cache.hash(file_name, offset, length), [&]
+    mapped = cache.getOrSet(MMappedFileCache::hash(file_name, offset, length), [&]
     {
         return std::make_shared<MMappedFile>(file_name, offset, length);
     });
@@ -35,7 +37,7 @@ MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
 MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
     MMappedFileCache & cache, const std::string & file_name, size_t offset)
 {
-    mapped = cache.getOrSet(cache.hash(file_name, offset, -1), [&]
+    mapped = cache.getOrSet(MMappedFileCache::hash(file_name, offset, -1), [&]
     {
         return std::make_shared<MMappedFile>(file_name, offset);
     });

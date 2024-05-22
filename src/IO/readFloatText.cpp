@@ -37,13 +37,13 @@ bool parseNaN(ReadBuffer & buf)
 void assertInfinity(ReadBuffer & buf)
 {
     if (!parseInfinity(buf))
-        throw Exception("Cannot parse infinity.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse infinity.");
 }
 
 void assertNaN(ReadBuffer & buf)
 {
     if (!parseNaN(buf))
-        throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse NaN.");
 }
 
 
@@ -66,5 +66,8 @@ template void readFloatText<Float32>(Float32 &, ReadBuffer &);
 template void readFloatText<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatText<Float32>(Float32 &, ReadBuffer &);
 template bool tryReadFloatText<Float64>(Float64 &, ReadBuffer &);
+
+template bool tryReadFloatTextNoExponent<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatTextNoExponent<Float64>(Float64 &, ReadBuffer &);
 
 }

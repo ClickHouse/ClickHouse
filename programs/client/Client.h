@@ -17,6 +17,7 @@ public:
 
 protected:
     bool processWithFuzzing(const String & full_query) override;
+    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
     void connect() override;
 
@@ -24,7 +25,7 @@ protected:
 
     String getName() const override { return "client"; }
 
-    void printHelpMessage(const OptionsDescription & options_description) override;
+    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
 
     void addOptions(OptionsDescription & options_description) override;
 
@@ -46,6 +47,7 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
+    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };
 }

@@ -12,6 +12,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include "DataTypes/IDataType.h"
 
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -35,9 +36,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 constexpr auto FORMAT_NAME = "Prometheus";
 
-static bool isDataTypeMapString(const DataTypePtr & type)
+bool isDataTypeMapString(const DataTypePtr & type)
 {
     if (!isMap(type))
         return false;
@@ -45,8 +49,8 @@ static bool isDataTypeMapString(const DataTypePtr & type)
     return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
 }
 
-template <typename ResType, typename Pred>
-static void getColumnPos(const Block & header, const String & col_name, Pred pred, ResType & res)
+template <typename ResType>
+void getColumnPos(const Block & header, const String & col_name, bool (*pred)(const DataTypePtr &), ResType & res)
 {
     static_assert(std::is_same_v<ResType, size_t> || std::is_same_v<ResType, std::optional<size_t>>, "Illegal ResType");
 
@@ -71,7 +75,7 @@ static void getColumnPos(const Block & header, const String & col_name, Pred pre
     }
 }
 
-static Float64 tryParseFloat(const String & s)
+Float64 tryParseFloat(const String & s)
 {
     Float64 t = 0;
     ReadBufferFromString buf(s);
@@ -79,23 +83,24 @@ static Float64 tryParseFloat(const String & s)
     return t;
 }
 
+}
+
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_)
+    : IRowOutputFormat(header_, out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
     , format_settings(format_settings_)
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString<DataTypePtr>, pos.name);
-    getColumnPos(header, "value", isNumber<DataTypePtr>, pos.value);
+    getColumnPos(header, "name", isStringOrFixedString, pos.name);
+    getColumnPos(header, "value", isNumber, pos.value);
 
-    getColumnPos(header, "help", isStringOrFixedString<DataTypePtr>, pos.help);
-    getColumnPos(header, "type", isStringOrFixedString<DataTypePtr>, pos.type);
-    getColumnPos(header, "timestamp", isNumber<DataTypePtr>, pos.timestamp);
+    getColumnPos(header, "help", isStringOrFixedString, pos.help);
+    getColumnPos(header, "type", isStringOrFixedString, pos.type);
+    getColumnPos(header, "timestamp", isNumber, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 
@@ -282,9 +287,9 @@ static void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Cont
     Field field;
     col_map->get(row_num, field);
     const auto & map_field = field.get<Map>();
-    for (size_t i = 0; i < map_field.size(); ++i)
+    for (const auto & map_element : map_field)
     {
-        const auto & map_entry = map_field[i].get<Tuple>();
+        const auto & map_entry = map_element.get<Tuple>();
 
         String entry_key;
         String entry_value;
@@ -339,10 +344,9 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
     });
 }
 

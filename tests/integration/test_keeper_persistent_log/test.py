@@ -46,6 +46,10 @@ def get_connection_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
+def restart_clickhouse():
+    node.restart_clickhouse(kill=True)
+
+
 def test_state_after_restart(started_cluster):
     try:
         node_zk = None
@@ -62,7 +66,7 @@ def test_state_after_restart(started_cluster):
             if i % 7 == 0:
                 node_zk.delete("/test_state_after_restart/node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 
@@ -111,7 +115,7 @@ def test_state_duplicate_restart(started_cluster):
             if i % 7 == 0:
                 node_zk.delete("/test_state_duplicated_restart/node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 
@@ -119,7 +123,7 @@ def test_state_duplicate_restart(started_cluster):
         node_zk2.create("/test_state_duplicated_restart/just_test2")
         node_zk2.create("/test_state_duplicated_restart/just_test3")
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk3 = get_connection_zk("node")
 
@@ -176,7 +180,7 @@ def test_ephemeral_after_restart(started_cluster):
             if i % 7 == 0:
                 node_zk.delete("/test_ephemeral_after_restart/node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 

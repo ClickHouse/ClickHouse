@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/AsynchronousReader.h>
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h>
@@ -30,7 +29,8 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
         size_t read_until_position_ = 0,
-        bool use_external_buffer = false);
+        bool use_external_buffer = false,
+        std::optional<size_t> file_size = std::nullopt);
 
     ~ReadBufferFromHDFS() override;
 
@@ -43,8 +43,6 @@ public:
     size_t getFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override;
-
-    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
 
     String getFileName() const override;
 

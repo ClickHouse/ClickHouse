@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB
@@ -13,6 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int DEPRECATED_FUNCTION;
 }
 
 namespace
@@ -31,7 +33,18 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNeighbor>(); }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (!context->getSettingsRef().allow_deprecated_functions)
+            throw Exception(
+                ErrorCodes::DEPRECATED_FUNCTION,
+                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Please use proper window function or set `allow_deprecated_functions` setting to enable it",
+                name);
+
+        return std::make_shared<FunctionNeighbor>();
+    }
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -61,20 +74,17 @@ public:
         size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(number_of_arguments)
-                    + ", should be from 2 to 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be from 2 to 3",
+                getName(), number_of_arguments);
 
         // second argument must be an integer
         if (!isInteger(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - should be an integer",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {} - should be an integer", arguments[1]->getName(), getName());
         else if (arguments[1]->isNullable())
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - can not be Nullable",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {} - can not be Nullable", arguments[1]->getName(), getName());
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)

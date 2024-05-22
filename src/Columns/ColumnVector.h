@@ -1,17 +1,21 @@
 #pragma once
 
-#include <cmath>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnVectorHelper.h>
-#include <base/unaligned.h>
-#include <Core/Field.h>
+#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
+#include <Core/CompareHelper.h>
+#include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
+#include <base/unaligned.h>
 
-#include "config_core.h"
+#include "config.h"
 
+#if USE_MULTITARGET_CODE
+#    include <immintrin.h>
+#endif
 
 namespace DB
 {
@@ -22,101 +26,16 @@ namespace ErrorCodes
 }
 
 
-/** Stuff for comparing numbers.
-  * Integer values are compared as usual.
-  * Floating-point numbers are compared this way that NaNs always end up at the end
-  *  (if you don't do this, the sort would not work at all).
-  */
-template <class T, class U = T>
-struct CompareHelper
-{
-    static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
-    static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
-    static constexpr bool equals(T a, U b, int /*nan_direction_hint*/) { return a == b; }
-
-    /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
-      * If one of the values is NaN, then
-      * - if nan_direction_hint == -1 - NaN are considered less than all numbers;
-      * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
-      * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
-      */
-    static constexpr int compare(T a, U b, int /*nan_direction_hint*/)
-    {
-        return a > b ? 1 : (a < b ? -1 : 0);
-    }
-};
-
-template <class T>
-struct FloatCompareHelper
-{
-    static constexpr bool less(T a, T b, int nan_direction_hint)
-    {
-        const bool isnan_a = std::isnan(a);
-        const bool isnan_b = std::isnan(b);
-
-        if (isnan_a && isnan_b)
-            return false;
-        if (isnan_a)
-            return nan_direction_hint < 0;
-        if (isnan_b)
-            return nan_direction_hint > 0;
-
-        return a < b;
-    }
-
-    static constexpr bool greater(T a, T b, int nan_direction_hint)
-    {
-        const bool isnan_a = std::isnan(a);
-        const bool isnan_b = std::isnan(b);
-
-        if (isnan_a && isnan_b)
-            return false;
-        if (isnan_a)
-            return nan_direction_hint > 0;
-        if (isnan_b)
-            return nan_direction_hint < 0;
-
-        return a > b;
-    }
-
-    static constexpr bool equals(T a, T b, int nan_direction_hint)
-    {
-        return compare(a, b, nan_direction_hint) == 0;
-    }
-
-    static constexpr int compare(T a, T b, int nan_direction_hint)
-    {
-        const bool isnan_a = std::isnan(a);
-        const bool isnan_b = std::isnan(b);
-
-        if (unlikely(isnan_a || isnan_b))
-        {
-            if (isnan_a && isnan_b)
-                return 0;
-
-            return isnan_a
-                ? nan_direction_hint
-                : -nan_direction_hint;
-        }
-
-        return (T(0) < (a - b)) - ((a - b) < T(0));
-    }
-};
-
-template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
-template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
-
-
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
+class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, ColumnFixedSizeHelper>, ColumnVector<T>>
 {
     static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
     struct less;
     struct less_stable;
@@ -150,6 +69,17 @@ public:
         data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+    {
+        ValueType v = assert_cast<const Self &>(src).getData()[position];
+        data.resize_fill(data.size() + length, v);
+    }
+
+    void insertMany(const Field & field, size_t length) override
+    {
+        data.resize_fill(data.size() + length, static_cast<T>(field.get<T>()));
+    }
+
     void insertData(const char * pos, size_t) override
     {
         data.emplace_back(unalignedLoad<T>(pos));
@@ -169,8 +99,6 @@ public:
     {
         data.resize_assume_reserved(data.size() - n);
     }
-
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -227,19 +155,6 @@ public:
 
 #endif
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override
-    {
-        return this->template doCompareColumn<Self>(assert_cast<const Self &>(rhs), rhs_row_num, row_indexes,
-                                                    compare_results, direction, nan_direction_hint);
-    }
-
-    bool hasEqualValues() const override
-    {
-        return this->template hasEqualValuesImpl<Self>();
-    }
-
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -248,7 +163,12 @@ public:
 
     void reserve(size_t n) override
     {
-        data.reserve(n);
+        data.reserve_exact(n);
+    }
+
+    void shrinkToFit() override
+    {
+        data.shrink_to_fit();
     }
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
@@ -301,8 +221,10 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<T>(x));
+        data.push_back(static_cast<T>(x.get<T>()));
     }
+
+    bool tryInsert(const DB::Field & x) override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
@@ -322,13 +244,6 @@ public:
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
     void getExtremes(Field & min, Field & max) const override;
-
-    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
-    {
-        return this->template scatterImpl<Self>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
@@ -351,17 +266,7 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
-    {
-        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
-    }
-
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 
@@ -393,6 +298,127 @@ protected:
     Container data;
 };
 
+DECLARE_DEFAULT_CODE(
+template <typename Container, typename Type>
+inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+{
+    for (size_t i = 0; i < limit; ++i)
+        res_data[i] = data[indexes[i]];
+}
+);
+
+DECLARE_AVX512VBMI_SPECIFIC_CODE(
+template <typename Container, typename Type>
+inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+{
+    static constexpr UInt64 MASK64 = 0xffffffffffffffff;
+    const size_t limit64 = limit & ~63;
+    size_t pos = 0;
+    size_t data_size = data.size();
+
+    auto data_pos = reinterpret_cast<const UInt8 *>(data.data());
+    auto indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
+    auto res_pos = reinterpret_cast<UInt8 *>(res_data.data());
+
+    if (limit == 0)
+        return;   /// nothing to do, just return
+
+    if (data_size <= 64)
+    {
+        /// one single mask load for table size <= 64
+        __mmask64 last_mask = MASK64 >> (64 - data_size);
+        __m512i table1 = _mm512_maskz_loadu_epi8(last_mask, data_pos);
+
+        /// 64 bytes table lookup using one single permutexvar_epi8
+        while (pos < limit64)
+        {
+            __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
+            __m512i out = _mm512_permutexvar_epi8(vidx, table1);
+            _mm512_storeu_epi8(res_pos + pos, out);
+            pos += 64;
+        }
+        /// tail handling
+        if (limit > limit64)
+        {
+            __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
+            __m512i vidx = _mm512_maskz_loadu_epi8(tail_mask, indexes_pos + pos);
+            __m512i out = _mm512_permutexvar_epi8(vidx, table1);
+            _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
+        }
+    }
+    else if (data_size <= 128)
+    {
+        /// table size (64, 128] requires 2 zmm load
+        __mmask64 last_mask = MASK64 >> (128 - data_size);
+        __m512i table1 = _mm512_loadu_epi8(data_pos);
+        __m512i table2 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 64);
+
+        /// 128 bytes table lookup using one single permute2xvar_epi8
+        while (pos < limit64)
+        {
+            __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
+            __m512i out = _mm512_permutex2var_epi8(table1, vidx, table2);
+            _mm512_storeu_epi8(res_pos + pos, out);
+            pos += 64;
+        }
+        if (limit > limit64)
+        {
+            __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
+            __m512i vidx = _mm512_maskz_loadu_epi8(tail_mask, indexes_pos + pos);
+            __m512i out = _mm512_permutex2var_epi8(table1, vidx, table2);
+            _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
+        }
+    }
+    else
+    {
+        if (data_size > 256)
+        {
+            /// byte index will not exceed 256 boundary.
+            data_size = 256;
+        }
+
+        __m512i table1 = _mm512_loadu_epi8(data_pos);
+        __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
+        __m512i table3, table4;
+        if (data_size <= 192)
+        {
+            /// only 3 tables need to load if size <= 192
+            __mmask64 last_mask = MASK64 >> (192 - data_size);
+            table3 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 128);
+            table4 = _mm512_setzero_si512();
+        }
+        else
+        {
+            __mmask64 last_mask = MASK64 >> (256 - data_size);
+            table3 = _mm512_loadu_epi8(data_pos + 128);
+            table4 = _mm512_maskz_loadu_epi8(last_mask, data_pos + 192);
+        }
+
+        /// 256 bytes table lookup can use: 2 permute2xvar_epi8 plus 1 blender with MSB
+        while (pos < limit64)
+        {
+            __m512i vidx = _mm512_loadu_epi8(indexes_pos + pos);
+            __m512i tmp1 = _mm512_permutex2var_epi8(table1, vidx, table2);
+            __m512i tmp2 = _mm512_permutex2var_epi8(table3, vidx, table4);
+            __mmask64 msb = _mm512_movepi8_mask(vidx);
+            __m512i out = _mm512_mask_blend_epi8(msb, tmp1, tmp2);
+            _mm512_storeu_epi8(res_pos + pos, out);
+            pos += 64;
+        }
+        if (limit > limit64)
+        {
+            __mmask64 tail_mask = MASK64 >> (limit64 + 64 - limit);
+            __m512i vidx = _mm512_maskz_loadu_epi8(tail_mask, indexes_pos + pos);
+            __m512i tmp1 = _mm512_permutex2var_epi8(table1, vidx, table2);
+            __m512i tmp2 = _mm512_permutex2var_epi8(table3, vidx, table4);
+            __mmask64 msb = _mm512_movepi8_mask(vidx);
+            __m512i out = _mm512_mask_blend_epi8(msb, tmp1, tmp2);
+            _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
+        }
+    }
+}
+);
+
 template <typename T>
 template <typename Type>
 ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
@@ -401,8 +427,18 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
-    for (size_t i = 0; i < limit; ++i)
-        res_data[i] = data[indexes[i]];
+#if USE_MULTITARGET_CODE
+    if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
+    {
+        /// VBMI optimization only applicable for (U)Int8 types
+        if (isArchSupported(TargetArch::AVX512VBMI))
+        {
+            TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
+            return res;
+        }
+    }
+#endif
+    TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
 
     return res;
 }
@@ -424,5 +460,7 @@ extern template class ColumnVector<Int256>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;
+extern template class ColumnVector<IPv4>;
+extern template class ColumnVector<IPv6>;
 
 }

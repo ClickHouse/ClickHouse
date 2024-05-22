@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -16,7 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -59,14 +58,14 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
         {
             return ColumnWithTypeAndName{nullptr, nested_type, col.name};
         }
-        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
+        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
         {
             const auto & nested_col = nullable->getNestedColumnPtr();
             return ColumnWithTypeAndName{nested_col, nested_type, col.name};
         }
-        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
+        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
         {
-            const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
+            const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&const_column->getDataColumn());
 
             ColumnPtr nullable_res;
             if (nullable_column)
@@ -81,7 +80,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
         }
         else
-            throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
     }
     return col;
 }
@@ -100,16 +99,13 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                           const char * expected_type_description)
 {
     if (arguments.size() <= argument_index)
-        throw Exception("Incorrect number of arguments of function " + func.getName(),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments of function {}",
+                        func.getName());
 
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
-        throw Exception("Illegal type " + argument->getName() +
-                        " of " + std::to_string(argument_index) +
-                        " argument of function " + func.getName() +
-                        " expected " + expected_type_description,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
+                        argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
 }
 
 namespace
@@ -130,12 +126,13 @@ void validateArgumentsImpl(const IFunction & func,
         const auto & arg = arguments[i + argument_offset];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
-            throw Exception("Illegal type of argument #" + std::to_string(argument_offset + i + 1) // +1 is for human-friendly 1-based indexing
-                            + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
-                            + " of function " + func.getName()
-                            + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
-                            + (arg.type ? ", got " + arg.type->getName() : String{}),
-                            error_code);
+            throw Exception(error_code,
+                            "Illegal type of argument #{}{} of function {}{}{}",
+                            argument_offset + i + 1,    // +1 is for human-friendly 1-based indexing
+                            (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{}),
+                            func.getName(),
+                            (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{}),
+                            (arg.type ? ", got " + arg.type->getName() : String{}));
     }
 }
 
@@ -184,15 +181,11 @@ void validateFunctionArgumentTypes(const IFunction & func,
             return result;
         };
 
-        throw Exception("Incorrect number of arguments for function " + func.getName()
-                        + " provided " + std::to_string(arguments.size())
-                        + (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{})
-                        + ", expected " + std::to_string(mandatory_args.size())
-                        + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
-                        + " (" + join_argument_types(mandatory_args)
-                        + (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : "")
-                        + ")",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for function {} provided {}{}, expected {}{} ({}{})",
+            func.getName(), arguments.size(), (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{}),
+            mandatory_args.size(), (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
+            join_argument_types(mandatory_args), (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : ""));
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
@@ -215,26 +208,13 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
             offsets_i = &arr->getOffsets();
         }
         else
-            throw Exception("Illegal column " + columns[i]->getName() + " as argument of function", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function", columns[i]->getName());
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to aggregate function must be equal.");
     }
     return {nested_columns, offsets->data()};
-}
-
-bool areTypesEqual(const IDataType & lhs, const IDataType & rhs)
-{
-    const auto & lhs_name = lhs.getName();
-    const auto & rhs_name = rhs.getName();
-
-    return lhs_name == rhs_name;
-}
-
-bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
-{
-    return areTypesEqual(*lhs, *rhs);
 }
 
 ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
@@ -246,7 +226,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
 
     if (src->onlyNull())
         return src;
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();
@@ -267,10 +247,10 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (isColumnConst(*elem.column))
             continue;
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            if (!result_null_map_column) //-V1051
+            if (!result_null_map_column)
             {
                 result_null_map_column = null_map_column;
             }

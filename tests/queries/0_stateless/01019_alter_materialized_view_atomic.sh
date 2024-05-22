@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest, no-debug
 
 set -e
 

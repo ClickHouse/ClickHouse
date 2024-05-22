@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
@@ -69,7 +71,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
         if (exists_query->temporary)
-            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
         result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
@@ -81,4 +83,12 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         "result" }}));
 }
 
+void registerInterpreterExistsQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterExistsQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterExistsQuery", create_fn);
+}
 }

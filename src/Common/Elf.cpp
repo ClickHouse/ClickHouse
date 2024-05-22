@@ -16,19 +16,31 @@ namespace ErrorCodes
 }
 
 
-Elf::Elf(const std::string & path)
-    : in(path, 0)
+Elf::Elf(const std::string & path_)
 {
-    /// Check if it's an elf.
-    elf_size = in.buffer().size();
-    if (elf_size < sizeof(ElfEhdr))
-        throw Exception("The size of supposedly ELF file is too small", ErrorCodes::CANNOT_PARSE_ELF);
+    in.emplace(path_, 0);
+    init(in->buffer().begin(), in->buffer().size(), path_);
+}
 
-    mapped = in.buffer().begin();
+Elf::Elf(const char * data, size_t size, const std::string & path_)
+{
+    init(data, size, path_);
+}
+
+void Elf::init(const char * data, size_t size, const std::string & path_)
+{
+    path = path_;
+    mapped = data;
+    elf_size = size;
+
+    /// Check if it's an elf.
+    if (elf_size < sizeof(ElfEhdr))
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The size of supposedly ELF file '{}' is too small", path);
+
     header = reinterpret_cast<const ElfEhdr *>(mapped);
 
     if (memcmp(header->e_ident, "\x7F""ELF", 4) != 0)
-        throw Exception("The file is not ELF according to magic", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The file '{}' is not ELF according to magic", path);
 
     /// Get section header.
     ElfOff section_header_offset = header->e_shoff;
@@ -37,7 +49,7 @@ Elf::Elf(const std::string & path)
     if (!section_header_offset
         || !section_header_num_entries
         || section_header_offset + section_header_num_entries * sizeof(ElfShdr) > elf_size)
-        throw Exception("The ELF is truncated (section header points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section header points after end of file)", path);
 
     section_headers = reinterpret_cast<const ElfShdr *>(mapped + section_header_offset);
 
@@ -48,11 +60,11 @@ Elf::Elf(const std::string & path)
     });
 
     if (!section_names_strtab)
-        throw Exception("The ELF doesn't have string table with section names", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' doesn't have string table with section names", path);
 
     ElfOff section_names_offset = section_names_strtab->header.sh_offset;
     if (section_names_offset >= elf_size)
-        throw Exception("The ELF is truncated (section names string table points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section names string table points after end of file)", path);
 
     section_names = reinterpret_cast<const char *>(mapped + section_names_offset);
 
@@ -64,7 +76,7 @@ Elf::Elf(const std::string & path)
     if (!program_header_offset
         || !program_header_num_entries
         || program_header_offset + program_header_num_entries * sizeof(ElfPhdr) > elf_size)
-        throw Exception("The ELF is truncated (program header points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (program header points after end of file)", path);
 
     program_headers = reinterpret_cast<const ElfPhdr *>(mapped + program_header_offset);
 }
@@ -188,7 +200,7 @@ String Elf::getStoredBinaryHash() const
 const char * Elf::Section::name() const
 {
     if (!elf.section_names)
-        throw Exception("Section names are not initialized", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section names are not initialized");
 
     /// TODO buffer overflow is possible, we may need to check strlen.
     return elf.section_names + header.sh_name;

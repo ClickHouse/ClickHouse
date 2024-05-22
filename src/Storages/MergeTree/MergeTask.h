@@ -1,21 +1,30 @@
 #pragma once
 
-#include <Storages/MergeTree/IExecutableTask.h>
-#include <Storages/MergeTree/MergeProgress.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/ColumnSizeEstimator.h>
-#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Compression/CompressedReadBufferFromFile.h>
+#include <list>
+#include <memory>
+
 #include <Common/filesystemHelpers.h>
 
-#include <memory>
-#include <list>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+
+#include <Interpreters/TemporaryDataOnDisk.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <QueryPipeline/QueryPipeline.h>
+
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/ColumnSizeEstimator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/IExecutableTask.h>
+#include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/MergeTree/MergeProgress.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+
 
 namespace DB
 {
@@ -58,9 +67,10 @@ public:
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
+        bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
-        const IMergeTreeDataPart * parent_part_,
-        const IDataPartStorageBuilder * parent_path_storage_builder_,
+        bool need_prefix,
+        IMergeTreeDataPart * parent_part_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
@@ -81,13 +91,14 @@ public:
             global_ctx->space_reservation = std::move(space_reservation_);
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
+            global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
-            global_ctx->parent_path_storage_builder = std::move(parent_path_storage_builder_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
+            global_ctx->need_prefix = need_prefix;
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
@@ -102,9 +113,11 @@ public:
         return global_ctx->promise.get_future();
     }
 
-    DataPartStorageBuilderPtr getBuilder()
+    MergeTreeData::MutableDataPartPtr getUnfinishedPart()
     {
-        return global_ctx->data_part_storage_builder;
+        if (global_ctx)
+            return global_ctx->new_data_part;
+        return nullptr;
     }
 
     bool execute();
@@ -127,7 +140,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
+    struct GlobalRuntimeContext : public IStageRuntimeContext
     {
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
@@ -141,13 +154,13 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
-        const IMergeTreeDataPart * parent_part{nullptr};
-        const IDataPartStorageBuilder * parent_path_storage_builder{nullptr};
+        IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
         bool deduplicate{false};
         Names deduplicate_by_columns{};
+        bool cleanup{false};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
@@ -168,7 +181,6 @@ private:
         std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
-        DataPartStorageBuilderPtr data_part_storage_builder;
 
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
@@ -180,6 +192,7 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
+        bool need_prefix;
 
         scope_guard temporary_directory_lock;
     };
@@ -189,19 +202,19 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         /// Dependencies
         String suffix;
+        bool need_prefix;
         MergeTreeData::MergingParams merging_params{};
 
-        DiskPtr tmp_disk{nullptr};
+        TemporaryDataOnDiskPtr tmp_disk{nullptr};
         DiskPtr disk{nullptr};
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<TemporaryFile> rows_sources_file{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -215,7 +228,7 @@ private:
         size_t sum_compressed_bytes_upper_bound{0};
         bool blocks_are_granules_size{false};
 
-        Poco::Logger * log{&Poco::Logger::get("MergeTask::PrepareStage")};
+        LoggerPtr log{getLogger("MergeTask::PrepareStage")};
 
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
@@ -233,15 +246,16 @@ private:
         bool prepare();
         bool executeImpl();
 
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<std::function<bool()>, 2>;
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 2>;
 
-        ExecuteAndFinalizeHorizontalPartSubtasks subtasks
+        const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
-            [this] () { return prepare(); },
-            [this] () { return executeImpl(); }
+            &ExecuteAndFinalizeHorizontalPart::prepare,
+            &ExecuteAndFinalizeHorizontalPart::executeImpl
         };
 
-        ExecuteAndFinalizeHorizontalPartSubtasks::iterator subtasks_iterator = subtasks.begin();
+        ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
 
         MergeAlgorithm chooseMergeAlgorithm() const;
@@ -261,22 +275,21 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
-        DiskPtr tmp_disk{nullptr};
+        TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         size_t column_num_for_vertical_merge{0};
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
 
-        enum class State
+        enum class State : uint8_t
         {
             NEED_PREPARE,
             NEED_EXECUTE,
@@ -286,7 +299,8 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::vector<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
+        size_t max_delayed_streams = 0;
+        std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
@@ -310,16 +324,17 @@ private:
         bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
-        using VerticalMergeStageSubtasks = std::array<std::function<bool()>, 3>;
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
+        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
 
-        VerticalMergeStageSubtasks subtasks
+        const VerticalMergeStageSubtasks subtasks
         {
-            [this] () { return prepareVerticalMergeForAllColumns(); },
-            [this] () { return executeVerticalMergeForAllColumns(); },
-            [this] () { return finalizeVerticalMergeForAllColumns(); }
+            &VerticalMergeStage::prepareVerticalMergeForAllColumns,
+            &VerticalMergeStage::executeVerticalMergeForAllColumns,
+            &VerticalMergeStage::finalizeVerticalMergeForAllColumns
         };
 
-        VerticalMergeStageSubtasks::iterator subtasks_iterator = subtasks.begin();
+        VerticalMergeStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
@@ -332,7 +347,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext //-V730
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
     {
         /// Only one dependency
         bool need_sync{false};
@@ -341,7 +356,7 @@ private:
         MergeTasks tasks_for_projections;
         MergeTasks::iterator projections_iterator;
 
-        Poco::Logger * log{&Poco::Logger::get("MergeTask::MergeProjectionsStage")};
+        LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
@@ -360,16 +375,17 @@ private:
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
-        using MergeProjectionsStageSubtasks = std::array<std::function<bool()>, 3>;
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
+        using MergeProjectionsStageSubtasks = std::array<bool(MergeProjectionsStage::*)()const, 3>;
 
-        MergeProjectionsStageSubtasks subtasks
+        const MergeProjectionsStageSubtasks subtasks
         {
-            [this] () { return mergeMinMaxIndexAndPrepareProjections(); },
-            [this] () { return executeProjections(); },
-            [this] () { return finalizeProjectionsAndWholeMerge(); }
+            &MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections,
+            &MergeProjectionsStage::executeProjections,
+            &MergeProjectionsStage::finalizeProjectionsAndWholeMerge
         };
 
-        MergeProjectionsStageSubtasks::iterator subtasks_iterator = subtasks.begin();
+        MergeProjectionsStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
         MergeProjectionsRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -379,15 +395,26 @@ private:
 
     using Stages = std::array<StagePtr, 3>;
 
-    Stages stages
+    const Stages stages
     {
         std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
         std::make_shared<VerticalMergeStage>(),
         std::make_shared<MergeProjectionsStage>()
     };
 
-    Stages::iterator stages_iterator = stages.begin();
+    Stages::const_iterator stages_iterator = stages.begin();
 
+    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
+    {
+        return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    }
+
+    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
+    {
+        return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    }
+
+    static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };
 
 /// FIXME

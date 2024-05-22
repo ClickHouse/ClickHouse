@@ -1,6 +1,6 @@
 ---
 slug: /ru/development/style
-sidebar_position: 69
+sidebar_position: 70
 sidebar_label: "Как писать код на C++"
 ---
 
@@ -345,7 +345,7 @@ struct ExtractDomain
 **7.** Для абстрактных классов (интерфейсов) можно добавить в начало имени букву `I`.
 
 ``` cpp
-class IBlockInputStream
+class IProcessor
 ```
 
 **8.** Если переменная используется достаточно локально, то можно использовать короткое имя.
@@ -493,7 +493,7 @@ catch (const DB::Exception & e)
 
 ``` cpp
 if (0 != close(fd))
-    throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
 ```
 
 `assert` не используются.

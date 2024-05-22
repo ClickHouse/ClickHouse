@@ -18,16 +18,37 @@ template <typename T>
 static inline String formatQuoted(T x)
 {
     WriteBufferFromOwnString wb;
-    writeQuoted(x, wb);
-    return wb.str();
-}
 
-template <typename T>
-static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf, {});
-    writeChar('\'', buf);
+    if constexpr (is_decimal_field<T>)
+    {
+        writeChar('\'', wb);
+        writeText(x.getValue(), x.getScale(), wb, {});
+        writeChar('\'', wb);
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        writeChar('\'', wb);
+        writeText(x, wb);
+        writeChar('\'', wb);
+    }
+    else
+    {
+        /// While `writeQuoted` sounds like it will always write the value in quotes,
+        /// in fact it means: write according to the rules of the quoted format, like VALUES,
+        /// where strings, dates, date-times, UUID are in quotes, and numbers are not.
+
+        /// That's why we take extra care to put Decimal and big integers inside quotes
+        /// when formatting literals in SQL language,
+        /// because it is different from the quoted formats like VALUES.
+
+        /// In fact, there are no Decimal and big integer literals in SQL,
+        /// but they can appear if we format the query from a modified AST.
+
+        /// We can fix this idiosyncrasy later.
+
+        writeQuoted(x, wb);
+    }
+    return wb.str();
 }
 
 /** In contrast to writeFloatText (and writeQuoted),
@@ -46,7 +67,7 @@ static String formatFloat(const Float64 x)
     const auto result = DoubleConverter<true>::instance().ToShortest(x, &builder);
 
     if (!result)
-        throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
 
     return { buffer, buffer + builder.position() };
 }
@@ -65,8 +86,11 @@ String FieldVisitorToString::operator() (const UInt128 & x) const { return forma
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const IPv4 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const IPv6 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
+String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -114,14 +138,14 @@ String FieldVisitorToString::operator() (const Map & x) const
 {
     WriteBufferFromOwnString wb;
 
-    wb << '(';
+    wb << '[';
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb << ", ";
         wb << applyVisitor(*this, *it);
     }
-    wb << ')';
+    wb << ']';
 
     return wb.str();
 }
@@ -145,5 +169,11 @@ String FieldVisitorToString::operator() (const Object & x) const
 
 }
 
+String convertFieldToString(const Field & field)
+{
+    if (field.getType() == Field::Types::Which::String)
+        return field.get<String>();
+    return applyVisitor(FieldVisitorToString(), field);
 }
 
+}

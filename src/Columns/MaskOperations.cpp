@@ -17,20 +17,20 @@ namespace ErrorCodes
 }
 
 template <typename T>
-void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted)
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted, T default_value)
 {
     if (mask.size() < data.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    int from = data.size() - 1;
-    int index = mask.size() - 1;
+    ssize_t from = data.size() - 1;
+    ssize_t index = mask.size() - 1;
     data.resize(mask.size());
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
             /// Copy only if it makes sense.
             if (index != from)
@@ -38,18 +38,18 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
             --from;
         }
         else
-            data[index] = T();
+            data[index] = default_value;
 
         --index;
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
 #define INSTANTIATE(TYPE) \
-template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool);
+template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool, TYPE);
 
 INSTANTIATE(UInt8)
 INSTANTIATE(UInt16)
@@ -72,11 +72,13 @@ INSTANTIATE(Decimal256)
 INSTANTIATE(DateTime64)
 INSTANTIATE(char *)
 INSTANTIATE(UUID)
+INSTANTIATE(IPv4)
+INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
 template <bool inverted, bool column_is_short, typename Container>
-size_t extractMaskNumericImpl(
+static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
     UInt8 null_value,
@@ -95,8 +97,7 @@ size_t extractMaskNumericImpl(
     size_t mask_size = mask.size();
     size_t data_size = data.size();
 
-    size_t i = 0;
-    for (; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
@@ -119,7 +120,7 @@ size_t extractMaskNumericImpl(
                 (*nulls)[i] = 1;
         }
         else
-            value = !!data[index];
+            value = static_cast<bool>(data[index]);
 
         if constexpr (inverted)
             value = !value;
@@ -140,7 +141,7 @@ size_t extractMaskNumericImpl(
 }
 
 template <bool inverted, typename NumericType>
-bool extractMaskNumeric(
+static bool extractMaskNumeric(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -165,7 +166,7 @@ bool extractMaskNumeric(
 }
 
 template <bool inverted>
-MaskInfo extractMaskFromConstOrNull(
+static MaskInfo extractMaskFromConstOrNull(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -194,7 +195,7 @@ MaskInfo extractMaskFromConstOrNull(
 }
 
 template <bool inverted>
-MaskInfo extractMaskImpl(
+static MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & col,
     UInt8 null_value,
@@ -204,10 +205,10 @@ MaskInfo extractMaskImpl(
     auto column = col->convertToFullColumnIfLowCardinality();
 
     /// Special implementation for Null and Const columns.
-    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
+    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(&*column))
         return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column))
     {
         const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
         return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
@@ -317,7 +318,7 @@ int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
     for (size_t i = 0; i != arguments.size(); ++i)
     {
         if (checkAndGetShortCircuitArgument(arguments[i].column))
-            last_short_circuit_argument_index = i;
+            last_short_circuit_argument_index = static_cast<int>(i);
     }
 
     return last_short_circuit_argument_index;
@@ -326,7 +327,7 @@ int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
 void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 {
     if (from.size() != to.size())
-        throw Exception("Cannot copy mask, because source and destination have different size", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy mask, because source and destination have different size");
 
     if (from.empty())
         return;
@@ -335,4 +336,3 @@ void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 }
 
 }
-

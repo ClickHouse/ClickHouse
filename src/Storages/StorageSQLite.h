@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_SQLITE
 #include <Storages/IStorage.h>
@@ -38,15 +38,22 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+
+    static ColumnsDescription getTableStructureFromData(
+        const SQLitePtr & sqlite_db_,
+        const String & table);
 
 private:
+    friend class SQLiteSink; /// for write_context
+
     String remote_table_name;
     String database_path;
     SQLitePtr sqlite_db;
-    Poco::Logger * log;
+    LoggerPtr log;
+    ContextPtr write_context;
 };
 
 }

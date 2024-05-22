@@ -7,7 +7,7 @@ SET allow_experimental_object_type = 1;
 CREATE TABLE t_json_sparse (data JSON)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1,
-min_bytes_for_wide_part = 0;
+min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 SYSTEM STOP MERGES t_json_sparse;
 
@@ -18,7 +18,8 @@ SELECT subcolumns.names, subcolumns.serializations, count() FROM system.parts_co
 ARRAY JOIN subcolumns
 WHERE database = currentDatabase()
     AND table = 't_json_sparse' AND column = 'data' AND active
-GROUP BY subcolumns.names, subcolumns.serializations;
+GROUP BY subcolumns.names, subcolumns.serializations
+ORDER BY subcolumns.names;
 
 SELECT '=============';
 
@@ -29,7 +30,8 @@ SELECT subcolumns.names, subcolumns.serializations, count() FROM system.parts_co
 ARRAY JOIN subcolumns
 WHERE database = currentDatabase()
     AND table = 't_json_sparse' AND column = 'data' AND active
-GROUP BY subcolumns.names, subcolumns.serializations;
+GROUP BY subcolumns.names, subcolumns.serializations
+ORDER BY subcolumns.names;
 
 SELECT '=============';
 
@@ -40,7 +42,8 @@ SELECT subcolumns.names, subcolumns.serializations, count() FROM system.parts_co
 ARRAY JOIN subcolumns
 WHERE database = currentDatabase()
     AND table = 't_json_sparse' AND column = 'data' AND active
-GROUP BY subcolumns.names, subcolumns.serializations;
+GROUP BY subcolumns.names, subcolumns.serializations
+ORDER BY subcolumns.names;
 
 INSERT INTO t_json_sparse SELECT '{"k1": 2}' FROM numbers(200000);
 
@@ -52,8 +55,9 @@ SELECT subcolumns.names, subcolumns.serializations, count() FROM system.parts_co
 ARRAY JOIN subcolumns
 WHERE database = currentDatabase()
     AND table = 't_json_sparse' AND column = 'data' AND active
-GROUP BY subcolumns.names, subcolumns.serializations;
+GROUP BY subcolumns.names, subcolumns.serializations
+ORDER BY subcolumns.names;
 
-SELECT data.k1, count(), sum(data.k2.k3) FROM t_json_sparse GROUP BY data.k1;
+SELECT data.k1, count(), sum(data.k2.k3) FROM t_json_sparse GROUP BY data.k1 ORDER BY data.k1;
 
-DROP TABLE t_json_sparse;
+-- DROP TABLE t_json_sparse;

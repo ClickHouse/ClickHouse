@@ -45,7 +45,7 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
@@ -60,7 +60,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 
--   `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
+- `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
 
     Column Data Type — `Int8`.
 
@@ -125,7 +125,7 @@ For each resulting data part ClickHouse saves:
 3.  The first “cancel” row, if there are more “cancel” rows than “state” rows.
 4.  None of the rows, in all other cases.
 
-Also when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
+Also, when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
@@ -196,7 +196,7 @@ What do we see and where is collapsing?
 
 With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows. Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment which we can not predict.
 
-Thus we need aggregation:
+Thus, we need aggregation:
 
 ``` sql
 SELECT
@@ -306,5 +306,3 @@ select * FROM UAct
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

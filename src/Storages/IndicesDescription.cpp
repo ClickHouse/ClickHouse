@@ -10,7 +10,10 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
+
 #include <Core/Defines.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -19,6 +22,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -72,46 +80,59 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
-        throw Exception("Cannot create skip index from non ASTIndexDeclaration AST", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");
 
     if (index_definition->name.empty())
-        throw Exception("Skip index must have name in definition.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
-    if (!index_definition->type)
-        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
+    auto index_type = index_definition->getType();
+    if (!index_type)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
 
-    if (index_definition->type->parameters && !index_definition->type->parameters->children.empty())
-        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
+    if (index_type->parameters && !index_type->parameters->children.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
-    result.type = Poco::toLower(index_definition->type->name);
+    result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
 
-    ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
-    result.expression_list_ast = expr_list->clone();
+    ASTPtr expr_list;
+    if (auto index_expression = index_definition->getExpression())
+    {
+        expr_list = extractKeyExpressionList(index_expression);
+
+        ReplaceAliasToExprVisitor::Data data{columns};
+        ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
+        result.expression_list_ast = expr_list->clone();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
+    }
 
     auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
-    Block block_without_columns = result.expression->getSampleBlock();
+    result.sample_block = result.expression->getSampleBlock();
 
-    for (size_t i = 0; i < block_without_columns.columns(); ++i)
+    for (auto & elem : result.sample_block)
     {
-        const auto & column = block_without_columns.getByPosition(i);
-        result.column_names.emplace_back(column.name);
-        result.data_types.emplace_back(column.type);
-        result.sample_block.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
+        if (!elem.column)
+            elem.column = elem.type->createColumn();
+
+        result.column_names.push_back(elem.name);
+        result.data_types.push_back(elem.type);
     }
 
-    const auto & definition_arguments = index_definition->type->arguments;
-    if (definition_arguments)
+    if (index_type && index_type->arguments)
     {
-        for (size_t i = 0; i < definition_arguments->children.size(); ++i)
+        for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
-            const auto * argument = definition_arguments->children[i]->as<ASTLiteral>();
+            const auto * argument = index_type->arguments->children[i]->as<ASTLiteral>();
             if (!argument)
-                throw Exception("Only literals can be skip index arguments", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
             result.arguments.emplace_back(argument->value);
         }
     }
@@ -141,7 +162,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return serializeAST(list, true);
+    return serializeAST(list);
 }
 
 
@@ -152,7 +173,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
         return result;
 
     ParserIndexDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & index : list->children)
         result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));

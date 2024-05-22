@@ -66,7 +66,7 @@ struct ReverseIndexHash
     template <typename T>
     size_t operator()(T) const
     {
-        throw Exception("operator()(key) is not implemented for ReverseIndexHash.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "operator()(key) is not implemented for ReverseIndexHash.");
     }
 };
 
@@ -86,7 +86,7 @@ struct ReverseIndexHashTableCell
     {
         /// Careful: apparently this uses SFINAE to redefine isZero for all types
         /// except the IndexType, for which the default ZeroTraits::isZero is used.
-        static_assert(!std::is_same_v<typename std::decay<T>::type, typename std::decay<IndexType>::type>);
+        static_assert(!std::is_same_v<typename std::decay_t<T>, typename std::decay_t<IndexType>>);
         return false;
     }
 
@@ -417,7 +417,7 @@ template <typename IndexType, typename ColumnType>
 size_t ReverseIndex<IndexType, ColumnType>::size() const
 {
     if (!column)
-        throw Exception("ReverseIndex has not size because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex has not size because index column wasn't set.");
 
     return column->size();
 }
@@ -429,7 +429,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         return;
 
     if (!column)
-        throw Exception("ReverseIndex can't build index because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't build index because index column wasn't set.");
 
     auto size = column->size();
     index = std::make_unique<IndexMapType>(size);
@@ -458,7 +458,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         index->reverseIndexEmplace(row + base_index, iterator, inserted, hash, column->getDataAt(row));
 
         if (!inserted)
-            throw Exception("Duplicating keys found in ReverseIndex.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicating keys found in ReverseIndex.");
     }
 }
 
@@ -466,7 +466,7 @@ template <typename IndexType, typename ColumnType>
 ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
 {
     if (!column)
-        throw Exception("ReverseIndex can't build index because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't build index because index column wasn't set.");
 
     auto size = column->size();
     auto hash = ColumnUInt64::create(size);

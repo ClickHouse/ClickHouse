@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -17,7 +17,7 @@
 #include <Common/escapeForFileName.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Common/config.h>
+#include "config.h"
 
 
 namespace DB
@@ -67,7 +67,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     ContextPtr context_,
     const BridgeHelperPtr bridge_)
     : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
+    , log(getLogger(bridge_->getName() + "DictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -76,7 +76,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , bridge_helper(bridge_)
     , bridge_url(bridge_helper->getMainURI())
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings().keep_alive_timeout))
 {
     auto url_params = bridge_helper->getURLParams(max_block_size);
     for (const auto & [name, value] : url_params)
@@ -86,7 +86,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     : WithContext(other.getContext())
-    , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    , log(getLogger(other.bridge_helper->getName() + "DictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)
@@ -178,7 +178,7 @@ bool XDBCDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (invalidate_query_response == response) //-V1051
+        if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
     }
@@ -203,7 +203,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 }
 
 
-QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
+QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const Block & required_sample_block, const std::string & query) const
 {
     bridge_helper->startBridgeSync();
 
@@ -214,10 +214,15 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const B
         os << "query=" << escapeForFileName(query);
     };
 
-    auto read_buf = std::make_unique<ReadWriteBufferFromHTTP>(
-        url, Poco::Net::HTTPRequest::HTTP_POST, write_body_callback, timeouts, credentials);
-    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, max_block_size);
-    format->addBuffer(std::move(read_buf));
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(timeouts)
+                   .withOutCallback(std::move(write_body_callback))
+                   .create(credentials);
+
+    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *buf, required_sample_block, max_block_size);
+    format->addBuffer(std::move(buf));
 
     return QueryPipeline(std::move(format));
 }
@@ -233,7 +238,11 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    bool /* check_config */) -> DictionarySourcePtr {
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
-            global_context, global_context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+            global_context,
+            global_context->getSettings().http_receive_timeout,
+            config.getString(config_prefix + ".odbc.connection_string"),
+            config.getBool(config_prefix + ".settings.odbc_bridge_use_connection_pooling",
+            global_context->getSettingsRef().odbc_bridge_use_connection_pooling));
 
         std::string settings_config_prefix = config_prefix + ".odbc";
 

@@ -472,7 +472,7 @@ FROM
 
 -   `r1`-2020-01-01期间访问该网站的独立访问者数量（ `cond1` 条件）。
 -   `r2`-在2020-01-01和2020-01-02之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond2` 条件）。
--   `r3`-在2020-01-01和2020-01-03之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond3` 条件）。
+-   `r3`-在2020-01-01和2020-01-03 网站的独立访客数量 (`cond1` 和 `cond3` 条件）。
 
 ## uniqUpTo(N)(x) {#uniquptonx}
 
@@ -497,5 +497,3 @@ FROM
 ## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
 和 [sumMap](./reference/summap.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
-
-[原始文章](https://clickhouse.com/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->

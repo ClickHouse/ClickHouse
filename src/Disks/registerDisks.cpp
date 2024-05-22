@@ -2,60 +2,49 @@
 
 #include "DiskFactory.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {
 
-void registerDiskLocal(DiskFactory & factory);
-void registerDiskMemory(DiskFactory & factory);
-
-#if USE_AWS_S3
-void registerDiskS3(DiskFactory & factory);
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-void registerDiskAzureBlobStorage(DiskFactory & factory);
-#endif
+void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
 
 #if USE_SSL
-void registerDiskEncrypted(DiskFactory & factory);
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
-#if USE_HDFS
-void registerDiskHDFS(DiskFactory & factory);
-#endif
+void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
+void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
 
-void registerDiskWebServer(DiskFactory & factory);
 
-void registerDiskCache(DiskFactory & factory);
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
-void registerDisks()
+void registerDisks(bool global_skip_access_check)
 {
     auto & factory = DiskFactory::instance();
 
-    registerDiskLocal(factory);
-    registerDiskMemory(factory);
-
-#if USE_AWS_S3
-    registerDiskS3(factory);
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-    registerDiskAzureBlobStorage(factory);
-#endif
+    registerDiskLocal(factory, global_skip_access_check);
 
 #if USE_SSL
-    registerDiskEncrypted(factory);
+    registerDiskEncrypted(factory, global_skip_access_check);
 #endif
 
-#if USE_HDFS
-    registerDiskHDFS(factory);
-#endif
+    registerDiskCache(factory, global_skip_access_check);
 
-    registerDiskWebServer(factory);
-
-    registerDiskCache(factory);
+    registerDiskObjectStorage(factory, global_skip_access_check);
 }
+
+#else
+
+void registerDisks(bool global_skip_access_check)
+{
+    auto & factory = DiskFactory::instance();
+
+    registerDiskLocal(factory, global_skip_access_check);
+
+    registerDiskObjectStorage(factory, global_skip_access_check);
+}
+
+#endif
 
 }

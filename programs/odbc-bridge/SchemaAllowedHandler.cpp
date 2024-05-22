@@ -29,7 +29,7 @@ namespace
 }
 
 
-void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -38,7 +38,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            *response.send() << message << '\n';
         LOG_WARNING(log, fmt::runtime(message));
     };
 
@@ -70,13 +70,19 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         return;
     }
 
+     bool use_connection_pooling = params.getParsed<bool>("use_connection_pooling", true);
+
     try
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        nanodbc::ConnectionHolderPtr connection;
+
+        if (use_connection_pooling)
+            connection = ODBCPooledConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        else
+            connection = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         bool result = isSchemaAllowed(std::move(connection));
 

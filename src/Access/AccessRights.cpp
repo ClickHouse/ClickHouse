@@ -1,6 +1,8 @@
 #include <Access/AccessRights.h>
-#include <Common/logger_useful.h>
 #include <base/sort.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <unordered_map>
@@ -54,21 +56,32 @@ namespace
             res.access_flags = access_flags;
             res.grant_option = grant_option;
             res.is_partial_revoke = is_partial_revoke;
-            switch (full_name.size())
+            switch (full_name.size()) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case 0:
                 {
                     res.any_database = true;
                     res.any_table = true;
                     res.any_column = true;
+                    res.any_parameter = true;
                     break;
                 }
                 case 1:
                 {
-                    res.any_database = false;
-                    res.database = full_name[0];
-                    res.any_table = true;
-                    res.any_column = true;
+                    if (access_flags.isGlobalWithParameter())
+                    {
+                        res.parameter = full_name[0];
+                        res.any_parameter = false;
+                        res.any_database = false;
+                    }
+                    else
+                    {
+                        res.database = full_name[0];
+                        res.any_database = false;
+                        res.any_parameter = false;
+                        res.any_table = true;
+                        res.any_column = true;
+                    }
                     break;
                 }
                 case 2:
@@ -110,10 +123,35 @@ namespace
                 size_t count_elements_with_diff_columns = sorted.countElementsWithDifferenceInColumnOnly(i);
                 if (count_elements_with_diff_columns == 1)
                 {
-                    /// Easy case: one Element is converted to one AccessRightsElement.
                     const auto & element = sorted[i];
                     if (element.access_flags)
-                        res.emplace_back(element.getResult());
+                    {
+                        const bool all_granted = sorted.size() == 1 && element.access_flags.contains(AccessFlags::allFlags());
+                        if (all_granted)
+                        {
+                            /// Easy case: one Element is converted to one AccessRightsElement.
+                            res.emplace_back(element.getResult());
+                        }
+                        else
+                        {
+                            auto per_parameter = element.access_flags.splitIntoParameterTypes();
+                            if (per_parameter.size() == 1)
+                            {
+                                /// Easy case: one Element is converted to one AccessRightsElement.
+                                res.emplace_back(element.getResult());
+                            }
+                            else
+                            {
+                                /// Difficult case: one element is converted into multiple AccessRightsElements.
+                                for (const auto & [_, parameter_flags] : per_parameter)
+                                {
+                                    auto current_element{element};
+                                    current_element.access_flags = parameter_flags;
+                                    res.emplace_back(current_element.getResult());
+                                }
+                            }
+                        }
+                    }
                     ++i;
                 }
                 else
@@ -137,6 +175,8 @@ namespace
             {
                 return (element.full_name.size() != 3) || (element.full_name[0] != start_element.full_name[0])
                     || (element.full_name[1] != start_element.full_name[1]) || (element.grant_option != start_element.grant_option)
+                    || (element.access_flags.isGlobalWithParameter() != start_element.access_flags.isGlobalWithParameter())
+                    || (element.access_flags.getParameterType() != start_element.access_flags.getParameterType())
                     || (element.is_partial_revoke != start_element.is_partial_revoke);
             });
 
@@ -191,13 +231,22 @@ namespace
         }
     };
 
+    /**
+     *  Levels:
+     *  1. GLOBAL
+     *  2. DATABASE_LEVEL          2. GLOBAL_WITH_PARAMETER (parameter example: named collection)
+     *  3. TABLE_LEVEL
+     *  4. COLUMN_LEVEL
+     */
 
     enum Level
     {
-        GLOBAL_LEVEL,
-        DATABASE_LEVEL,
-        TABLE_LEVEL,
-        COLUMN_LEVEL,
+        GLOBAL_LEVEL = 0,
+        DATABASE_LEVEL = 1,
+        GLOBAL_WITH_PARAMETER = DATABASE_LEVEL,
+        TABLE_LEVEL = 2,
+        COLUMN_LEVEL = 3,
+        MAX = COLUMN_LEVEL,
     };
 
     AccessFlags getAllGrantableFlags(Level level)
@@ -205,11 +254,11 @@ namespace
         switch (level)
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
-            case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel();
+            case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 
@@ -362,6 +411,65 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
+    bool contains(const Node & other)
+    {
+        if (min_flags_with_children.contains(other.max_flags_with_children))
+            return true;
+
+        if (!flags.contains(other.flags))
+            return false;
+
+        /// Let's assume that the current node has the following rights:
+        ///
+        /// SELECT ON *.* TO user1;
+        /// REVOKE SELECT ON system.* FROM user1;
+        /// REVOKE SELECT ON mydb.* FROM user1;
+        ///
+        /// And the other node has the rights:
+        ///
+        /// SELECT ON *.* TO user2;
+        /// REVOKE SELECT ON system.* FROM user2;
+        ///
+        /// First, we check that each child from the other node is present in the current node:
+        ///
+        /// SELECT ON *.* TO user1;  -- checked
+        /// REVOKE SELECT ON system.* FROM user1; -- checked
+        if (other.children)
+        {
+            for (const auto & [name, node] : *other.children)
+            {
+                const auto & child = tryGetChild(name);
+                if (child == nullptr)
+                {
+                    if (!flags.contains(node.flags))
+                        return false;
+                }
+                else
+                {
+                    if (!child->contains(node))
+                        return false;
+                }
+            }
+        }
+
+        if (!children)
+            return true;
+
+        /// Then we check that each of our children has no other rights revoked.
+        ///
+        /// REVOKE SELECT ON mydb.* FROM user1; -- check failed, returning false
+        for (const auto & [name, node] : *children)
+        {
+            if (other.children && other.children->contains(name))
+                continue;
+
+            if (!node.flags.contains(other.flags))
+                return false;
+        }
+
+        return true;
+    }
+
     void makeUnion(const Node & other)
     {
         makeUnionRec(other);
@@ -397,7 +505,7 @@ public:
             optimizeTree();
     }
 
-    void logTree(Poco::Logger * log, const String & title) const
+    void logTree(LoggerPtr log, const String & title) const
     {
         LOG_TRACE(log, "Tree({}): level={}, name={}, flags={}, min_flags={}, max_flags={}, num_children={}",
             title, level, node_name ? *node_name : "NULL", flags.toString(),
@@ -413,7 +521,7 @@ public:
 
 private:
     AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
-    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level + 1)); }
+    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
 
     Node * tryGetChild(std::string_view name) const
     {
@@ -783,7 +891,14 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
     assert(!element.is_partial_revoke);
     assert(!element.grant_option || with_grant_option);
-    if (element.any_database)
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            grantImpl<with_grant_option>(element.access_flags);
+        else
+            grantImpl<with_grant_option>(element.access_flags, element.parameter);
+    }
+    else if (element.any_database)
         grantImpl<with_grant_option>(element.access_flags);
     else if (element.any_table)
         grantImpl<with_grant_option>(element.access_flags, element.database);
@@ -797,7 +912,7 @@ template <bool with_grant_option>
 void AccessRights::grantImpl(const AccessRightsElement & element)
 {
     if (element.is_partial_revoke)
-        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A partial revoke should be revoked, not granted");
     if constexpr (with_grant_option)
     {
         grantImplHelper<true>(element);
@@ -858,7 +973,14 @@ template <bool grant_option>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            revokeImpl<grant_option>(element.access_flags);
+        else
+            revokeImpl<grant_option>(element.access_flags, element.parameter);
+    }
+    else if (element.any_database)
         revokeImpl<grant_option>(element.access_flags);
     else if (element.any_table)
         revokeImpl<grant_option>(element.access_flags, element.database);
@@ -945,10 +1067,35 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 }
 
 template <bool grant_option>
+bool AccessRights::containsImpl(const AccessRights & other) const
+{
+    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
+    {
+        if (!root_node)
+            return !other.root;
+        if (!other.root)
+            return true;
+        return root_node->contains(*other.root);
+    };
+    if constexpr (grant_option)
+        return helper(root_with_grant_option);
+    else
+        return helper(root);
+}
+
+
+template <bool grant_option>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            return isGrantedImpl<grant_option>(element.access_flags);
+        else
+            return isGrantedImpl<grant_option>(element.access_flags, element.parameter);
+    }
+    else if (element.any_database)
         return isGrantedImpl<grant_option>(element.access_flags);
     else if (element.any_table)
         return isGrantedImpl<grant_option>(element.access_flags, element.database);
@@ -1001,6 +1148,8 @@ bool AccessRights::hasGrantOption(const AccessFlags & flags, std::string_view da
 bool AccessRights::hasGrantOption(const AccessRightsElement & element) const { return isGrantedImpl<true>(element); }
 bool AccessRights::hasGrantOption(const AccessRightsElements & elements) const { return isGrantedImpl<true>(elements); }
 
+bool AccessRights::contains(const AccessRights & access_rights) const { return containsImpl<false>(access_rights); }
+bool AccessRights::containsWithGrantOption(const AccessRights & access_rights) const { return containsImpl<true>(access_rights); }
 
 bool operator ==(const AccessRights & left, const AccessRights & right)
 {
@@ -1091,7 +1240,7 @@ AccessRights AccessRights::getFullAccess()
 
 void AccessRights::logTree() const
 {
-    auto * log = &Poco::Logger::get("AccessRights");
+    auto log = getLogger("AccessRights");
     if (root)
     {
         root->logTree(log, "");

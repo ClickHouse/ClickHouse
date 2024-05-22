@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/CopyableAtomic.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
@@ -9,7 +10,6 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
-#include <mutex>
 #include <condition_variable>
 
 
@@ -35,7 +35,7 @@ struct ReplicatedMergeTreeLogEntryData
         EMPTY,          /// Not used.
         GET_PART,       /// Get the part from another replica.
         ATTACH_PART,    /// Attach the part, possibly from our own replica (if found in /detached folder).
-                        /// You may think of it as a GET_PART with some optimisations as they're nearly identical.
+                        /// You may think of it as a GET_PART with some optimizations as they're nearly identical.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
@@ -45,6 +45,7 @@ struct ReplicatedMergeTreeLogEntryData
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
         SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
         CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
+        DROP_PART,      /// NOTE: Virtual (has the same (de)serialization format as DROP_RANGE). Deletes the specified part.
     };
 
     static String typeToString(Type type)
@@ -62,8 +63,9 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
             case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
             case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
+            case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
             default:
-                throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
         }
     }
 
@@ -73,7 +75,7 @@ struct ReplicatedMergeTreeLogEntryData
     }
 
     void writeText(WriteBuffer & out) const;
-    void readText(ReadBuffer & in);
+    void readText(ReadBuffer & in, MergeTreeDataFormatVersion partition_format_version);
     String toString() const;
 
     String znode_name;
@@ -88,14 +90,16 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
-    MergeTreeDataPartType new_part_type;
+    MergeTreeDataPartFormat new_part_format;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
+    mutable std::unordered_set<String> replace_range_actual_new_part_names;     /// Same as above, but for REPLACE_RANGE
     UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
+    bool cleanup = false;
     MergeType merge_type = MergeType::Regular;
     String column_name;
     String index_name;
@@ -157,6 +161,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
     std::exception_ptr exception;         /// The last exception, in the case of an unsuccessful attempt to perform the action.
+    time_t last_exception_time = 0;       /// The time at which the last exception occurred.
     time_t last_attempt_time = 0;         /// The time at which the last attempt was attempted to complete the action.
     size_t num_postponed = 0;             /// The number of times the action was postponed.
     String postpone_reason;               /// The reason why the action was postponed, if it was postponed.
@@ -167,6 +172,9 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    /// Used only in tests for permanent fault injection for particular queue entry.
+    CopyableAtomic<bool> fault_injected{false};
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const
@@ -182,7 +190,7 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
-    static Ptr parse(const String & s, const Coordination::Stat & stat);
+    static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };
 
 using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;

@@ -1,7 +1,11 @@
 #pragma once
 
-#include <string>
+#include <base/types.h>
+
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+
+#include <functional>
+#include <string>
 
 
 namespace DB
@@ -10,31 +14,23 @@ namespace DB
 /// Object metadata: path, size, path_key_for_cache.
 struct StoredObject
 {
-    std::string absolute_path;
+    String remote_path; /// abs path
+    String local_path; /// or equivalent "metadata_path"
 
-    uint64_t bytes_size;
-
-    std::string getPathKeyForCache() const;
-
-    /// Create `StoredObject` based on metadata storage and blob name of the object.
-    static StoredObject create(
-        const IObjectStorage & object_storage,
-        const std::string & object_path,
-        size_t object_size = 0,
-        bool exists = false,
-        bool object_bypasses_cache = false);
-
-    /// Optional hint for cache. Use delayed initialization
-    /// because somecache hint implementation requires it.
-    using PathKeyForCacheCreator = std::function<std::string(const std::string &)>;
-    PathKeyForCacheCreator path_key_for_cache_creator;
+    uint64_t bytes_size = 0;
 
     explicit StoredObject(
-        const std::string & absolute_path_,
-        uint64_t bytes_size_ = 0,
-        PathKeyForCacheCreator && path_key_for_cache_creator_ = {});
+        const String & remote_path_ = "",
+        const String & local_path_ = "",
+        uint64_t bytes_size_ = 0)
+        : remote_path(remote_path_)
+        , local_path(local_path_)
+        , bytes_size(bytes_size_)
+    {}
 };
 
 using StoredObjects = std::vector<StoredObject>;
+
+size_t getTotalSize(const StoredObjects & objects);
 
 }

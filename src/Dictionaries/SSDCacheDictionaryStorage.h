@@ -12,6 +12,7 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <base/unaligned.h>
+#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
@@ -469,7 +470,7 @@ public:
         auto path = std::filesystem::path{file_path};
         auto parent_path_directory = path.parent_path();
 
-        /// If cache file is in directory that does not exists create it
+        /// If cache file is in directory that does not exist create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
                 throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
@@ -480,7 +481,7 @@ public:
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-            throwFromErrnoWithPath("Cannot open file " + file_path, file_path, error_code);
+            ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
         }
 
         allocateSizeForNextPartition();
@@ -489,7 +490,8 @@ public:
     void allocateSizeForNextPartition()
     {
         if (preallocateDiskSpace(file.fd, current_blocks_size * block_size, block_size * file_blocks_size) < 0)
-            throwFromErrnoWithPath("Cannot preallocate space for the file " + file_path, file_path, ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_ALLOCATE_MEMORY, file_path, "Cannot preallocate space for the file {}", file_path);
 
         current_blocks_size += file_blocks_size;
     }
@@ -544,18 +546,18 @@ public:
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
                 "Not all data was written for asynchronous IO on file {}. returned: {}",
                 file_path,
-                std::to_string(bytes_written));
+                bytes_written);
 
         ProfileEvents::increment(ProfileEvents::FileSync);
 
         Stopwatch watch;
         #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
-            throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
-        #else
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, file_path, "Cannot fsync {}", file_path);
+#    else
         if (::fdatasync(file.fd) < 0)
-            throwFromErrnoWithPath("Cannot fdatasync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
-        #endif
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, file_path, "Cannot fdatasync {}", file_path);
+#    endif
         ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
         current_block_index += buffer_size_in_blocks;
@@ -597,13 +599,13 @@ public:
         while (io_submit(aio_context.ctx, 1, &request_ptr) != 1)
         {
             if (errno != EINTR)
-                throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
+                throw ErrnoException(ErrorCodes::CANNOT_IO_SUBMIT, "io_submit: Failed to submit a request for asynchronous IO");
         }
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) != 1)
         {
             if (errno != EINTR)
-                throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
+                throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
         }
 
         auto read_bytes = eventResult(event);
@@ -675,7 +677,7 @@ public:
             pointers.push_back(&requests.back());
         }
 
-        AIOContext aio_context(read_from_file_buffer_blocks_size);
+        AIOContext aio_context(static_cast<unsigned>(read_from_file_buffer_blocks_size));
 
         PaddedPODArray<bool> processed(requests.size(), false);
         PaddedPODArray<io_event> events;
@@ -691,7 +693,7 @@ public:
             while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) <= 0)
             {
                 if (errno != EINTR)
-                    throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
+                    throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
             }
 
             for (size_t i = to_pop; i < to_pop + popped; ++i)
@@ -726,7 +728,7 @@ public:
                         check_sum);
                 }
 
-                std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
+                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
 
                 processed[block_to_fetch_index] = true;
             }
@@ -735,13 +737,14 @@ public:
                 ++to_pop;
 
             /// add new io tasks
-            const int new_tasks_count = std::min(read_from_file_buffer_blocks_size - (to_push - to_pop), requests.size() - to_push);
+            const int new_tasks_count = static_cast<int>(std::min(
+                read_from_file_buffer_blocks_size - (to_push - to_pop), requests.size() - to_push));
 
             int pushed = 0;
             while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) <= 0)
             {
                 if (errno != EINTR)
-                    throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
+                    throw ErrnoException(ErrorCodes::CANNOT_IO_SUBMIT, "io_submit: Failed to submit a request for asynchronous IO");
             }
 
             to_push += pushed;
@@ -767,7 +770,8 @@ private:
             if (this == &rhs)
                 return *this;
 
-            close(fd);
+            int err = ::close(fd);
+            chassert(!err || errno == EINTR);
 
             fd = rhs.fd;
             rhs.fd = -1;
@@ -776,7 +780,10 @@ private:
         ~FileDescriptor()
         {
             if (fd != -1)
-                close(fd);
+            {
+                int err = close(fd);
+                chassert(!err || errno == EINTR);
+            }
         }
 
         int fd = -1;
@@ -862,10 +869,11 @@ public:
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) override
+        const DictionaryStorageFetchRequest & fetch_request,
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
+            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
     }
@@ -898,10 +906,11 @@ public:
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) override
+        const DictionaryStorageFetchRequest & fetch_request,
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
-            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request);
+            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
     }
@@ -995,7 +1004,8 @@ private:
     template <typename Result>
     Result fetchColumnsForKeysImpl(
         const PaddedPODArray<KeyType> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) const
+        const DictionaryStorageFetchRequest & fetch_request,
+        IColumn::Filter * const default_mask) const
     {
         Result result;
 
@@ -1005,6 +1015,7 @@ private:
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
+        size_t fetched_columns_index_without_default = 0;
 
         using BlockIndexToKeysMap = absl::flat_hash_map<size_t, PaddedPODArray<KeyToBlockOffset>, DefaultHash<size_t>>;
         BlockIndexToKeysMap block_to_keys_map;
@@ -1054,8 +1065,11 @@ private:
             {
                 case Cell::in_memory:
                 {
-                    result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+                    result.key_index_to_state[key_index] = {key_state,
+                        default_mask ? fetched_columns_index_without_default : fetched_columns_index};
+
                     ++fetched_columns_index;
+                    ++fetched_columns_index_without_default;
 
                     const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
                     char * serialized_columns_place = partition.getPlace(cell.index);
@@ -1082,12 +1096,14 @@ private:
                 }
                 case Cell::default_value:
                 {
-                    result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+                    result.key_index_to_state[key_index] = {key_state,
+                        default_mask ? fetched_columns_index_without_default : fetched_columns_index};
                     result.key_index_to_state[key_index].setDefault();
                     ++fetched_columns_index;
                     ++result.default_keys_size;
 
-                    insertDefaultValuesIntoColumns(result.fetched_columns, fetch_request, key_index);
+                    if (!default_mask)
+                        insertDefaultValuesIntoColumns(result.fetched_columns, fetch_request, key_index);
                     break;
                 }
             }
@@ -1096,7 +1112,8 @@ private:
         /// Sort blocks by offset before start async io requests
         ::sort(blocks_to_request.begin(), blocks_to_request.end());
 
-        file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
+        file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request,
+            [&](size_t block_index, char * block_data)
         {
             auto & keys_in_block = block_to_keys_map[block_index];
 
@@ -1105,9 +1122,11 @@ private:
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
-                result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(fetched_columns_index);
+                result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(
+                    default_mask ? fetched_columns_index_without_default : fetched_columns_index);
 
                 ++fetched_columns_index;
+                ++fetched_columns_index_without_default;
             }
         });
 

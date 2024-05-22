@@ -1,42 +1,39 @@
-#include <DataTypes/Serializations/SerializationAggregateFunction.h>
-
-#include <IO/WriteHelpers.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/AlignedBuffer.h>
-
+#include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
 
-void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const AggregateFunctionStateData & state = get<const AggregateFunctionStateData &>(field);
+    const AggregateFunctionStateData & state = field.get<const AggregateFunctionStateData &>();
     writeBinary(state.data, ostr);
 }
 
-void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = get<AggregateFunctionStateData &>(field);
+    AggregateFunctionStateData & s = field.get<AggregateFunctionStateData &>();
     readBinary(s.data, istr);
     s.name = type_name;
 }
 
-void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
@@ -66,9 +63,7 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
     ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
 
-    if (end > vec.end())
-        end = vec.end();
-
+    end = std::min(end, vec.end());
     for (; it != end; ++it)
         function->serialize(*it, ostr, version);
 }
@@ -187,10 +182,10 @@ void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, s
 }
 
 
-void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readJSONString(s, istr);
+    readJSONString(s, istr, settings.json);
     deserializeFromString(function, column, s, version);
 }
 

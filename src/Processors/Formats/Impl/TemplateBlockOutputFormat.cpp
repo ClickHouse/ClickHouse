@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int INVALID_TEMPLATE_FORMAT;
 }
 
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
@@ -88,7 +89,7 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
     else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
     else
-        throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
@@ -133,14 +134,7 @@ void TemplateBlockOutputFormat::writePrefix()
 
 void TemplateBlockOutputFormat::finalizeImpl()
 {
-    if (finalized)
-        return;
-
     size_t parts = format.format_idx_to_column_idx.size();
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
-
     for (size_t i = 0; i < parts; ++i)
     {
         auto type = std::make_shared<DataTypeUInt64>();
@@ -184,27 +178,41 @@ void TemplateBlockOutputFormat::finalizeImpl()
         }
         writeString(format.delimiters[i + 1], out);
     }
-
-    finalized = true;
 }
 
+void TemplateBlockOutputFormat::resetFormatterImpl()
+{
+    row_count = 0;
+    statistics = Statistics();
+}
 
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;
+        auto idx_resultset_by_name = [&](const String & partName)
+        {
+            return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
+        };
         if (settings.template_settings.resultset_format.empty())
         {
             /// Default format string: "${data}"
-            resultset_format.delimiters.resize(2);
-            resultset_format.escaping_rules.emplace_back(ParsedTemplateFormatString::EscapingRule::None);
-            resultset_format.format_idx_to_column_idx.emplace_back(0);
-            resultset_format.column_names.emplace_back("data");
+            if (settings.template_settings.resultset_format_template.empty())
+            {
+                resultset_format.delimiters.resize(2);
+                resultset_format.escaping_rules.emplace_back(ParsedTemplateFormatString::EscapingRule::None);
+                resultset_format.format_idx_to_column_idx.emplace_back(0);
+                resultset_format.column_names.emplace_back("data");
+            }
+            else
+            {
+                resultset_format = ParsedTemplateFormatString();
+                resultset_format.parse(settings.template_settings.resultset_format_template, idx_resultset_by_name);
+            }
         }
         else
         {
@@ -212,20 +220,34 @@ void registerOutputFormatTemplate(FormatFactory & factory)
             resultset_format = ParsedTemplateFormatString(
                     FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
                             settings.schema.is_server, settings.schema.format_schema_path),
-                    [&](const String & partName)
-                    {
-                        return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
-                    });
+                    idx_resultset_by_name);
+            if (!settings.template_settings.resultset_format_template.empty())
+            {
+                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_resultset or format_template_resultset_format, but not both");
+            }
         }
 
-        ParsedTemplateFormatString row_format = ParsedTemplateFormatString(
+        ParsedTemplateFormatString row_format;
+        auto idx_row_by_name = [&](const String & colName)
+        {
+            return sample.getPositionByName(colName);
+        };
+        if (settings.template_settings.row_format.empty())
+        {
+            row_format = ParsedTemplateFormatString();
+            row_format.parse(settings.template_settings.row_format_template, idx_row_by_name);
+        }
+        else
+        {
+            row_format = ParsedTemplateFormatString(
                 FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
                         settings.schema.is_server, settings.schema.format_schema_path),
-                [&](const String & colName)
-                {
-                    return sample.getPositionByName(colName);
-                });
-
+                idx_row_by_name);
+            if (!settings.template_settings.row_format_template.empty())
+            {
+                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_template_row_format, but not both");
+            }
+        }
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 

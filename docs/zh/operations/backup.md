@@ -12,8 +12,9 @@ sidebar_label: "\u6570\u636E\u5907\u4EFD"
 
 不同公司有不同的可用资源和业务需求，因此不存在一个通用的解决方案可以应对各种情况下的ClickHouse备份和恢复。 适用于 1GB 数据的方案可能并不适用于几十 PB 数据的情况。 有多种具备各自优缺点的可能方法，将在下面对其进行讨论。最好使用几种方法而不是仅仅使用一种方法来弥补它们的各种缺点。。
 
-!!! note "注"
-    需要注意的是，如果您备份了某些内容并且从未尝试过还原它，那么当您实际需要它时可能无法正常恢复（或者至少需要的时间比业务能够容忍的时间更长）。 因此，无论您选择哪种备份方法，请确保自动还原过程，并定期在备用ClickHouse群集上演练。
+:::note
+需要注意的是，如果您备份了某些内容并且从未尝试过还原它，那么当您实际需要它时可能无法正常恢复（或者至少需要的时间比业务能够容忍的时间更长）。 因此，无论您选择哪种备份方法，请确保自动还原过程，并定期在备用ClickHouse群集上演练。
+:::
 
 ## 将源数据复制到其它地方 {#duplicating-source-data-somewhere-else}
 
@@ -22,12 +23,6 @@ sidebar_label: "\u6570\u636E\u5907\u4EFD"
 ## 文件系统快照 {#filesystem-snapshots}
 
 某些本地文件系统提供快照功能（例如, [ZFS](https://en.wikipedia.org/wiki/ZFS)），但它们可能不是提供实时查询的最佳选择。 一个可能的解决方案是使用这种文件系统创建额外的副本，并将它们与用于`SELECT` 查询的 [分布式](../engines/table-engines/special/distributed.md) 表分离。 任何修改数据的查询都无法访问此类副本上的快照。 作为回报，这些副本可能具有特殊的硬件配置，每个服务器附加更多的磁盘，这将是经济高效的。
-
-## clickhouse-copier {#clickhouse-copier}
-
-[clickhouse-copier](utilities/clickhouse-copier.md) 是一个多功能工具，最初创建它是为了用于重新切分pb大小的表。 因为它能够在ClickHouse表和集群之间可靠地复制数据，所以它也可用于备份和还原数据。
-
-对于较小的数据量，一个简单的 `INSERT INTO ... SELECT ...` 到远程表也可以工作。
 
 ## part操作 {#manipulations-with-parts}
 
@@ -38,5 +33,3 @@ ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表
 有关与分区操作相关的查询的详细信息，请参阅 [更改文档](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
 第三方工具可用于自动化此方法: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
-
-[原始文章](https://clickhouse.com/docs/en/operations/backup/) <!--hide-->

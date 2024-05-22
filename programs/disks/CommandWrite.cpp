@@ -1,7 +1,10 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
+
+#include <Common/TerminalSize.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 
 namespace DB
 {
@@ -11,18 +14,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandWrite : public ICommand
+class CommandWrite final : public ICommand
 {
 public:
     CommandWrite()
     {
         command_name = "write";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Write File `from_path` or stdin to `to_path`";
-        usage = "write [OPTION]... <FROM_PATH> <TO_PATH>\nor\nstdin | write [OPTION]... <TO_PATH>\nPath should be in format './' or './path' or 'path'";
+        description = "Write a file from `FROM_PATH` to `TO_PATH`";
+        usage = "write [OPTION]... [<FROM_PATH>] <TO_PATH>";
         command_option_description->add_options()
-            ("input", po::value<String>(), "set path to file to which we are write")
-            ;
+            ("input", po::value<String>(), "file from which we are reading, defaults to `stdin`");
     }
 
     void processOptions(
@@ -35,22 +37,22 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
+        const String & path = command_arguments[0];
 
-        DiskPtr disk = global_context->getDisk(disk_name);
+        DiskPtr disk = disk_selector->get(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String relative_path = validatePathAndGetAsRelative(path);
 
         String path_input = config.getString("input", "");
         std::unique_ptr<ReadBufferFromFileBase> in;
@@ -60,11 +62,11 @@ public:
         }
         else
         {
-            String full_path_input = fullPathWithValidate(disk, path_input);
-            in = disk->readFile(full_path_input);
+            String relative_path_input = validatePathAndGetAsRelative(path_input);
+            in = disk->readFile(relative_path_input);
         }
 
-        auto out = disk->writeFile(full_path);
+        auto out = disk->writeFile(relative_path);
         copyData(*in, *out);
         out->finalize();
     }

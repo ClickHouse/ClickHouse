@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 
@@ -115,7 +115,7 @@ public:
         const bool empty_partition_keys;
         const HiveFilesCachePtr hive_files_cache;
 
-        Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
+        LoggerPtr log = getLogger("HiveMetastoreClient");
     };
 
 
@@ -138,7 +138,7 @@ private:
     CacheBase<String, HiveTableMetadata> table_metadata_cache;
     ThriftHiveMetastoreClientPool client_pool;
 
-    Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
+    LoggerPtr log = getLogger("HiveMetastoreClient");
 };
 
 using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;

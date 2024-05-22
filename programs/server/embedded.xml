@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <!-- Config that is used when server is run without config file. -->
 <clickhouse>
     <logger>
@@ -24,7 +23,9 @@
 
             <profile>default</profile>
             <quota>default</quota>
+
             <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
         </default>
     </users>
 

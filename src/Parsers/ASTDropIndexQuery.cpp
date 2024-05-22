@@ -9,7 +9,7 @@ namespace DB
 /** Get the text that identifies this element. */
 String ASTDropIndexQuery::getID(char delim) const
 {
-    return "CreateIndexQuery" + (delim + getDatabase()) + delim + getTable();
+    return "DropIndexQuery" + (delim + getDatabase()) + delim + getTable();
 }
 
 ASTPtr ASTDropIndexQuery::clone() const
@@ -43,10 +43,12 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
     {
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        chassert(table);
+        table->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);
@@ -55,9 +57,11 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
 ASTPtr ASTDropIndexQuery::convertToASTAlterCommand() const
 {
     auto command = std::make_shared<ASTAlterCommand>();
+
     command->type = ASTAlterCommand::DROP_INDEX;
-    command->index = index_name->clone();
     command->if_exists = if_exists;
+
+    command->index = command->children.emplace_back(index_name).get();
 
     return command;
 }

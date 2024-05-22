@@ -19,12 +19,14 @@ a
 --JSONType--
 Object
 Array
+Bool
 --JSONExtract<numeric>--
 -100
 200
 300
 1
 0
+1
 --JSONExtractString--
 hello
 hello
@@ -42,10 +44,13 @@ hello
 (-100,200,300)
 [-100,0,0]
 [-100,NULL,NULL]
+[-100,NULL,NULL]
 [0,200,0]
+[NULL,200,NULL]
 [NULL,200,NULL]
 -100
 200
+\N
 \N
 1
 Thursday
@@ -61,11 +66,57 @@ Friday
 (1,'417ddc5d-e556-4d27-95dd-a34d84e46a50')
 hello
 (3333.6,'test')
+(3333.6,'test')
+(3333.6333333333,'test')
 (3333.6333333333,'test')
 123456.1234	Decimal(20, 4)
+123456.1234	Decimal(20, 4)
+123456789012345.12	Decimal(30, 4)
+(1234567890.1234567890123456789,'test')	Tuple(\n    a Decimal(35, 20),\n    b LowCardinality(String))
+(1234567890.12345678901234567890123456789,'test')	Tuple(\n    a Decimal(45, 30),\n    b LowCardinality(String))
 123456789012345.1136	123456789012345.1136
 1234567890.12345677879616925706	(1234567890.12345677879616925706,'test')
 1234567890.123456695758468374595199311875	(1234567890.123456695758468374595199311875,'test')
+-1234567890	Int32
+1234567890	UInt32
+-1234567890123456789	Int64
+1234567890123456789	UInt64
+-1234567890123456789	Int128
+1234567890123456789	UInt128
+-1234567890123456789	Int256
+1234567890123456789	UInt256
+-123456789	Int32
+123456789	UInt32
+-123456789012	Int64
+123456789012	UInt64
+-123456789012	Int128
+123456789012	UInt128
+-123456789012	Int256
+123456789012	UInt256
+-123456789	Int32
+123456789	UInt32
+-1234567890123456789	Int64
+1234567890123456789	UInt64
+-12345678901234567890123456789012345678	Int128
+12345678901234567890123456789012345678	UInt128
+-11345678901234567890123456789012345678901234567890123456789012345678901234567	Int256
+11345678901234567890123456789012345678901234567890123456789012345678901234567	UInt256
+0	Int32
+0	UInt32
+0	Int64
+0	UInt64
+false	Bool
+true	Bool
+-123456789012	Int64
+123456789012	UInt64
+0	UInt64
+0	Int8
+{'a':'hello','b':'world'}
+{'a':'hello','b':'world'}
+{'a':('hello',100),'b':('world',200)}
+{'a':[100,200],'b':[-100,200,300]}
+{'a':{'c':'hello'},'b':{'d':'world'}}
+{'c':'hello'}
 --JSONExtractKeysAndValues--
 [('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
@@ -110,6 +161,7 @@ e
 u
 v
 --show error: type should be const string
+--show error: key of map type should be String
 --allow_simdjson=0--
 --JSONLength--
 2
@@ -131,12 +183,18 @@ a
 --JSONType--
 Object
 Array
+Bool
 --JSONExtract<numeric>--
 -100
 200
 300
 1
 0
+1
+-123456789012	Int64
+123456789012	UInt64
+0	UInt64
+0	Int8
 --JSONExtractString--
 hello
 hello
@@ -154,10 +212,13 @@ hello
 (-100,200,300)
 [-100,0,0]
 [-100,NULL,NULL]
+[-100,NULL,NULL]
 [0,200,0]
+[NULL,200,NULL]
 [NULL,200,NULL]
 -100
 200
+\N
 \N
 1
 Thursday
@@ -169,6 +230,12 @@ Friday
 (3,0)
 (3,5)
 (3,0)
+{'a':'hello','b':'world'}
+{'a':'hello','b':'world'}
+{'a':('hello',100),'b':('world',200)}
+{'a':[100,200],'b':[-100,200,300]}
+{'a':{'c':'hello'},'b':{'d':'world'}}
+{'c':'hello'}
 --JSONExtractKeysAndValues--
 [('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
@@ -217,3 +284,11 @@ e
 u
 v
 --show error: type should be const string
+--show error: index type should be integer
+--show error: key of map type should be String
+\N
+\N
+Hello
+Hello
+Hello
+Hello

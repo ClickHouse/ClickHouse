@@ -1,14 +1,15 @@
 #include <Coordination/KeeperLogStore.h>
 #include <IO/CompressionMethod.h>
+#include <Disks/DiskLocal.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_)
-    : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, rotate_interval_, force_sync_, log, compress_logs_)
+KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context)
+    : log(getLogger("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, keeper_context)
 {
-    if (force_sync_)
+    if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
     else
         LOG_INFO(log, "force_sync disabled");
@@ -65,13 +66,16 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
     return changelog.entryAt(index);
 }
 
+bool KeeperLogStore::is_conf(uint64_t index)
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.isConfigLog(index);
+}
+
 uint64_t KeeperLogStore::term_at(uint64_t index)
 {
     std::lock_guard lock(changelog_lock);
-    auto entry = changelog.entryAt(index);
-    if (entry)
-        return entry->get_term();
-    return 0;
+    return changelog.termAt(index);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperLogStore::pack(uint64_t index, int32_t cnt)
@@ -90,8 +94,7 @@ bool KeeperLogStore::compact(uint64_t last_log_index)
 bool KeeperLogStore::flush()
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
-    return true;
+    return changelog.flush();
 }
 
 void KeeperLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)
@@ -109,7 +112,7 @@ uint64_t KeeperLogStore::size() const
 void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*count*/)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
+    changelog.flushAsync();
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
@@ -127,9 +130,28 @@ void KeeperLogStore::shutdownChangelog()
 bool KeeperLogStore::flushChangelogAndShutdown()
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
+    if (changelog.isInitialized())
+        changelog.flush();
     changelog.shutdown();
     return true;
+}
+
+uint64_t KeeperLogStore::last_durable_index()
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.lastDurableIndex();
+}
+
+void KeeperLogStore::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server)
+{
+    std::lock_guard lock(changelog_lock);
+    changelog.setRaftServer(raft_server);
+}
+
+void KeeperLogStore::getKeeperLogInfo(KeeperLogInfo & log_info) const
+{
+    std::lock_guard lock(changelog_lock);
+    changelog.getKeeperLogInfo(log_info);
 }
 
 }

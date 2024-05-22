@@ -7,13 +7,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
+namespace ErrorCodesEnumValues
 {
     extern const int BAD_ARGUMENTS;
 }
 
 template <typename T>
-class EnumValues : public IHints<1, EnumValues<T>>
+class EnumValues : public IHints<>
 {
 public:
     using Value = std::pair<std::string, T>;
@@ -37,9 +37,14 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception{"Unexpected value " + toString(value) + " in enum", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
 
         return it;
+    }
+
+    bool hasValue(const T & value) const
+    {
+        return value_to_name_map.contains(value);
     }
 
     /// throws exception if value is not valid
@@ -60,6 +65,7 @@ public:
     }
 
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
+    bool tryGetValue(T & x, StringRef field_name, bool try_treat_as_id = false) const;
 
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const

@@ -66,7 +66,7 @@ int main(int, char **)
 
         size_t sum_merged_size = 0;
         size_t start_index = 0;
-        size_t max_level = 0;
+        unsigned max_level = 0;
         bool in_range = false;
 
         for (size_t i = 0, size = parts.size(); i < size; ++i)
@@ -82,8 +82,7 @@ int main(int, char **)
             if (in_range)
             {
                 sum_merged_size += parts[i].size;
-                if (parts[i].level > max_level)
-                    max_level = parts[i].level;
+                max_level = std::max(parts[i].level, max_level);
             }
 
             if (parts[i].data == selected_parts.back().data)

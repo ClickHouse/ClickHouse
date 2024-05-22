@@ -5,6 +5,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -68,12 +69,12 @@ ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 
 DataTypePtr IDataType::promoteNumericType() const
 {
-    throw Exception("Data type " + getName() + " can't be promoted.", ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED);
+    throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED, "Data type {} can't be promoted.", getName());
 }
 
 size_t IDataType::getSizeOfValueInMemory() const
 {
-    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
 void IDataType::forEachSubcolumn(
@@ -84,33 +85,50 @@ void IDataType::forEachSubcolumn(
     {
         for (size_t i = 0; i < subpath.size(); ++i)
         {
-            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, i + 1))
+            size_t prefix_len = i + 1;
+            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, i + 1);
-                auto subdata = ISerialization::createFromPath(subpath, i);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                auto subdata = ISerialization::createFromPath(subpath, prefix_len);
                 callback(subpath, name, subdata);
             }
             subpath[i].visited = true;
         }
     };
 
-    SubstreamPath path;
-    data.serialization->enumerateStreams(path, callback_with_data, data);
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    data.serialization->enumerateStreams(settings, callback_with_data, data);
 }
 
 template <typename Ptr>
 Ptr IDataType::getForSubcolumn(
-    const String & subcolumn_name,
+    std::string_view subcolumn_name,
     const SubstreamData & data,
     Ptr SubstreamData::*member,
     bool throw_if_null) const
 {
     Ptr res;
-    forEachSubcolumn([&](const auto &, const auto & name, const auto & subdata)
+
+    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
     {
-        if (name == subcolumn_name)
-            res = subdata.*member;
-    }, data);
+        for (size_t i = 0; i < subpath.size(); ++i)
+        {
+            size_t prefix_len = i + 1;
+            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
+            {
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                /// Create data from path only if it's requested subcolumn.
+                if (name == subcolumn_name)
+                    res = ISerialization::createFromPath(subpath, prefix_len).*member;
+            }
+            subpath[i].visited = true;
+        }
+    };
+
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && throw_if_null)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
@@ -118,33 +136,38 @@ Ptr IDataType::getForSubcolumn(
     return res;
 }
 
-DataTypePtr IDataType::tryGetSubcolumnType(const String & subcolumn_name) const
+bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const
 {
-    SubstreamData data = { getDefaultSerialization(), getPtr(), nullptr, nullptr };
+    return tryGetSubcolumnType(subcolumn_name) != nullptr;
+}
+
+DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
+{
+    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, false);
 }
 
-DataTypePtr IDataType::getSubcolumnType(const String & subcolumn_name) const
+DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 {
-    SubstreamData data = { getDefaultSerialization(), getPtr(), nullptr, nullptr };
+    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, true);
 }
 
-ColumnPtr IDataType::tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const
+ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    SubstreamData data = { getDefaultSerialization(), nullptr, column, nullptr };
+    auto data = SubstreamData(getDefaultSerialization()).withColumn(column);
     return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, false);
 }
 
-ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const
+ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    SubstreamData data = { getDefaultSerialization(), nullptr, column, nullptr };
+    auto data = SubstreamData(getDefaultSerialization()).withColumn(column);
     return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, true);
 }
 
-SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const
+SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
 {
-    SubstreamData data = { serialization, nullptr, nullptr, nullptr };
+    auto data = SubstreamData(serialization);
     return getForSubcolumn<SerializationPtr>(subcolumn_name, data, &SubstreamData::serialization, true);
 }
 
@@ -154,7 +177,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, { getDefaultSerialization(), nullptr, nullptr, nullptr });
+    }, SubstreamData(getDefaultSerialization()));
     return res;
 }
 
@@ -179,7 +202,7 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
         custom_serialization = std::move(custom_desc_->serialization);
 }
 
-MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfo::Settings & settings) const
+MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     return std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
 }
@@ -243,5 +266,92 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column)
 
     return column.type->getDefaultSerialization();
 }
+
+#define FOR_TYPES_OF_TYPE(M) \
+    M(TypeIndex) \
+    M(const IDataType &) \
+    M(const DataTypePtr &) \
+    M(WhichDataType)
+
+#define DISPATCH(TYPE) \
+bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \
+bool isUInt16(TYPE data_type) { return WhichDataType(data_type).isUInt16(); } \
+bool isUInt32(TYPE data_type) { return WhichDataType(data_type).isUInt32(); } \
+bool isUInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64(); } \
+bool isNativeUInt(TYPE data_type) { return WhichDataType(data_type).isNativeUInt(); } \
+bool isUInt(TYPE data_type) { return WhichDataType(data_type).isUInt(); } \
+\
+bool isInt8(TYPE data_type) { return WhichDataType(data_type).isInt8(); } \
+bool isInt16(TYPE data_type) { return WhichDataType(data_type).isInt16(); } \
+bool isInt32(TYPE data_type) { return WhichDataType(data_type).isInt32(); } \
+bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
+bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
+bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
+\
+bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } \
+bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
+\
+bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } \
+\
+bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
+\
+bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \
+bool isNumber(TYPE data_type) { return WhichDataType(data_type).isNumber(); } \
+\
+bool isEnum8(TYPE data_type) { return WhichDataType(data_type).isEnum8(); } \
+bool isEnum16(TYPE data_type) { return WhichDataType(data_type).isEnum16(); } \
+bool isEnum(TYPE data_type) { return WhichDataType(data_type).isEnum(); } \
+\
+bool isDate(TYPE data_type) { return WhichDataType(data_type).isDate(); } \
+bool isDate32(TYPE data_type) { return WhichDataType(data_type).isDate32(); } \
+bool isDateOrDate32(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32(); } \
+bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); } \
+bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
+bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
+bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
+\
+bool isString(TYPE data_type) { return WhichDataType(data_type).isString(); } \
+bool isFixedString(TYPE data_type) { return WhichDataType(data_type).isFixedString(); } \
+bool isStringOrFixedString(TYPE data_type) { return WhichDataType(data_type).isStringOrFixedString(); } \
+\
+bool isUUID(TYPE data_type) { return WhichDataType(data_type).isUUID(); } \
+bool isIPv4(TYPE data_type) { return WhichDataType(data_type).isIPv4(); } \
+bool isIPv6(TYPE data_type) { return WhichDataType(data_type).isIPv6(); } \
+bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
+bool isTuple(TYPE data_type) { return WhichDataType(data_type).isTuple(); } \
+bool isMap(TYPE data_type) {return WhichDataType(data_type).isMap(); } \
+bool isInterval(TYPE data_type) {return WhichDataType(data_type).isInterval(); } \
+bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
+bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } \
+bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
+\
+bool isColumnedAsNumber(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
+} \
+\
+bool isColumnedAsDecimal(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isDecimal() || which.isDateTime64(); \
+} \
+\
+bool isNotCreatable(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isNothing() || which.isFunction() || which.isSet(); \
+} \
+\
+bool isNotDecimalButComparableToDecimal(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isInt() || which.isUInt() || which.isFloat(); \
+} \
+
+FOR_TYPES_OF_TYPE(DISPATCH)
+
+#undef DISPATCH
+#undef FOR_TYPES_OF_TYPE
 
 }

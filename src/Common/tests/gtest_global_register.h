@@ -1,8 +1,13 @@
 #pragma once
 
 #include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 
+inline void tryRegisterAggregateFunctions()
+{
+    static struct Register { Register() { DB::registerAggregateFunctions(); } } registered;
+}
 
 inline void tryRegisterFunctions()
 {

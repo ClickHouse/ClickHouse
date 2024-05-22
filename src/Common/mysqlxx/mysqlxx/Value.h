@@ -242,13 +242,12 @@ template <> inline unsigned char        Value::get<unsigned char        >() cons
 template <> inline char8_t              Value::get<char8_t              >() const { return getUInt(); }
 template <> inline short                Value::get<short                >() const { return getInt(); } /// NOLINT
 template <> inline unsigned short       Value::get<unsigned short       >() const { return getUInt(); } /// NOLINT
-template <> inline int                  Value::get<int                  >() const { return getInt(); }
-template <> inline unsigned int         Value::get<unsigned int         >() const { return getUInt(); }
+template <> inline int                  Value::get<int                  >() const { return static_cast<int>(getInt()); }
+template <> inline unsigned int         Value::get<unsigned int         >() const { return static_cast<unsigned int>(getUInt()); }
 template <> inline long                 Value::get<long                 >() const { return getInt(); } /// NOLINT
 template <> inline unsigned long        Value::get<unsigned long        >() const { return getUInt(); } /// NOLINT
 template <> inline long long            Value::get<long long            >() const { return getInt(); } /// NOLINT
 template <> inline unsigned long long   Value::get<unsigned long long   >() const { return getUInt(); } /// NOLINT
-template <> inline float                Value::get<float                >() const { return getDouble(); }
 template <> inline double               Value::get<double               >() const { return getDouble(); }
 template <> inline std::string          Value::get<std::string          >() const { return getString(); }
 template <> inline LocalDate            Value::get<LocalDate            >() const { return getDate(); }

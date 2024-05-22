@@ -3,7 +3,7 @@
 #include <base/types.h>
 
 #include <Interpreters/BloomFilter.h>
-
+#include <Interpreters/GinFilter.h>
 
 namespace DB
 {
@@ -32,10 +32,19 @@ struct ITokenExtractor
 
     virtual void stringPaddedToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
     {
-        return stringToBloomFilter(data, length, bloom_filter);
+        stringToBloomFilter(data, length, bloom_filter);
     }
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
+
+    virtual void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
+
+    virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const
+    {
+        stringToGinFilter(data, length, gin_filter);
+    }
+
+    virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
 
 };
 
@@ -68,8 +77,44 @@ class ITokenExtractorHelper : public ITokenExtractor
     {
         size_t cur = 0;
         String token;
+
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
             bloom_filter.add(token.c_str(), token.size());
+    }
+
+    void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
+    {
+        gin_filter.setQueryString(data, length);
+
+        size_t cur = 0;
+        size_t token_start = 0;
+        size_t token_len = 0;
+
+        while (cur < length && static_cast<const Derived *>(this)->nextInString(data, length, &cur, &token_start, &token_len))
+            gin_filter.addTerm(data + token_start, token_len);
+    }
+
+    void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
+    {
+        gin_filter.setQueryString(data, length);
+
+        size_t cur = 0;
+        size_t token_start = 0;
+        size_t token_len = 0;
+
+        while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
+            gin_filter.addTerm(data + token_start, token_len);
+    }
+
+    void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
+    {
+        gin_filter.setQueryString(data, length);
+
+        size_t cur = 0;
+        String token;
+
+        while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
+            gin_filter.addTerm(token.c_str(), token.size());
     }
 };
 

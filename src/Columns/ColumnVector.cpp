@@ -1,23 +1,27 @@
 #include "ColumnVector.h"
 
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/TargetSpecific.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
+#include <Common/findExtreme.h>
+#include <Common/iota.h>
 
 #include <bit>
 #include <cmath>
@@ -49,14 +53,6 @@ namespace ErrorCodes
 }
 
 template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    auto * pos = arena.allocContinue(sizeof(T), begin);
-    unalignedStore<T>(pos, data[n]);
-    return StringRef(pos, sizeof(T));
-}
-
-template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.emplace_back(unalignedLoad<T>(pos));
@@ -81,8 +77,8 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
     auto s = data.size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -90,7 +86,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = intHashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }
@@ -175,26 +171,6 @@ struct ColumnVector<T>::equals
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
-namespace
-{
-    template <typename T>
-    struct ValueWithIndex
-    {
-        T value;
-        UInt32 index;
-    };
-
-    template <typename T>
-    struct RadixSortTraits : RadixSortNumTraits<T>
-    {
-        using Element = ValueWithIndex<T>;
-        using Result = size_t;
-
-        static T & extractKey(Element & elem) { return elem.value; }
-        static size_t extractResult(Element & elem) { return elem.index; }
-    };
-}
-
 #if USE_EMBEDDED_COMPILER
 
 template <typename T>
@@ -237,35 +213,44 @@ template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    size_t s = data.size();
-    res.resize(s);
+    size_t data_size = data.size();
+    res.resize_exact(data_size);
 
-    if (s == 0)
+    if (data_size == 0)
         return;
 
-    if (limit >= s)
+    if (limit >= data_size)
         limit = 0;
 
-    if (limit)
-    {
-        for (size_t i = 0; i < s; ++i)
-            res[i] = i;
+    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-        if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
-        else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less_stable(*this, nan_direction_hint));
-        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
-        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater_stable(*this, nan_direction_hint));
-    }
-    else
+    if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
     {
-        /// A case for radix sort
-        /// LSD RadixSort is stable
-        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+        /// Disabled for:floating point
+        /// * floating point: We don't deal with nan_direction_hint
+        /// * stability::Stable: We might return any value, not the first
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
         {
+            std::optional<size_t> index;
+            if (direction == IColumn::PermutationSortDirection::Ascending)
+                index = findExtremeMinIndex(data.data(), 0, data.size());
+            else
+                index = findExtremeMaxIndex(data.data(), 0, data.size());
+            if (index)
+            {
+                res.data()[0] = *index;
+                return;
+            }
+        }
+    }
+
+    if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+    {
+        if (!limit)
+        {
+            /// A case for radix sort
+            /// LSD RadixSort is stable
+
             bool reverse = direction == IColumn::PermutationSortDirection::Descending;
             bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
@@ -274,13 +259,27 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                PaddedPODArray<ValueWithIndex<T>> pairs(s);
-                for (UInt32 i = 0; i < static_cast<UInt32>(s); ++i)
+                bool try_sort = false;
+
+                if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), less(*this, nan_direction_hint));
+                else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+                    try_sort = trySort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
+                else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+                else
+                    try_sort = trySort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
+
+                if (try_sort)
+                    return;
+
+                PaddedPODArray<ValueWithIndex<T>> pairs(data_size);
+                for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
@@ -288,9 +287,9 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 {
                     size_t nans_to_move = 0;
 
-                    for (size_t i = 0; i < s; ++i)
+                    for (size_t i = 0; i < data_size; ++i)
                     {
-                        if (isNaN(data[res[reverse ? i : s - 1 - i]]))
+                        if (isNaN(data[res[reverse ? i : data_size - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -298,38 +297,35 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     if (nans_to_move)
                     {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
+                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
                     }
                 }
+
                 return;
             }
         }
-
-        /// Default sorting algorithm.
-        for (size_t i = 0; i < s; ++i)
-            res[i] = i;
-
-        if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-            ::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
-        else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-            ::sort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
-        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-            ::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
-        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-            ::sort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
     }
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        this->getPermutationImpl(limit, res, less(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        this->getPermutationImpl(limit, res, less_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        this->getPermutationImpl(limit, res, greater(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else
+        this->getPermutationImpl(limit, res, greater_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
 }
 
 template <typename T>
 void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
-    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
-    bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
-
     auto sort = [&](auto begin, auto end, auto pred)
     {
+        bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+        bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+        bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
         /// A case for radix sort
         if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
@@ -340,6 +336,10 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
+                bool try_sort = trySort(begin, end, pred);
+                if (try_sort)
+                    return;
+
                 PaddedPODArray<ValueWithIndex<T>> pairs(size);
                 size_t index = 0;
 
@@ -416,12 +416,12 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
-    auto res = this->create();
+    auto res = this->create(size);
 
     if (size > 0)
     {
         auto & new_col = static_cast<Self &>(*res);
-        new_col.data.resize(size);
+        new_col.data.resize_exact(size);
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
@@ -461,16 +461,37 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 }
 
 template <typename T>
+bool ColumnVector<T>::tryInsert(const DB::Field & x)
+{
+    NearestFieldType<T> value;
+    if (!x.tryGet<NearestFieldType<T>>(value))
+    {
+        if constexpr (std::is_same_v<T, UInt8>)
+        {
+            /// It's also possible to insert boolean values into UInt8 column.
+            bool boolean_value;
+            if (x.tryGet<bool>(boolean_value))
+            {
+                data.push_back(static_cast<T>(boolean_value));
+                return true;
+            }
+        }
+        return false;
+    }
+    data.push_back(static_cast<T>(value));
+    return true;
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception("Parameters start = "
-            + toString(start) + ", length = "
-            + toString(length) + " are out of bound in ColumnVector<T>::insertRangeFrom method"
-            " (data.size() = " + toString(src_vec.data.size()) + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                        "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
+                        toString(start), toString(length), toString(src_vec.data.size()));
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -499,30 +520,62 @@ static inline UInt64 blsr(UInt64 mask)
 #endif
 }
 
+/// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
+/// Otherwise it returns the special value: 0xFF.
+uint8_t prefixToCopy(UInt64 mask)
+{
+    if (mask == 0)
+        return 0;
+    if (mask == static_cast<UInt64>(-1))
+        return 64;
+    /// Row with index 0 correspond to the least significant bit.
+    /// So the length of the prefix to copy is 64 - #(leading zeroes).
+    const UInt64 leading_zeroes = __builtin_clzll(mask);
+    if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
+        return 64 - leading_zeroes;
+    else
+        return 0xFF;
+}
+
+uint8_t suffixToCopy(UInt64 mask)
+{
+    const auto prefix_to_copy = prefixToCopy(~mask);
+    return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
+}
+
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_BYTES>
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     while (filt_pos < filt_end_aligned)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+        const uint8_t prefix_to_copy = prefixToCopy(mask);
 
-        if (0xffffffffffffffff == mask)
+        if (0xFF != prefix_to_copy)
         {
-            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+            res_data.insert(data_pos, data_pos + prefix_to_copy);
         }
         else
         {
-            while (mask)
+            const uint8_t suffix_to_copy = suffixToCopy(mask);
+            if (0xFF != suffix_to_copy)
             {
-                size_t index = std::countr_zero(mask);
-                res_data.push_back(data_pos[index]);
-                mask = blsr(mask);
+                res_data.insert(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+            }
+            else
+            {
+                while (mask)
+                {
+                    size_t index = std::countr_zero(mask);
+                    res_data.push_back(data_pos[index]);
+                    mask = blsr(mask);
+                }
             }
         }
 
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
     }
 }
 )
@@ -555,7 +608,7 @@ inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
         _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
 }
 
-template <typename T, typename Container, size_t SIMD_BYTES>
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
@@ -565,12 +618,12 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
     size_t current_offset = res_data.size();
     size_t reserve_size = res_data.size();
-    size_t alloc_size = SIMD_BYTES * 2;
+    size_t alloc_size = SIMD_ELEMENTS * 2;
 
     while (filt_pos < filt_end_aligned)
     {
         /// to avoid calling resize too frequently, resize to reserve buffer.
-        if (reserve_size - current_offset < SIMD_BYTES)
+        if (reserve_size - current_offset < SIMD_ELEMENTS)
         {
             reserve_size += alloc_size;
             resize<T>(res_data, reserve_size);
@@ -581,16 +634,16 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xffffffffffffffff == mask)
         {
-            for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
+            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                 _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
                         _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
-            current_offset += SIMD_BYTES;
+            current_offset += SIMD_ELEMENTS;
         }
         else
         {
             if (mask)
             {
-                for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
+                for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                 {
                     compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
                             reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
@@ -604,11 +657,11 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
         }
 
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
     }
-    /// resize to the real size.
-    res_data.resize(current_offset);
+    /// Resize to the real size.
+    res_data.resize_exact(current_offset);
 }
 )
 
@@ -623,7 +676,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     Container & res_data = res->getData();
 
     if (result_size_hint)
-        res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+        res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -632,18 +685,18 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     /** A slightly more optimized version.
       * Based on the assumption that often pieces of consecutive values
       *  completely pass or do not pass the filter.
-      * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+      * Therefore, we will optimistically check the parts of `SIMD_ELEMENTS` values.
       */
-    static constexpr size_t SIMD_BYTES = 64;
-    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+    static constexpr size_t SIMD_ELEMENTS = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
 #if USE_MULTITARGET_CODE
     static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
     if (VBMI2_CAPABLE && isArchSupported(TargetArch::AVX512VBMI2))
-        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
-        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
 
     while (filt_pos < filt_end)
     {
@@ -729,7 +782,7 @@ namespace
       */
     template<typename IntType>
     requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE42Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
+    void replicateSSE2Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
     {
         const IntType * data_copy_begin_ptr = nullptr;
         size_t offsets_size = offsets.size();
@@ -814,7 +867,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     const size_t size = data.size();
     if (size != offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
     if (0 == size)
         return this->create();
@@ -824,7 +877,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 #ifdef __SSE2__
     if constexpr (std::is_same_v<T, UInt32>)
     {
-        replicateSSE42Int32(getData().data(), res->getData().data(), offsets);
+        replicateSSE2Int32(getData().data(), res->getData().data(), offsets);
         return res;
     }
 #endif
@@ -838,12 +891,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 template <typename T>
@@ -892,9 +939,6 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
-
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {
@@ -912,17 +956,17 @@ ColumnPtr ColumnVector<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [compressed = std::move(compressed), column_size = data_size]
+        [my_compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
             return res;
         });
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -931,7 +975,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = safeGet<T>(default_field);
+    T default_value = assert_cast<const ColumnVector<T> &>(column_with_default_value.getDataColumn()).getElement(0);
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];
@@ -955,5 +999,7 @@ template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
 template class ColumnVector<UUID>;
+template class ColumnVector<IPv4>;
+template class ColumnVector<IPv6>;
 
 }

@@ -26,7 +26,7 @@ Then we need some balance between optimization of these two metrics.
 But some optimizations may improve both metrics.
 
 For example, we can look at the "merge tree" - the tree of data parts that were merged.
-If the tree is perfectly balanced then its depth is proportonal to the log(data size),
+If the tree is perfectly balanced then its depth is proportional to the log(data size),
 the total amount of work is proportional to data_size * log(data_size)
 and the write amplification is proportional to log(data_size).
 If it's not balanced (e.g. every new data part is always merged with existing data parts),
@@ -140,6 +140,11 @@ public:
         double heuristic_to_align_parts_min_ratio_of_sum_size_to_prev_part = 0.9;
         double heuristic_to_align_parts_max_absolute_difference_in_powers_of_two = 0.5;
         double heuristic_to_align_parts_max_score_adjustment = 0.75;
+
+        /** If it's not 0, all part ranges that have min_age larger than min_age_to_force_merge
+          * will be considered for merging
+          */
+        size_t min_age_to_force_merge = 0;
 
         /** Heuristic:
           * From right side of range, remove all parts, that size is less than specified ratio of sum_size.

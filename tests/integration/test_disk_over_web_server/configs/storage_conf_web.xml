@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -30,4 +29,6 @@
             </cached_web>
         </policies>
     </storage_configuration>
+
+    <query_log></query_log>
 </clickhouse>

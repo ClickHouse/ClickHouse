@@ -5,6 +5,16 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DestroyAggregatesThreads;
+    extern const Metric DestroyAggregatesThreadsActive;
+    extern const Metric DestroyAggregatesThreadsScheduled;
+}
 
 namespace DB
 {
@@ -14,6 +24,7 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
+    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -60,16 +71,12 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
-
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
     }
 
     ~ManyAggregatedData()
@@ -82,7 +89,11 @@ struct ManyAggregatedData
             // Aggregation states destruction may be very time-consuming.
             // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
             // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(variants.size());
+            const auto pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::DestroyAggregatesThreads,
+                CurrentMetrics::DestroyAggregatesThreadsActive,
+                CurrentMetrics::DestroyAggregatesThreadsScheduled,
+                variants.size());
 
             for (auto && variant : variants)
             {
@@ -94,10 +105,14 @@ struct ManyAggregatedData
                 {
                     // variant is moved here and will be destroyed in the destructor of the lambda function.
                     pool->trySchedule(
-                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
                             if (thread_group)
-                                CurrentThread::attachToIfDetached(thread_group);
+                                CurrentThread::attachToGroupIfDetached(thread_group);
 
                             setThreadName("AggregDestruct");
                         });
@@ -143,7 +158,9 @@ public:
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t max_threads,
-        size_t temporary_data_merge_threads);
+        size_t temporary_data_merge_threads,
+        bool should_produce_results_in_order_of_bucket_number_ = true,
+        bool skip_merging_ = false);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -159,7 +176,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    LoggerPtr log = getLogger("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -175,6 +192,8 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
+    bool should_produce_results_in_order_of_bucket_number = true;
+    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -182,7 +201,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    bool is_generate_initialized = false;
+    std::atomic_flag is_generate_initialized;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 

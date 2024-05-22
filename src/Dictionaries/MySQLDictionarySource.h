@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #    include <Common/LocalDateTime.h>
@@ -82,7 +82,7 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;

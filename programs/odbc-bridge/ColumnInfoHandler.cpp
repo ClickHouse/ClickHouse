@@ -8,13 +8,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/parseQuery.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
@@ -30,7 +29,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -69,7 +68,7 @@ namespace
 }
 
 
-void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -78,7 +77,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            *response.send() << message << '\n';
         LOG_WARNING(log, fmt::runtime(message));
     };
 
@@ -145,6 +144,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}'", catalog_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
@@ -153,6 +156,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}.{}'", catalog_name, schema_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
             }
@@ -180,10 +187,24 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             columns.emplace_back(column_name, std::move(column_type));
         }
 
+        /// Usually this should not happen, since in case of table does not
+        /// exists, the call should be succeeded.
+        /// However it is possible sometimes because internally there are two
+        /// queries in ClickHouse ODBC bridge:
+        /// - system.tables
+        /// - system.columns
+        /// And if between this two queries the table will be removed, them
+        /// there will be no columns
+        ///
+        /// Also sometimes system.columns can return empty result because of
+        /// the cached value of total tables to scan.
         if (columns.empty())
-            throw Exception("Columns definition was not returned", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Columns definition was not returned");
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(
+            response,
+            request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+            keep_alive_timeout);
         try
         {
             writeStringBinary(columns.toString(), out);

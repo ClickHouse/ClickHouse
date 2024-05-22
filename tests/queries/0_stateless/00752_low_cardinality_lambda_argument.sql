@@ -1,3 +1,4 @@
+set allow_suspicious_low_cardinality_types=1;
 drop table if exists lc_lambda;
 create table lc_lambda (arr Array(LowCardinality(UInt64))) engine = Memory;
 insert into lc_lambda select range(number) from system.numbers limit 10;
@@ -9,3 +10,5 @@ CREATE TABLE test_array(resources_host Array(LowCardinality(String))) ENGINE = M
 insert into test_array values (['a']);
 SELECT arrayMap(i -> [resources_host[i]], arrayEnumerate(resources_host)) FROM test_array;
 drop table if exists test_array;
+
+SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), []);

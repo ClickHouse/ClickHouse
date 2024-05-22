@@ -27,6 +27,14 @@ public:
     /// NOTE: Adding events into distant past (further than `period`) must be avoided.
     void add(double now, double count)
     {
+        // Remove data for initial heating stage that can present at the beginning of a query.
+        // Otherwise it leads to wrong gradual increase of average value, turning algorithm into not very reactive.
+        if (count != 0.0 && ++data_points < 5)
+        {
+            start = events.time;
+            events = ExponentiallySmoothedAverage();
+        }
+
         if (now - period <= start) // precise counting mode
             events = ExponentiallySmoothedAverage(events.value + count, now);
         else // exponential smoothing mode
@@ -51,6 +59,7 @@ public:
     {
         start = now;
         events = ExponentiallySmoothedAverage();
+        data_points = 0;
     }
 
 private:
@@ -58,6 +67,7 @@ private:
     const double half_decay_time;
     double start; // Instant in past without events before it; when measurement started or reset
     ExponentiallySmoothedAverage events; // Estimated number of events in the last `period`
+    size_t data_points = 0;
 };
 
 }

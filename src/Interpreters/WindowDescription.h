@@ -1,18 +1,20 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Field.h>
-#include <Parsers/IAST_fwd.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Core/SortDescription.h>
-#include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Core/Types.h>
-#include <Processors/QueryPlan/FilterStep.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
 class ASTFunction;
+
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 struct WindowFunctionDescription
 {
@@ -28,8 +30,8 @@ struct WindowFunctionDescription
 
 struct WindowFrame
 {
-    enum class FrameType { ROWS, GROUPS, RANGE };
-    enum class BoundaryType { Unbounded, Current, Offset };
+    enum class FrameType : uint8_t { ROWS, GROUPS, RANGE };
+    enum class BoundaryType : uint8_t { Unbounded, Current, Offset };
 
     // This flag signifies that the frame properties were not set explicitly by
     // user, but the fields of this structure still have to contain proper values
@@ -98,7 +100,6 @@ struct WindowDescription
 
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
-
 
     std::string dump() const;
 

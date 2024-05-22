@@ -5,9 +5,6 @@ if (GLIBC_COMPATIBILITY)
     endif()
 
     enable_language(ASM)
-    include(CheckIncludeFile)
-
-    check_include_file("sys/random.h" HAVE_SYS_RANDOM_H)
 
     add_headers_and_sources(glibc_compatibility .)
     add_headers_and_sources(glibc_compatibility musl)
@@ -21,11 +18,6 @@ if (GLIBC_COMPATIBILITY)
         message (FATAL_ERROR "glibc_compatibility can only be used on x86_64 or aarch64.")
     endif ()
 
-    list(REMOVE_ITEM glibc_compatibility_sources musl/getentropy.c)
-    if(HAVE_SYS_RANDOM_H)
-        list(APPEND glibc_compatibility_sources musl/getentropy.c)
-    endif()
-
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
@@ -37,17 +29,11 @@ if (GLIBC_COMPATIBILITY)
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
-    if (NOT USE_STATIC_LIBRARIES AND NOT USE_STATIC_LIBRARIES)
+    if (ENABLE_OPENSSL_DYNAMIC)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
-
-    install(
-        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
-        EXPORT global
-        ARCHIVE DESTINATION lib
-    )
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 

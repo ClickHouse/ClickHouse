@@ -1,8 +1,8 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-#include "ODBCBlockInputStream.h"
-#include "ODBCBlockOutputStream.h"
+#include "ODBCSource.h"
+#include "ODBCSink.h"
 #include "getIdentifierQuote.h"
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
@@ -20,7 +20,7 @@
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Common/config.h>
+#include "config.h"
 
 #include <mutex>
 #include <memory>
@@ -46,12 +46,12 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 {
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
-        *response.send() << message << std::endl;
+        *response.send() << message << '\n';
     LOG_WARNING(log, fmt::runtime(message));
 }
 
 
-void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -102,7 +102,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     std::string format = params.get("format", "RowBinary");
     std::string connection_string = params.get("connection_string");
+    bool use_connection_pooling = params.getParsed<bool>("use_connection_pooling", true);
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
+    LOG_TRACE(log, "Use pooling: {}", use_connection_pooling);
 
     UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     if (params.has("max_block_size"))
@@ -134,7 +136,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     try
     {
         nanodbc::ConnectionHolderPtr connection_handler;
-        if (getContext()->getSettingsRef().odbc_bridge_use_connection_pooling)
+        if (use_connection_pooling)
             connection_handler = ODBCPooledConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
         else

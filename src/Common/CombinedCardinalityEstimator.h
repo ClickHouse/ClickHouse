@@ -16,7 +16,12 @@ namespace ErrorCodes
 namespace details
 {
 
-enum class ContainerType : uint8_t { SMALL = 1, MEDIUM = 2, LARGE = 3 };
+enum class ContainerType : uint8_t
+{
+    SMALL = 1,
+    MEDIUM = 2,
+    LARGE = 3
+};
 
 static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 {
@@ -65,7 +70,7 @@ public:
 private:
     using Small = SmallSet<Key, small_set_size_max>;
     using Medium = HashContainer;
-    using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
+    using Large = HyperLogLogCounter<K, Key, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
 
 public:
     CombinedCardinalityEstimator()

@@ -85,21 +85,43 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 
 class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
 {
+public:
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTExistsDatabaseQuery>(*this);
+        res->children.clear();
+        cloneTableOptions(*res);
+        return res;
+    }
+
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
-                    << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+                    << " " << (settings.hilite ? hilite_none : "");
+        database->formatImpl(settings, state, frame);
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Exists; }
 };
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
+public:
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTShowCreateDatabaseQuery>(*this);
+        res->children.clear();
+        cloneTableOptions(*res);
+        return res;
+    }
+
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+                      << " " << (settings.hilite ? hilite_none : "");
+        database->formatImpl(settings, state, frame);
     }
 };
 
@@ -122,6 +144,8 @@ public:
         cloneOutputOptions(*res);
         return res;
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

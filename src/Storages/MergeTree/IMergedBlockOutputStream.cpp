@@ -1,19 +1,19 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    DataPartStorageBuilderPtr data_part_storage_builder_,
-    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage_builder(std::move(data_part_storage_builder_))
+    , data_part_storage(data_part->getDataPartStoragePtr())
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
@@ -51,7 +51,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
+                if (stream_name)
+                    ++stream_counts[*stream_name];
             });
     }
 
@@ -65,12 +67,13 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, checksums);
+
             /// Delete files if they are no longer shared with another column.
-            if (--stream_counts[stream_name] == 0)
+            if (stream_name && --stream_counts[*stream_name] == 0)
             {
-                remove_files.emplace(stream_name + ".bin");
-                remove_files.emplace(stream_name + mrk_extension);
+                remove_files.emplace(*stream_name + ".bin");
+                remove_files.emplace(*stream_name + mrk_extension);
             }
         };
 
@@ -106,6 +109,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (remove_it != columns.end())
             columns.erase(remove_it);
     }
+
     return remove_files;
 }
 

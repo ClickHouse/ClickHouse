@@ -1,7 +1,10 @@
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include "reverse.h"
 
 
 namespace DB
@@ -25,9 +28,17 @@ struct ReverseUTF8Impl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
+        bool all_ascii = isAllASCII(data.data(), data.size());
+        if (all_ascii)
+        {
+            ReverseImpl::vector(data, offsets, res_data, res_offsets);
+            return;
+        }
+
         res_data.resize(data.size());
         res_offsets.assign(offsets);
         size_t size = offsets.size();
+
 
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -64,7 +75,7 @@ struct ReverseUTF8Impl
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function reverseUTF8 to fixed string.");
     }
 };
 

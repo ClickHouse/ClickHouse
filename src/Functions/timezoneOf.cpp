@@ -6,7 +6,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
 
-
 namespace DB
 {
 

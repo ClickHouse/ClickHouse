@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-polymorphic-parts
-# Tag no-polymorphic-parts: bug, shoud be fixed
+# Tags: long, no-polymorphic-parts, no-random-settings, no-random-merge-tree-settings, no-debug
 
 # Description of test result:
 # Test the correctness of the partition pruning

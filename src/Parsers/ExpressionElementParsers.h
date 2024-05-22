@@ -9,26 +9,6 @@ namespace DB
 {
 
 
-class ParserArray : public IParserBase
-{
-protected:
-    const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** If in parenthesis an expression from one element - returns this element in `node`;
-  *  or if there is a SELECT subquery in parenthesis, then this subquery returned in `node`;
-  *  otherwise returns `tuple` function from the contents of brackets.
-  */
-class ParserParenthesisExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "parenthesized expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 /** The SELECT subquery is in parenthesis.
   */
 class ParserSubquery : public IParserBase
@@ -45,12 +25,29 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 public:
-    explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+    explicit ParserIdentifier(bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_) {}
+    Highlight highlight() const override { return highlight_type; }
 
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_query_parameter;
+    Highlight highlight_type;
+};
+
+
+/** An identifier for tables written as string literal, for example, 'mytable.avro'
+  */
+class ParserTableAsStringLiteralIdentifier : public IParserBase
+{
+public:
+    explicit ParserTableAsStringLiteralIdentifier() = default;
+
+protected:
+    const char * getName() const override { return "string literal table identifier"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::identifier; }
 };
 
 
@@ -60,8 +57,8 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
     {
     }
 
@@ -70,6 +67,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
     bool allow_query_parameter;
+    Highlight highlight_type;
 };
 
 /** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
@@ -124,7 +122,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** COLUMNS('<regular expression>')
+/** COLUMNS(columns_names) or COLUMNS('<regular expression>')
   */
 class ParserColumnsMatcher : public IParserBase
 {
@@ -141,34 +139,21 @@ protected:
     ColumnTransformers allowed_transformers;
 };
 
-/** A function, for example, f(x, y + 1, g(z)).
-  * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
-  * Or a parametric aggregate function: quantile(0.9)(x + y).
-  *  Syntax - two pairs of parentheses instead of one. The first is for parameters, the second for arguments.
-  * For functions, the DISTINCT modifier can be specified, for example, count(DISTINCT x, y).
+/** Qualified columns matcher identifier.COLUMNS(columns_names) or identifier.COLUMNS('<regular expression>')
   */
-class ParserFunction : public IParserBase
+class ParserQualifiedColumnsMatcher : public IParserBase
 {
 public:
-    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
-        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
-    {
-    }
+    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
+    explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+        : allowed_transformers(allowed_transformers_)
+    {}
 
 protected:
-    const char * getName() const override { return "function"; }
+    const char * getName() const override { return "qualified COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool allow_function_parameters;
-    bool is_table_function;
-};
 
-// A special function parser for view and viewIfPermitted table functions.
-// It parses an SELECT query as its argument and doesn't support getColumnName().
-class ParserTableFunctionView : public IParserBase
-{
-protected:
-    const char * getName() const override { return "function"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    ColumnTransformers allowed_transformers;
 };
 
 // Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
@@ -214,6 +199,14 @@ class ParserCodec : public IParserBase
 {
 protected:
     const char * getName() const override { return "codec"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// STATISTIC(tdigest(200))
+class ParserStatisticType : public IParserBase
+{
+protected:
+    const char * getName() const override { return "statistic"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -265,6 +258,7 @@ class ParserNumber : public IParserBase
 protected:
     const char * getName() const override { return "number"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::number; }
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -285,6 +279,7 @@ class ParserStringLiteral : public IParserBase
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::string; }
 };
 
 
@@ -334,6 +329,22 @@ protected:
     }
 };
 
+/** Parses all collections of literals and their various combinations
+  * Used in parsing parameters for SET query
+  */
+class ParserAllCollectionsOfLiterals : public IParserBase
+{
+public:
+    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
+
+protected:
+    const char * getName() const override { return "combination of maps, arrays, tuples"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool allow_map;
+};
+
 
 /** The literal is one of: NULL, UInt64, Int64, Float64, String.
   */
@@ -381,6 +392,7 @@ class ParserSubstitution : public IParserBase
 protected:
     const char * getName() const override { return "substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::substitution; }
 };
 
 
@@ -390,16 +402,6 @@ class ParserMySQLGlobalVariable : public IParserBase
 {
 protected:
     const char * getName() const override { return "MySQL-style global variable"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
-  */
-class ParserExpressionElement : public IParserBase
-{
-protected:
-    const char * getName() const override { return "element of expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -48,7 +49,7 @@ namespace
             if (current_query)
             {
                 const auto & prev_element = current_query->access_rights_elements.back();
-                bool continue_with_current_query = element.sameDatabaseAndTable(prev_element) && element.sameOptions(prev_element);
+                bool continue_with_current_query = element.sameDatabaseAndTableAndParameter(prev_element) && element.sameOptions(prev_element);
                 if (!continue_with_current_query)
                     current_query = nullptr;
             }
@@ -94,7 +95,7 @@ namespace
             return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
 }
@@ -196,6 +197,15 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_r
 ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & user_or_role)
 {
     return getGrantQueriesImpl(user_or_role, nullptr, true);
+}
+
+void registerInterpreterShowGrantsQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowGrantsQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowGrantsQuery", create_fn);
 }
 
 }

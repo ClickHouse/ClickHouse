@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 
-#include <Common/interpolate.h>
+#include <base/interpolate.h>
 
 #include <cmath>
 #include <cassert>
@@ -36,7 +36,7 @@ struct Estimator
             while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
                 --end;
 
-        if (!min_score || current_score < min_score)
+        if (min_score == 0.0 || current_score < min_score)
         {
             min_score = current_score;
             best_begin = begin;
@@ -69,7 +69,7 @@ struct Estimator
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    double min_score = 0;
+    double min_score = 0.0;
     Iterator best_begin {};
     Iterator best_end {};
 };
@@ -102,6 +102,9 @@ bool allow(
     double max_size_to_lower_base_log,
     const SimpleMergeSelector::Settings & settings)
 {
+    if (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
+        return true;
+
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
     /// Map size to 0..1 using logarithmic scale
@@ -154,12 +157,21 @@ void selectWithinPartition(
     if (parts_count <= 1)
         return;
 
-    for (size_t begin = 0; begin < parts_count; ++begin)
-    {
-        /// If too many parts, select only from first, to avoid complexity.
-        if (begin > 1000)
-            break;
+    /// If the parts in the parts vector are sorted by block number,
+    /// it may not be ideal to only select parts for merging from the first N ones.
+    /// This is because if there are more than N parts in the partition,
+    /// we will not be able to assign a merge for newly created parts.
+    /// As a result, the total number of parts within the partition could
+    /// grow uncontrollably, similar to a snowball effect.
+    /// To address this we will try to assign a merge taking into consideration
+    /// only last N parts.
+    static constexpr size_t parts_threshold = 1000;
+    size_t begin = 0;
+    if (parts_count >= parts_threshold)
+        begin = parts_count - parts_threshold;
 
+    for (; begin < parts_count; ++begin)
+    {
         if (!parts[begin].shall_participate_in_merges)
             continue;
 
@@ -170,7 +182,7 @@ void selectWithinPartition(
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             assert(end > begin);
-            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once) //-V658
+            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
                 break;
 
             if (!parts[end - 1].shall_participate_in_merges)

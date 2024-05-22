@@ -79,11 +79,11 @@ SYSTEM STOP FETCHES r2;
 
 SET insert_quorum_timeout=0;
 
-INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
 
 -- retry should fail despite the insert_deduplicate enabled
-INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
-INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
 SELECT * FROM r2 WHERE key=4;
 
 SYSTEM START FETCHES r2;
@@ -99,5 +99,5 @@ SELECT 'insert happened';
 SELECT COUNT() FROM r1;
 SELECT COUNT() FROM r2;
 
-DROP TABLE IF EXISTS r1;
-DROP TABLE IF EXISTS r2;
+DROP TABLE IF EXISTS r1 SYNC;
+DROP TABLE IF EXISTS r2 SYNC;

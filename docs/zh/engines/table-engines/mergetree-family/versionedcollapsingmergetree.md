@@ -54,8 +54,9 @@ VersionedCollapsingMergeTree(sign, version)
 
 <summary>不推荐使用的创建表的方法</summary>
 
-    :::info "注意"
-    不要在新项目中使用此方法。 如果可能，请将旧项目切换到上述方法。
+:::info "注意"
+不要在新项目中使用此方法。 如果可能，请将旧项目切换到上述方法。
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -233,5 +234,3 @@ SELECT * FROM UAct FINAL
 ```
 
 这是一个非常低效的方式来选择数据。 不要把它用于数据量大的表。
-
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

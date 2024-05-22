@@ -137,7 +137,7 @@ GrantedRoles::Elements GrantedRoles::getElements() const
     boost::range::set_difference(roles, roles_with_admin_option, std::back_inserter(element.ids));
     if (!element.empty())
     {
-        element.admin_option = false; //-V1048
+        element.admin_option = false;
         elements.emplace_back(std::move(element));
     }
 
@@ -161,9 +161,9 @@ void GrantedRoles::makeUnion(const GrantedRoles & other)
 
 void GrantedRoles::makeIntersection(const GrantedRoles & other)
 {
-    boost::range::remove_erase_if(roles, [&other](const UUID & id) { return other.roles.find(id) == other.roles.end(); });
+    boost::range::remove_erase_if(roles, [&other](const UUID & id) { return other.roles.find(id) == other.roles.end(); }); // NOLINT
 
-    boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id)
+    boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id) // NOLINT
     {
         return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
     });

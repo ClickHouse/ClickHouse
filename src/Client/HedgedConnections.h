@@ -70,12 +70,15 @@ public:
         size_t index;
     };
 
-    HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
-                      ContextPtr context_,
-                      const ConnectionTimeouts & timeouts_,
-                      const ThrottlerPtr & throttler,
-                      PoolMode pool_mode,
-                      std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
+    HedgedConnections(
+        const ConnectionPoolWithFailoverPtr & pool_,
+        ContextPtr context_,
+        const ConnectionTimeouts & timeouts_,
+        const ThrottlerPtr & throttler,
+        PoolMode pool_mode,
+        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
+        AsyncCallback async_callback = {},
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     void sendScalarsData(Scalars & data) override;
 
@@ -91,17 +94,17 @@ public:
 
     void sendReadTaskResponse(const String &) override
     {
-        throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }
 
-    void sendMergeTreeReadTaskResponse(PartitionReadResponse) override
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
     {
-        throw Exception("sendMergeTreeReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
     }
 
     Packet receivePacket() override;
 
-    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 
@@ -118,6 +121,8 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
+    void setAsyncCallback(AsyncCallback async_callback) override;
 
 private:
     /// If we don't receive data from replica and there is no progress in query
@@ -173,12 +178,12 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count;
+    size_t active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
     /// disabled replica changing in all offsets.
-    size_t offsets_with_disabled_changing_replica;
+    size_t offsets_with_disabled_changing_replica = 0;
 
     Pipeline pipeline_for_new_replicas;
 
@@ -196,12 +201,6 @@ private:
     Epoll epoll;
     ContextPtr context;
     const Settings & settings;
-
-    /// The following two fields are from settings but can be referenced outside the lifetime of
-    /// settings when connection is drained asynchronously.
-    Poco::Timespan drain_timeout;
-    bool allow_changing_replica_until_first_data_packet;
-
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;

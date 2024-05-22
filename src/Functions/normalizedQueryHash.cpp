@@ -4,9 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/queryNormalization.h>
-#include <base/find_symbols.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/SipHash.h>
 
 
 /** The function returns 64bit hash value that is identical for similar queries.
@@ -39,8 +36,10 @@ struct Impl
         for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            res_data[i] = normalizedQueryHash<keep_names>(
-                reinterpret_cast<const char *>(&data[prev_src_offset]), reinterpret_cast<const char *>(&data[curr_src_offset - 1]));
+            res_data[i] = normalizedQueryHash(
+                reinterpret_cast<const char *>(&data[prev_src_offset]),
+                reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
+                keep_names);
             prev_src_offset = offsets[i];
         }
     }
@@ -69,7 +68,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -90,8 +89,8 @@ public:
             return col_res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 
@@ -104,4 +103,3 @@ REGISTER_FUNCTION(NormalizedQueryHash)
 }
 
 }
-

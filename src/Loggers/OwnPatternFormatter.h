@@ -2,6 +2,7 @@
 
 
 #include <Poco/PatternFormatter.h>
+#include <Common/DateLUT.h>
 #include "ExtendedLogChannel.h"
 
 
@@ -24,11 +25,12 @@ class Loggers;
 class OwnPatternFormatter : public Poco::PatternFormatter
 {
 public:
-    OwnPatternFormatter(bool color_ = false);
+    explicit OwnPatternFormatter(bool color_ = false);
 
     void format(const Poco::Message & msg, std::string & text) override;
     virtual void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
 
 private:
+    const DateLUTImpl & server_timezone = DateLUT::serverTimezoneInstance();
     bool color;
 };

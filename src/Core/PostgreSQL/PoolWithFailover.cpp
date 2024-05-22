@@ -6,6 +6,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int POSTGRESQL_CONNECTION_FAILURE;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -30,7 +32,7 @@ PoolWithFailover::PoolWithFailover(
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
 {
-    LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
+    LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
 
     for (const auto & [priority, configurations] : configurations_by_priority)
@@ -45,7 +47,7 @@ PoolWithFailover::PoolWithFailover(
 }
 
 PoolWithFailover::PoolWithFailover(
-    const DB::StoragePostgreSQLConfiguration & configuration,
+    const DB::StoragePostgreSQL::Configuration & configuration,
     size_t pool_size,
     size_t pool_wait_timeout_,
     size_t max_tries_,
@@ -54,13 +56,13 @@ PoolWithFailover::PoolWithFailover(
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
 {
-    LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
+    LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
 
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
     for (const auto & [host, port] : configuration.addresses)
     {
-        LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
+        LOG_DEBUG(getLogger("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
         auto connection_string = formatConnectionString(configuration.database, host, port, configuration.username, configuration.password);
         replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }
@@ -70,7 +72,10 @@ ConnectionHolderPtr PoolWithFailover::get()
 {
     std::lock_guard lock(mutex);
 
-    DB::WriteBufferFromOwnString error_message;
+    if (replicas_with_priority.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No address specified");
+
+    PreformattedMessage error_message;
     for (size_t try_idx = 0; try_idx < max_tries; ++try_idx)
     {
         for (auto & priority : replicas_with_priority)
@@ -103,7 +108,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
-                    error_message << fmt::format(
+                    error_message = PreformattedMessage::create(
                         "Try {}. Connection to {} failed with error: {}\n",
                         try_idx + 1, DB::backQuote(replica.connection_info.host_port), pqxx_error.what());
 
@@ -127,7 +132,7 @@ ConnectionHolderPtr PoolWithFailover::get()
         }
     }
 
-    throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, error_message.str());
+    throw DB::Exception(error_message, DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE);
 }
 }
 

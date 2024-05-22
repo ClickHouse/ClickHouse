@@ -2,44 +2,30 @@
 #include <IO/ReadHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/JSONUtils.h>
 
 namespace DB
 {
 
-JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_) : JSONColumnsReaderBase(in_)
+JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_, const FormatSettings & format_settings_) : JSONColumnsReaderBase(in_), format_settings(format_settings_)
 {
 }
 
 void JSONColumnsReader::readChunkStart()
 {
-    skipWhitespaceIfAny(*in);
-    assertChar('{', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipObjectStart(*in);
 }
 
 std::optional<String> JSONColumnsReader::readColumnStart()
 {
-    skipWhitespaceIfAny(*in);
-    String name;
-    readJSONString(name, *in);
-    skipWhitespaceIfAny(*in);
-    assertChar(':', *in);
-    skipWhitespaceIfAny(*in);
-    assertChar('[', *in);
-    skipWhitespaceIfAny(*in);
+    auto name = JSONUtils::readFieldName(*in, format_settings.json);
+    JSONUtils::skipArrayStart(*in);
     return name;
 }
 
 bool JSONColumnsReader::checkChunkEnd()
 {
-    skipWhitespaceIfAny(*in);
-    if (!in->eof() && *in->position() == '}')
-    {
-        ++in->position();
-        skipWhitespaceIfAny(*in);
-        return true;
-    }
-    return false;
+    return JSONUtils::checkAndSkipObjectEnd(*in);
 }
 
 
@@ -52,7 +38,7 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsReader>(buf));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsReader>(buf, settings));
         }
     );
     factory.markFormatSupportsSubsetOfColumns("JSONColumns");
@@ -64,12 +50,12 @@ void registerJSONColumnsSchemaReader(FormatFactory & factory)
         "JSONColumns",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf));
+            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf, settings));
         }
     );
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONColumns", [](const FormatSettings & settings)
     {
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        return getAdditionalFormatInfoForAllRowBasedFormats(settings) + getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
     });
 }
 

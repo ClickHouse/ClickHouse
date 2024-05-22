@@ -56,4 +56,3 @@ SELECT groupArray(y) FROM t_null_big
 ```
 
 `groupArray` не включает `NULL` в результирующий массив.
-

@@ -26,12 +26,13 @@ EmbeddedRocksDBSink::EmbeddedRocksDBSink(
             break;
         ++primary_key_pos;
     }
+    serializations = getHeader().getSerializations();
 }
 
 void EmbeddedRocksDBSink::consume(Chunk chunk)
 {
     auto rows = chunk.getNumRows();
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    const auto & columns = chunk.getColumns();
 
     WriteBufferFromOwnString wb_key;
     WriteBufferFromOwnString wb_value;
@@ -43,20 +44,17 @@ void EmbeddedRocksDBSink::consume(Chunk chunk)
         wb_key.restart();
         wb_value.restart();
 
-        size_t idx = 0;
-        for (const auto & elem : block)
-        {
-            elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
-            ++idx;
-        }
+        for (size_t idx = 0; idx < columns.size(); ++idx)
+            serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? wb_key : wb_value, {});
+
         status = batch.Put(wb_key.str(), wb_value.str());
         if (!status.ok())
-            throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
     }
 
     status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
     if (!status.ok())
-        throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 }
 
 }

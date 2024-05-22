@@ -4,11 +4,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <Functions/FunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 namespace DB
 {
-
-const String & getFunctionCanonicalNameIfAny(const String & name);
-const String & getAggregateFunctionCanonicalNameIfAny(const String & name);
 
 void FunctionNameNormalizer::visit(IAST * ast)
 {

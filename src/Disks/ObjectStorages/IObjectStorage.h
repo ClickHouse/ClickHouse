@@ -9,46 +9,82 @@
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
-#include <Common/Exception.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/copyData.h>
 
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/ObjectStorageKey.h>
 #include <Disks/WriteMode.h>
+#include <Interpreters/Context_fwd.h>
+#include <Core/Types.h>
+#include <Disks/DirectoryIterator.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/Exception.h>
+#include "config.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#include <Common/MultiVersion.h>
+#include <azure/storage/blobs.hpp>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-struct RelativePathWithSize
-{
-    String relative_path;
-    size_t bytes_size;
-
-    RelativePathWithSize() = default;
-
-    RelativePathWithSize(const String & relative_path_, size_t bytes_size_)
-        : relative_path(relative_path_), bytes_size(bytes_size_) {}
-};
-using RelativePathsWithSize = std::vector<RelativePathWithSize>;
-
-
 struct ObjectMetadata
 {
-    uint64_t size_bytes;
+    uint64_t size_bytes = 0;
     std::optional<Poco::Timestamp> last_modified;
     std::optional<ObjectAttributes> attributes;
 };
 
-using FinalizeCallback = std::function<void(size_t bytes_count)>;
+struct RelativePathWithMetadata
+{
+    String relative_path;
+    ObjectMetadata metadata;
+
+    RelativePathWithMetadata() = default;
+
+    RelativePathWithMetadata(String relative_path_, ObjectMetadata metadata_)
+        : relative_path(std::move(relative_path_))
+        , metadata(std::move(metadata_))
+    {}
+};
+
+struct ObjectKeyWithMetadata
+{
+    ObjectStorageKey key;
+    ObjectMetadata metadata;
+
+    ObjectKeyWithMetadata() = default;
+
+    ObjectKeyWithMetadata(ObjectStorageKey key_, ObjectMetadata metadata_)
+        : key(std::move(key_))
+        , metadata(std::move(metadata_))
+    {}
+};
+
+using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
+using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
+
+class IObjectStorageIterator;
+using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
+
+class IObjectStorageKeysGenerator;
+using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
 
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
@@ -58,15 +94,30 @@ class IObjectStorage
 public:
     IObjectStorage() = default;
 
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
-
     virtual std::string getName() const = 0;
+
+    virtual ObjectStorageType getType() const = 0;
+
+    virtual std::string getCommonKeyPrefix() const = 0;
+
+    virtual std::string getDescription() const = 0;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 
-    /// List on prefix, return children (relative paths) with their sizes.
-    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const = 0;
+    /// Object exists or any child on the specified path exists.
+    /// We have this method because object storages are flat for example
+    /// /a/b/c/d may exist but /a/b/c may not. So this method will return true for
+    /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
+    virtual bool existsOrHasAnyChild(const std::string & path) const;
+
+    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const;
+
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const;
+
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
@@ -91,7 +142,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 
@@ -114,6 +164,8 @@ public:
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
     /// Copy object to another instance of object storage
@@ -122,15 +174,14 @@ public:
     virtual void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {});
 
     virtual ~IObjectStorage() = default;
 
-    /// Path to directory with objects cache
-    virtual const std::string & getCacheBasePath() const;
-
-    static AsynchronousReaderPtr getThreadPoolReader();
+    virtual const std::string & getCacheName() const;
 
     static ThreadPool & getThreadPoolWriter();
 
@@ -140,9 +191,10 @@ public:
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) = 0;
+        const Poco::Util::AbstractConfiguration &,
+        const std::string & /*config_prefix*/,
+        ContextPtr)
+    {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
@@ -157,34 +209,41 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual std::string generateBlobNameForPath(const std::string & path) = 0;
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
+
+    /// Object key prefix for local paths in the directory 'path'.
+    virtual ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
+    }
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
-    virtual bool supportsAppend() const { return false; }
-
-    /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
-    /// which is used to define a cache key for the source object path.
+    /// Remove filesystem cache.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
 
     virtual bool isReadOnly() const { return false; }
+    virtual bool isWriteOnce() const { return false; }
+    virtual bool isPlain() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 
-    virtual ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & /* path */) const { return settings; }
-
-    virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
-
-protected:
-    /// Should be called from implementation of applyNewSettings()
-    void applyRemoteThrottlingSettings(ContextPtr context);
-
-    /// Should be used by implementation of read* and write* methods
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
+    virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
+
+#if USE_AZURE_BLOB_STORAGE
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+#endif
+
 
 private:
     mutable std::mutex throttlers_mutex;

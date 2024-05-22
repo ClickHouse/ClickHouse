@@ -1,4 +1,6 @@
 #include <Functions/FunctionConstantBase.h>
+#include <base/getFQDNOrHostName.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -25,12 +27,12 @@ namespace
     public:
         static constexpr auto name = "buildId";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBuildId>(context); }
-        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance()->getBuildIDHex(), context->isDistributed()) {}
+        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance().getBuildIDHex(), context->isDistributed()) {}
     };
 #endif
 
 
-    /// Get the host name. Is is constant on single server, but is not constant in distributed queries.
+    /// Get the host name. It is constant on single server, but is not constant in distributed queries.
     class FunctionHostName : public FunctionConstantBase<FunctionHostName, String, DataTypeString>
     {
     public:
@@ -49,22 +51,31 @@ namespace
     };
 
 
-    class FunctionTcpPort : public FunctionConstantBase<FunctionTcpPort, UInt16, DataTypeUInt16>
+    class FunctionTCPPort : public FunctionConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
     {
     public:
         static constexpr auto name = "tcpPort";
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTcpPort>(context); }
-        explicit FunctionTcpPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTCPPort>(context); }
+        explicit FunctionTCPPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
     };
 
 
-    /// Returns the server time zone.
+    /// Returns timezone for current session.
     class FunctionTimezone : public FunctionConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance().getTimeZone()}, context->isDistributed()) {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
+    };
+
+    /// Returns the server time zone (timezone in which server runs).
+    class FunctionServerTimezone : public FunctionConstantBase<FunctionServerTimezone, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "serverTimezone";
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerTimezone>(context); }
+        explicit FunctionServerTimezone(ContextPtr context) : FunctionConstantBase(DateLUT::serverTimezoneInstance().getTimeZone(), context->isDistributed()) {}
     };
 
 
@@ -115,6 +126,13 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 
+    class FunctionDisplayName : public FunctionConstantBase<FunctionDisplayName, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "displayName";
+        explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
+    };
 }
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -135,15 +153,41 @@ REGISTER_FUNCTION(ServerUUID)
     factory.registerFunction<FunctionServerUUID>();
 }
 
-REGISTER_FUNCTION(TcpPort)
+REGISTER_FUNCTION(TCPPort)
 {
-    factory.registerFunction<FunctionTcpPort>();
+    factory.registerFunction<FunctionTCPPort>();
 }
 
 REGISTER_FUNCTION(Timezone)
 {
-    factory.registerFunction<FunctionTimezone>();
-    factory.registerAlias("timeZone", "timezone");
+    factory.registerFunction<FunctionTimezone>(
+        FunctionDocumentation{
+        .description=R"(
+Returns the default timezone for current session.
+Used as default timezone for parsing DateTime|DateTime64 without explicitly specified timezone.
+Can be changed with SET timezone = 'New/Tz'
+
+[example:timezone]
+    )",
+    .examples{{"timezone", "SELECT timezone();", ""}},
+    .categories{"Constant", "Miscellaneous"}
+});
+factory.registerAlias("timeZone", "timezone");
+}
+
+REGISTER_FUNCTION(ServerTimezone)
+{
+    factory.registerFunction<FunctionServerTimezone>(
+    FunctionDocumentation{
+        .description=R"(
+Returns the timezone name in which server operates.
+
+[example:serverTimezone]
+    )",
+     .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
+     .categories{"Constant", "Miscellaneous"}
+});
+    factory.registerAlias("serverTimeZone", "serverTimezone");
 }
 
 REGISTER_FUNCTION(Uptime)
@@ -170,6 +214,22 @@ REGISTER_FUNCTION(ZooKeeperSessionUptime)
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
     factory.registerFunction<FunctionGetOSKernelVersion>();
+}
+
+
+REGISTER_FUNCTION(DisplayName)
+{
+    factory.registerFunction<FunctionDisplayName>(FunctionDocumentation
+        {
+            .description=R"(
+Returns the value of `display_name` from config or server FQDN if not set.
+
+[example:displayName]
+)",
+            .examples{{"displayName", "SELECT displayName();", ""}},
+            .categories{"Constant", "Miscellaneous"}
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 

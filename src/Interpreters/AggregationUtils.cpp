@@ -1,3 +1,4 @@
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/AggregationUtils.h>
 
 namespace DB
@@ -45,30 +46,27 @@ OutputBlockColumns prepareOutputBlockColumns(
         }
         else
         {
-            final_aggregate_columns[i] = aggregate_functions[i]->getReturnType()->createColumn();
+            final_aggregate_columns[i] = aggregate_functions[i]->getResultType()->createColumn();
             final_aggregate_columns[i]->reserve(rows);
 
             if (aggregate_functions[i]->isState())
             {
-                /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(final_aggregate_columns[i].get()))
-                    for (auto & pool : aggregates_pools)
-                        column_aggregate_func->addArena(pool);
+                auto callback = [&](IColumn & subcolumn)
+                {
+                    /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
+                    if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(&subcolumn))
+                        for (auto & pool : aggregates_pools)
+                            column_aggregate_func->addArena(pool);
+                };
 
-                /// Aggregate state can be wrapped into array if aggregate function ends with -Resample combinator.
-                final_aggregate_columns[i]->forEachSubcolumn(
-                    [&aggregates_pools](auto & subcolumn)
-                    {
-                        if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
-                            for (auto & pool : aggregates_pools)
-                                column_aggregate_func->addArena(pool);
-                    });
+                callback(*final_aggregate_columns[i]);
+                final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
             }
         }
     }
 
     if (key_columns.size() != params.keys_size)
-        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate. Unexpected key columns size.");
 
     std::vector<IColumn *> raw_key_columns;
     raw_key_columns.reserve(key_columns.size());

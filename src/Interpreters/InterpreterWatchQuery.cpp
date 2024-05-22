@@ -12,8 +12,10 @@ limitations under the License. */
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -41,7 +43,7 @@ BlockIO InterpreterWatchQuery::execute()
         const Settings & settings = getContext()->getSettingsRef();
 
         StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+        limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits.max_rows = settings.max_result_rows;
         limits.size_limits.max_bytes = settings.max_result_bytes;
         limits.size_limits.overflow_mode = settings.result_overflow_mode;
@@ -61,18 +63,17 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!storage)
-        throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
-        ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
     if (storage_name == "LiveView"
         && !getContext()->getSettingsRef().allow_experimental_live_view)
-        throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
-                        ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
     else if (storage_name == "WindowView"
         && !getContext()->getSettingsRef().allow_experimental_window_view)
-        throw Exception("Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
-                        ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
@@ -83,10 +84,8 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
 
     /// Limitation on the number of columns to read.
     if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
-        throw Exception("Limit for number of columns to read exceeded. "
-            "Requested: " + std::to_string(required_columns.size())
-            + ", maximum: " + settings.max_columns_to_read.toString(),
-            ErrorCodes::TOO_MANY_COLUMNS);
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Limit for number of columns to read exceeded. "
+            "Requested: {}, maximum: {}", required_columns.size(), settings.max_columns_to_read.toString());
 
     size_t max_block_size = settings.max_block_size;
     size_t max_streams = 1;
@@ -104,6 +103,15 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     QueryPipelineBuilder pipeline;
     pipeline.init(std::move(pipe));
     return pipeline;
+}
+
+void registerInterpreterWatchQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterWatchQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterWatchQuery", create_fn);
 }
 
 }

@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_S2_GEOMETRY
 
@@ -94,7 +94,7 @@ public:
             S2CellId cell_id(id);
 
             if (!cell_id.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell (id {}) is not valid in function {}", id, getName());
 
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);

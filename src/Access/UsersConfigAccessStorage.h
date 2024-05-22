@@ -20,7 +20,7 @@ class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
 
-    static constexpr char STORAGE_TYPE[] = "users.xml";
+    static constexpr char STORAGE_TYPE[] = "users_xml";
 
     UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);
     ~UsersConfigAccessStorage() override;
@@ -38,9 +38,9 @@ public:
               const String & preprocessed_dir = {},
               const zkutil::GetZooKeeper & get_zookeeper_function = {});
 
-    void reload() override;
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
+    void reload(ReloadMode reload_mode) override;
 
     bool exists(const UUID & id) const override;
 

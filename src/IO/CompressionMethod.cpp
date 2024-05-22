@@ -16,7 +16,7 @@
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -52,7 +52,31 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::None:
             return "";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
+}
+
+CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
+{
+    /// The compression methods are ordered from most to least preferred.
+
+    if (std::string::npos != list.find("zstd"))
+        return CompressionMethod::Zstd;
+    else if (std::string::npos != list.find("br"))
+        return CompressionMethod::Brotli;
+    else if (std::string::npos != list.find("lz4"))
+        return CompressionMethod::Lz4;
+    else if (std::string::npos != list.find("snappy"))
+        return CompressionMethod::Snappy;
+    else if (std::string::npos != list.find("gzip"))
+        return CompressionMethod::Gzip;
+    else if (std::string::npos != list.find("deflate"))
+        return CompressionMethod::Zlib;
+    else if (std::string::npos != list.find("xz"))
+        return CompressionMethod::Xz;
+    else if (std::string::npos != list.find("bz2"))
+        return CompressionMethod::Bzip2;
+    else
+        return CompressionMethod::None;
 }
 
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
@@ -93,9 +117,8 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
-    throw Exception(
-        "Unknown compression method '" + hint + "'. Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
-        ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "
+        "Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods", hint);
 }
 
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)
@@ -135,7 +158,7 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
 
-    throw Exception("Unsupported compression method", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
@@ -146,37 +169,68 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max);
 }
 
-std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
-    std::unique_ptr<WriteBuffer> nested, CompressionMethod method, int level, size_t buf_size, char * existing_memory, size_t alignment)
+
+template<typename WriteBufferT>
+std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
-        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(nested), method, level, buf_size, existing_memory, alignment);
+        return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
 
 #if USE_BROTLI
     if (method == DB::CompressionMethod::Brotli)
-        return std::make_unique<BrotliWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<BrotliWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 #endif
     if (method == CompressionMethod::Xz)
-        return std::make_unique<LZMADeflatingWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<LZMADeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 
     if (method == CompressionMethod::Zstd)
-        return std::make_unique<ZstdDeflatingWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<ZstdDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
 
     if (method == CompressionMethod::Lz4)
-        return std::make_unique<Lz4DeflatingWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<Lz4DeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 
 #if USE_BZIP2
     if (method == CompressionMethod::Bzip2)
-        return std::make_unique<Bzip2WriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<Bzip2WriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
-        throw Exception("Unsupported compression method", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 #endif
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+}
+
+
+std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
+    std::unique_ptr<WriteBuffer> nested,
+    CompressionMethod method,
+    int level,
+    int zstd_window_log,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment,
+    bool compress_empty)
+{
     if (method == CompressionMethod::None)
         return nested;
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+}
 
-    throw Exception("Unsupported compression method", ErrorCodes::NOT_IMPLEMENTED);
+
+std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
+    WriteBuffer * nested,
+    CompressionMethod method,
+    int level,
+    int zstd_window_log,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment,
+    bool compress_empty)
+{
+    assert(method != CompressionMethod::None);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
 }
 
 }

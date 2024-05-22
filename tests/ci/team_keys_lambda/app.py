@@ -2,19 +2,18 @@
 
 import argparse
 import json
-
 from datetime import datetime
 from queue import Queue
 from threading import Thread
 
-import requests  # type: ignore
 import boto3  # type: ignore
+import requests
 
 
 class Keys(set):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.updated_at = 0
+        self.updated_at = 0.0
 
     def update_now(self):
         self.updated_at = datetime.now().timestamp()
@@ -34,7 +33,7 @@ class Worker(Thread):
             m = self.queue.get()
             if m == "":
                 break
-            response = requests.get(f"https://github.com/{m}.keys")
+            response = requests.get(f"https://github.com/{m}.keys", timeout=30)
             self.results.add(f"# {m}\n{response.text}\n")
             self.queue.task_done()
 
@@ -45,7 +44,9 @@ def get_org_team_members(token: str, org: str, team_slug: str) -> set:
         "Accept": "application/vnd.github.v3+json",
     }
     response = requests.get(
-        f"https://api.github.com/orgs/{org}/teams/{team_slug}/members", headers=headers
+        f"https://api.github.com/orgs/{org}/teams/{team_slug}/members",
+        headers=headers,
+        timeout=30,
     )
     response.raise_for_status()
     data = response.json()
@@ -81,6 +82,8 @@ def get_cached_members_keys(members: set) -> Keys:
 
 
 def get_token_from_aws() -> str:
+    # We need a separate token, since the clickhouse-ci app does not have
+    # access to the organization members' endpoint
     secret_name = "clickhouse_robot_token"
     session = boto3.session.Session()
     client = session.client(
@@ -88,7 +91,7 @@ def get_token_from_aws() -> str:
     )
     get_secret_value_response = client.get_secret_value(SecretId=secret_name)
     data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse_robot_token"]
+    return data["clickhouse_robot_token"]  # type: ignore
 
 
 def main(token: str, org: str, team_slug: str) -> str:
@@ -130,4 +133,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     output = main(args.token, args.organization, args.team)
 
-    print(f"# Just shoing off the keys:\n{output}")
+    print(f"# Just showing off the keys:\n{output}")

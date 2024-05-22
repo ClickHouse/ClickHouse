@@ -1,4 +1,4 @@
-# rebuild in #33610
+# rebuild in #47031
 # docker build -t clickhouse/stateful-test .
 ARG FROM_TAG=latest
 FROM clickhouse/stateless-test:$FROM_TAG
@@ -9,14 +9,9 @@ RUN apt-get update -y \
         python3-requests \
         nodejs \
         npm \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY s3downloader /s3downloader
-
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
-ENV DATASETS="hits visits"
-
-RUN npm install -g azurite
-
+COPY create.sql /
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

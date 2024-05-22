@@ -32,7 +32,8 @@ struct MultiSearchFirstIndexImpl
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
-        size_t /*max_hyperscan_regexp_total_length*/)
+        size_t /*max_hyperscan_regexp_total_length*/,
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
@@ -78,7 +79,8 @@ struct MultiSearchFirstIndexImpl
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
-        size_t /*max_hyperscan_regexp_total_length*/)
+        size_t /*max_hyperscan_regexp_total_length*/,
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
         const size_t haystack_size = haystack_offsets.size();
         res.resize(haystack_size);
@@ -86,7 +88,7 @@ struct MultiSearchFirstIndexImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needles_offset = 0;
 
-        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
         std::vector<std::string_view> needles;
 
@@ -96,7 +98,7 @@ struct MultiSearchFirstIndexImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string->getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j).toView());
             }
 
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal

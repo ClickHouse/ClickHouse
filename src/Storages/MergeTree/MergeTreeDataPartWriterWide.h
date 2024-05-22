@@ -1,5 +1,8 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Formats/MarkInCompressedFile.h>
+
 
 namespace DB
 {
@@ -18,11 +21,11 @@ class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterWide(
-        const MergeTreeData::DataPartPtr & data_part,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
+        const MergeTreeMutableDataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -30,14 +33,14 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove);
     void finishDataSerialization(bool sync);
 
     /// Write data of one column.
@@ -61,8 +64,7 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns,
-        ISerialization::SubstreamPath & path);
+        WrittenOffsetColumns & offset_columns);
 
     /// Write mark to disk using stream and rows count
     void flushMarkToFile(
@@ -73,13 +75,11 @@ private:
     void writeSingleMark(
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
-        size_t number_of_rows,
-        ISerialization::SubstreamPath & path);
+        size_t number_of_rows);
 
     void writeFinalMark(
         const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns,
-        ISerialization::SubstreamPath & path);
+        WrittenOffsetColumns & offset_columns);
 
     void addStreams(
         const NameAndTypePair & column,
@@ -105,6 +105,7 @@ private:
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -113,6 +114,12 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+
+    /// Some long column names may be replaced to hashes.
+    /// Below are mapping from original stream name to actual
+    /// stream name (probably hash of the stream) and vice versa.
+    std::unordered_map<String, String> full_name_to_stream_name;
+    std::unordered_map<String, String> stream_name_to_full_name;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.

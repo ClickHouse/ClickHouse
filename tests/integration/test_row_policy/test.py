@@ -60,7 +60,7 @@ def started_cluster():
                 CREATE TABLE mydb.filtered_table2 (a UInt8, b UInt8, c UInt8, d UInt8) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table2 values (0, 0, 0, 0), (1, 2, 3, 4), (4, 3, 2, 1), (0, 0, 6, 0);
 
-                CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+                CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, bb ALIAS b + 1, c UInt16 ALIAS a + bb - 1) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
 
                 CREATE TABLE mydb.`.filtered_table4` (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
@@ -113,6 +113,7 @@ def test_smoke():
 
     assert node.query("SELECT a FROM mydb.filtered_table3") == TSV([[0], [1]])
     assert node.query("SELECT b FROM mydb.filtered_table3") == TSV([[1], [0]])
+    assert node.query("SELECT bb FROM mydb.filtered_table3") == TSV([[2], [1]])
     assert node.query("SELECT c FROM mydb.filtered_table3") == TSV([[1], [1]])
     assert node.query("SELECT a + b FROM mydb.filtered_table3") == TSV([[1], [1]])
     assert node.query("SELECT a FROM mydb.filtered_table3 WHERE c = 1") == TSV(
@@ -420,7 +421,7 @@ def test_introspection():
             "mydb",
             "local",
             "5b23c389-7e18-06bf-a6bc-dd1afbbc0a97",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -433,7 +434,7 @@ def test_introspection():
             "mydb",
             "filtered_table1",
             "9e8a8f62-4965-2b5e-8599-57c7b99b3549",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -446,7 +447,7 @@ def test_introspection():
             "mydb",
             "filtered_table2",
             "cffae79d-b9bf-a2ef-b798-019c18470b25",
-            "users.xml",
+            "users_xml",
             "a + b < 1 or c - d > 5",
             0,
             0,
@@ -459,7 +460,7 @@ def test_introspection():
             "mydb",
             "filtered_table3",
             "12fc5cef-e3da-3940-ec79-d8be3911f42b",
-            "users.xml",
+            "users_xml",
             "c = 1",
             0,
             0,
@@ -636,7 +637,9 @@ def test_grant_create_row_policy():
     assert node.query("SHOW POLICIES") == ""
     node.query("CREATE USER X")
 
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
@@ -644,12 +647,16 @@ def test_grant_create_row_policy():
     node.query(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table2 FOR SELECT USING a<b", user="X"
     )
 
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
@@ -657,25 +664,33 @@ def test_grant_create_row_policy():
     node.query(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table2 FOR SELECT USING a==b", user="X"
     )
 
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table1", user="X"
     )
     node.query("GRANT DROP POLICY ON mydb.filtered_table1 TO X")
     node.query("DROP POLICY pA ON mydb.filtered_table1", user="X")
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table2", user="X"
     )
 
     node.query("REVOKE ALL ON *.* FROM X")
 
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
@@ -684,7 +699,9 @@ def test_grant_create_row_policy():
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
 
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
@@ -693,7 +710,9 @@ def test_grant_create_row_policy():
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
 
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table1", user="X"
     )
@@ -785,9 +804,9 @@ def test_tags_with_db_and_table_names():
     assert node.query("SHOW CREATE POLICIES default") == TSV(
         [
             "CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
+            "CREATE ROW POLICY default ON mydb.`table` FOR SELECT USING a = 0 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
-            "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default",
         ]
     )
 
@@ -867,3 +886,30 @@ def test_policy_on_distributed_table_via_role():
     assert node.query(
         "SELECT * FROM dist_tbl SETTINGS prefer_localhost_replica=0", user="user1"
     ) == TSV([[0], [2], [4], [6], [8], [0], [2], [4], [6], [8]])
+
+
+def test_row_policy_filter_with_subquery():
+    copy_policy_xml("no_filters.xml")
+    assert node.query("SHOW POLICIES") == ""
+
+    node.query("DROP ROW POLICY IF EXISTS filter_1 ON table1")
+    node.query("DROP TABLE IF EXISTS table_1")
+    node.query("DROP TABLE IF EXISTS table_2")
+
+    node.query(
+        "CREATE TABLE table_1 (x int, y int) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query("INSERT INTO table_1 SELECT number, number * number FROM numbers(10)")
+
+    node.query("CREATE TABLE table_2 (a int) ENGINE=MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO table_2 VALUES (3), (5)")
+
+    node.query(
+        "CREATE ROW POLICY filter_1 ON table_1 USING x IN (SELECT a FROM table_2) TO ALL"
+    )
+
+    assert node.query("SELECT * FROM table_1") == TSV([[3, 9], [5, 25]])
+
+    node.query("DROP ROW POLICY filter_1 ON table_1")
+    node.query("DROP TABLE table_1")
+    node.query("DROP TABLE table_2")

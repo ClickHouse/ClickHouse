@@ -20,9 +20,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 
 
 struct CompactStringRef
@@ -120,7 +118,7 @@ struct FastHash64
         pos2 = reinterpret_cast<const unsigned char*>(pos);
         v = 0;
 
-        switch (len & 7)
+        switch (len & 7) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: v ^= static_cast<UInt64>(pos2[6]) << 48; [[fallthrough]];
             case 6: v ^= static_cast<UInt64>(pos2[5]) << 40; [[fallthrough]];
@@ -259,7 +257,7 @@ struct Grower : public HashTableGrower<>
     static const size_t initial_size_degree = 16;
     Grower() { size_degree = initial_size_degree; }
 
-    size_t max_fill = (1ULL << initial_size_degree) * 0.9;
+    size_t max_fill = (1ULL << initial_size_degree) * 9 / 10;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -280,7 +278,7 @@ struct Grower : public HashTableGrower<>
     void increaseSize()
     {
         size_degree += size_degree >= 23 ? 1 : 2;
-        max_fill = (1ULL << size_degree) * 0.9;
+        max_fill = (1ULL << size_degree) * 9 / 10;
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.

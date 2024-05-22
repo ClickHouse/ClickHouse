@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 
-from collections import namedtuple
 import fnmatch
 import json
 import time
+from collections import namedtuple
+from urllib.parse import quote
 
-import jwt
-import requests  # type: ignore
-import boto3  # type: ignore
+import requests
+from lambda_shared.pr import TRUSTED_CONTRIBUTORS
+from lambda_shared.token import get_cached_access_token
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
 SUSPICIOUS_PATTERNS = [
-    "tests/ci/*",
-    "docs/tools/*",
     ".github/*",
-    "utils/release/*",
     "docker/*",
-    "release",
+    "docs/tools/*",
+    "packages/*",
+    "tests/ci/*",
 ]
 
 # Number of retries for API calls.
@@ -25,7 +25,7 @@ MAX_RETRY = 5
 
 # Number of times a check can re-run as a whole.
 # It is needed, because we are using AWS "spot" instances, that are terminated often
-MAX_WORKFLOW_RERUN = 20
+MAX_WORKFLOW_RERUN = 30
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",
@@ -61,108 +61,13 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "Docs",
-    "DocsRelease",
+    "DocsCheck",
     "MasterCI",
+    "NightlyBuilds",
+    "PublishedReleaseCI",
     "PullRequestCI",
-    "ReleaseCI",
+    "ReleaseBranchCI",
 }
-
-# Individual trusted contirbutors who are not in any trusted organization.
-# Can be changed in runtime: we will append users that we learned to be in
-# a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {
-    e.lower()
-    for e in [
-        "achimbab",
-        "adevyatova ",  # DOCSUP
-        "Algunenano",  # Raúl Marín, Tinybird
-        "amosbird",
-        "AnaUvarova",  # DOCSUP
-        "anauvarova",  # technical writer, Yandex
-        "annvsh",  # technical writer, Yandex
-        "atereh",  # DOCSUP
-        "azat",
-        "bharatnc",  # Newbie, but already with many contributions.
-        "bobrik",  # Seasoned contributor, CloudFlare
-        "BohuTANG",
-        "codyrobert",  # Flickerbox engineer
-        "cwurm",  # Employee
-        "damozhaeva",  # DOCSUP
-        "den-crane",
-        "flickerbox-tom",  # Flickerbox
-        "gyuton",  # DOCSUP
-        "hagen1778",  # Roman Khavronenko, seasoned contributor
-        "hczhcz",
-        "hexiaoting",  # Seasoned contributor
-        "ildus",  # adjust, ex-pgpro
-        "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "ka1bi4",  # DOCSUP
-        "kirillikoff",  # DOCSUP
-        "kreuzerkrieg",
-        "lehasm",  # DOCSUP
-        "michon470",  # DOCSUP
-        "nikvas0",
-        "nvartolomei",
-        "olgarev",  # DOCSUP
-        "otrazhenia",  # Yandex docs contractor
-        "pdv-ru",  # DOCSUP
-        "podshumok",  # cmake expert from QRator Labs
-        "s-mx",  # Maxim Sabyanin, former employee, present contributor
-        "sevirov",  # technical writer, Yandex
-        "spongedu",  # Seasoned contributor
-        "taiyang-li",
-        "ucasFL",  # Amos Bird's friend
-        "vdimir",  # Employee
-        "vzakaznikov",
-        "YiuRULE",
-        "zlobober",  # Developer of YT
-        "ilejn",  # Arenadata, responsible for Kerberized Kafka
-        "thomoco",  # ClickHouse
-        "BoloniniD",  # Seasoned contributor, HSE
-        "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse Employee
-    ]
-}
-
-
-def get_installation_id(jwt_token):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.get("https://api.github.com/app/installations", headers=headers)
-    response.raise_for_status()
-    data = response.json()
-    for installation in data:
-        if installation["account"]["login"] == "ClickHouse":
-            installation_id = installation["id"]
-    return installation_id
-
-
-def get_access_token(jwt_token, installation_id):
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.post(
-        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["token"]
-
-
-def get_key_and_app_from_aws():
-    secret_name = "clickhouse_github_secret_key"
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-    )
-    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-    data = json.loads(get_secret_value_response["SecretString"])
-    return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
 
 
 def is_trusted_contributor(pr_user_login, pr_user_orgs):
@@ -185,26 +90,29 @@ def is_trusted_contributor(pr_user_login, pr_user_orgs):
 
 def _exec_get_with_retry(url, token):
     headers = {"Authorization": f"token {token}"}
+    e = Exception()
     for i in range(MAX_RETRY):
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
             print("Got exception executing request", ex)
+            e = ex
             time.sleep(i + 1)
 
-    raise Exception("Cannot execute GET request with retries")
+    raise requests.HTTPError("Cannot execute GET request with retries") from e
 
 
 def _exec_post_with_retry(url, token, data=None):
     headers = {"Authorization": f"token {token}"}
+    e = Exception()
     for i in range(MAX_RETRY):
         try:
             if data:
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=30)
             else:
-                response = requests.post(url, headers=headers)
+                response = requests.post(url, headers=headers, timeout=30)
             if response.status_code == 403:
                 data = response.json()
                 if (
@@ -218,13 +126,14 @@ def _exec_post_with_retry(url, token, data=None):
             return response.json()
         except Exception as ex:
             print("Got exception executing request", ex)
+            e = ex
             time.sleep(i + 1)
 
-    raise Exception("Cannot execute POST request with retry")
+    raise requests.HTTPError("Cannot execute POST request with retry") from e
 
 
 def _get_pull_requests_from(repo_url, owner, branch, token):
-    url = f"{repo_url}/pulls?head={owner}:{branch}"
+    url = f"{repo_url}/pulls?head={quote(owner)}:{quote(branch)}"
     return _exec_get_with_retry(url, token)
 
 
@@ -309,33 +218,21 @@ def check_suspicious_changed_files(changed_files):
                 )
                 return True
 
-    print("No changed files match suspicious patterns, run will be approved")
+    print("No changed files match suspicious patterns, run could be approved")
     return False
 
 
-def approve_run(workflow_description: WorkflowDescription, token):
+def approve_run(workflow_description: WorkflowDescription, token: str) -> None:
+    print("Approving run")
     url = f"{workflow_description.api_url}/approve"
     _exec_post_with_retry(url, token)
 
 
 def label_manual_approve(pull_request, token):
-    url = f"{pull_request['url']}/labels"
-    data = {"labels": "manual approve"}
+    url = f"{pull_request['issue_url']}/labels"
+    data = {"labels": ["manual approve"]}
 
     _exec_post_with_retry(url, token, data)
-
-
-def get_token_from_aws():
-    private_key, app_id = get_key_and_app_from_aws()
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    return get_access_token(encoded_jwt, installation_id)
 
 
 def get_workflow_jobs(workflow_description, token):
@@ -366,6 +263,7 @@ def check_need_to_rerun(workflow_description, token):
     jobs = get_workflow_jobs(workflow_description, token)
     print("Got jobs", len(jobs))
     for job in jobs:
+        print(f"Job {job['name']} has a conclusion '{job['conclusion']}'")
         if job["conclusion"] not in ("success", "skipped"):
             print("Job", job["name"], "failed, checking steps")
             for step in job["steps"]:
@@ -391,7 +289,7 @@ def rerun_workflow(workflow_description, token):
 
 
 def check_workflow_completed(
-    event_data, workflow_description: WorkflowDescription, token: str
+    event_data: dict, workflow_description: WorkflowDescription, token: str
 ) -> bool:
     if workflow_description.action == "completed":
         attempt = 0
@@ -436,7 +334,7 @@ def check_workflow_completed(
 
 
 def main(event):
-    token = get_token_from_aws()
+    token = get_cached_access_token()
     event_data = json.loads(event["body"])
     print("The body received:", event["body"])
     workflow_description = get_workflow_description_from_event(event_data)
@@ -475,14 +373,18 @@ def main(event):
         approve_run(workflow_description, token)
         return
 
+    labels = {label["name"] for label in pull_request["labels"]}
+    if "can be tested" not in labels:
+        print("Label 'can be tested' is required for untrusted users")
+        return
+
     changed_files = get_changed_files_for_pull_request(pull_request, token)
     print(f"Totally have {len(changed_files)} changed files in PR:", changed_files)
     if check_suspicious_changed_files(changed_files):
-        print(
-            f"Pull Request {pull_request['number']} has suspicious changes, "
-            "label it for manuall approve"
-        )
-        label_manual_approve(pull_request, token)
+        print(f"Pull Request {pull_request['number']} has suspicious changes")
+        if "manual approve" not in labels:
+            print("Label the PR as needed for manuall approve")
+            label_manual_approve(pull_request, token)
     else:
         print(f"Pull Request {pull_request['number']} has no suspicious changes")
         approve_run(workflow_description, token)
@@ -491,6 +393,12 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
+
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"status": "OK"}',
+        }
     except Exception:
         print("Received event: ", event)
         raise

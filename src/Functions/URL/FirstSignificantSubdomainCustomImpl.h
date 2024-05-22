@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/URL/FunctionsURL.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/StringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -69,16 +69,15 @@ public:
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*arguments[0].column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*arguments[0].column))
         {
             auto col_res = ColumnString::create();
             vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     static void vector(FirstSignificantSubdomainCustomLookup & tld_lookup,

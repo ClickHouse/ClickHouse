@@ -2,6 +2,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -10,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
     extern const int INVALID_PARTITION_VALUE;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 
@@ -18,11 +21,18 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
     else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
-void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
 {
+    std::string partition_id;
+    if (auto * literal = partition_id_ast->as<ASTLiteral>(); literal != nullptr && literal->value.getType() == Field::Types::String)
+        partition_id = literal->value.safeGet<String>();
+
+    else
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id must be string literal");
+
     if (partition_id.empty())
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 
@@ -121,7 +131,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
         /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
         /// So we replace unexpected max level to make contains(...) method and comparison operators work
         /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
-        part_info.use_leagcy_max_level = true;
+        part_info.use_legacy_max_level = true;
         level = MAX_LEVEL;
     }
 
@@ -143,10 +153,10 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
         || !checkChar('_', in)
         || !tryReadIntText(max_yyyymmdd, in))
     {
-        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
     }
 
-    const auto & date_lut = DateLUT::instance();
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
     max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
@@ -155,7 +165,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
     auto max_month = date_lut.toNumYYYYMM(max_date);
 
     if (min_month != max_month)
-        throw Exception("Part name " + part_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Part name {} contains different months", part_name);
 }
 
 
@@ -167,7 +177,25 @@ bool MergeTreePartInfo::contains(const String & outer_part_name, const String & 
 }
 
 
-String MergeTreePartInfo::getPartName() const
+String MergeTreePartInfo::getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const
+{
+    if (format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        return getPartNameV1();
+
+    /// We cannot just call getPartNameV0 because it requires extra arguments, but at least we can warn about it.
+    chassert(false);  /// Catch it in CI. Feel free to remove this line.
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Trying to get part name in new format for old format version. "
+                    "Either some new feature is incompatible with deprecated *MergeTree definition syntax or it's a bug.");
+}
+
+
+String MergeTreePartInfo::getPartNameForLogs() const
+{
+    /// We don't care about format version here
+    return getPartNameV1();
+}
+
+String MergeTreePartInfo::getPartNameV1() const
 {
     WriteBufferFromOwnString wb;
 
@@ -177,7 +205,7 @@ String MergeTreePartInfo::getPartName() const
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -199,7 +227,7 @@ String MergeTreePartInfo::getPartName() const
 
 String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) const
 {
-    const auto & date_lut = DateLUT::instance();
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     /// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
 
@@ -216,7 +244,7 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -233,6 +261,70 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     }
 
     return wb.str();
+}
+
+void MergeTreePartInfo::serialize(WriteBuffer & out) const
+{
+    UInt64 version = DBMS_MERGE_TREE_PART_INFO_VERSION;
+    /// Must be the first
+    writeIntBinary(version, out);
+
+    writeStringBinary(partition_id, out);
+    writeIntBinary(min_block, out);
+    writeIntBinary(max_block, out);
+    writeIntBinary(level, out);
+    writeIntBinary(mutation, out);
+    writeBoolText(use_legacy_max_level, out);
+}
+
+
+String MergeTreePartInfo::describe() const
+{
+    return getPartNameV1();
+}
+
+
+void MergeTreePartInfo::deserialize(ReadBuffer & in)
+{
+    UInt64 version;
+    readIntBinary(version, in);
+    if (version != DBMS_MERGE_TREE_PART_INFO_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Version for MergeTreePart info mismatched. Got: {}, supported version: {}",
+            version, DBMS_MERGE_TREE_PART_INFO_VERSION);
+
+    readStringBinary(partition_id, in);
+    readIntBinary(min_block, in);
+    readIntBinary(max_block, in);
+    readIntBinary(level, in);
+    readIntBinary(mutation, in);
+    readBoolText(use_legacy_max_level, in);
+}
+
+bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates)
+{
+    if (candidates.empty())
+        return false;
+
+    std::sort(candidates.begin(), candidates.end());
+
+    /// First doesn't cover left border
+    if (candidates[0].min_block != blocks_range.min_block)
+        return false;
+
+    int64_t current_right_block = candidates[0].min_block - 1;
+
+    for (const auto & candidate : candidates)
+    {
+        if (current_right_block + 1 != candidate.min_block)
+            return false;
+
+        current_right_block = candidate.max_block;
+    }
+
+    if (current_right_block != blocks_range.max_block)
+        return false;
+
+    return true;
 }
 
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
@@ -302,9 +394,10 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     return part_info;
 }
 
-void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo& part)
+void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
 {
     // Both class are aggregates so it's ok.
     static_cast<MergeTreePartInfo &>(*this) = part;
 }
+
 }

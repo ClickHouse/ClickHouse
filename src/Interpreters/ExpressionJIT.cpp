@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 
@@ -38,10 +38,9 @@ static CHJIT & getJITInstance()
     return jit;
 }
 
-static Poco::Logger * getLogger()
+static LoggerPtr getLogger()
 {
-    static Poco::Logger & logger = Poco::Logger::get("ExpressionJIT");
-    return &logger;
+    return ::getLogger("ExpressionJIT");
 }
 
 class CompiledFunctionHolder : public CompiledExpressionCacheEntry
@@ -160,9 +159,9 @@ public:
 
     bool isCompilable() const override { return true; }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
     {
-        return dag.compile(builder, values);
+        return dag.compile(builder, arguments).value;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -263,7 +262,7 @@ public:
         return result;
     }
 
-    static void applyFunction(IFunctionBase & function, Field & value)
+    static void applyFunction(const IFunctionBase & function, Field & value)
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
@@ -338,7 +337,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
-    auto & function = *node.function_base;
+    const auto & function = *node.function_base;
 
     IFunction::ShortCircuitSettings settings;
     if (function.isShortCircuit(settings, node.children.size()))

@@ -41,7 +41,7 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
             thread_to_wake = threads_queue.popAny();
 
         if (thread_to_wake >= use_threads)
-            throw Exception("Non-empty queue without allocated thread", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
 
         lock.unlock();
         executor_contexts[thread_to_wake]->wakeUp();
@@ -52,6 +52,17 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 {
     {
         std::unique_lock lock(mutex);
+
+    #if defined(OS_LINUX)
+        if (num_threads == 1)
+        {
+            if (auto res = async_task_queue.tryGetReadyTask(lock))
+            {
+                context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
+                return;
+            }
+        }
+    #endif
 
         /// Try get async task assigned to this thread or any other task from queue.
         if (auto * async_task = context.tryPopAsyncTask())
@@ -89,7 +100,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
             {
                 if (finished)
                     return;
-                throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
             }
 
             context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
@@ -109,11 +120,15 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
     context.setTask(nullptr);
 
     /// Take local task from queue if has one.
-    if (!queue.empty() && !context.hasAsyncTasks())
+    if (!queue.empty() && !context.hasAsyncTasks()
+        && context.num_scheduled_local_tasks < ExecutionThreadContext::max_scheduled_local_tasks)
     {
+        ++context.num_scheduled_local_tasks;
         context.setTask(queue.front());
         queue.pop();
     }
+    else
+        context.num_scheduled_local_tasks = 0;
 
     if (!queue.empty() || !async_queue.empty())
     {
@@ -177,8 +192,7 @@ void ExecutorTasks::fill(Queue & queue)
 void ExecutorTasks::upscale(size_t use_threads_)
 {
     std::lock_guard lock(mutex);
-    if (use_threads < use_threads_)
-        use_threads = use_threads_;
+    use_threads = std::max(use_threads, use_threads_);
 }
 
 void ExecutorTasks::processAsyncTasks()

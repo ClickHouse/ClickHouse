@@ -11,8 +11,9 @@ namespace ErrorCodes
 }
 
 ITTLAlgorithm::ITTLAlgorithm(
-    const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
-    : description(description_)
+    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
+    : ttl_expressions(ttl_expressions_)
+    , description(description_)
     , old_ttl_info(old_ttl_info_)
     , current_time(current_time_)
     , force(force_)
@@ -48,18 +49,18 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
 UInt32 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
 {
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
-        return date_lut.fromDayNum(DayNum(column_date->getData()[index]));
+        return static_cast<UInt32>(date_lut.fromDayNum(DayNum(column_date->getData()[index])));
     else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
         return column_date_time->getData()[index];
     else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
-            return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
+            return static_cast<UInt32>(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
         else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
             return column_const->getValue<UInt32>();
     }
 
-    throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
 }
 
 }

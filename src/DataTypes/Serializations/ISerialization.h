@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
-#include <variant>
+#include <set>
 
 namespace DB
 {
@@ -101,6 +101,30 @@ public:
 
     struct SubstreamData
     {
+        SubstreamData() = default;
+        explicit SubstreamData(SerializationPtr serialization_)
+            : serialization(std::move(serialization_))
+        {
+        }
+
+        SubstreamData & withType(DataTypePtr type_)
+        {
+            type = std::move(type_);
+            return *this;
+        }
+
+        SubstreamData & withColumn(ColumnPtr column_)
+        {
+            column = std::move(column_);
+            return *this;
+        }
+
+        SubstreamData & withSerializationInfo(SerializationInfoPtr serialization_info_)
+        {
+            serialization_info = std::move(serialization_info_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -118,6 +142,8 @@ public:
             NullMap,
 
             TupleElement,
+            NamedOffsets,
+            NamedNullMap,
 
             DictionaryKeys,
             DictionaryIndexes,
@@ -128,16 +154,25 @@ public:
             ObjectStructure,
             ObjectData,
 
+            VariantDiscriminators,
+            NamedVariantDiscriminators,
+            VariantOffsets,
+            VariantElements,
+            VariantElement,
+
             Regular,
         };
 
+        /// Types of substreams that can have arbitrary name.
+        static const std::set<Type> named_types;
+
         Type type;
 
-        /// Index of tuple element, starting at 1 or name.
-        String tuple_element_name;
+        /// The name of a variant element type.
+        String variant_element_name;
 
-        /// Do we need to escape a dot in filenames for tuple elements.
-        bool escape_tuple_delimiter = true;
+        /// Name of substream for type from 'named_types'.
+        String name_of_substream;
 
         /// Data for current substream.
         SubstreamData data;
@@ -149,7 +184,6 @@ public:
         mutable bool visited = false;
 
         Substream(Type type_) : type(type_) {} /// NOLINT
-
         String toString() const;
     };
 
@@ -164,16 +198,22 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
+    struct EnumerateStreamsSettings
+    {
+        SubstreamPath path;
+        bool position_independent_encoding = true;
+    };
+
     virtual void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const;
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
-
-    void enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const;
+    /// Enumerate streams with default settings.
+    void enumerateStreams(
+        const StreamCallback & callback,
+        const DataTypePtr & type = nullptr,
+        const ColumnPtr & column = nullptr) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -219,7 +259,9 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    /// Column may be used only to retrieve the structure.
     virtual void serializeBinaryBulkStatePrefix(
+        const IColumn & /*column*/,
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
@@ -271,34 +313,37 @@ public:
       */
 
     /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+    virtual void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /// Other variants takes a column, to avoid creating temporary Field object.
     /// Column must be non-constant.
 
     /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */
     virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
     virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for the CSV format.
       */
     virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
@@ -308,11 +353,18 @@ public:
     /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
       */
     virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization intended for using in JSON format.
       */
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
+    {
+        serializeTextJSON(column, row_num, ostr, settings);
+    }
+
 
     /** Text serialization for putting into the XML format.
       */
@@ -327,10 +379,14 @@ public:
      *  additional code in data types serialization and ReadHelpers.
      */
     virtual void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
+    virtual bool tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
     virtual void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+
+    virtual void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
@@ -353,6 +409,7 @@ protected:
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
+using SubstreamType = ISerialization::Substream::Type;
 
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
