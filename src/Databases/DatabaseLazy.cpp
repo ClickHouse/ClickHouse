@@ -186,7 +186,6 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
     CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
-    
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
