@@ -350,6 +350,11 @@ public:
         return delegate;
     }
 
+    ObjectStoragePtr getObjectStorage() override
+    {
+        return delegate->getObjectStorage();
+    }
+
 private:
     String wrappedPath(const String & path) const
     {

@@ -116,13 +116,18 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, config.getUInt(config_prefix + ".thread_pool_size", 16))
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads,
+              CurrentMetrics::IDiskCopierThreadsActive,
+              CurrentMetrics::IDiskCopierThreadsScheduled,
+              config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
     {
     }
 
