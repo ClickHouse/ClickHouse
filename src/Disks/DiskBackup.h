@@ -6,8 +6,13 @@
 #include <IO/WriteBufferFromFile.h>
 #include "Common/Exception.h"
 
-namespace DB 
+namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class DiskBackup : public IDisk
 {
