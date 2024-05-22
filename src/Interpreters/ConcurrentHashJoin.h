@@ -39,7 +39,7 @@ public:
         const Block & right_sample_block,
         bool any_take_last_row_ = false);
 
-    ~ConcurrentHashJoin() override = default;
+    ~ConcurrentHashJoin() override;
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -66,6 +66,7 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
+    ThreadPool pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
     std::mutex totals_mutex;
