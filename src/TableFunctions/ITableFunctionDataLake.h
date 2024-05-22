@@ -7,7 +7,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IStorageDataLake.h>
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
