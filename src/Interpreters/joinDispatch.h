@@ -12,38 +12,39 @@
 namespace DB
 {
 
-template <JoinKind kind, JoinStrictness join_strictness>
+template <JoinKind kind, JoinStrictness join_strictness, bool force_use_maps_all>
 struct MapGetter;
 
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::RightAny>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Inner, JoinStrictness::RightAny> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::RightAny> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Full, JoinStrictness::RightAny>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::RightAny, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::RightAny, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::RightAny, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::RightAny, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
 
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::Any> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Full, JoinStrictness::Any>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::Any, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Any, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Any, force_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::All>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Inner, JoinStrictness::All> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::All> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Full, JoinStrictness::All>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-
-/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Semi> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::Semi> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Full, JoinStrictness::Semi>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::All, force_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::All, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::All, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::All, force_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 
 /// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Anti> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::Anti> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Full, JoinStrictness::Anti>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::Semi, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Semi, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Semi, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 
-template <JoinKind kind>
-struct MapGetter<kind, JoinStrictness::Asof> { using Map = HashJoin::MapsAsof; static constexpr bool flagged = false; };
+/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::Anti, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Anti, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Anti, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+
+template <JoinKind kind, bool force_use_maps_all>
+struct MapGetter<kind, JoinStrictness::Asof, force_use_maps_all> { using Map = HashJoin::MapsAsof; static constexpr bool flagged = false; };
 
 static constexpr std::array<JoinStrictness, 6> STRICTNESSES = {
     JoinStrictness::RightAny,
@@ -62,7 +63,7 @@ static constexpr std::array<JoinKind, 4> KINDS = {
 };
 
 /// Init specified join map
-inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoin::MapsVariant & maps)
+inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoin::MapsVariant & maps, bool force_maps_all = false)
 {
     return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
     {
@@ -70,7 +71,10 @@ inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoin:
         constexpr auto j = ij % STRICTNESSES.size();
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
-            maps = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map();
+            if (force_maps_all)
+                maps = typename MapGetter<KINDS[i], STRICTNESSES[j], true>::Map();
+            else
+                maps = typename MapGetter<KINDS[i], STRICTNESSES[j], false>::Map();
             return true;
         }
         return false;
@@ -79,7 +83,7 @@ inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoin:
 
 /// Call function on specified join map
 template <typename MapsVariant, typename Func>
-inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant & maps, Func && func)
+inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant & maps, bool force_maps_all, Func && func)
 {
     return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
     {
@@ -89,10 +93,16 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant &
         constexpr auto j = ij % STRICTNESSES.size();
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
-            func(
-                std::integral_constant<JoinKind, KINDS[i]>(),
-                std::integral_constant<JoinStrictness, STRICTNESSES[j]>(),
-                std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps));
+            if (force_maps_all)
+                func(
+                    std::integral_constant<JoinKind, KINDS[i]>(),
+                    std::integral_constant<JoinStrictness, STRICTNESSES[j]>(),
+                    std::get<typename MapGetter<KINDS[i], STRICTNESSES[j], true>::Map>(maps));
+            else
+                func(
+                    std::integral_constant<JoinKind, KINDS[i]>(),
+                    std::integral_constant<JoinStrictness, STRICTNESSES[j]>(),
+                    std::get<typename MapGetter<KINDS[i], STRICTNESSES[j], false>::Map>(maps));
             return true;
         }
         return false;
@@ -101,7 +111,7 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant &
 
 /// Call function on specified join map
 template <typename MapsVariant, typename Func>
-inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<const MapsVariant *> & mapsv, Func && func)
+inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<const MapsVariant *> & mapsv, bool force_maps_all , Func && func)
 {
     return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
     {
@@ -111,17 +121,31 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<c
         constexpr auto j = ij % STRICTNESSES.size();
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
-            using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map;
-            std::vector<const MapType *> v;
-            v.reserve(mapsv.size());
-            for (const auto & el : mapsv)
-                v.push_back(&std::get<MapType>(*el));
+            if (force_maps_all)
+            {
+                using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j], true>::Map;
+                std::vector<const MapType *> v;
+                v.reserve(mapsv.size());
+                for (const auto & el : mapsv)
+                    v.push_back(&std::get<MapType>(*el));
 
-            func(
-                std::integral_constant<JoinKind, KINDS[i]>(),
-                std::integral_constant<JoinStrictness, STRICTNESSES[j]>(),
-                v
-                /*std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps)*/);
+                func(
+                    std::integral_constant<JoinKind, KINDS[i]>(), std::integral_constant<JoinStrictness, STRICTNESSES[j]>(), v
+                    /*std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps)*/);
+            }
+            else
+            {
+                using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j], false>::Map;
+                std::vector<const MapType *> v;
+                v.reserve(mapsv.size());
+                for (const auto & el : mapsv)
+                    v.push_back(&std::get<MapType>(*el));
+
+                func(
+                    std::integral_constant<JoinKind, KINDS[i]>(), std::integral_constant<JoinStrictness, STRICTNESSES[j]>(), v
+                    /*std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps)*/);
+
+            }
             return true;
         }
         return false;

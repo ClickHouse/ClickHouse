@@ -53,10 +53,10 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool force_maps_all>
     void reinit(size_t size_);
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool force_maps_all>
     void reinit(const Block * block_ptr);
 
     bool getUsedSafe(size_t i) const;

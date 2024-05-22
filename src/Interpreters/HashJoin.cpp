@@ -1,5 +1,6 @@
 #include <any>
 #include <limits>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -102,10 +103,10 @@ namespace JoinStuff
     }
 
     /// for single disjunct
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool force_maps_all>
     void JoinUsedFlags::reinit(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, force_maps_all>::flagged)
         {
             assert(flags[nullptr].size() <= size);
             need_flags = true;
@@ -120,10 +121,10 @@ namespace JoinStuff
     }
 
     /// for multiple disjuncts
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool force_maps_all>
     void JoinUsedFlags::reinit(const Block * block_ptr)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, force_maps_all>::flagged)
         {
             assert(flags[block_ptr].size() <= block_ptr->rows());
             need_flags = true;
@@ -511,12 +512,12 @@ void HashJoin::dataMapInit(MapsVariant & map)
 {
     if (kind == JoinKind::Cross)
         return;
-    joinDispatchInit(kind, strictness, map);
-    joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.create(data->type); });
+    joinDispatchInit(kind, strictness, map, table_join->getMixedJoinExpression() != nullptr);
+    joinDispatch(kind, strictness, map, table_join->getMixedJoinExpression() != nullptr, [&](auto, auto, auto & map_) { map_.create(data->type); });
 
     if (reserve_num)
     {
-        joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
+        joinDispatch(kind, strictness, map, table_join->getMixedJoinExpression() != nullptr, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
     }
 
     if (!data)
@@ -549,7 +550,7 @@ size_t HashJoin::getTotalRowCount() const
     {
         for (const auto & map : data->maps)
         {
-            joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
+            joinDispatch(kind, strictness, map, table_join->getMixedJoinExpression() != nullptr, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
         }
     }
 
@@ -589,7 +590,7 @@ size_t HashJoin::getTotalByteCount() const
     {
         for (const auto & map : data->maps)
         {
-            joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
+            joinDispatch(kind, strictness, map, table_join->getMixedJoinExpression() != nullptr, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
         }
     }
     return res;
@@ -925,7 +926,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
-                joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
+                joinDispatch(kind, strictness, data->maps[onexpr_idx], table_join->getMixedJoinExpression() != nullptr, [&](auto kind_, auto strictness_, auto & map)
                 {
                     size_t size = insertFromBlockImpl<strictness_>(
                         *this, data->type, map, rows, key_columns, key_sizes[onexpr_idx], stored_block, null_map,
@@ -934,10 +935,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                         data->pool, is_inserted);
 
                     if (flag_per_row)
-                        used_flags.reinit<kind_, strictness_>(stored_block);
+                        used_flags.reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(stored_block);
                     else if (is_inserted)
                         /// Number of buckets + 1 value from zero storage
-                        used_flags.reinit<kind_, strictness_>(size + 1);
+                        used_flags.reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(size + 1);
                 });
             }
 
@@ -1366,15 +1367,15 @@ void AddedColumns<true>::appendDefaultRow()
     }
 }
 
-template <JoinKind KIND, JoinStrictness STRICTNESS>
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename Map>
 struct JoinFeatures
 {
     static constexpr bool is_any_join = STRICTNESS == JoinStrictness::Any;
-    static constexpr bool is_any_or_semi_join = STRICTNESS == JoinStrictness::Any || STRICTNESS == JoinStrictness::RightAny || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Left);
     static constexpr bool is_all_join = STRICTNESS == JoinStrictness::All;
     static constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
     static constexpr bool is_semi_join = STRICTNESS == JoinStrictness::Semi;
     static constexpr bool is_anti_join = STRICTNESS == JoinStrictness::Anti;
+    static constexpr bool is_any_or_semi_join = is_any_join || STRICTNESS == JoinStrictness::RightAny || (is_semi_join && KIND == JoinKind::Left);
 
     static constexpr bool left = KIND == JoinKind::Left;
     static constexpr bool right = KIND == JoinKind::Right;
@@ -1385,7 +1386,7 @@ struct JoinFeatures
     static constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
     static constexpr bool add_missing = (left || full) && !is_semi_join;
 
-    static constexpr bool need_flags = MapGetter<KIND, STRICTNESS>::flagged;
+    static constexpr bool need_flags = MapGetter<KIND, STRICTNESS, std::is_same_v<std::decay_t<Map>, HashJoin::MapsOne>>::flagged;
 };
 
 template <bool flag_per_row>
@@ -1854,7 +1855,7 @@ NO_INLINE size_t joinRightColumns(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
 
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
@@ -1993,7 +1994,7 @@ size_t joinRightColumnsSwitchMultipleDisjuncts(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
     if constexpr (join_features.is_all_join)
     {
         if (added_columns.additional_filter_expression)
@@ -2146,7 +2147,7 @@ Block HashJoin::joinBlockImpl(
     const std::vector<const Maps *> & maps_,
     bool is_join_get) const
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    constexpr JoinFeatures<KIND, STRICTNESS, Maps> join_features;
 
     std::vector<JoinOnKeyColumns> join_on_keys;
     const auto & onexprs = table_join->getClauses();
@@ -2420,7 +2421,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         keys.insert(std::move(key));
     }
 
-    static_assert(!MapGetter<JoinKind::Left, JoinStrictness::Any>::flagged,
+    static_assert(!MapGetter<JoinKind::Left, JoinStrictness::Any, false>::flagged,
                   "joinGet are not protected from hash table changes between block processing");
 
     std::vector<const MapsOne *> maps_vector;
@@ -2467,7 +2468,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 
-        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (joinDispatch(kind, strictness, maps_vector, table_join->getMixedJoinExpression() != nullptr, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             Block remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
             if (remaining_block.rows())
@@ -2569,7 +2570,7 @@ public:
                 rows_added = fillColumnsFromMap(map, columns_right);
             };
 
-            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), fill_callback))
+                if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), parent.table_join->getMixedJoinExpression() != nullptr, fill_callback))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
         }
 
@@ -2770,9 +2771,9 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
     for (auto & map : data->maps)
     {
-        joinDispatch(kind, strictness, map, [this](auto kind_, auto strictness_, auto & map_)
+        joinDispatch(kind, strictness, map, join.table_join->getMixedJoinExpression() != nullptr, [this](auto kind_, auto strictness_, auto & map_)
         {
-            used_flags.reinit<kind_, strictness_>(map_.getBufferSizeInCells(data->type) + 1);
+            used_flags.reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(map_.getBufferSizeInCells(data->type) + 1);
         });
     }
 }
