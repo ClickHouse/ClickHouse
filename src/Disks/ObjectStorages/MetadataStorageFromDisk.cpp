@@ -1,159 +1,342 @@
-#include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
-#include "Disks/MetadataStorageFromBackupFile.h"
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-#include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
-#endif
-#include <Disks/DiskLocal.h>
-#include <Interpreters/Context.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Common/getRandomASCIIString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <ranges>
+#include <filesystem>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int LOGICAL_ERROR;
+    extern const int FS_METADATA_ERROR;
 }
 
-MetadataStorageFactory & MetadataStorageFactory::instance()
+MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_)
+    : disk(disk_)
+    , compatible_key_prefix(compatible_key_prefix_)
 {
-    static MetadataStorageFactory factory;
-    return factory;
 }
 
-void MetadataStorageFactory::registerMetadataStorageType(const std::string & metadata_type, Creator creator)
+const std::string & MetadataStorageFromDisk::getPath() const
 {
-    if (!registry.emplace(metadata_type, creator).second)
+    return disk->getPath();
+}
+
+bool MetadataStorageFromDisk::exists(const std::string & path) const
+{
+    return disk->exists(path);
+}
+
+bool MetadataStorageFromDisk::isFile(const std::string & path) const
+{
+    return disk->isFile(path);
+}
+
+bool MetadataStorageFromDisk::isDirectory(const std::string & path) const
+{
+    return disk->isDirectory(path);
+}
+
+Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & path) const
+{
+    return disk->getLastModified(path);
+}
+
+time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
+{
+    return disk->getLastChanged(path);
+}
+
+uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
+{
+    auto metadata = readMetadata(path);
+    return metadata->getTotalSizeBytes();
+}
+
+std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::string & path) const
+{
+    std::vector<std::string> result_files;
+    disk->listFiles(path, result_files);
+    return result_files;
+}
+
+DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string & path) const
+{
+    return disk->iterateDirectory(path);
+}
+
+
+std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
+{
+    auto buf = disk->readFile(path);
+    std::string result;
+    readStringUntilEOF(result, *buf);
+    return result;
+}
+
+std::string MetadataStorageFromDisk::readInlineDataToString(const std::string & path) const
+{
+    return readMetadata(path)->getInlineData();
+}
+
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> &) const
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(compatible_key_prefix, path);
+    auto str = readFileToString(path);
+    metadata->deserializeFromString(str);
+    return metadata;
+}
+
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> &) const
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(compatible_key_prefix, path);
+    auto str = readFileToString(path);
+    metadata->deserializeFromString(str);
+    return metadata;
+}
+
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) const
+{
+    std::shared_lock lock(metadata_mutex);
+    return readMetadataUnlocked(path, lock);
+}
+
+std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> & file_paths) const
+{
+    std::shared_lock lock(metadata_mutex);
+    std::unordered_map<String, String> metadatas;
+
+    for (const auto & path : file_paths)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "MetadataStorageFactory: the metadata type '{}' is not unique",
-                        metadata_type);
+        auto metadata = readMetadataUnlocked(path, lock);
+        metadata->resetRefCount();
+        WriteBufferFromOwnString buf;
+        metadata->serialize(buf, false);
+        metadatas[path] = buf.str();
+    }
+
+    return metadatas;
+}
+
+void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
+{
+    addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.disk, metadata_storage));
+}
+
+MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
+{
+    return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
+}
+
+StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
+{
+    auto metadata = readMetadata(path);
+    const auto & keys_with_meta = metadata->getKeysWithMeta();
+
+    StoredObjects objects;
+    objects.reserve(keys_with_meta.size());
+    for (const auto & [object_key, object_meta] : keys_with_meta)
+    {
+        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
+    }
+
+    return objects;
+}
+
+uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
+{
+    auto metadata = readMetadata(path);
+    return metadata->getRefCount();
+}
+
+const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const
+{
+    return metadata_storage;
+}
+
+void MetadataStorageFromDiskTransaction::addOperation(MetadataOperationPtr && operation)
+{
+    if (state != MetadataFromDiskTransactionState::PREPARING)
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot add operations to transaction in {} state, it should be in {} state",
+            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
+
+    operations.emplace_back(std::move(operation));
+}
+
+void MetadataStorageFromDiskTransaction::commit()
+{
+    if (state != MetadataFromDiskTransactionState::PREPARING)
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot commit transaction in {} state, it should be in {} state",
+            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
+
+    {
+        std::unique_lock lock(metadata_storage.metadata_mutex);
+        for (size_t i = 0; i < operations.size(); ++i)
+        {
+            try
+            {
+                operations[i]->execute(lock);
+            }
+            catch (Exception & ex)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
+                state = MetadataFromDiskTransactionState::FAILED;
+                rollback(i);
+                throw;
+            }
+        }
+    }
+
+    /// Do it in "best effort" mode
+    for (size_t i = 0; i < operations.size(); ++i)
+    {
+        try
+        {
+            operations[i]->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to finalize operation #{}", i));
+        }
+    }
+
+    state = MetadataFromDiskTransactionState::COMMITTED;
+}
+
+void MetadataStorageFromDiskTransaction::rollback(size_t until_pos)
+{
+    /// Otherwise everything is alright
+    if (state == MetadataFromDiskTransactionState::FAILED)
+    {
+        for (int64_t i = until_pos; i >= 0; --i)
+        {
+            try
+            {
+                operations[i]->undo();
+            }
+            catch (Exception & ex)
+            {
+                state = MetadataFromDiskTransactionState::PARTIALLY_ROLLED_BACK;
+                ex.addMessage(fmt::format("While rolling back operation #{}", i));
+                throw;
+            }
+        }
+    }
+    else
+    {
+        /// Nothing to do, transaction committed or not even started to commit
     }
 }
 
-std::string MetadataStorageFactory::getCompatibilityMetadataTypeHint(const ObjectStorageType & type)
+void MetadataStorageFromDiskTransaction::writeStringToFile(
+     const std::string & path,
+     const std::string & data)
 {
-    switch (type)
-    {
-        case ObjectStorageType::S3:
-        case ObjectStorageType::HDFS:
-        case ObjectStorageType::Local:
-        case ObjectStorageType::Azure:
-            return "local";
-        case ObjectStorageType::Web:
-            return "web";
-        default:
-            return "";
-    }
+    addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
-std::string MetadataStorageFactory::getMetadataType(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const std::string & compatibility_type_hint)
+void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
+     const std::string & path,
+     const std::string & data)
 {
-    if (compatibility_type_hint.empty() && !config.has(config_prefix + ".metadata_type"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Expected `metadata_type` in config");
-    }
-
-    return config.getString(config_prefix + ".metadata_type", compatibility_type_hint);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->setInlineData(data);
+    writeStringToFile(path, metadata->serializeToString());
 }
 
-MetadataStoragePtr MetadataStorageFactory::create(
-    const std::string & name,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ObjectStoragePtr object_storage,
-    const std::string & compatibility_type_hint) const
+void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
-    const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
-    const auto it = registry.find(type);
-
-    if (it == registry.end())
-    {
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                        "MetadataStorageFactory: unknown metadata storage type: {}", type);
-    }
-
-    return it->second(name, config, config_prefix, object_storage);
+    addOperation(std::make_unique<SetLastModifiedOperation>(path, timestamp, *metadata_storage.getDisk()));
 }
 
-static std::string getObjectKeyCompatiblePrefix(
-    const IObjectStorage & object_storage,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix)
+void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
 {
-    return config.getString(config_prefix + ".key_compatibility_prefix", object_storage.getCommonKeyPrefix());
+    addOperation(std::make_unique<ChmodOperation>(path, mode, *metadata_storage.getDisk()));
 }
 
-void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
+void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path)
 {
-    factory.registerMetadataStorageType("local", [](
-        const std::string & name,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
-    {
-        auto metadata_path = config.getString(config_prefix + ".metadata_path",
-                                              fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
-        fs::create_directories(metadata_path);
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0, config, config_prefix);
-        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_compatibility_prefix);
-    });
+    addOperation(std::make_unique<UnlinkFileOperation>(path, *metadata_storage.getDisk()));
 }
 
-void registerPlainMetadataStorage(MetadataStorageFactory & factory)
+void MetadataStorageFromDiskTransaction::removeRecursive(const std::string & path)
 {
-    factory.registerMetadataStorageType("plain", [](
-        const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
-    {
-        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix);
-    });
+    addOperation(std::make_unique<RemoveRecursiveOperation>(path, *metadata_storage.getDisk()));
 }
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
+void MetadataStorageFromDiskTransaction::createDirectory(const std::string & path)
 {
-    factory.registerMetadataStorageType("web", [](
-        const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & /* config */,
-        const std::string & /* config_prefix */,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
-    {
-        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
-    });
-}
-#endif
-
-void registerMetadataStorageFromBackupFile(MetadataStorageFactory & factory)
-{
-    factory.registerMetadataStorageType("backup", [](
-        const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ObjectStoragePtr /* object_storage */) -> MetadataStoragePtr
-    {
-        auto path_to_backup_file = config.getString(config_prefix + ".path_to_backup_file");
-        return std::make_shared<MetadataStorageFromBackupFile>(path_to_backup_file);
-    });
+    addOperation(std::make_unique<CreateDirectoryOperation>(path, *metadata_storage.getDisk()));
 }
 
-void registerMetadataStorages()
+void MetadataStorageFromDiskTransaction::createDirectoryRecursive(const std::string & path)
 {
-    auto & factory = MetadataStorageFactory::instance();
-    registerMetadataStorageFromDisk(factory);
-    registerPlainMetadataStorage(factory);
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    registerMetadataStorageFromStaticFilesWebServer(factory);
-#endif
+    addOperation(std::make_unique<CreateDirectoryRecursiveOperation>(path, *metadata_storage.getDisk()));
+}
+
+void MetadataStorageFromDiskTransaction::removeDirectory(const std::string & path)
+{
+    addOperation(std::make_unique<RemoveDirectoryOperation>(path, *metadata_storage.getDisk()));
+}
+
+void MetadataStorageFromDiskTransaction::moveFile(const std::string & path_from, const std::string & path_to)
+{
+    addOperation(std::make_unique<MoveFileOperation>(path_from, path_to, *metadata_storage.getDisk()));
+}
+
+void MetadataStorageFromDiskTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
+{
+    addOperation(std::make_unique<MoveDirectoryOperation>(path_from, path_to, *metadata_storage.getDisk()));
+}
+
+void MetadataStorageFromDiskTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
+{
+    addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, *metadata_storage.getDisk()));
+}
+
+void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
+{
+    auto metadata = metadata_storage.readMetadata(path);
+    metadata->setReadOnly();
+    writeStringToFile(path, metadata->serializeToString());
+}
+
+void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    writeStringToFile(path, metadata->serializeToString());
+}
+
+void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->addObject(std::move(object_key), size_in_bytes);
+
+    auto data = metadata->serializeToString();
+    if (!data.empty())
+        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
+}
+
+void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
+{
+    addOperation(std::make_unique<AddBlobOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.disk, metadata_storage));
+}
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
+{
+    auto operation = std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage);
+    auto result = operation->outcome;
+    addOperation(std::move(operation));
+    return result;
 }
 
 }
