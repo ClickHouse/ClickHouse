@@ -3,7 +3,7 @@
 #include <Functions/FunctionTokens.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 

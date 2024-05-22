@@ -1,7 +1,7 @@
 
 #include <Functions/FunctionTokens.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
