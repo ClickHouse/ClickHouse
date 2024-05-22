@@ -690,6 +690,132 @@ serverUUID()
 
 Type: [UUID](../data-types/uuid.md).
 
+## generateSnowflakeID
+
+Generates a [Snowflake ID](https://github.com/twitter-archive/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231).
+
+Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
+In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
+
+Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|0|                         timestamp                           |
+├─┼                 ┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                   |     machine_id    |    machine_seq_num    |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+**Syntax**
+
+``` sql
+generateSnowflakeID([expr])
+```
+
+**Arguments**
+
+- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+
+**Returned value**
+
+A value of type UInt64.
+
+**Example**
+
+First, create a table with a column of type UInt64, then insert a generated Snowflake ID into the table.
+
+``` sql
+CREATE TABLE tab (id UInt64) ENGINE = Memory;
+
+INSERT INTO tab SELECT generateSnowflakeID();
+
+SELECT * FROM tab;
+```
+
+Result:
+
+```response
+┌──────────────────id─┐
+│ 7199081390080409600 │
+└─────────────────────┘
+```
+
+**Example with multiple Snowflake IDs generated per row**
+
+```sql
+SELECT generateSnowflakeID(1), generateSnowflakeID(2);
+
+┌─generateSnowflakeID(1)─┬─generateSnowflakeID(2)─┐
+│    7199081609652224000 │    7199081609652224001 │
+└────────────────────────┴────────────────────────┘
+```
+
+## generateSnowflakeIDThreadMonotonic
+
+Generates a [Snowflake ID](https://github.com/twitter-archive/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231).
+
+Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+
+This function behaves like `generateSnowflakeID` but gives no guarantee on counter monotony across different simultaneous requests. Monotonicity within one timestamp is guaranteed only within the same thread calling this function to generate Snowflake IDs.
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|0|                         timestamp                           |
+├─┼                 ┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                   |     machine_id    |    machine_seq_num    |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+**Syntax**
+
+``` sql
+generateSnowflakeIDThreadMonotonic([expr])
+```
+
+**Arguments**
+
+- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+
+**Returned value**
+
+A value of type UInt64.
+
+**Example**
+
+First, create a table with a column of type UInt64, then insert a generated Snowflake ID into the table.
+
+``` sql
+CREATE TABLE tab (id UInt64) ENGINE = Memory;
+
+INSERT INTO tab SELECT generateSnowflakeIDThreadMonotonic();
+
+SELECT * FROM tab;
+```
+
+Result:
+
+```response
+┌──────────────────id─┐
+│ 7199082832006627328 │
+└─────────────────────┘
+```
+
+**Example with multiple Snowflake IDs generated per row**
+
+```sql
+SELECT generateSnowflakeIDThreadMonotonic(1), generateSnowflakeIDThreadMonotonic(2);
+
+┌─generateSnowflakeIDThreadMonotonic(1)─┬─generateSnowflakeIDThreadMonotonic(2)─┐
+│                   7199082940311945216 │                   7199082940316139520 │
+└───────────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## See also
 
 - [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
