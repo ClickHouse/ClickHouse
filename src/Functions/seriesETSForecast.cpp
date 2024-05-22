@@ -1,7 +1,9 @@
+#include <cmath>
+#include <cstddef>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -13,8 +15,6 @@
 #include "Columns/IColumn.h"
 #include "DataTypes/IDataType.h"
 #include "base/types.h"
-#include <cmath>
-#include <cstddef>
 
 namespace DB
 {
@@ -26,12 +26,11 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
-            
 /*methodName(series, number_to_predict, params, [fill_gaps]) -> Array[values]
 methodName(series, times, times_to_predict, params, [fill_gaps]) -> Array[values]
 */
 
-template<typename ETSForecastingPolicy>
+template <typename ETSForecastingPolicy>
 class FunctionETSForecast : public IFunction
 {
 public:
@@ -49,18 +48,20 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool isSeriesTimed(const ColumnsWithTypeAndName & arguments) const {
+    bool isSeriesTimed(const ColumnsWithTypeAndName & arguments) const
+    {
         FunctionArgumentDescriptor times{"times", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"};
-        FunctionArgumentDescriptor number_to_predict{"number_to_predict", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), nullptr, "Number"};
-        if (times.isValid(arguments[1].type, arguments[1].column) != 0) 
+        FunctionArgumentDescriptor number_to_predict{
+            "number_to_predict", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), nullptr, "Number"};
+        if (times.isValid(arguments[1].type, arguments[1].column) != 0)
         {
-            if (number_to_predict.isValid(arguments[1].type, arguments[1].column) != 0) 
+            if (number_to_predict.isValid(arguments[1].type, arguments[1].column) != 0)
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Second argument of function {} must be either Array or unsigned integer{}.",
                     getName(),
                     (arguments[1].type ? ", got " + arguments[1].type->getName() : String{}));
-            
+
             return false;
         }
         return true;
@@ -81,33 +82,34 @@ public:
                 arguments.size());
 
         bool is_timed = isSeriesTimed(arguments);
-        
-        if (is_timed) 
+
+        if (is_timed)
         {
             FunctionArgumentDescriptors mandatory_args{
                 {"series", &isArray, nullptr, "Array"},
                 {"times", &isArray, nullptr, "Array"},
                 {"times_to_predict", &isArray, nullptr, "Array"}};
-            for (auto arg_name : ETSForecastingPolicy::paramsNames){
+            for (auto arg_name : ETSForecastingPolicy::paramsNames)
+            {
                 FunctionArgumentDescriptor arg{arg_name, &isNativeNumber, isColumnConst, "Number"};
                 mandatory_args.push_back(arg);
             }
             FunctionArgumentDescriptors optional_args{{"fill_gaps", &isUInt, isColumnConst, "String"}};
             validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
         }
-        else 
+        else
         {
             FunctionArgumentDescriptors mandatory_args{
-                {"series", &isArray, nullptr, "Array"},
-                {"number_to_predict", &isNumber, isColumnConst, "Number"}};
-            for (auto arg_name : ETSForecastingPolicy::paramsNames){
+                {"series", &isArray, nullptr, "Array"}, {"number_to_predict", &isNumber, isColumnConst, "Number"}};
+            for (auto arg_name : ETSForecastingPolicy::paramsNames)
+            {
                 FunctionArgumentDescriptor arg{arg_name, &isNativeNumber, isColumnConst, "Number"};
                 mandatory_args.push_back(arg);
             }
             FunctionArgumentDescriptors optional_args{{"fill_gaps", &isUInt, nullptr, "String"}};
             validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
         }
-        
+
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
@@ -123,51 +125,44 @@ public:
         ColumnPtr col_res;
         if (input_rows_count == 0)
             return ColumnArray::create(ColumnFloat64::create());
-        
+
         bool is_timed = isSeriesTimed(arguments);
 
         size_t params_offset = is_timed ? 3 : 2;
-        
-        ETSForecastingPolicy forcaster(arguments, params_offset);
 
-    
+        ETSForecastingPolicy forecaster(arguments, params_offset);
+
+
         size_t fill_gaps_offset = params_offset + ETSForecastingPolicy::paramsCount;
         bool fill_gaps = false;
-        if (fill_gaps_offset < arguments.size()) {
+        if (fill_gaps_offset < arguments.size())
+        {
             fill_gaps = arguments[fill_gaps_offset].column->getUInt(0);
-            if (fill_gaps == 0) 
-            {
+            if (fill_gaps == 0)
                 fill_gaps = false;
-            }
-            else if (fill_gaps == 1) 
-            {
+            else if (fill_gaps == 1)
                 fill_gaps = true;
-            }
-            else 
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Last optional for function {} must be 0 or 1.",
-                    getName());
-            }
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Last optional for function {} must be 0 or 1.", getName());
         }
-    
-        if (!is_timed) {
+
+        if (!is_timed)
+        {
             size_t number_to_predict = arguments[1].column->getUInt(0);
-            if (executeNumber<UInt8>(series_column, series_offsets,  forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<UInt16>(series_column, series_offsets,  forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<UInt32>(series_column, series_offsets,  forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<UInt64>(series_column,  series_offsets, forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<Int8>(series_column,  series_offsets, forcaster, number_to_predict, fill_gaps,  col_res)
-                || executeNumber<Int16>(series_column, series_offsets,  forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<Int32>(series_column, series_offsets,  forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<Int64>(series_column,  series_offsets, forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<Float32>(series_column, series_offsets,  forcaster, number_to_predict, fill_gaps, col_res)
-                || executeNumber<Float64>(series_column,  series_offsets, forcaster, number_to_predict, fill_gaps, col_res))
+            if (executeNumber<UInt8>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<UInt16>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<UInt32>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<UInt64>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<Int8>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<Int16>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<Int32>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<Int64>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<Float32>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res)
+                || executeNumber<Float64>(series_column, series_offsets, forecaster, number_to_predict, fill_gaps, col_res))
             {
                 return col_res;
             }
-            else 
+            else
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -176,9 +171,8 @@ public:
                     getName());
             }
         }
-        else 
+        else
         {
-
             ColumnPtr times = arguments[1].column;
             const ColumnArray * times_arr = checkAndGetColumn<ColumnArray>(times.get());
 
@@ -192,20 +186,110 @@ public:
             const ColumnArray::Offsets & times_predict_offsets = times_predict_arr->getOffsets();
 
 
-            if (executeNumberTimed<UInt8>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<UInt16>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<UInt32>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<UInt64>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<Int8>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<Int16>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<Int32>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<Int64>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<Float32>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res)
-                || executeNumberTimed<Float64>(series_column, series_offsets,  times_column, times_offsets, forcaster, times_predict_column, times_predict_offsets, fill_gaps, col_res))
+            if (executeNumberTimed<UInt8>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<UInt16>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<UInt32>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<UInt64>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<Int8>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<Int16>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<Int32>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<Int64>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<Float32>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res)
+                || executeNumberTimed<Float64>(
+                    series_column,
+                    series_offsets,
+                    times_column,
+                    times_offsets,
+                    forecaster,
+                    times_predict_column,
+                    times_predict_offsets,
+                    fill_gaps,
+                    col_res))
             {
                 return col_res;
             }
-            else 
+            else
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -217,17 +301,15 @@ public:
     }
 
 private:
-
     template <typename T>
     bool executeNumber(
         const IColumn & series_column,
         const ColumnArray::Offsets & series_offsets,
-        ETSForecastingPolicy & forcaster,
+        ETSForecastingPolicy & forecaster,
         size_t number_to_predict,
         bool fill_gaps,
         ColumnPtr & res_ptr) const
     {
-
         const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(series_column);
         const IColumn * series_data;
         const char8_t * null_map = nullptr;
@@ -246,7 +328,7 @@ private:
         if (!series_concrete)
             return false;
 
-        const PaddedPODArray<T> & series_vec =  series_concrete->getData();
+        const PaddedPODArray<T> & series_vec = series_concrete->getData();
 
         auto res = ColumnFloat64::create();
         auto & res_data = res->getData();
@@ -260,35 +342,31 @@ private:
             chassert(prev_offset <= cur_offset);
             bool first = true;
             size_t ts = 0;
-            for (size_t id = prev_offset; id < cur_offset; ++id, ++ts) {
+            for (size_t id = prev_offset; id < cur_offset; ++id, ++ts)
+            {
                 Float64 value = series_vec[id];
-                if (null_map && null_map[id]) {
+                if (null_map && null_map[id])
+                {
                     if (first || !fill_gaps)
                         continue;
-                    forcaster.add(forcaster.forecast(ts));
+                    forecaster.add(forecaster.forecast(ts));
                 }
-                else {
-                    if (first) 
-                    {
-                        forcaster.init(value);
-                        first = false;
-                    }
-                    else
-                    {
-                        forcaster.add(value);
-                    }
+                else if (first)
+                {
+                    forecaster.init(value);
+                    first = false;
                 }
-                forcaster.updateTs(ts);
+                else
+                {
+                    forecaster.add(value);
+                }
+                forecaster.updateTs(ts);
             }
-            if (first) 
+            if (first)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No non-null data points provided for function {}", getName());
+            for (size_t delta = 0; delta < number_to_predict; ++delta)
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "No non-null data points provided for function {}",
-                    getName());
-            }
-            for (size_t delta = 0; delta < number_to_predict; ++delta) {
-                Float64 value = forcaster.forecast(ts + delta);
+                Float64 value = forecaster.forecast(ts + delta);
                 res_data.push_back(value);
             }
             res_offsets_data.push_back(res_data.size());
@@ -306,13 +384,12 @@ private:
         const ColumnArray::Offsets & series_offsets,
         const IColumn & times_column,
         const ColumnArray::Offsets & times_offsets,
-        ETSForecastingPolicy & forcaster,
+        ETSForecastingPolicy & forecaster,
         const IColumn & times_predict_column,
         const ColumnArray::Offsets & times_predict_offsets,
         bool fill_gaps,
         ColumnPtr & res_ptr) const
     {
-
         const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(series_column);
         const IColumn * series_data;
         const char8_t * null_map = nullptr;
@@ -330,32 +407,25 @@ private:
         const ColumnVector<T> * series_concrete = checkAndGetColumn<ColumnVector<T>>(series_data);
         if (!series_concrete)
             return false;
-        const PaddedPODArray<T> & series_vec =  series_concrete->getData();
+        const PaddedPODArray<T> & series_vec = series_concrete->getData();
 
 
         const ColumnVector<UInt64> * times_concrete = checkAndGetColumn<ColumnVector<UInt64>>(times_column);
         if (!times_concrete)
             return false;
-        const PaddedPODArray<UInt64> & times_vec =  times_concrete->getData();
+        const PaddedPODArray<UInt64> & times_vec = times_concrete->getData();
 
         const ColumnVector<UInt64> * times_predict_concrete = checkAndGetColumn<ColumnVector<UInt64>>(times_predict_column);
         if (!times_concrete)
             return false;
-        const PaddedPODArray<UInt64> & times_predict_vec =  times_predict_concrete->getData();
+        const PaddedPODArray<UInt64> & times_predict_vec = times_predict_concrete->getData();
 
-        if (times_offsets != series_offsets) 
-        {
-            throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Sizes of series and times for function {} do not match",
-                    getName());
-        }
+        if (times_offsets != series_offsets)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of series and times for function {} do not match", getName());
         if (series_offsets.size() != times_predict_offsets.size())
         {
             throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Numbers of given arrays for function {} do not match (times_to_predict and times)",
-                    getName());
+                ErrorCodes::BAD_ARGUMENTS, "Numbers of given arrays for function {} do not match (times_to_predict and times)", getName());
         }
 
         auto res = ColumnFloat64::create();
@@ -375,36 +445,32 @@ private:
             chassert(prev_offset_output <= cur_offset_output);
 
             bool first = true;
-            for (size_t id = prev_offset_input; id < cur_offset_input; ++id) {
+            for (size_t id = prev_offset_input; id < cur_offset_input; ++id)
+            {
                 Float64 value = series_vec[id];
                 size_t ts = times_vec[id];
-                if (null_map && null_map[id]) {
+                if (null_map && null_map[id])
+                {
                     if (first || !fill_gaps)
                         continue;
-                    forcaster.add(forcaster.forecast(ts));
+                    forecaster.add(forecaster.forecast(ts));
                 }
-                else {
-                    if (first) 
-                    {
-                        forcaster.init(value);
-                        first = false;
-                    }
-                    else
-                    {
-                        forcaster.add(value);
-                    }
+                else if (first)
+                {
+                    forecaster.init(value);
+                    first = false;
                 }
-                forcaster.updateTs(ts);
+                else
+                {
+                    forecaster.add(value);
+                }
+                forecaster.updateTs(ts);
             }
-            if (first) 
+            if (first)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No non-null data points provided for function {}", getName());
+            for (size_t id = prev_offset_output; id < cur_offset_output; ++id)
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "No non-null data points provided for function {}",
-                    getName());
-            }
-            for (size_t id = prev_offset_output; id < cur_offset_output; ++id) {
-                Float64 value = forcaster.forecast(times_predict_vec[id]);
+                Float64 value = forecaster.forecast(times_predict_vec[id]);
                 res_data.push_back(value);
             }
             res_offsets_data.push_back(res_data.size());
@@ -417,37 +483,37 @@ private:
         return true;
     }
 };
-namespace ETSForecastHelper {
-
-bool is01RangeFloat(Float64 value) 
+namespace ETSForecastHelper
 {
-    if (isnan(value) || !isFinite(value) || value < 0.0 || value > 1.0) 
+
+bool is01RangeFloat(Float64 value)
+{
+    if (isnan(value) || !isFinite(value) || value < 0.0 || value > 1.0)
         return false;
     return true;
 }
 
-Float64 calculateAdditivedamped(Float64 phi, UInt64 time) 
+Float64 calculateAdditivedamped(Float64 phi, UInt64 time)
 {
-    if (phi == 1.0){
+    if (phi == 1.0)
         return time;
-    }
     return (pow(phi, time + 1) - 1) / (phi - 1) - 1;
 }
 
 }
 
-struct HoltsImpl 
+struct HoltsImpl
 {
     static constexpr auto name = "seriesHolt";
     static constexpr size_t paramsCount = 2;
-    static constexpr std::array<const char*, paramsCount> paramsNames = {"alpha", "betta"};
+    static constexpr std::array<const char *, paramsCount> paramsNames = {"alpha", "betta"};
     static constexpr bool needs_fit = false;
-    
+
     Float64 alpha, betta;
     Float64 trend, level;
     UInt64 last_ts;
 
-    HoltsImpl(const ColumnsWithTypeAndName & arguments, size_t offset) 
+    HoltsImpl(const ColumnsWithTypeAndName & arguments, size_t offset)
     {
         alpha = arguments[offset].column->getFloat64(0);
         betta = arguments[offset + 1].column->getFloat64(0);
@@ -455,22 +521,19 @@ struct HoltsImpl
         if (!ETSForecastHelper::is01RangeFloat(alpha))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The alpha argument of function {} must be in range [0, 1]", name);
 
-        
+
         if (!ETSForecastHelper::is01RangeFloat(betta))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The betta argument of function {} must be in range [0, 1]", name);
     }
 
-    void updateTs(UInt64 ts)
-    {
-        last_ts = ts;
-    }
+    void updateTs(UInt64 ts) { last_ts = ts; }
 
     void init(Float64 value)
     {
         level = value;
         trend = 0;
     }
-    
+
     void add(Float64 value)
     {
         Float64 new_level = alpha * value + (1.0 - alpha) * (level + trend);
@@ -478,24 +541,21 @@ struct HoltsImpl
         level = new_level;
     }
 
-    Float64 forecast(UInt64 ts) const 
-    {
-        return level + trend * (ts - last_ts);
-    }
+    Float64 forecast(UInt64 ts) const { return level + trend * (ts - last_ts); }
 };
 
-struct AdditiveDampedImpl 
+struct AdditiveDampedImpl
 {
     static constexpr auto name = "seriesAdditiveDamped";
     static constexpr size_t paramsCount = 3;
-    static constexpr std::array<const char*, paramsCount> paramsNames = {"alpha", "betta", "phi"};
+    static constexpr std::array<const char *, paramsCount> paramsNames = {"alpha", "betta", "phi"};
     static constexpr bool needs_fit = false;
-    
+
     Float64 alpha, betta, phi;
     Float64 trend, level;
     UInt64 last_ts;
 
-    AdditiveDampedImpl(const ColumnsWithTypeAndName & arguments, size_t offset) 
+    AdditiveDampedImpl(const ColumnsWithTypeAndName & arguments, size_t offset)
     {
         alpha = arguments[offset].column->getFloat64(0);
         betta = arguments[offset + 1].column->getFloat64(0);
@@ -504,7 +564,7 @@ struct AdditiveDampedImpl
         if (!ETSForecastHelper::is01RangeFloat(alpha))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The alpha argument of function {} must be in range [0, 1]", name);
 
-        
+
         if (!ETSForecastHelper::is01RangeFloat(betta))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The betta argument of function {} must be in range [0, 1]", name);
 
@@ -513,17 +573,14 @@ struct AdditiveDampedImpl
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The phi argument of function {} must be in range [0, 1]", name);
     }
 
-    void updateTs(UInt64 ts)
-    {
-        last_ts = ts;
-    }
+    void updateTs(UInt64 ts) { last_ts = ts; }
 
     void init(Float64 value)
     {
         level = value;
         trend = 0;
     }
-    
+
     void add(Float64 value)
     {
         Float64 new_level = alpha * value + (1.0 - alpha) * (level + phi * trend);
@@ -531,26 +588,22 @@ struct AdditiveDampedImpl
         level = new_level;
     }
 
-    Float64 forecast(UInt64 ts) const 
-    {
-        return level + trend * ETSForecastHelper::calculateAdditivedamped(phi, ts - last_ts);
-    }
+    Float64 forecast(UInt64 ts) const { return level + trend * ETSForecastHelper::calculateAdditivedamped(phi, ts - last_ts); }
 };
 
 
-
-struct MultiplicativeDampedImpl 
+struct MultiplicativeDampedImpl
 {
     static constexpr auto name = "seriesMultiplicativeDamped";
     static constexpr size_t paramsCount = 3;
-    static constexpr std::array<const char*, paramsCount> paramsNames = {"alpha", "betta", "phi"};
+    static constexpr std::array<const char *, paramsCount> paramsNames = {"alpha", "betta", "phi"};
     static constexpr bool needs_fit = false;
-    
+
     Float64 alpha, betta, phi;
     Float64 trend, level;
     UInt64 last_ts;
 
-    MultiplicativeDampedImpl(const ColumnsWithTypeAndName & arguments, size_t offset) 
+    MultiplicativeDampedImpl(const ColumnsWithTypeAndName & arguments, size_t offset)
     {
         alpha = arguments[offset].column->getFloat64(0);
         betta = arguments[offset + 1].column->getFloat64(0);
@@ -559,7 +612,7 @@ struct MultiplicativeDampedImpl
         if (!ETSForecastHelper::is01RangeFloat(alpha))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The alpha argument of function {} must be in range [0, 1]", name);
 
-        
+
         if (!ETSForecastHelper::is01RangeFloat(betta))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The betta argument of function {} must be in range [0, 1]", name);
 
@@ -568,17 +621,14 @@ struct MultiplicativeDampedImpl
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The phi argument of function {} must be in range [0, 1]", name);
     }
 
-    void updateTs(UInt64 ts)
-    {
-        last_ts = ts;
-    }
+    void updateTs(UInt64 ts) { last_ts = ts; }
 
     void init(Float64 value)
     {
         level = value;
         trend = 0;
     }
-    
+
     void add(Float64 value)
     {
         Float64 new_level = alpha * value + (1.0 - alpha) * (level * pow(trend, phi));
@@ -586,22 +636,17 @@ struct MultiplicativeDampedImpl
         level = new_level;
     }
 
-    Float64 forecast(UInt64 ts) const 
-    {
-        return level * pow(trend, ETSForecastHelper::calculateAdditivedamped(phi, ts - last_ts));
-    }
+    Float64 forecast(UInt64 ts) const { return level * pow(trend, ETSForecastHelper::calculateAdditivedamped(phi, ts - last_ts)); }
 };
 
 
-
-
-struct HoltWintersAdditiveImpl 
+struct HoltWintersAdditiveImpl
 {
     static constexpr auto name = "seriesHoltWintersAdditive";
     static constexpr size_t paramsCount = 4;
-    static constexpr std::array<const char*, paramsCount> paramsNames = {"alpha", "betta", "gamma", "window"};
+    static constexpr std::array<const char *, paramsCount> paramsNames = {"alpha", "betta", "gamma", "window"};
     static constexpr bool needs_fit = false;
-    
+
     Float64 alpha;
     Float64 betta;
     Float64 gamma;
@@ -613,28 +658,24 @@ struct HoltWintersAdditiveImpl
     Float64 last_season;
     std::deque<Float64> seasons;
 
-    HoltWintersAdditiveImpl(const ColumnsWithTypeAndName & arguments, size_t offset) 
+    HoltWintersAdditiveImpl(const ColumnsWithTypeAndName & arguments, size_t offset)
     {
         alpha = arguments[offset].column->getFloat64(0);
         betta = arguments[offset + 1].column->getFloat64(0);
         gamma = arguments[offset + 2].column->getFloat64(0);
         window = arguments[offset + 3].column->getUInt(0);
-        
+
         if (!ETSForecastHelper::is01RangeFloat(alpha))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The alpha argument of function {} must be in range [0, 1]", name);
         if (!ETSForecastHelper::is01RangeFloat(betta))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The betta argument of function {} must be in range [0, 1]", name);
         if (!ETSForecastHelper::is01RangeFloat(gamma))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The gamma argument of function {} must be in range [0, 1]", name);
-        if (window < 2){
+        if (window < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The window argument of function {} can not be equal to 0 or 1.", name);
-        }
     }
 
-    void updateTs(UInt64 ts)
-    {
-        last_ts = ts;
-    }
+    void updateTs(UInt64 ts) { last_ts = ts; }
 
     void init(Float64 value)
     {
@@ -643,7 +684,7 @@ struct HoltWintersAdditiveImpl
         seasons.assign(window, 0.0);
         add(value);
     }
-    
+
     void add(Float64 value)
     {
         Float64 new_level = alpha * (value - seasons[0]) + (1.0 - alpha) * (level + trend);
@@ -653,28 +694,26 @@ struct HoltWintersAdditiveImpl
         trend = new_trend;
         last_season = seasons[0];
         seasons.push_back(new_season);
-        seasons.pop_front(); 
-
+        seasons.pop_front();
     }
 
-    Float64 forecast(UInt64 ts) const 
+    Float64 forecast(UInt64 ts) const
     {
         UInt64 delta = (ts - last_ts);
-        if (delta % window == 0){
-            return  level + trend * delta + last_season;
-        }
-        return level + trend * delta + seasons[(delta + (window - 1))% window];
+        if (delta % window == 0)
+            return level + trend * delta + last_season;
+        return level + trend * delta + seasons[(delta + (window - 1)) % window];
     }
 };
 
 
-struct HoltWintersMultiplicativeImpl 
+struct HoltWintersMultiplicativeImpl
 {
     static constexpr auto name = "seriesHoltWintersMultiplicative";
     static constexpr size_t paramsCount = 4;
-    static constexpr std::array<const char*, paramsCount> paramsNames = {"alpha", "betta", "gamma", "window"};
+    static constexpr std::array<const char *, paramsCount> paramsNames = {"alpha", "betta", "gamma", "window"};
     static constexpr bool needs_fit = false;
-    
+
     Float64 alpha;
     Float64 betta;
     Float64 gamma;
@@ -685,28 +724,24 @@ struct HoltWintersMultiplicativeImpl
     Float64 level, trend, last_season;
     std::deque<Float64> seasons;
 
-    HoltWintersMultiplicativeImpl(const ColumnsWithTypeAndName & arguments, size_t offset) 
+    HoltWintersMultiplicativeImpl(const ColumnsWithTypeAndName & arguments, size_t offset)
     {
         alpha = arguments[offset].column->getFloat64(0);
         betta = arguments[offset + 1].column->getFloat64(0);
         gamma = arguments[offset + 2].column->getFloat64(0);
         window = arguments[offset + 3].column->getUInt(0);
-        
+
         if (!ETSForecastHelper::is01RangeFloat(alpha))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The alpha argument of function {} must be in range [0, 1]", name);
         if (!ETSForecastHelper::is01RangeFloat(betta))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The betta argument of function {} must be in range [0, 1]", name);
         if (!ETSForecastHelper::is01RangeFloat(gamma))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The gamma argument of function {} must be in range [0, 1]", name);
-        if (window == 0){
+        if (window == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The window argument of function {} can not be equal to 0.", name);
-        }
     }
 
-    void updateTs(UInt64 ts)
-    {
-        last_ts = ts;
-    }
+    void updateTs(UInt64 ts) { last_ts = ts; }
 
     void init(Float64 value)
     {
@@ -715,7 +750,7 @@ struct HoltWintersMultiplicativeImpl
         seasons.assign(window, 1.0);
         add(value);
     }
-    
+
     void add(Float64 value)
     {
         Float64 new_level = alpha * (value / seasons[0]) + (1.0 - alpha) * (level + trend);
@@ -725,28 +760,25 @@ struct HoltWintersMultiplicativeImpl
         trend = new_trend;
         last_season = seasons[0];
         seasons.push_back(new_season);
-        seasons.pop_front(); 
-
+        seasons.pop_front();
     }
 
-    Float64 forecast(UInt64 ts) const 
+    Float64 forecast(UInt64 ts) const
     {
-
         UInt64 delta = (ts - last_ts);
-        if (delta % window == 0){
-            return  (level + trend * delta) * last_season;
-        }
-        return (level + trend * delta) * seasons[(delta + (window - 1))% window];
+        if (delta % window == 0)
+            return (level + trend * delta) * last_season;
+        return (level + trend * delta) * seasons[(delta + (window - 1)) % window];
     }
 };
 
-struct HoltWintersAdditiveDampedImpl 
+struct HoltWintersAdditiveDampedImpl
 {
     static constexpr auto name = "seriesHoltWintersDamped";
     static constexpr size_t paramsCount = 5;
-    static constexpr std::array<const char*, paramsCount> paramsNames = {"alpha", "betta", "gamma",  "phi", "window"};
+    static constexpr std::array<const char *, paramsCount> paramsNames = {"alpha", "betta", "gamma", "phi", "window"};
     static constexpr bool needs_fit = false;
-    
+
     Float64 alpha;
     Float64 betta;
     Float64 gamma;
@@ -759,31 +791,27 @@ struct HoltWintersAdditiveDampedImpl
     Float64 last_season;
     std::deque<Float64> seasons;
 
-    HoltWintersAdditiveDampedImpl(const ColumnsWithTypeAndName & arguments, size_t offset) 
+    HoltWintersAdditiveDampedImpl(const ColumnsWithTypeAndName & arguments, size_t offset)
     {
         alpha = arguments[offset].column->getFloat64(0);
         betta = arguments[offset + 1].column->getFloat64(0);
         gamma = arguments[offset + 2].column->getFloat64(0);
         phi = arguments[offset + 3].column->getFloat64(0);
         window = arguments[offset + 4].column->getUInt(0);
-        
+
         if (!ETSForecastHelper::is01RangeFloat(alpha))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The alpha argument of function {} must be in range [0, 1]", name);
         if (!ETSForecastHelper::is01RangeFloat(betta))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The betta argument of function {} must be in range [0, 1]", name);
         if (!ETSForecastHelper::is01RangeFloat(gamma))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The gamma argument of function {} must be in range [0, 1]", name);
-         if (!ETSForecastHelper::is01RangeFloat(phi))
+        if (!ETSForecastHelper::is01RangeFloat(phi))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The phi argument of function {} must be in range [0, 1]", name);
-        if (window == 0){
+        if (window == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The window argument of function {} can not be equal to 0.", name);
-        }
     }
 
-    void updateTs(UInt64 ts)
-    {
-        last_ts = ts;
-    }
+    void updateTs(UInt64 ts) { last_ts = ts; }
 
     void init(Float64 value)
     {
@@ -792,25 +820,24 @@ struct HoltWintersAdditiveDampedImpl
         seasons.assign(window, 0.0);
         add(value);
     }
-    
+
     void add(Float64 value)
     {
         Float64 new_level = alpha * (value - seasons[0]) + (1.0 - alpha) * (level + phi * trend);
-        Float64 new_trend = betta * (new_level - level) + (1.0 - betta) *  phi * trend;
+        Float64 new_trend = betta * (new_level - level) + (1.0 - betta) * phi * trend;
         Float64 new_season = gamma * (value - level - trend * phi) + (1.0 - gamma) * seasons[0];
         level = new_level;
         trend = new_trend;
         last_season = seasons[0];
         seasons.push_back(new_season);
-        seasons.pop_front(); 
+        seasons.pop_front();
     }
 
-    Float64 forecast(UInt64 ts) const 
+    Float64 forecast(UInt64 ts) const
     {
         UInt64 delta = (ts - last_ts);
-        if (delta % window == 0){
-            return  level + trend * ETSForecastHelper::calculateAdditivedamped(phi, delta)  + last_season;
-        }
+        if (delta % window == 0)
+            return level + trend * ETSForecastHelper::calculateAdditivedamped(phi, delta) + last_season;
         return level + trend * ETSForecastHelper::calculateAdditivedamped(phi, delta) + seasons[(delta + (window - 1)) % window];
     }
 };

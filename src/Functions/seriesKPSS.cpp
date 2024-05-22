@@ -1,8 +1,8 @@
 #include <numeric>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -15,9 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionSeriesKPSS : public IFunction
@@ -37,8 +35,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
+        FunctionArgumentDescriptors args{{"series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
 
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -52,7 +49,7 @@ public:
 
         const IColumn & arr_data = col_arr->getData();
         const ColumnArray::Offsets & arr_offsets = col_arr->getOffsets();
-        
+
         Float64 result;
 
         auto res = ColumnFloat64::create(input_rows_count);
@@ -63,7 +60,7 @@ public:
         {
             ColumnArray::Offset curr_offset = arr_offsets[i];
             if (executeNumber<UInt8>(arr_data, result, prev_src_offset, curr_offset)
-                || executeNumber<UInt16>(arr_data,  result, prev_src_offset, curr_offset)
+                || executeNumber<UInt16>(arr_data, result, prev_src_offset, curr_offset)
                 || executeNumber<UInt32>(arr_data, result, prev_src_offset, curr_offset)
                 || executeNumber<UInt64>(arr_data, result, prev_src_offset, curr_offset)
                 || executeNumber<Int8>(arr_data, result, prev_src_offset, curr_offset)
@@ -82,16 +79,13 @@ public:
                     "Illegal column {} of first argument of function {}",
                     arguments[0].column->getName(),
                     getName());
-            }
+        }
         return res;
     }
 
 private:
     template <typename T>
-    bool executeNumber(
-        const IColumn & src_data,
-        Float64 & result,
-        ColumnArray::Offset & start, ColumnArray::Offset & end) const
+    bool executeNumber(const IColumn & src_data, Float64 & result, ColumnArray::Offset & start, ColumnArray::Offset & end) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -103,7 +97,7 @@ private:
 
         size_t n = end - start;
         Float64 mean = std::accumulate(src_vec.begin() + start, src_vec.begin() + end, 0.0) / n;
-        
+
         std::vector<Float64> deviations(n);
         std::transform(src_vec.begin() + start, src_vec.begin() + end, deviations.begin(), [mean](double x) { return x - mean; });
 
@@ -113,7 +107,7 @@ private:
         Float64 s2 = std::inner_product(deviations.begin(), deviations.end(), deviations.begin(), 0.0) / n;
 
         Float64 kpss_statistic = std::inner_product(cum_sum.begin(), cum_sum.end(), cum_sum.begin(), 0.0);
-         
+
         result = kpss_statistic / (n * n * s2);
         return true;
     }
