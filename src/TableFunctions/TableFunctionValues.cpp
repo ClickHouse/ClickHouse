@@ -25,7 +25,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
@@ -112,7 +112,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least 1 argument", getName());
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Table function '{}' requires at least 1 argument", getName());
 
     const auto & literal = args[0]->as<const ASTLiteral>();
     String value;

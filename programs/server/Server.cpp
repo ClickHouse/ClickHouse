@@ -138,6 +138,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
+#   include <azure/core/diagnostics/logger.hpp>
 #endif
 
 #include <incbin.h>
@@ -612,6 +613,45 @@ static void sanityChecks(Server & server)
     }
 }
 
+static void initializeAzureSDKLogger(
+    [[ maybe_unused ]] const ServerSettings & server_settings,
+    [[ maybe_unused ]] int server_logs_level)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (!server_settings.enable_azure_sdk_logging)
+        return;
+
+    using AzureLogsLevel = Azure::Core::Diagnostics::Logger::Level;
+
+    static const std::unordered_map<AzureLogsLevel, std::pair<Poco::Message::Priority, DB::LogsLevel>> azure_to_server_mapping =
+    {
+        {AzureLogsLevel::Error, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
+        {AzureLogsLevel::Warning, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
+        {AzureLogsLevel::Informational, {Poco::Message::PRIO_TRACE, LogsLevel::trace}},
+        {AzureLogsLevel::Verbose, {Poco::Message::PRIO_TEST, LogsLevel::test}},
+    };
+
+    static const std::map<Poco::Message::Priority, AzureLogsLevel> server_to_azure_mapping =
+    {
+        {Poco::Message::PRIO_DEBUG, AzureLogsLevel::Warning},
+        {Poco::Message::PRIO_TRACE, AzureLogsLevel::Informational},
+        {Poco::Message::PRIO_TEST, AzureLogsLevel::Verbose},
+    };
+
+    static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK");
+
+    auto it = server_to_azure_mapping.lower_bound(static_cast<Poco::Message::Priority>(server_logs_level));
+    chassert(it != server_to_azure_mapping.end());
+    Azure::Core::Diagnostics::Logger::SetLevel(it->second);
+
+    Azure::Core::Diagnostics::Logger::SetListener([](AzureLogsLevel level, const std::string & message)
+    {
+        auto [poco_level, db_level] = azure_to_server_mapping.at(level);
+        LOG_IMPL(azure_sdk_logger, db_level, poco_level, fmt::runtime(message));
+    });
+#endif
+}
+
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -842,6 +882,16 @@ try
 
     /// It could grow if we need to synchronously wait until all the data parts will be loaded.
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
+        server_settings.max_active_parts_loading_thread_pool_size
+    );
+
+    getUnexpectedPartsLoadingThreadPool().initialize(
+        server_settings.max_unexpected_parts_loading_thread_pool_size,
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_unexpected_parts_loading_thread_pool_size);
+
+    /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+    getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(
         server_settings.max_active_parts_loading_thread_pool_size
     );
 
@@ -1165,11 +1215,11 @@ try
     }
 
     {
-        fs::create_directories(path / "data/");
-        fs::create_directories(path / "metadata/");
+        fs::create_directories(path / "data");
+        fs::create_directories(path / "metadata");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(path / "metadata_dropped/");
+        fs::create_directories(path / "metadata_dropped");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -1533,8 +1583,11 @@ try
 
                 global_context->reloadQueryMaskingRulesIfChanged(config);
 
-                std::lock_guard lock(servers_lock);
-                updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                if (global_context->isServerCompletelyStarted())
+                {
+                    std::lock_guard lock(servers_lock);
+                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                }
             }
 
             global_context->updateStorageConfiguration(*config);
@@ -1860,6 +1913,7 @@ try
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
+        initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));

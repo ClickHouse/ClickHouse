@@ -1,5 +1,5 @@
 #include <Common/DateLUTImpl.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -712,12 +712,12 @@ bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTIm
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
+    parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 void parseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
+    parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

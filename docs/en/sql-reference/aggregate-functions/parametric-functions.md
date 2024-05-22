@@ -505,9 +505,117 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calculates the number of unique `UserID` values for each `SearchPhrase`, but it only counts up to 4 unique values. If there are more than 4 unique `UserID` values for a `SearchPhrase`, the function returns 5 (4 + 1). The `HAVING` clause then filters out the `SearchPhrase` values for which the number of unique `UserID` values is less than 5. This will give you a list of search keywords that were used by at least 5 unique users.
 
-## sumMapFiltered(keys_to_keep)(keys, values)
+## sumMapFiltered
 
-Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
+
+**Syntax**
+
+`sumMapFiltered(keys_to_keep)(keys, values)`
+
+**Parameters**
+
+- `keys_to_keep`: [Array](../data-types/array.md) of keys to filter with.
+- `keys`: [Array](../data-types/array.md) of keys.
+- `values`: [Array](../data-types/array.md) of values.
+
+**Returned Value** 
+
+- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE sum_map
+(
+    `date` Date,
+    `timeslot` DateTime,
+    `statusMap` Nested(status UInt16, requests UInt64)
+)
+ENGINE = Log
+
+INSERT INTO sum_map VALUES 
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]), 
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]), 
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+```
+
+```sql
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_map;
+```
+
+Result:
+
+```response
+   ┌─sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests)─┐
+1. │ ([1,4,8],[10,20,10])                                            │
+   └─────────────────────────────────────────────────────────────────┘
+```
+
+## sumMapFilteredWithOverflow
+
+This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+
+**Syntax**
+
+`sumMapFilteredWithOverflow(keys_to_keep)(keys, values)`
+
+**Parameters**
+
+- `keys_to_keep`: [Array](../data-types/array.md) of keys to filter with.
+- `keys`: [Array](../data-types/array.md) of keys.
+- `values`: [Array](../data-types/array.md) of values.
+
+**Returned Value** 
+
+- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+
+**Example**
+
+In this example we create a table `sum_map`, insert some data into it and then use both `sumMapFilteredWithOverflow` and `sumMapFiltered` and the `toTypeName` function for comparison of the result. Where `requests` was of type `UInt8` in the created table, `sumMapFiltered` has promoted the type of the summed values to `UInt64` to avoid overflow whereas `sumMapFilteredWithOverflow` has kept the type as `UInt8` which is not large enough to store the result - i.e. overflow has occurred.
+
+Query:
+
+```sql
+CREATE TABLE sum_map
+(
+    `date` Date,
+    `timeslot` DateTime,
+    `statusMap` Nested(status UInt8, requests UInt8)
+)
+ENGINE = Log
+
+INSERT INTO sum_map VALUES 
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]), 
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]), 
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+```
+
+```sql
+SELECT sumMapFilteredWithOverflow([1, 4, 8])(statusMap.status, statusMap.requests) as summap_overflow, toTypeName(summap_overflow) FROM sum_map;
+```
+
+```sql
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap, toTypeName(summap) FROM sum_map;
+```
+
+Result:
+
+```response
+   ┌─sum──────────────────┬─toTypeName(sum)───────────────────┐
+1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt8)) │
+   └──────────────────────┴───────────────────────────────────┘
+```
+
+```response
+   ┌─summap───────────────┬─toTypeName(summap)─────────────────┐
+1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt64)) │
+   └──────────────────────┴────────────────────────────────────┘
+```
 
 ## sequenceNextNode
 

@@ -19,7 +19,6 @@ prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesyst
 $CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
 
 config_path=/etc/clickhouse-server/config.d/storage_conf.xml
-config_path_tmp=$config_path.tmp
 
 new_max_size=$($CLICKHOUSE_CLIENT --query "SELECT divide(max_size, 2) FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
 sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|"  $config_path

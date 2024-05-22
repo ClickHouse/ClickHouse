@@ -127,7 +127,7 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    enum class ApplicationType
+    enum class ApplicationType : uint8_t
     {
         KEEPER
     };
@@ -137,7 +137,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOURingReader() const;
+    IOUringReader & getIOUringReader() const;
 #endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
@@ -163,6 +163,8 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     const ServerSettings & getServerSettings() const;
+
+    bool hasTraceCollector() const;
 };
 
 }

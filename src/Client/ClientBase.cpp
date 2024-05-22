@@ -18,7 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
 #include <Columns/ColumnString.h>
@@ -273,7 +273,7 @@ public:
     static void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
 
     /// Set value not greater then 0 to mark the query as stopped.
-    static void stop() { return exit_after_signals.store(0); }
+    static void stop() { exit_after_signals.store(0); }
 
     /// Return true if the query was stopped.
     /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
@@ -439,8 +439,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     for (auto & table : external_tables)
         data.emplace_back(table.getData(global_context));
 
-    if (send_external_tables)
-        connection->sendExternalTablesData(data);
+    connection->sendExternalTablesData(data);
 }
 
 
@@ -711,8 +710,8 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// Do not limit pretty format output in case of --pager specified.
-    if (!pager.empty())
+    /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
+    if (!pager.empty() || !stdout_is_a_tty)
     {
         if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
         {
@@ -2617,7 +2616,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
+            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"), global_context->getClientInfo());
         }
 
         try
@@ -2811,9 +2810,9 @@ public:
      * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
      * Implements boost::program_options::ext_parser logic
      */
-    std::pair<std::string, std::string> operator()(const std::string& token) const
+    std::pair<std::string, std::string> operator()(const std::string & token) const
     {
-        if (token.find("--") != 0)
+        if (!token.starts_with("--"))
             return {};
         std::string arg = token.substr(2);
 
@@ -2910,8 +2909,29 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     }
 
     /// Check positional options.
-    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+    for (const auto & op : parsed.options)
+    {
+        if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
+            && !op.original_tokens[0].empty() && !op.value.empty())
+        {
+            /// Two special cases for better usability:
+            /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
+            /// These are relevant for interactive usage - user-friendly, but questionable in general.
+            /// In case of ambiguity or for scripts, prefer using proper options.
+
+            const auto & token = op.original_tokens[0];
+            po::variable_value value(boost::any(op.value), false);
+
+            const char * option;
+            if (token.contains(' '))
+                option = "query";
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
+
+            if (!options.emplace(option, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
+        }
+    }
 
     po::store(parsed, options);
 }
@@ -2955,7 +2975,8 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
-        ("help", "produce help message")
+        ("help", "print usage summary, combine with --verbose to display all options")
+        ("verbose", "print query and other debugging info")
         ("version,V", "print version information and exit")
         ("version-clean", "print version in machine-readable format and exit")
 
@@ -2979,7 +3000,6 @@ void ClientBase::init(int argc, char ** argv)
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
 
         ("echo", "in batch mode, print query before execution")
-        ("verbose", "print query and other debugging info")
 
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
@@ -3007,6 +3027,8 @@ void ClientBase::init(int argc, char ** argv)
     ;
 
     addOptions(options_description);
+
+    OptionsDescription options_description_non_verbose = options_description;
 
     auto getter = [](const auto & op)
     {
@@ -3042,11 +3064,17 @@ void ClientBase::init(int argc, char ** argv)
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
+    if (options.count("verbose"))
+        config().setBool("verbose", true);
+
     /// Output of help message.
     if (options.count("help")
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
-        printHelpMessage(options_description);
+        if (config().getBool("verbose", false))
+            printHelpMessage(options_description, true);
+        else
+            printHelpMessage(options_description_non_verbose, false);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
@@ -3113,8 +3141,6 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         config().setString("history_file", options["history_file"].as<std::string>());
-    if (options.count("verbose"))
-        config().setBool("verbose", true);
     if (options.count("interactive"))
         config().setBool("interactive", true);
     if (options.count("pager"))

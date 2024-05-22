@@ -8,10 +8,7 @@ import subprocess
 import sys
 from typing import List, Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status

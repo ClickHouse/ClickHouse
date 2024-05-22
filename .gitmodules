@@ -6,7 +6,7 @@
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/ClickHouse/lz4
+	url = https://github.com/lz4/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -363,6 +363,9 @@
 [submodule "contrib/idna"]
 	path = contrib/idna
 	url = https://github.com/ada-url/idna.git
+[submodule "contrib/rust_vendor"]
+	path = contrib/rust_vendor
+	url = https://github.com/ClickHouse/rust_vendor.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/ClickHouse/openssl.git

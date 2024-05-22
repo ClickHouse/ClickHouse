@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Glob.h>
