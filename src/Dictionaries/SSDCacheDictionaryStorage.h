@@ -721,11 +721,10 @@ public:
                 if (!block.checkCheckSum())
                 {
                     std::string calculated_check_sum = std::to_string(block.calculateCheckSum());
-                    std::string check_sum = std::to_string(block.getCheckSum());
+                    std::string expected_check_sum = std::to_string(block.getCheckSum());
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "Cache data corrupted. Checksum validation failed. Calculated {} in block {}",
-                        calculated_check_sum,
-                        check_sum);
+                        "Cache data corrupted. Checksum validation failed. Calculated {} expected in block {}, in file {}",
+                        calculated_check_sum, expected_check_sum, file_path);
                 }
 
                 func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());

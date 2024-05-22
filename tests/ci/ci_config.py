@@ -26,6 +26,7 @@ class CIStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     TESTS_1 = "Tests_1"
     TESTS_2 = "Tests_2"
+    TESTS_3 = "Tests_3"
 
 
 class Runners(metaclass=WithIter):
@@ -51,9 +52,9 @@ class CILabels(metaclass=WithIter):
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
     CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
-    CI_SET_STATLESS = "ci_set_stateless"
+    CI_SET_STATELESS = "ci_set_stateless"
     CI_SET_STATEFUL = "ci_set_stateful"
-    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
+    CI_SET_STATELESS_ASAN = "ci_set_stateless_asan"
     CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
@@ -205,7 +206,7 @@ class DigestConfig:
     include_paths: List[Union[str, Path]] = field(default_factory=list)
     # file suffixes to exclude from digest
     exclude_files: List[str] = field(default_factory=list)
-    # directories to exlude from digest
+    # directories to exclude from digest
     exclude_dirs: List[Union[str, Path]] = field(default_factory=list)
     # docker names to include into digest
     docker: List[str] = field(default_factory=list)
@@ -216,7 +217,7 @@ class DigestConfig:
 @dataclass
 class LabelConfig:
     """
-    configures different CI scenarious per GH label
+    configures different CI scenarios per GH label
     """
 
     run_jobs: Iterable[str] = frozenset()
@@ -230,7 +231,7 @@ class JobConfig:
 
     # configures digest calculation for the job
     digest: DigestConfig = field(default_factory=DigestConfig)
-    # will be triggered for the job if omited in CI workflow yml
+    # will be triggered for the job if omitted in CI workflow yml
     run_command: str = ""
     # job timeout, seconds
     timeout: Optional[int] = None
@@ -241,7 +242,7 @@ class JobConfig:
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
-    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
+    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skip-able.
     required_on_release_branch: bool = False
     # job is for pr workflow only
     pr_only: bool = False
@@ -469,7 +470,7 @@ compatibility_test_common_params = {
     "digest": compatibility_check_digest,
     "run_command": "compatibility_check.py",
 }
-statless_test_common_params = {
+stateless_test_common_params = {
     "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
@@ -581,7 +582,6 @@ class CIConfig:
         elif job_name == JobNames.BUILD_CHECK_SPECIAL:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
-            stage_type = CIStages.TESTS_1
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
                 assert required_build
@@ -593,6 +593,8 @@ class CIConfig:
                     stage_type = CIStages.TESTS_2
             else:
                 stage_type = CIStages.TESTS_1
+            if job_name not in REQUIRED_CHECKS:
+                stage_type = CIStages.TESTS_3
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -663,7 +665,7 @@ class CIConfig:
                 # crosscompile - no arm required
                 pass
             else:
-                # switch to aarch64 runnner
+                # switch to aarch64 runner
                 result += "-aarch64"
 
         return result
@@ -710,7 +712,7 @@ class CIConfig:
                     break
         assert (
             res
-        ), f"Error: Experimantal feature... Invlid request or not supported job [{check_name}]"
+        ), f"Error: Experimental feature... Invalid request or not supported job [{check_name}]"
         return res
 
     def get_digest_config(self, check_name: str) -> DigestConfig:
@@ -813,16 +815,16 @@ class CIConfig:
                     f"The following names of the build report '{build_report_name}' "
                     f"are missed in build_config: {missed_names}",
                 )
-        # And finally, all of tests' requirements must be in the builds
+        # And finally, all tests' requirements must be in the builds
         for test_name, test_config in self.test_configs.items():
             if test_config.required_build not in self.build_config.keys():
                 logging.error(
-                    "The requierment '%s' for '%s' is not found in builds",
+                    "The requirement '%s' for '%s' is not found in builds",
                     test_config,
                     test_name,
                 )
                 errors.append(
-                    f"The requierment '{test_config}' for "
+                    f"The requirement '{test_config}' for "
                     f"'{test_name}' is not found in builds"
                 )
 
@@ -863,7 +865,7 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
             ]
         ),
-        CILabels.CI_SET_STATLESS: LabelConfig(
+        CILabels.CI_SET_STATELESS: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -871,7 +873,7 @@ CI_CONFIG = CIConfig(
                 JobNames.STATELESS_TEST_RELEASE,
             ]
         ),
-        CILabels.CI_SET_STATLESS_ASAN: LabelConfig(
+        CILabels.CI_SET_STATELESS_ASAN: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -1178,49 +1180,49 @@ CI_CONFIG = CIConfig(
         # End stateful tests for parallel replicas
         JobNames.STATELESS_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
-            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=5, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_MSAN: TestConfig(
             Build.PACKAGE_MSAN,
-            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_UBSAN: TestConfig(
             Build.PACKAGE_UBSAN,
-            job_config=JobConfig(num_batches=2, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=2, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
-            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=5, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=JobConfig(**stateless_test_common_params)  # type: ignore
         ),
         JobNames.STATELESS_TEST_RELEASE_COVERAGE: TestConfig(
             Build.PACKAGE_RELEASE_COVERAGE,
-            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
+            Build.PACKAGE_AARCH64, job_config=JobConfig(**stateless_test_common_params)  # type: ignore
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
-            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **stateless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
-            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=5, **stateless_test_common_params),  # type: ignore
         ),
         JobNames.STRESS_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
@@ -1269,8 +1271,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
-            # add [run_by_label="test arm"] to not run in regular pr workflow by default
-            job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
+            job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
@@ -1324,7 +1325,7 @@ CI_CONFIG = CIConfig(
         JobNames.STATELESS_TEST_FLAKY_ASAN: TestConfig(
             # replace to non-default
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(pr_only=True, **{**statless_test_common_params, "timeout": 3600}),  # type: ignore
+            job_config=JobConfig(pr_only=True, **{**stateless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
         JobNames.JEPSEN_KEEPER: TestConfig(
             Build.BINARY_RELEASE,
@@ -1484,7 +1485,7 @@ CHECK_DESCRIPTIONS = [
         "Checks if new added or modified tests are flaky by running them repeatedly, "
         "in parallel, with more randomization. Functional tests are run 100 times "
         "with address sanitizer, and additional randomization of thread scheduling. "
-        "Integrational tests are run up to 10 times. If at least once a new test has "
+        "Integration tests are run up to 10 times. If at least once a new test has "
         "failed, or was too long, this check will be red. We don't allow flaky tests, "
         'read <a href="https://clickhouse.com/blog/decorating-a-christmas-tree-with-'
         'the-help-of-flaky-tests/">the doc</a>',
@@ -1574,7 +1575,7 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(
-        "Falback for unknown",
+        "Fallback for unknown",
         "There's no description for the check yet, please add it to "
         "tests/ci/ci_config.py:CHECK_DESCRIPTIONS",
         lambda x: True,
