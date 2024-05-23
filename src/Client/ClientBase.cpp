@@ -2134,6 +2134,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // unlike VALUES.
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
     const char * query_to_execute_end = this_query_end;
+    // TODO: handle test hints
     if (insert_ast && insert_ast->data)
     {
         if (insert_ast->format == "Values")

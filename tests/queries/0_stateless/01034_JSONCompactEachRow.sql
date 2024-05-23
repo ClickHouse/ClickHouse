@@ -54,6 +54,7 @@ SET input_format_null_as_default = 1;
 INSERT INTO test_table FORMAT JSONCompactEachRowWithNamesAndTypes ["v1", "v2", "v3", "v4"]["String","UInt8","UInt16","UInt8"]["first", 1, "2", null] ["second", 2, null, 6];
 
 INSERT INTO test_table FORMAT JSONCompactEachRowWithNames ["v1", "v2", "v3", "v4"]["first", 1, "2", null] ["second", 2, null, 6];
+
 SELECT * FROM test_table FORMAT JSONCompactEachRow;
 SELECT 10;
 /* Check Header */
