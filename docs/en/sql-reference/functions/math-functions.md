@@ -945,3 +945,49 @@ Result:
 │                               11 │
 └──────────────────────────────────┘
 ```
+
+## proportionsZTest
+
+Returns test statistics for the two proportion Z-test - a statistical test for comparing the proportions from two populations `x` and `y`.
+
+**Syntax**
+
+```sql
+proportionsZTest(successes_x, successes_y, trials_x, trials_y, conf_level, pool_type)
+```
+
+**Arguments**
+
+- `successes_x`: Number of successes in population `x`. [UInt64](../data-types/int-uint.md).
+- `successes_y`: Number of successes in population `y`. [UInt64](../data-types/int-uint.md).
+- `trials_x`: Number of trials in population `x`. [UInt64](../data-types/int-uint.md).
+- `trials_y`: Number of trials in population `y`. [UInt64](../data-types/int-uint.md).
+- `conf_level`: Confidence level for the test. [Float64](../data-types/float.md).
+- `pool_type`: Selection of pooling (way in which the standard error is estimated). Can be either `unpooled` or `pooled`. [String](../data-types/string.md). 
+
+:::note
+For argument `pool_type`: In the pooled version, the two proportions are averaged, and only one proportion is used to estimate the standard error. In the unpooled version, the two proportions are used separately.
+:::
+
+**Returned value**
+
+- `z_stat`: Z statistic. [Float64](../data-types/float.md).
+- `p_val`: P value. [Float64](../data-types/float.md).
+- `ci_low`: The lower confidence interval. [Float64](../data-types/float.md).
+- `ci_high`: The upper confidence interval. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
+```
+
+Result:
+
+```response
+┌─proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled')───────────────────────────────┐
+│ (-0.20656724435948853,0.8363478437079654,-0.09345975390115283,0.07563797172293502) │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```

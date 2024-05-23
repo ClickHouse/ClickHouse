@@ -6,10 +6,20 @@ sidebar_label: Other
 
 # Other Functions
 
-## hostName()
+## hostName
 
 Returns the name of the host on which this function was executed. If the function executes on a remote server (distributed processing), the remote server name is returned.
 If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+
+**Syntax**
+
+```sql
+hostName()
+```
+
+**Returned value**
+
+- Host name. [String](../data-types/string.md).
 
 ## getMacro {#getMacro}
 
@@ -159,16 +169,28 @@ Result:
 └────────────────┴────────────────────────────┘
 ```
 
-## visibleWidth(x)
+## visibleWidth
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
-This function is used by the system to implement Pretty formats.
+This function is used by the system to implement [Pretty formats](../../interfaces/formats.md).
 
 `NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
+
+**Syntax**
+
+```sql
+visibleWidth(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT visibleWidth(NULL)
 ```
+
+Result:
 
 ```text
 ┌─visibleWidth(NULL)─┐
@@ -176,16 +198,28 @@ SELECT visibleWidth(NULL)
 └────────────────────┘
 ```
 
-## toTypeName(x)
+## toTypeName
 
 Returns the type name of the passed argument.
 
 If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
-## blockSize() {#blockSize}
+**Syntax**
+
+```sql
+toTypeName(x)
+```
+
+## blockSize {#blockSize}
 
 In ClickHouse, queries are processed in blocks (chunks).
 This function returns the size (row count) of the block the function is called on.
+
+**Syntax**
+
+```sql
+blockSize()
+```
 
 ## byteSize
 
@@ -282,15 +316,27 @@ Result:
 └────────────────────────────┘
 ```
 
-## materialize(x)
+## materialize
 
 Turns a constant into a full column containing a single value.
 Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
 
-## ignore(…)
+**Syntax**
+
+```sql
+materialize(x)
+```
+
+## ignore
 
 Accepts any arguments, including `NULL` and does nothing. Always returns 0.
 The argument is internally still evaluated. Useful e.g. for benchmarks.
+
+**Syntax**
+
+```sql
+ignore(x)
+```
 
 ## sleep
 
@@ -386,17 +432,25 @@ The `sleepEachRow()` function is primarily used for testing and debugging purpos
 
 Like the [`sleep()` function](#sleep), it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
 
-## currentDatabase()
+## currentDatabase
 
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-## currentUser() {#currentUser}
+**Syntax**
+
+```sql
+currentDatabase()
+```
+
+## currentUser {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
 
+**Syntax**
+
 ```sql
-SELECT currentUser();
+currentUser()
 ```
 
 Aliases: `user()`, `USER()`, `current_user()`. Aliases are case insensitive.
@@ -486,52 +540,6 @@ Result:
 │                  0 │
 └────────────────────┘
 ```
-
-## isFinite(x)
-
-Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwise this function returns 0.
-
-## isInfinite(x)
-
-Returns 1 if the Float32 or Float64 argument is infinite, otherwise this function returns 0. Note that 0 is returned for a NaN.
-
-## ifNotFinite
-
-Checks whether a floating point value is finite.
-
-**Syntax**
-
-```sql
-ifNotFinite(x,y)
-```
-
-**Arguments**
-
-- `x` — Value to check for infinity. [Float\*](../../sql-reference/data-types/float.md).
-- `y` — Fallback value. [Float\*](../../sql-reference/data-types/float.md).
-
-**Returned value**
-
-- `x` if `x` is finite.
-- `y` if `x` is not finite.
-
-**Example**
-
-Query:
-
-    SELECT 1/0 as infimum, ifNotFinite(infimum,42)
-
-Result:
-
-    ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
-    │     inf │                            42 │
-    └─────────┴───────────────────────────────┘
-
-You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
-
-## isNaN(x)
-
-Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
 
 ## hasColumnInTable
 
@@ -723,17 +731,27 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## formatReadableDecimalSize(x)
+## formatReadableDecimalSize
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
-Example:
+**Syntax**
+
+```sql
+formatReadableDecimalSize(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableDecimalSize(filesize_bytes) AS filesize
 ```
+
+Result:
 
 ```text
 ┌─filesize_bytes─┬─filesize───┐
@@ -744,11 +762,20 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## formatReadableSize(x)
+## formatReadableSize
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
 
-Example:
+**Syntax**
+
+```sql
+formatReadableSize(x)
+```
+Alias: `FORMAT_BYTES`.
+
+**Example**
+
+Query:
 
 ```sql
 SELECT
@@ -756,7 +783,7 @@ SELECT
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-Alias: `FORMAT_BYTES`.
+Result:
 
 ```text
 ┌─filesize_bytes─┬─filesize───┐
@@ -767,17 +794,27 @@ Alias: `FORMAT_BYTES`.
 └────────────────┴────────────┘
 ```
 
-## formatReadableQuantity(x)
+## formatReadableQuantity
 
 Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as string.
 
-Example:
+**Syntax**
+
+```sql
+formatReadableQuantity(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT
     arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
     formatReadableQuantity(number) AS number_for_humans
 ```
+
+Result:
 
 ```text
 ┌─────────number─┬─number_for_humans─┐
@@ -893,15 +930,27 @@ SELECT parseTimeDelta('1yr2mo')
 └──────────────────────────┘
 ```
 
-## least(a, b)
+## least
 
 Returns the smaller value of a and b.
 
-## greatest(a, b)
+**Syntax**
+
+```sql
+least(a, b)
+```
+
+## greatest
 
 Returns the larger value of a and b.
 
-## uptime()
+**Syntax**
+
+```sql
+greatest(a, b)
+```
+
+## uptime
 
 Returns the server’s uptime in seconds.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
@@ -932,7 +981,7 @@ Result:
 └────────┘
 ```
 
-## version()
+## version
 
 Returns the current version of ClickHouse as a string in the form of:
 
@@ -981,22 +1030,178 @@ SELECT version()
 └───────────┘
 ```
 
-## buildId()
+## buildId
 
 Returns the build ID generated by a compiler for the running ClickHouse server binary.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## blockNumber()
+**Syntax**
 
-Returns the sequence number of the data block where the row is located.
+```sql
+buildId()
+```
 
-## rowNumberInBlock() {#rowNumberInBlock}
+## blockNumber
 
-Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
+Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
+The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate.
 
-## rowNumberInAllBlocks()
+**Syntax**
 
-Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
+```sql
+blockNumber()
+```
+
+**Returned value**
+
+- Sequence number of the data block where the row is located. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT blockNumber()
+FROM
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 10
+) SETTINGS max_block_size = 2
+```
+
+Result:
+
+```response
+┌─blockNumber()─┐
+│             7 │
+│             7 │
+└───────────────┘
+┌─blockNumber()─┐
+│             8 │
+│             8 │
+└───────────────┘
+┌─blockNumber()─┐
+│             9 │
+│             9 │
+└───────────────┘
+┌─blockNumber()─┐
+│            10 │
+│            10 │
+└───────────────┘
+┌─blockNumber()─┐
+│            11 │
+│            11 │
+└───────────────┘
+```
+
+## rowNumberInBlock {#rowNumberInBlock}
+
+Returns for each [block](../../development/architecture.md#block) processed by `rowNumberInBlock` the number of the current row.
+The returned number starts for each block at 0.
+
+**Syntax**
+
+```sql
+rowNumberInBlock()
+```
+
+**Returned value**
+
+- Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT rowNumberInBlock()
+FROM
+(
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+) SETTINGS max_block_size = 2
+```
+
+Result:
+
+```response
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+```
+
+## rowNumberInAllBlocks
+
+Returns a unique row number for each row processed by `rowNumberInAllBlocks`. The returned numbers start at 0.
+
+**Syntax**
+
+```sql
+rowNumberInAllBlocks()
+```
+
+**Returned value**
+
+- Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT rowNumberInAllBlocks()
+FROM
+(
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+)
+SETTINGS max_block_size = 2
+```
+
+Result:
+
+```response
+┌─rowNumberInAllBlocks()─┐
+│                      0 │
+│                      1 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      4 │
+│                      5 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      2 │
+│                      3 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      6 │
+│                      7 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      8 │
+│                      9 │
+└────────────────────────┘
+```
 
 ## neighbor
 
@@ -1118,7 +1323,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x) {#runningDifference}
+## runningDifference {#runningDifference}
 
 Calculates the difference between two consecutive row values in the data block.
 Returns 0 for the first row, and for subsequent rows the difference to the previous row.
@@ -1133,7 +1338,15 @@ The result of the function depends on the affected data blocks and the order of 
 The order of rows during calculation of `runningDifference()` can differ from the order of rows returned to the user.
 To prevent that you can create a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
 
-Example:
+**Syntax**
+
+```sql
+runningDifference(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT
@@ -1152,6 +1365,8 @@ FROM
 )
 ```
 
+Result:
+
 ```text
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
@@ -1164,6 +1379,8 @@ FROM
 
 Please note that the block size affects the result. The internal state of `runningDifference` state is reset for each new block.
 
+Query:
+
 ```sql
 SELECT
     number,
@@ -1171,6 +1388,8 @@ SELECT
 FROM numbers(100000)
 WHERE diff != 1
 ```
+
+Result:
 
 ```text
 ┌─number─┬─diff─┐
@@ -1181,6 +1400,8 @@ WHERE diff != 1
 └────────┴──────┘
 ```
 
+Query:
+
 ```sql
 set max_block_size=100000 -- default value is 65536!
 
@@ -1190,6 +1411,8 @@ SELECT
 FROM numbers(100000)
 WHERE diff != 1
 ```
+
+Result:
 
 ```text
 ┌─number─┬─diff─┐
@@ -1260,22 +1483,42 @@ Result:
 └────────────┴────────────────────────────────┘
 ```
 
-## MACNumToString(num)
+## MACNumToString
 
 Interprets a UInt64 number as a MAC address in big endian format. Returns the corresponding MAC address in format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form) as string.
 
-## MACStringToNum(s)
+**Syntax**
+
+```sql
+MACNumToString(num)
+```
+
+## MACStringToNum
 
 The inverse function of MACNumToString. If the MAC address has an invalid format, it returns 0.
 
-## MACStringToOUI(s)
+**Syntax**
+
+```sql
+MACStringToNum(s)
+```
+
+## MACStringToOUI
 
 Given a MAC address in format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form), returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
+
+**Syntax**
+
+```sql
+MACStringToOUI(s)
+```
 
 ## getSizeOfEnumType
 
 Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
 An exception is thrown if the type is not `Enum`.
+
+**Syntax**
 
 ```sql
 getSizeOfEnumType(value)
@@ -1336,6 +1579,8 @@ Result:
 ## toColumnTypeName
 
 Returns the internal name of the data type that represents the value.
+
+**Syntax**
 
 ```sql
 toColumnTypeName(value)
@@ -1414,6 +1659,8 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 Returns the default value for the given data type.
 
 Does not include default values for custom columns set by the user.
+
+**Syntax** 
 
 ```sql
 defaultValueOfArgumentType(expression)
@@ -1613,16 +1860,20 @@ Result:
 
 Creates an array with a single value.
 
-Used for the internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
+:::note
+This function is used for the internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
+:::
+
+**Syntax**
 
 ```sql
-SELECT replicate(x, arr);
+replicate(x, arr)
 ```
 
-**Arguments:**
+**Arguments**
 
-- `arr` — An array.
 - `x` — The value to fill the result array with.
+- `arr` — An array. [Array](../data-types/array.md).
 
 **Returned value**
 
@@ -1633,7 +1884,7 @@ An array of the lame length as `arr` filled with value `x`. [Array](../data-type
 Query:
 
 ```sql
-SELECT replicate(1, ['a', 'b', 'c'])
+SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 Result:
@@ -1642,6 +1893,36 @@ Result:
 ┌─replicate(1, ['a', 'b', 'c'])─┐
 │ [1,1,1]                       │
 └───────────────────────────────┘
+```
+
+## revision
+
+Returns the current ClickHouse [server revision](../../operations/system-tables/metrics#revision).
+
+**Syntax**
+
+```sql
+revision()
+```
+
+**Returned value**
+
+- The current ClickHouse server revision. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT revision();
+```
+
+Result:
+
+```response
+┌─revision()─┐
+│      54485 │
+└────────────┘
 ```
 
 ## filesystemAvailable
@@ -2082,7 +2363,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
+## catboostEvaluate
 
 :::note
 This function is not available in ClickHouse Cloud.
@@ -2090,6 +2371,14 @@ This function is not available in ClickHouse Cloud.
 
 Evaluate an external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learning.
 Accepts a path to a catboost model and model arguments (features). Returns Float64.
+
+**Syntax**
+
+```sql
+catboostEvaluate(path_to_model, feature_1, feature_2, ..., feature_n)
+```
+
+**Example**
 
 ```sql
 SELECT feat1, ..., feat_n, catboostEvaluate('/path/to/model.bin', feat_1, ..., feat_n) AS prediction
@@ -2127,9 +2416,15 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
-## throwIf(x\[, message\[, error_code\]\])
+## throwIf
 
 Throw an exception if argument `x` is true.
+
+**Syntax**
+
+```sql
+throwIf(x[, message[, error_code]])
+```
 
 **Arguments**
 
@@ -2266,7 +2561,7 @@ countDigits(x)
 
 **Returned value**
 
-Number of digits. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- Number of digits. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 :::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
@@ -2290,7 +2585,7 @@ Result:
 
 ## errorCodeToName
 
-Returns the textual name of an error code. [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+- The textual name of an error code. [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
 
 **Syntax**
 

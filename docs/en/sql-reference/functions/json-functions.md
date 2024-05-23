@@ -386,7 +386,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices_or_keys\]…)
+## JSONHas(json\[, indices_or_keys\]...)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -419,7 +419,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices_or_keys\]…)
+## JSONLength(json\[, indices_or_keys\]...)
 
 Return the length of a JSON array or a JSON object.
 
@@ -432,7 +432,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices_or_keys\]…)
+## JSONType(json\[, indices_or_keys\]...)
 
 Return the type of a JSON value.
 
@@ -446,13 +446,13 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices_or_keys\]…)
+## JSONExtractUInt(json\[, indices_or_keys\]...)
 
-## JSONExtractInt(json\[, indices_or_keys\]…)
+## JSONExtractInt(json\[, indices_or_keys\]...)
 
-## JSONExtractFloat(json\[, indices_or_keys\]…)
+## JSONExtractFloat(json\[, indices_or_keys\]...)
 
-## JSONExtractBool(json\[, indices_or_keys\]…)
+## JSONExtractBool(json\[, indices_or_keys\]...)
 
 Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
 
@@ -466,7 +466,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
-## JSONExtractString(json\[, indices_or_keys\]…)
+## JSONExtractString(json\[, indices_or_keys\]...)
 
 Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
 
@@ -484,7 +484,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices_or_keys…\], Return_type)
+## JSONExtract(json\[, indices_or_keys...\], Return_type)
 
 Parses a JSON and extract a value of the given ClickHouse data type.
 
@@ -506,7 +506,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type)
+## JSONExtractKeysAndValues(json\[, indices_or_keys...\], Value_type)
 
 Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
 
@@ -552,7 +552,7 @@ text
 └────────────────────────────────────────────────────────────┘
 ```
 
-## JSONExtractRaw(json\[, indices_or_keys\]…)
+## JSONExtractRaw(json\[, indices_or_keys\]...)
 
 Returns a part of JSON as unparsed string.
 
@@ -564,7 +564,7 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw(json\[, indices_or_keys…\])
+## JSONExtractArrayRaw(json\[, indices_or_keys...\])
 
 Returns an array with elements of JSON array, each represented as unparsed string.
 

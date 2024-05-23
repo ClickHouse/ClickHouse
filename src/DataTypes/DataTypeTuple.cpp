@@ -1,6 +1,6 @@
 #include <base/map.h>
 #include <base/range.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
@@ -291,9 +291,9 @@ bool DataTypeTuple::haveMaximumSizeOfValue() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
-bool DataTypeTuple::hasDynamicSubcolumns() const
+bool DataTypeTuple::hasDynamicSubcolumnsDeprecated() const
 {
-    return std::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicSubcolumns(); });
+    return std::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
 }
 
 bool DataTypeTuple::isComparable() const

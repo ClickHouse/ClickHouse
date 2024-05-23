@@ -581,7 +581,7 @@ mapApply(func, map)
 
 **Returned value**
 
-- Returns a map obtained from the original map by application of `func(map1[i], …, mapN[i])` for each element.
+- Returns a map obtained from the original map by application of `func(map1[i], ..., mapN[i])` for each element.
 
 **Example**
 
@@ -621,7 +621,7 @@ mapFilter(func, map)
 
 **Returned value**
 
-- Returns a map containing only the elements in `map` for which `func(map1[i], …, mapN[i])` returns something other than 0.
+- Returns a map containing only the elements in `map` for which `func(map1[i], ..., mapN[i])` returns something other than 0.
 
 
 **Example**

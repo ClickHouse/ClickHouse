@@ -44,9 +44,9 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
-    bool try_infer_integers = false;
-    bool try_infer_dates = false;
-    bool try_infer_datetimes = false;
+    bool try_infer_integers = true;
+    bool try_infer_dates = true;
+    bool try_infer_datetimes = true;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t
@@ -283,7 +283,6 @@ struct FormatSettings
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
-        bool preserve_border_for_multiline_string = true;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
 
         enum class Charset : uint8_t
@@ -362,6 +361,7 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
+        bool crlf_end_of_line_input = false;
     } tsv{};
 
     struct

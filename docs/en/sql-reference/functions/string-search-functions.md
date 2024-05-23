@@ -797,7 +797,7 @@ If you only want to search multiple substrings in a string, you can use function
 **Syntax**
 
 ```sql
-multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiMatchAnyIndex
@@ -807,7 +807,7 @@ Like `multiMatchAny` but returns any index that matches the haystack.
 **Syntax**
 
 ```sql
-multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiMatchAllIndices
@@ -817,7 +817,7 @@ Like `multiMatchAny` but returns the array of all indices that match the haystac
 **Syntax**
 
 ```sql
-multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAny
@@ -831,7 +831,7 @@ Like `multiMatchAny` but returns 1 if any pattern matches the haystack within a 
 **Syntax**
 
 ```sql
-multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAnyIndex
@@ -841,7 +841,7 @@ Like `multiFuzzyMatchAny` but returns any index that matches the haystack within
 **Syntax**
 
 ```sql
-multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAllIndices
@@ -851,7 +851,7 @@ Like `multiFuzzyMatchAny` but returns the array of all indices in any order that
 **Syntax**
 
 ```sql
-multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## extract
