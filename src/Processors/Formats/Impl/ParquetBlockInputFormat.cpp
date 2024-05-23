@@ -444,7 +444,7 @@ auto make_bloom_filter_condition(
 {
     auto temp = buildColumnIndexToBF(bf_reader, 0, header, column_name_to_index);
 
-    return std::make_unique<ParquetBloomFilterCondition>(filter_dag, temp, ctx, header);
+    return std::make_unique<ParquetBloomFilterCondition>(BloomFilterRPNBuilder::build(filter_dag, temp, ctx, header));
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
