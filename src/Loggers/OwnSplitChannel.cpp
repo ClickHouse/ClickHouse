@@ -107,6 +107,10 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
     }
 
+    auto text_log_locked = text_log.lock();
+    if (!text_log_locked)
+        return;
+
     /// Also log to system.text_log table, if message is not too noisy
     auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
     if (text_log_max_priority_loaded && msg.getPriority() <= text_log_max_priority_loaded)
@@ -131,10 +135,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         elem.source_line = msg.getSourceLine();
         elem.message_format_string = msg.getFormatString();
 
-        std::shared_ptr<SystemLogQueue<TextLogElement>> text_log_locked{};
-        text_log_locked = text_log.lock();
-        if (text_log_locked)
-            text_log_locked->push(std::move(elem));
+        text_log_locked->push(std::move(elem));
     }
 #endif
 }
