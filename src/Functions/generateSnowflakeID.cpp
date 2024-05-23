@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace
 {
 
@@ -81,7 +76,7 @@ SnowflakeComponents toComponents(uint64_t snowflake) {
 
 uint64_t toSnowflakeID(SnowflakeComponents components) {
     return (components.timestamp << (machine_id_bits_count + machine_seq_num_bits_count) |
-            components.machind_id << (machine_seq_num_bits_count) | 
+            components.machind_id << (machine_seq_num_bits_count) |
             components.machine_seq_num);
 }
 
@@ -120,7 +115,7 @@ RangeOfSnowflakeIDs getRangeOfAvailableIDs(const SnowflakeComponents& available,
         end.timestamp = begin.timestamp + 1 + (input_rows_count - seq_nums_in_current_timestamp_left) / (max_machine_seq_num + 1);
     else
         end.timestamp = begin.timestamp;
-    
+
     end.machind_id = begin.machind_id;
     end.machine_seq_num = (begin.machine_seq_num + input_rows_count) & machine_seq_num_mask;
 
