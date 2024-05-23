@@ -4,8 +4,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Common/re2.h>
-
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
+#include <re2/re2.h>
 
 namespace CurrentMetrics
 {
@@ -29,7 +29,8 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_key_prefix_,
+        const String & object_storage_root_path_,
+        const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
@@ -38,7 +39,7 @@ public:
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
 
     bool supportZeroCopyReplication() const override { return true; }
 
@@ -47,6 +48,8 @@ public:
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
+
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
@@ -84,8 +87,6 @@ public:
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void truncateFile(const String & path, size_t size) override;
-
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
@@ -114,7 +115,7 @@ public:
 
     void clearDirectory(const String & path) override;
 
-    void moveDirectory(const String & from_path, const String & to_path) override;
+    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
     void removeDirectory(const String & path) override;
 
@@ -153,10 +154,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings = {},
-        const WriteSettings & write_settings = {},
-        const std::function<void()> & cancellation_hook = {}
-        ) override;
+        const WriteSettings & settings = {}) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
@@ -184,8 +182,6 @@ public:
     /// does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
-
-    bool supportsHardLinks() const override;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
@@ -215,30 +211,20 @@ private:
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
-    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
-    String getReadResourceName() const;
-    String getWriteResourceName() const;
-
-    const String object_key_prefix;
-    LoggerPtr log;
+    const String object_storage_root_path;
+    Poco::Logger * log;
 
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
-    DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
     bool tryReserve(UInt64 bytes);
-    void sendMoveMetadata(const String & from_path, const String & to_path);
 
     const bool send_metadata;
-
-    mutable std::mutex resource_mutex;
-    String read_resource_name;
-    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

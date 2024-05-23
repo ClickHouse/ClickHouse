@@ -1,15 +1,13 @@
 #!/usr/bin/env python
 """Helper for GitHub API requests"""
 import logging
-import re
 from datetime import date, datetime, timedelta
-from os import path as p
 from pathlib import Path
+from os import path as p
 from time import sleep
 from typing import List, Optional, Tuple, Union
 
 import github
-import requests
 
 # explicit reimport
 # pylint: disable=useless-import-alias
@@ -21,9 +19,6 @@ from github.Issue import Issue as Issue
 from github.NamedUser import NamedUser as NamedUser
 from github.PullRequest import PullRequest as PullRequest
 from github.Repository import Repository as Repository
-
-from env_helper import GITHUB_REPOSITORY
-from get_robot_token import get_best_robot_token
 
 # pylint: enable=useless-import-alias
 
@@ -124,14 +119,6 @@ class GitHub(github.Github):
             )
         return prs
 
-    def get_release_pulls(self, repo_name: str) -> PullRequests:
-        return self.get_pulls_from_search(
-            query=f"type:pr repo:{repo_name} is:open",
-            sort="created",
-            order="asc",
-            label="release",
-        )
-
     def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():
             if data["remaining"] == 0:
@@ -148,9 +135,7 @@ class GitHub(github.Github):
     def get_pull_cached(
         self, repo: Repository, number: int, obj_updated_at: Optional[datetime] = None
     ) -> PullRequest:
-        # clean any special symbol from the repo name, especially '/'
-        repo_name = re.sub(r"\W", "_", repo.full_name)
-        cache_file = self.cache_path / f"pr-{repo_name}-{number}.pickle"
+        cache_file = self.cache_path / f"pr-{number}.pickle"
 
         if cache_file.is_file():
             is_updated, cached_pr = self._is_cache_updated(cache_file, obj_updated_at)
@@ -199,32 +184,6 @@ class GitHub(github.Github):
         with open(path, "rb") as ob_fd:
             return self.load(ob_fd)  # type: ignore
 
-    # pylint: disable=protected-access
-    @staticmethod
-    def toggle_pr_draft(pr: PullRequest) -> None:
-        """GH rest API does not provide a way to toggle the draft status for PR"""
-        node_id = pr._rawData["node_id"]
-        if pr.draft:
-            action = (
-                "mutation PullRequestReadyForReview($input:MarkPullRequestReadyForReviewInput!)"
-                "{markPullRequestReadyForReview(input: $input){pullRequest{id}}}"
-            )
-        else:
-            action = (
-                "mutation ConvertPullRequestToDraft($input:ConvertPullRequestToDraftInput!)"
-                "{convertPullRequestToDraft(input: $input){pullRequest{id}}}"
-            )
-        query = {
-            "query": action,
-            "variables": {"input": {"pullRequestId": node_id}},
-        }
-        url = f"{pr._requester.base_url}/graphql"
-        _, data = pr._requester.requestJsonAndCheck("POST", url, input=query)
-        if data.get("data"):
-            pr._draft = pr._makeBoolAttribute(not pr.draft)
-
-    # pylint: enable=protected-access
-
     def _is_cache_updated(
         self, cache_file: Path, obj_updated_at: Optional[datetime]
     ) -> Tuple[bool, object]:
@@ -264,18 +223,3 @@ class GitHub(github.Github):
     def retries(self, value: int) -> None:
         assert isinstance(value, int)
         self._retries = value
-
-    # minimalistic static methods not using pygithub
-    @staticmethod
-    def cancel_wf(run_id, strict=False):
-        token = get_best_robot_token()
-        headers = {"Authorization": f"token {token}"}
-        url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/runs/{run_id}/cancel"
-        try:
-            response = requests.post(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            print(f"NOTE: Workflow [{run_id}] has been cancelled")
-        except Exception as ex:
-            print("ERROR: Got exception executing wf cancel request", ex)
-            if strict:
-                raise ex

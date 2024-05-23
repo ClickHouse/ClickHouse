@@ -139,7 +139,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
                             const auto * literal = equals_expression_list->children[1]->as<ASTLiteral>();
                             if (literal && literal->alias.empty())
                             {
-                                auto expr_lhs = equals_expression_list->children[0]->getTreeHash(/*ignore_aliases=*/ true);
+                                auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
                                 OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
                                 disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
                                 found_chain = true;

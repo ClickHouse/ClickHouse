@@ -32,11 +32,6 @@ public:
     /// Construct table node with storage, context
     explicit TableNode(StoragePtr storage_, const ContextPtr & context);
 
-    /** Update table node storage.
-      * After this call storage, storage_id, storage_lock, storage_snapshot will be updated using new storage.
-      */
-    void updateStorage(StoragePtr storage_value, const ContextPtr & context);
-
     /// Get storage
     const StoragePtr & getStorage() const
     {
@@ -105,9 +100,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
-    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
+    void updateTreeHashImpl(HashState & state) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

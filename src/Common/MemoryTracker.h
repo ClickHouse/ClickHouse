@@ -158,10 +158,6 @@ public:
     {
         allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
     }
-    bool getAllowUseJemallocMmemory() const
-    {
-        return allow_use_jemalloc_memory.load(std::memory_order_relaxed);
-    }
 
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.

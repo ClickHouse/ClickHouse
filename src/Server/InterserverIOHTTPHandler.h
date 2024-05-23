@@ -26,11 +26,11 @@ class InterserverIOHTTPHandler : public HTTPRequestHandler
 public:
     explicit InterserverIOHTTPHandler(IServer & server_)
         : server(server_)
-        , log(getLogger("InterserverIOHTTPHandler"))
+        , log(&Poco::Logger::get("InterserverIOHTTPHandler"))
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
     struct Output
@@ -39,7 +39,7 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 

@@ -94,7 +94,7 @@ namespace
         }
         void operator() (const IPv6 & x) const
         {
-            operator()(String(reinterpret_cast<const char *>(&x), 16));
+            return operator()(String(reinterpret_cast<const char *>(&x), 16));
         }
         void operator() (const Float64 & x) const
         {

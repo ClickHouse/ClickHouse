@@ -10,8 +10,14 @@
 namespace DB
 {
 
-MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_)
-    : disk(disk_), compatible_key_prefix(compatible_key_prefix_)
+namespace ErrorCodes
+{
+    extern const int FS_METADATA_ERROR;
+}
+
+MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_)
+    : disk(disk_)
+    , object_storage_root_path(object_storage_root_path_)
 {
 }
 
@@ -79,7 +85,7 @@ std::string MetadataStorageFromDisk::readInlineDataToString(const std::string & 
 
 DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> &) const
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
     metadata->deserializeFromString(str);
     return metadata;
@@ -87,7 +93,7 @@ DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const
 
 DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> &) const
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
     metadata->deserializeFromString(str);
     return metadata;
@@ -129,16 +135,21 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
     auto metadata = readMetadata(path);
-    const auto & keys_with_meta = metadata->getKeysWithMeta();
 
-    StoredObjects objects;
-    objects.reserve(keys_with_meta.size());
-    for (const auto & [object_key, object_meta] : keys_with_meta)
+    auto object_storage_relative_paths = metadata->getBlobsRelativePaths(); /// Relative paths.
+
+    StoredObjects object_storage_paths;
+    object_storage_paths.reserve(object_storage_relative_paths.size());
+
+    /// Relative paths -> absolute.
+    for (auto & [object_relative_path, object_meta] : object_storage_relative_paths)
     {
-        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
+        auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
+        StoredObject object{ object_path, object_meta.size_bytes, path };
+        object_storage_paths.push_back(object);
     }
 
-    return objects;
+    return object_storage_paths;
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
@@ -152,9 +163,83 @@ const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTra
     return metadata_storage;
 }
 
+void MetadataStorageFromDiskTransaction::addOperation(MetadataOperationPtr && operation)
+{
+    if (state != MetadataFromDiskTransactionState::PREPARING)
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot add operations to transaction in {} state, it should be in {} state",
+            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
+
+    operations.emplace_back(std::move(operation));
+}
+
 void MetadataStorageFromDiskTransaction::commit()
 {
-    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
+    if (state != MetadataFromDiskTransactionState::PREPARING)
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot commit transaction in {} state, it should be in {} state",
+            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
+
+    {
+        std::unique_lock lock(metadata_storage.metadata_mutex);
+        for (size_t i = 0; i < operations.size(); ++i)
+        {
+            try
+            {
+                operations[i]->execute(lock);
+            }
+            catch (Exception & ex)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
+                state = MetadataFromDiskTransactionState::FAILED;
+                rollback(i);
+                throw;
+            }
+        }
+    }
+
+    /// Do it in "best effort" mode
+    for (size_t i = 0; i < operations.size(); ++i)
+    {
+        try
+        {
+            operations[i]->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to finalize operation #{}", i));
+        }
+    }
+
+    state = MetadataFromDiskTransactionState::COMMITTED;
+}
+
+void MetadataStorageFromDiskTransaction::rollback(size_t until_pos)
+{
+    /// Otherwise everything is alright
+    if (state == MetadataFromDiskTransactionState::FAILED)
+    {
+        for (int64_t i = until_pos; i >= 0; --i)
+        {
+            try
+            {
+                operations[i]->undo();
+            }
+            catch (Exception & ex)
+            {
+                state = MetadataFromDiskTransactionState::PARTIALLY_ROLLED_BACK;
+                ex.addMessage(fmt::format("While rolling back operation #{}", i));
+                throw;
+            }
+        }
+    }
+    else
+    {
+        /// Nothing to do, transaction committed or not even started to commit
+    }
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -168,7 +253,8 @@ void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
      const std::string & path,
      const std::string & data)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(
+        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
     metadata->setInlineData(data);
     writeStringToFile(path, metadata->serializeToString());
 }
@@ -232,36 +318,31 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 
 void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(
+        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
     writeStringToFile(path, metadata->serializeToString());
 }
 
-void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
+void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
-    metadata->addObject(std::move(object_key), size_in_bytes);
+    DiskObjectStorageMetadataPtr metadata = std::make_unique<DiskObjectStorageMetadata>(
+        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
+
+    metadata->addObject(blob_name, size_in_bytes);
 
     auto data = metadata->serializeToString();
     if (!data.empty())
         addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
-void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
+void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
 {
-    addOperation(std::make_unique<AddBlobOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.disk, metadata_storage));
+    addOperation(std::make_unique<AddBlobOperation>(path, blob_name, metadata_storage.object_storage_root_path, size_in_bytes, *metadata_storage.disk, metadata_storage));
 }
 
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
     auto operation = std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage);
-    auto result = operation->outcome;
-    addOperation(std::move(operation));
-    return result;
-}
-
-TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
-{
-    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk());
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;

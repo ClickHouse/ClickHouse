@@ -76,9 +76,6 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
-void registerInputFormatNpy(FormatFactory & factory);
-void registerOutputFormatNpy(FormatFactory & factory);
-void registerInputFormatForm(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -104,7 +101,6 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
-void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
 #if USE_HIVE
@@ -147,10 +143,7 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
-void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
-void registerNpySchemaReader(FormatFactory & factory);
-void registerFormSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -215,7 +208,6 @@ void registerFormats()
     registerOutputFormatRawBLOB(factory);
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
-    registerInputFormatForm(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);
@@ -225,8 +217,6 @@ void registerFormats()
     registerOutputFormatAvro(factory);
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
-    registerInputFormatNpy(factory);
-    registerOutputFormatNpy(factory);
 
     registerOutputFormatPretty(factory);
     registerOutputFormatPrettyCompact(factory);
@@ -255,7 +245,6 @@ void registerFormats()
     registerInputFormatMySQLDump(factory);
 
     registerInputFormatParquetMetadata(factory);
-    registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
@@ -293,10 +282,7 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
-    registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
-    registerNpySchemaReader(factory);
-    registerFormSchemaReader(factory);
 }
 
 }

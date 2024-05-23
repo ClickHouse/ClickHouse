@@ -9,9 +9,9 @@ ExpressionTransform × 3
           ExpressionTransform × 3
             (ReadFromMergeTree)
             ExpressionTransform × 4
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+              MergeTreeInOrder 0 → 1
                 MergingSortedTransform 2 → 1
                   ExpressionTransform × 2
-                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                    MergeTreeInOrder × 2 0 → 1
                       ExpressionTransform
-                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                        MergeTreeInOrder 0 → 1

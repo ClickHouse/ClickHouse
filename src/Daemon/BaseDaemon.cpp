@@ -1,11 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include <base/defines.h>
-#include <base/errnoToString.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -62,7 +60,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
@@ -80,7 +78,6 @@ namespace DB
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
         extern const int SYSTEM_ERROR;
-        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -95,10 +92,10 @@ PipeFDs signal_pipe;
 static void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     if (0 != raise(sig))
-        throw ErrnoException(ErrorCodes::CANNOT_SEND_SIGNAL, "Cannot send signal");
+        throwFromErrno("Cannot send signal.", ErrorCodes::CANNOT_SEND_SIGNAL);
 }
 
 static const size_t signal_pipe_buf_size =
@@ -106,7 +103,6 @@ static const size_t signal_pipe_buf_size =
     + sizeof(siginfo_t)
     + sizeof(ucontext_t*)
     + sizeof(StackTrace)
-    + sizeof(UInt64)
     + sizeof(UInt32)
     + sizeof(void*);
 
@@ -144,9 +140,6 @@ static std::atomic_flag fatal_error_printed;
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (asynchronous_stack_unwinding && sig == SIGSEGV)
-        siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
-
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -189,16 +182,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 
-static bool getenvBool(const char * name)
-{
-    bool res = false;
-    const char * env_var = getenv(name); // NOLINT(concurrency-mt-unsafe)
-    if (env_var && 0 == strcmp(env_var, "1"))
-        res = true;
-    return res;
-}
-
-
 /// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
 __attribute__((__weak__)) void collectCrashLog(
     Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
@@ -217,7 +200,7 @@ public:
     static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
-        : log(getLogger("BaseDaemon"))
+        : log(&Poco::Logger::get("BaseDaemon"))
         , daemon(daemon_)
     {
     }
@@ -282,30 +265,19 @@ public:
                 }
 
                 readPODBinary(stack_trace, in);
-
-                if (sig != SanitizerTrap)
-                    readVectorBinary(thread_frame_pointers, in);
-
+                readVectorBinary(thread_frame_pointers, in);
                 readBinary(thread_num, in);
                 readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                try
-                {
-                    std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
-                }
-                catch (...)
-                {
-                    /// Likely cannot allocate thread
-                    onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
-                }
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
             }
         }
     }
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
     BaseDaemon & daemon;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const
@@ -337,7 +309,6 @@ private:
         const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         ThreadStatus * thread_ptr) const
-    try
     {
         ThreadStatus thread_status;
 
@@ -502,11 +473,12 @@ private:
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
-            if (auto * sentry = SentryWriter::getInstance())
-                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
-            if (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
@@ -524,9 +496,11 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
+#pragma clang diagnostic pop
+
         }
 
-        /// ClickHouse Keeper does not link to some parts of Settings.
+        /// ClickHouse Keeper does not link to some part of Settings.
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
@@ -544,32 +518,16 @@ private:
         }
 #endif
 
-        /// When everything is done, we will try to send these error messages to the client.
+        /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
 
         fatal_error_printed.test_and_set();
     }
-    catch (...)
-    {
-        /// onFault is called from the std::thread, and it should catch all exceptions; otherwise, you can get unrelated fatal errors.
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        LOG_FATAL(getLogger(__PRETTY_FUNCTION__), message);
-    }
 };
 
 
 #if defined(SANITIZER)
-
-template <typename T>
-struct ValueHolder
-{
-    ValueHolder(T value_) : value(value_)
-    {}
-
-    T value;
-};
-
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
 /// Sanitizers may not expect some function calls from death callback.
@@ -587,13 +545,10 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     const StackTrace stack_trace;
 
-    writeBinary(SignalListener::SanitizerTrap, out);
+    int sig = SignalListener::SanitizerTrap;
+    writeBinary(sig, out);
     writePODBinary(stack_trace, out);
-    /// We create a dummy struct with a constructor so DISABLE_SANITIZER_INSTRUMENTATION is not applied to it
-    /// otherwise, Memory sanitizer can't know that values initiialized inside this function are actually initialized
-    /// because instrumentations are disabled leading to false positives later on
-    ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
-    writeBinary(thread_id.value, out);
+    writeBinary(UInt32(getThreadId()), out);
     writePODBinary(current_thread, out);
 
     out.next();
@@ -678,7 +633,7 @@ void BaseDaemon::reloadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -698,20 +653,8 @@ BaseDaemon::~BaseDaemon()
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
         if (SIG_ERR == signal(sig, SIG_DFL))
-        {
-            try
-            {
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
-            }
-            catch (ErrnoException &)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
+            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     signal_pipe.close();
-
-    SentryWriter::resetInstance();
 }
 
 
@@ -900,7 +843,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
-        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
+        setbuf(stderr, nullptr);
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
@@ -1018,29 +961,11 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern const char * GIT_HASH;
+extern String getGitHash();
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    SentryWriter::initializeInstance(config());
-    if (config().getBool("send_crash_reports.send_logical_errors", false))
-    {
-        /// In release builds send it to sentry (if it is configured)
-        if (auto * sentry = SentryWriter::getInstance())
-        {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
-            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
-            {
-                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
-                {
-                    SentryWriter::FramePointers frame_pointers;
-                    for (size_t i = 0; i < trace.size(); ++i)
-                        frame_pointers[i] = trace[i];
-                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
-                }
-            };
-        }
-    }
+    SentryWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -1076,7 +1001,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = "";
 #endif
 
-    git_hash = GIT_HASH;
+    git_hash = getGitHash();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1185,8 +1110,10 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
-    bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
-    bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
 
     while (true)
     {
@@ -1198,7 +1125,7 @@ void BaseDaemon::setupWatchdog()
         pid = fork();
 
         if (-1 == pid)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
+            throwFromErrno("Cannot fork", ErrorCodes::SYSTEM_ERROR);
 
         if (0 == pid)
         {
@@ -1267,37 +1194,23 @@ void BaseDaemon::setupWatchdog()
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
-        if (forward_signals)
-        {
-            addSignalHandler(
-                {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
-                [](int sig, siginfo_t *, void *)
-                {
-                    /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
-                    /// and we process double delivery of this signal as immediate termination.
-                    if (sig == SIGINT)
-                        return;
-
-                    const char * error_message = "Cannot forward signal to the child process.\n";
-                    if (0 != ::kill(pid, sig))
-                    {
-                        auto res = write(STDERR_FILENO, error_message, strlen(error_message));
-                        (void)res;
-                    }
-                },
-                nullptr);
-        }
-        else
-        {
-            for (const auto & sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM})
+        addSignalHandler(
+            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
+            [](int sig, siginfo_t *, void *)
             {
-                if (SIG_ERR == signal(sig, SIG_IGN))
+                /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
+                /// and we process double delivery of this signal as immediate termination.
+                if (sig == SIGINT)
+                    return;
+
+                const char * error_message = "Cannot forward signal to the child process.\n";
+                if (0 != ::kill(pid, sig))
                 {
-                    char * signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe)
-                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot ignore {}", signal_description);
+                    auto res = write(STDERR_FILENO, error_message, strlen(error_message));
+                    (void)res;
                 }
-            }
-        }
+            },
+            nullptr);
 
         int status = 0;
         do
@@ -1384,7 +1297,7 @@ void systemdNotify(const std::string_view & command)
     int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
     if (s == -1)
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Can't create UNIX socket for systemd notify");
+        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
 
     SCOPE_EXIT({ close(s); });
 
@@ -1420,7 +1333,7 @@ void systemdNotify(const std::string_view & command)
             if (errno == EINTR)
                 continue;
             else
-                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
+                throwFromErrno("Failed to notify systemd, sendto returned error.", ErrorCodes::SYSTEM_ERROR);
         }
         else
             sent_bytes_total += sent_bytes;

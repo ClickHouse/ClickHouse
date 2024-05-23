@@ -1,23 +1,25 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
+#include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <sys/time.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <base/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
 
-
 namespace DB
 {
-
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+
 #ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
@@ -25,7 +27,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         return;
 #endif
 
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
         auto matches = masker->wipeSensitiveData(message_text);
@@ -134,21 +136,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         elem.source_line = msg.getSourceLine();
         elem.message_format_string = msg.getFormatString();
-
-#define SET_VALUE_IF_EXISTS(INDEX) if ((INDEX) <= msg.getFormatStringArgs().size()) (elem.value##INDEX) = msg.getFormatStringArgs()[(INDEX) - 1]
-
-        SET_VALUE_IF_EXISTS(1);
-        SET_VALUE_IF_EXISTS(2);
-        SET_VALUE_IF_EXISTS(3);
-        SET_VALUE_IF_EXISTS(4);
-        SET_VALUE_IF_EXISTS(5);
-        SET_VALUE_IF_EXISTS(6);
-        SET_VALUE_IF_EXISTS(7);
-        SET_VALUE_IF_EXISTS(8);
-        SET_VALUE_IF_EXISTS(9);
-        SET_VALUE_IF_EXISTS(10);
-
-#undef SET_VALUE_IF_EXISTS
 
         text_log_locked->push(std::move(elem));
     }

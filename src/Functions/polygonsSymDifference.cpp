@@ -3,13 +3,19 @@
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
 #include <Common/logger_useful.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 
 #include <memory>
+#include <utility>
 
 namespace DB
 {
@@ -19,8 +25,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 template <typename Point>
 class FunctionPolygonsSymDifference : public IFunction
@@ -104,8 +108,6 @@ const char * FunctionPolygonsSymDifference<CartesianPoint>::name = "polygonsSymD
 
 template <>
 const char * FunctionPolygonsSymDifference<SphericalPoint>::name = "polygonsSymDifferenceSpherical";
-
-}
 
 REGISTER_FUNCTION(PolygonsSymDifference)
 {

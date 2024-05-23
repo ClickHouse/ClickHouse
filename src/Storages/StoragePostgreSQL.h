@@ -65,7 +65,7 @@ public:
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
@@ -79,7 +79,7 @@ private:
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

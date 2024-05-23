@@ -144,9 +144,6 @@ bool ServerType::shouldStop(const std::string & port_name) const
         port_custom_name = port_name.substr(protocols_size, port_name.size() - protocols_size - ports_size + 1);
     }
 
-    else if (port_name == "cloud.port")
-        port_type = Type::CLOUD;
-
     else
         return false;
 

@@ -75,20 +75,6 @@ function run_tests()
         cat /test_output/statements-test/check_status.tsv >> /test_output/check_status.tsv
         cat /test_output/statements-test/test_results.tsv >> /test_output/test_results.tsv
         tar -zcvf statements-check.tar.gz statements-test 1>/dev/null
-
-        mkdir -p /test_output/complete-test
-        /clickhouse-tests/sqllogic/runner.py \
-        --log-file /test_output/runner-complete-test.log \
-        --log-level info \
-            complete-test \
-            --input-dir /sqllogictest \
-            --out-dir /test_output/complete-test \
-            2>&1 \
-            | ts '%Y-%m-%d %H:%M:%S'
-
-        cat /test_output/complete-test/check_status.tsv >> /test_output/check_status.tsv
-        cat /test_output/complete-test/test_results.tsv >> /test_output/test_results.tsv
-        tar -zcvf complete-check.tar.gz complete-test 1>/dev/null
     fi
 }
 

@@ -1,7 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -35,7 +33,8 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     size_t max_rows_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , block(index_sample_block_.cloneEmpty())
+    , index_sample_block(index_sample_block_)
+    , block(index_sample_block)
 {
 }
 
@@ -46,7 +45,8 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     MutableColumns && mutable_columns_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
+    , index_sample_block(index_sample_block_)
+    , block(index_sample_block.cloneWithColumns(std::move(mutable_columns_)))
 {
 }
 
@@ -65,11 +65,10 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     }
 
     size_serialization->serializeBinary(size(), ostr, {});
-    size_t num_columns = block.columns();
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const auto & type = block.getByPosition(i).type;
+        const auto & type = index_sample_block.getByPosition(i).type;
 
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
@@ -91,6 +90,8 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
+    block.clear();
+
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
@@ -99,22 +100,24 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     if (rows_to_read == 0)
         return;
 
-    size_t num_columns = block.columns();
-
-    ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
-    settings.position_independent_encoding = false;
-
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        auto & elem = block.getByPosition(i);
-        elem.column = elem.column->cloneEmpty();
+        const auto & column = index_sample_block.getByPosition(i);
+        const auto & type = column.type;
+        ColumnPtr new_column = type->createColumn();
+
+
+        ISerialization::DeserializeBinaryBulkSettings settings;
+        settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+        settings.position_independent_encoding = false;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        auto serialization = elem.type->getDefaultSerialization();
+        auto serialization = type->getDefaultSerialization();
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state, nullptr);
+
+        block.insert(ColumnWithTypeAndName(new_column, type, column.name));
     }
 }
 
@@ -244,7 +247,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const String & index_name_,
     const Block & index_sample_block,
     size_t max_rows_,
-    const ActionsDAGPtr & filter_dag,
+    const SelectQueryInfo & query_info,
     ContextPtr context)
     : index_name(index_name_)
     , max_rows(max_rows_)
@@ -253,22 +256,42 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    if (!filter_dag)
-        return;
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+            return;
 
-    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context))
-        return;
+        if (checkDAGUseless(*query_info.filter_actions_dag->getOutputs().at(0), context))
+            return;
 
-    auto filter_actions_dag = filter_dag->clone();
-    const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
+        const auto * filter_node = query_info.filter_actions_dag->getOutputs().at(0);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG({filter_node}, {}, context);
+        const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+        filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-    filter_actions_dag->removeUnusedActions();
-    actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+        filter_actions_dag->removeUnusedActions();
+        actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+    }
+    else
+    {
+        ASTPtr ast_filter_node = buildFilterNode(query_info.query);
+        if (!ast_filter_node)
+            return;
 
-    actions_output_column_name = filter_actions_dag->getOutputs().at(0)->result_name;
+        if (checkASTUseless(ast_filter_node))
+            return;
+
+        auto expression_ast = ast_filter_node->clone();
+
+        /// Replace logical functions with bit functions.
+        /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
+        traverseAST(expression_ast);
+
+        auto syntax_analyzer_result = TreeRewriter(context).analyze(expression_ast, index_sample_block.getNamesAndTypesList());
+        actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
+    }
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -281,19 +304,42 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (isUseless())
         return true;
 
-    const MergeTreeIndexGranuleSet & granule = assert_cast<const MergeTreeIndexGranuleSet &>(*idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSet>(idx_granule);
+    if (!granule)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Set index condition got a granule with the wrong type");
 
-    size_t size = granule.size();
-    if (size == 0 || (max_rows != 0 && size > max_rows))
+    if (isUseless() || granule->empty() || (max_rows != 0 && granule->size() > max_rows))
         return true;
 
-    Block result = granule.block;
+    Block result = granule->block;
     actions->execute(result);
 
-    const auto & column = result.getByName(actions_output_column_name).column;
+    const auto & filter_node_name = actions->getActionsDAG().getOutputs().at(0)->result_name;
+    auto column = result.getByName(filter_node_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
-    for (size_t i = 0; i < size; ++i)
-        if (!column->isNullAt(i) && (column->get64(i) & 1))
+    if (column->onlyNull())
+        return false;
+
+    const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+
+    const NullMap * null_map = nullptr;
+
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
+    {
+        col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
+        null_map = &col_nullable->getNullMapData();
+    }
+
+    if (!col_uint8)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ColumnUInt8 expected as Set index condition result");
+
+    const auto & condition = col_uint8->getData();
+    size_t column_size = column->size();
+
+    for (size_t i = 0; i < column_size; ++i)
+        if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
             return true;
 
     return false;
@@ -466,8 +512,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    if (node.column && isColumnConst(*node.column)
-        && !WhichDataType(node.result_type).isSet())
+    if (node.column && isColumnConst(*node.column))
     {
         Field literal;
         node.column->get(0, literal);
@@ -653,15 +698,20 @@ MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleSet>(index.name, index.sample_block, max_rows);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
+}
+
+bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
+{
+    return false;
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)

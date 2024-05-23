@@ -68,14 +68,8 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
     else
     {
-        if (database)
-        {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
-        }
-
-        chassert(table);
-        table->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_none : "")
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
     }
 
     if (columns)
@@ -123,8 +117,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << delim;
         select->formatImpl(settings, state, frame);
     }
+    else if (watch)
+    {
+        settings.ostr << delim;
+        watch->formatImpl(settings, state, frame);
+    }
 
-    if (!select)
+    if (!select && !watch)
     {
         if (!format.empty())
         {
@@ -139,13 +138,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
 }
 
-void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(table_id.database_name);
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 

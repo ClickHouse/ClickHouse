@@ -170,7 +170,7 @@ public:
     inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
 
 private:
-    enum class CellType : uint8_t
+    enum class CellType
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.

@@ -1,11 +1,10 @@
 #pragma once
-
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
-
 
 #ifndef WITHOUT_TEXT_LOG
 namespace DB

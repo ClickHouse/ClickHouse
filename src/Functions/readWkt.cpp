@@ -16,8 +16,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKT : public IFunction
@@ -51,14 +49,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
+        const auto * column_string = checkAndGetColumn<ColumnString>(arguments[0].column.get());
 
         Serializer serializer;
         Geometry geometry;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string.getDataAt(i).toString();
+            const auto & str = column_string->getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);
             serializer.add(geometry);
         }
@@ -96,8 +94,6 @@ struct ReadWKTMultiPolygonNameHolder
 {
     static constexpr const char * name = "readWKTMultiPolygon";
 };
-
-}
 
 REGISTER_FUNCTION(ReadWKT)
 {

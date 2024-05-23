@@ -1,26 +1,21 @@
 #pragma once
 
-#include <cstdint>
-
-
 namespace DB
 {
 
 /// Strictness mode for loading a table or database
-enum class LoadingStrictnessLevel : uint8_t
+enum class LoadingStrictnessLevel
 {
     /// Do all possible sanity checks
     CREATE = 0,
-    /// Skip some sanity checks (for internal queries in DatabaseReplicated; for RESTORE)
-    SECONDARY_CREATE = 1,
     /// Expect existing paths on FS and in ZK for ATTACH query
-    ATTACH = 2,
+    ATTACH = 1,
     /// We ignore some error on server startup
-    FORCE_ATTACH = 3,
+    FORCE_ATTACH = 2,
     /// Skip all sanity checks (if force_restore_data flag exists)
-    FORCE_RESTORE = 4,
+    FORCE_RESTORE = 3,
 };
 
-LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary);
+LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore);
 
 }
