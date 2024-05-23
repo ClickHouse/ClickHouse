@@ -1,6 +1,16 @@
 2
 SELECT countDistinctIf(number % 10, (number % 5) = 2)
 FROM numbers(1000)
+SETTINGS allow_experimental_analyzer = 0
+--analyzer--
+SELECT uniqExactIf(__table1.number % 10, (__table1.number % 5) = 2) AS `countDistinctIf(modulo(number, 10), equals(modulo(number, 5), 2))`
+FROM numbers(1000) AS __table1
+SETTINGS allow_experimental_analyzer = 1
 2
 SELECT uniqExactIf(number % 10, (number % 5) = 2)
 FROM numbers(1000)
+SETTINGS allow_experimental_analyzer = 0
+--analyzer--
+SELECT uniqExactIf(__table1.number % 10, (__table1.number % 5) = 2) AS `countDistinctIf(modulo(number, 10), equals(modulo(number, 5), 2))`
+FROM numbers(1000) AS __table1
+SETTINGS allow_experimental_analyzer = 1
