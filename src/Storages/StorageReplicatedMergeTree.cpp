@@ -141,6 +141,7 @@ namespace FailPoints
 {
     extern const char replicated_queue_fail_next_entry[];
     extern const char replicated_queue_unfail_entries[];
+    extern const char finish_set_quorum_failed_parts[];
 }
 
 namespace ErrorCodes
@@ -2130,6 +2131,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         if (code == Coordination::Error::ZOK)
                         {
                             LOG_DEBUG(log, "Marked quorum for part {} as failed.", entry.new_part_name);
+                            FailPointInjection::disableFailPoint(FailPoints::finish_set_quorum_failed_parts);
                             queue.removeFailedQuorumPart(part_info);
                             return true;
                         }
