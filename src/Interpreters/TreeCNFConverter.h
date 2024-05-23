@@ -186,7 +186,7 @@ TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
             negative_atom.negative = !atom.negative;
 
             // Sikpping erase-insert for mutually exclusive atoms within
-            // signle group, since it won't insert negative atom, which
+            // single group, since it won't insert negative atom, which
             // will break the logic of this rule
             if (copy.contains(negative_atom))
             {
