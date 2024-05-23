@@ -27,6 +27,7 @@ namespace ErrorCodes
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
     M(Bool, allow_s3_native_copy) \
+    M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, azure_attempt_to_create_container) \
     M(Bool, read_from_filesystem_cache) \
