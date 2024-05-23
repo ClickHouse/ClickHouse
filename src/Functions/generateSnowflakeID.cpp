@@ -49,7 +49,7 @@ uint64_t getTimestamp()
     return static_cast<uint64_t>(ticks_since_epoch) & ((1ull << timestamp_bits_count) - 1);
 }
 
-uint64_t getMachineId()
+uint64_t getMachineIdImpl()
 {
     UUID server_uuid = ServerUUID::get();
     /// hash into 64 bits
@@ -57,6 +57,12 @@ uint64_t getMachineId()
     uint64_t lo = UUIDHelpers::getLowBytes(server_uuid);
     /// return only 10 bits
     return (((hi * 11) ^ (lo * 17)) & machine_id_mask) >> machine_seq_num_bits_count;
+}
+
+uint64_t getMachineId()
+{
+    static uint64_t machine_id = getMachineIdImpl();
+    return machine_id;
 }
 
 struct SnowflakeId
@@ -106,7 +112,7 @@ SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, size_t in
     SnowflakeId end;
     const uint64_t seq_nums_in_current_timestamp_left = (max_machine_seq_num - begin.machine_seq_num + 1);
     if (input_rows_count >= seq_nums_in_current_timestamp_left)
-        /// if sequence numbers in current timestamp is not enough for rows => update timestamp
+        /// if sequence numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
         end.timestamp = begin.timestamp + 1 + (input_rows_count - seq_nums_in_current_timestamp_left) / (max_machine_seq_num + 1);
     else
         end.timestamp = begin.timestamp;
@@ -136,8 +142,8 @@ struct GlobalCounterPolicy
                 range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), input_rows_count);
             }
             while (!lowest_available_snowflake_id.compare_exchange_weak(available_snowflake_id, fromSnowflakeId(range.end)));
-            /// if `compare_exhange` failed    => another thread updated `lowest_available_snowflake_id` and we should try again
-            ///                      completed => range of IDs [begin, end) is reserved, can return the beginning of the range
+            /// if CAS failed --> another thread updated `lowest_available_snowflake_id` and we re-try
+            ///          else --> our thread reserved ID range [begin, end) and return the beginning of the range
 
             return range.begin;
         }
@@ -200,17 +206,20 @@ public:
             vec_to.resize(input_rows_count);
 
             typename FillPolicy::Data data;
-
-            /// get the begin of available snowflake ids range
-            SnowflakeId snowflake_id = data.reserveRange(input_rows_count);
+            SnowflakeId snowflake_id = data.reserveRange(input_rows_count); /// returns begin of available snowflake ids range
 
             for (UInt64 & to_row : vec_to)
             {
                 to_row = fromSnowflakeId(snowflake_id);
-                if (snowflake_id.machine_seq_num++ == max_machine_seq_num)
+                if (snowflake_id.machine_seq_num == max_machine_seq_num)
                 {
+                    /// handle overflow
                     snowflake_id.machine_seq_num = 0;
                     ++snowflake_id.timestamp;
+                }
+                else
+                {
+                    ++snowflake_id.machine_seq_num;
                 }
             }
         }

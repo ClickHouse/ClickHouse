@@ -1,11 +1,11 @@
--- generateSnowflakeID --
+-- generateSnowflakeID
 1
 1
 0
 0
 1
 100
--- generateSnowflakeIDThreadMonotonic --
+-- generateSnowflakeIDThreadMonotonic
 1
 1
 100
