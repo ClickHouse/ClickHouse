@@ -253,7 +253,7 @@ public:
                 "Cannot remove collection `{}`, because it doesn't exist",
                 collection_name);
         }
-        fs::remove(collection_path);
+        (void)fs::remove(collection_path);
     }
 
 private:
@@ -291,7 +291,7 @@ private:
                 files_to_remove.push_back(current_path);
         }
         for (const auto & file : files_to_remove)
-            fs::remove(file);
+            (void)fs::remove(file);
     }
 
     static ASTCreateNamedCollectionQuery readCreateQueryFromMetadata(
@@ -402,7 +402,7 @@ void loadIfNot()
     if (is_loaded_from_sql && is_loaded_from_config)
         return;
     auto lock = lockNamedCollectionsTransaction();
-    return loadIfNotUnlocked(lock);
+    loadIfNotUnlocked(lock);
 }
 
 void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context)

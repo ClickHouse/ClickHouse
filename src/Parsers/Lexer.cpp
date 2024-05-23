@@ -1,7 +1,7 @@
 #include <cassert>
 #include <base/defines.h>
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
 
 namespace DB
@@ -484,7 +484,7 @@ Token Lexer::nextTokenImpl()
                 if (heredoc_name_end_position != std::string::npos)
                 {
                     size_t heredoc_size = heredoc_name_end_position + 1;
-                    std::string_view heredoc = {token_stream.data(), heredoc_size};
+                    std::string_view heredoc = {token_stream.data(), heredoc_size}; // NOLINT
 
                     size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
                     if (heredoc_end_position != std::string::npos)

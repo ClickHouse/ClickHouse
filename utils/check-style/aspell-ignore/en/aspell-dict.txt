@@ -53,6 +53,8 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+analysisOfVariance
+ANOVA
 BIGINT
 BIGSERIAL
 BORO
@@ -394,6 +396,8 @@ InterserverThreads
 IsPentagon
 IsResClassIII
 IsValid
+isNotDistinctFrom
+isNullable
 JBOD
 JOINed
 JOINs
@@ -473,7 +477,9 @@ LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
+LOONGARCH
 LONGLONG
+LoongArch
 Levenshtein
 Liao
 LibFuzzer
@@ -759,6 +765,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+proportionsZTest
 Punycode
 PyArrow
 PyCharm
@@ -1097,6 +1104,8 @@ addQuarters
 addSeconds
 addWeeks
 addYears
+addInterval
+addTupleOfIntervals
 addr
 addressToLine
 addressToLineWithInlines
@@ -1906,6 +1915,7 @@ logTrace
 logagent
 loghouse
 london
+loongarch
 lookups
 lowcardinality
 lowerUTF
@@ -2394,6 +2404,7 @@ sharded
 sharding
 shortcircuit
 shortkeys
+showCertificate
 shoutout
 simdjson
 simpleJSON
@@ -2753,6 +2764,7 @@ unixODBC
 unixodbc
 unoptimized
 unparsed
+unpooled
 unrealiable
 unreplicated
 unresolvable

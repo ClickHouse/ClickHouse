@@ -3,7 +3,7 @@
 namespace DB
 {
 
-enum class MsgPackExtensionTypes
+enum class MsgPackExtensionTypes : uint8_t
 {
     UUIDType = 0x02,
 };
