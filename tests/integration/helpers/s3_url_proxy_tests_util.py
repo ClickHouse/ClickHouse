@@ -27,7 +27,7 @@ def check_proxy_logs(cluster, proxy_instance, protocol, bucket, requested_http_m
 
 
 def wait_resolver(cluster):
-    for i in range(10):
+    for i in range(15):
         response = cluster.exec_in_container(
             cluster.get_container_id("resolver"),
             [
@@ -40,8 +40,8 @@ def wait_resolver(cluster):
         if response == "proxy1" or response == "proxy2":
             return
         time.sleep(i)
-    else:
-        assert False, "Resolver is not up"
+
+    assert False, "Resolver is not up"
 
 
 # Runs simple proxy resolver in python env container.
