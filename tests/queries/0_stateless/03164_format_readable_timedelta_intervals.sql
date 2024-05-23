@@ -1,11 +1,12 @@
-SELECT formatReadableTimeDelta(INTERVAL 1 NANOSECOND, 'seconds');
-SELECT formatReadableTimeDelta(INTERVAL 1 MICROSECOND, 'seconds');
-SELECT formatReadableTimeDelta(INTERVAL 1 MILLISECOND, 'seconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 SECOND, 'seconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 MINUTE, 'seconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 HOUR, 'seconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 DAY, 'seconds');
 SELECT formatReadableTimeDelta(INTERVAL 1 WEEK, 'seconds');
+
+SELECT formatReadableTimeDelta(INTERVAL 1 NANOSECOND, 'nanoseconds');
+SELECT formatReadableTimeDelta(INTERVAL 1 MICROSECOND, 'nanoseconds');
+SELECT formatReadableTimeDelta(INTERVAL 1 MILLISECOND, 'nanoseconds');
 
 -- MONTH, QUARTER & YEAR don't work as they don't represent constant intervals
 
