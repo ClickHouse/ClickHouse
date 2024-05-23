@@ -640,9 +640,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **Returned value**
 
-- Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000.
-
-Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
+- Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000. [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
 
 **Usage examples**
 
@@ -682,9 +680,7 @@ serverUUID()
 
 **Returned value**
 
-- The UUID of the server.
-
-Type: [UUID](../data-types/uuid.md).
+- The UUID of the server. [UUID](../data-types/uuid.md).
 
 ## See also
 

@@ -42,8 +42,8 @@ Alias:
 
 **Returned values**
 
-- Starting position in bytes and counting from 1, if the substring was found.
-- 0, if the substring was not found.
+- Starting position in bytes and counting from 1, if the substring was found. [UInt64](../../sql-reference/data-types/int-uint.md).
+- 0, if the substring was not found. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 If substring `needle` is empty, these rules apply:
 - if no `start_pos` was specified: return `1`
@@ -52,8 +52,6 @@ If substring `needle` is empty, these rules apply:
 - otherwise: return `0`
 
 The same rules also apply to functions `locate`, `positionCaseInsensitive`, `positionUTF8` and `positionCaseInsensitiveUTF8`.
-
-Type: `Integer`.
 
 **Examples**
 
