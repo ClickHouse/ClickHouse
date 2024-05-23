@@ -638,7 +638,10 @@ struct ScopeAliases
 
         auto it = alias_map.find(*key);
 
-        if (it == alias_map.end() && lookup.lookup_context == IdentifierLookupContext::TABLE_EXPRESSION)
+        if (it != alias_map.end())
+            return &it->second;
+
+        if (lookup.lookup_context == IdentifierLookupContext::TABLE_EXPRESSION)
             return {};
 
         while (it == alias_map.end())
