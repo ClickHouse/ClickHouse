@@ -970,7 +970,7 @@ If the haystack or the LIKE expression are not valid UTF-8, the behavior is unde
 
 No automatic Unicode normalization is performed, you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
-To match against literal `%`, `_` and `/` (which are LIKE metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
+To match against literal `%`, `_` and `\` (which are LIKE metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
 The backslash loses its special meaning (i.e. is interpreted literally) if it prepends a character different than `%`, `_` or `\`.
 Note that ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
 
@@ -1322,9 +1322,9 @@ Result:
 
 ## countSubstrings
 
-Returns how often substring `needle` occurs in string `haystack`.
+Returns how often a substring `needle` occurs in a string `haystack`.
 
-Functions `countSubstringsCaseInsensitive` and `countSubstringsCaseInsensitiveUTF8` provide a case-insensitive and case-insensitive + UTF-8 variants of this function.
+Functions [`countSubstringsCaseInsensitive`](#countsubstringscaseinsensitive) and [`countSubstringsCaseInsensitiveUTF8`](#countsubstringscaseinsensitiveutf8) provide case-insensitive and case-insensitive + UTF-8 variants of this function respectively.
 
 **Syntax**
 
@@ -1370,6 +1370,113 @@ Result:
 ┌─countSubstrings('abc___abc', 'abc', 4)─┐
 │                                      1 │
 └────────────────────────────────────────┘
+```
+## countSubstringsCaseInsensitive
+
+Returns how often a substring `needle` occurs in a string `haystack`. Ignores case.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitive(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+- The number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+```
+
+Example with `start_pos` argument:
+
+Query:
+
+```sql
+SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitiveUTF8
+
+Returns how often a substring `needle` occurs in a string `haystack`. Ignores case and assumes that `haystack` is a UTF8 string.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+- The number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Example with `start_pos` argument:
+
+Query:
+
+```sql
+SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## countMatches
@@ -1421,7 +1528,40 @@ Result:
 
 ## countMatchesCaseInsensitive
 
-Like `countMatches(haystack, pattern)` but matching ignores the case.
+Returns the number of regular expression matches for a pattern in a haystack like [`countMatches`](#countmatches) but matching ignores the case.
+
+**Syntax**
+
+``` sql
+countMatchesCaseInsensitive(haystack, pattern)
+```
+
+**Arguments**
+
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The number of matches.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countMatchesCaseInsensitive('AAAA', 'aa');
+```
+
+Result:
+
+``` text
+┌─countMatchesCaseInsensitive('AAAA', 'aa')────┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+```
 
 ## regexpExtract
 

@@ -7,6 +7,8 @@ toc_max_heading_level: 2
 
 # Core Settings
 
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
 ## additional_table_filters
 
 An additional filter expression that is applied after reading
@@ -1923,7 +1925,9 @@ Default value: `16`.
 
 ### wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` as soon it has received the data, but it might still fail to parse or insert it later (You can check in system.asynchronous_insert_log)
+
+If you want to use asynchronous inserts, we need to also enable [`async_insert`](#async-insert).
 
 Possible values:
 
@@ -3931,19 +3935,6 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
 
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-Cloud default value: `1`.
-
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -5469,3 +5460,11 @@ Default value: 'false'.
 ## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## mysql_datatypes_support_level
+
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
+- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
+- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
+- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.

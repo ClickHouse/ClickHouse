@@ -40,6 +40,12 @@ def cluster():
             image="clickhouse/clickhouse-server",
             tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         )
+        cluster.add_instance(
+            "node5",
+            main_configs=["configs/storage_conf.xml"],
+            with_nginx=True,
+            use_old_analyzer=True,
+        )
 
         cluster.start()
 
@@ -295,7 +301,6 @@ def test_replicated_database(cluster):
     node1 = cluster.instances["node3"]
     node1.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
-        settings={"allow_experimental_database_replicated": 1},
     )
 
     global uuids
@@ -312,7 +317,6 @@ def test_replicated_database(cluster):
     node2 = cluster.instances["node2"]
     node2.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r2')",
-        settings={"allow_experimental_database_replicated": 1},
     )
     node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
 
@@ -392,3 +396,21 @@ def test_page_cache(cluster):
 
         node.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
+
+
+def test_config_reload(cluster):
+    node1 = cluster.instances["node5"]
+    table_name = "config_reload"
+
+    global uuids
+    node1.query(
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name} UUID '{uuids[0]}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
+        SETTINGS disk = disk(type=web, endpoint='http://nginx:80/test1/');
+    """
+    )
+
+    node1.query("SYSTEM RELOAD CONFIG")
+    node1.query(f"DROP TABLE {table_name} SYNC")

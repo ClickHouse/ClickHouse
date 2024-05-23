@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <base/types.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <Core/Block.h>
@@ -103,10 +103,12 @@ bool forAllKeys(OnExpr & expressions, Func callback)
 
 }
 
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
+    , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
+    , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
@@ -115,6 +117,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , temporary_files_codec(settings.temporary_files_codec)
     , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
+    , tmp_data(tmp_data_)
 {
 }
 

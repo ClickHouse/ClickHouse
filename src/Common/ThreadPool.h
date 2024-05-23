@@ -10,8 +10,10 @@
 #include <optional>
 #include <atomic>
 #include <stack>
+#include <random>
 
 #include <boost/heap/priority_queue.hpp>
+#include <pcg_random.hpp>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
@@ -240,6 +242,11 @@ public:
                 if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
                     thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
             }
+            else
+            {
+                UNUSED(global_profiler_real_time_period);
+                UNUSED(global_profiler_cpu_time_period);
+            }
 
             std::apply(function, arguments);
         },
@@ -346,3 +353,21 @@ using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true,
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
+
+/// Enables fault injections globally for all thread pools
+class CannotAllocateThreadFaultInjector
+{
+    std::atomic_bool enabled = false;
+    std::mutex mutex;
+    pcg64_fast rndgen;
+    std::optional<std::bernoulli_distribution> random;
+
+    static thread_local bool block_fault_injections;
+
+    static CannotAllocateThreadFaultInjector & instance();
+public:
+    static void setFaultProbability(double probability);
+    static bool injectFault();
+
+    static scope_guard blockFaultInjections();
+};

@@ -403,7 +403,7 @@ void ZooKeeperSetACLRequest::readImpl(ReadBuffer & in)
 
 std::string ZooKeeperSetACLRequest::toStringImpl() const
 {
-    return fmt::format("path = {}\n", "version = {}", path, version);
+    return fmt::format("path = {}\nversion = {}", path, version);
 }
 
 void ZooKeeperSetACLResponse::writeImpl(WriteBuffer & out) const
@@ -457,7 +457,7 @@ void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
 
 std::string ZooKeeperCheckRequest::toStringImpl() const
 {
-    return fmt::format("path = {}\n", "version = {}", path, version);
+    return fmt::format("path = {}\nversion = {}", path, version);
 }
 
 void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)

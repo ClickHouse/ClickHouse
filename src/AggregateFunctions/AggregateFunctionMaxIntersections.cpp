@@ -48,7 +48,7 @@ struct MaxIntersectionsData
     Array value;
 };
 
-enum class AggregateFunctionIntersectionsKind
+enum class AggregateFunctionIntersectionsKind : uint8_t
 {
     Count,
     Position

@@ -80,6 +80,7 @@ namespace DB
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
         extern const int SYSTEM_ERROR;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -143,6 +144,9 @@ static std::atomic_flag fatal_error_printed;
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+        siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
+
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -183,6 +187,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     errno = saved_errno;
 }
+
 
 static bool getenvBool(const char * name)
 {
@@ -497,7 +502,8 @@ private:
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
-            SentryWriter::onFault(sig, error_message, stack_trace);
+            if (auto * sentry = SentryWriter::getInstance())
+                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
 
             /// Advice the user to send it manually.
             if (std::string_view(VERSION_OFFICIAL).contains("official build"))
@@ -704,6 +710,8 @@ BaseDaemon::~BaseDaemon()
         }
 
     signal_pipe.close();
+
+    SentryWriter::resetInstance();
 }
 
 
@@ -1014,7 +1022,25 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    SentryWriter::initialize(config());
+    SentryWriter::initializeInstance(config());
+    if (config().getBool("send_crash_reports.send_logical_errors", false))
+    {
+        /// In release builds send it to sentry (if it is configured)
+        if (auto * sentry = SentryWriter::getInstance())
+        {
+            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+            {
+                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+                {
+                    SentryWriter::FramePointers frame_pointers;
+                    for (size_t i = 0; i < trace.size(); ++i)
+                        frame_pointers[i] = trace[i];
+                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                }
+            };
+        }
+    }
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.

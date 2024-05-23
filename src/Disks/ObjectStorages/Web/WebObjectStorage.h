@@ -98,7 +98,7 @@ protected:
     [[noreturn]] static void throwNotAllowed();
     bool exists(const std::string & path) const;
 
-    enum class FileType
+    enum class FileType : uint8_t
     {
         File,
         Directory

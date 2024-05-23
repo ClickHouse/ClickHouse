@@ -521,45 +521,6 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## dotProduct
-
-Calculates the scalar product of two tuples of the same size.
-
-**Syntax**
-
-```sql
-dotProduct(tuple1, tuple2)
-```
-
-Alias: `scalarProduct`.
-
-**Arguments**
-
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-
-**Returned value**
-
-- Scalar product.
-
-Type: [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT dotProduct((1, 2), (2, 3));
-```
-
-Result:
-
-```text
-┌─dotProduct((1, 2), (2, 3))─┐
-│                          8 │
-└────────────────────────────┘
-```
-
 ## tupleConcat
 
 Combines tuples passed as arguments.
@@ -854,6 +815,42 @@ Result:
 ┌─tupleModuloByNumber((15, 10, 5), 2)─┐
 │ (1,0,1)                             │
 └─────────────────────────────────────┘
+```
+
+## flattenTuple
+
+Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
+
+**Syntax**
+
+```sql
+flattenTuple(input)
+```
+
+**Parameters**
+
+- `input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
+
+**Returned value**
+
+- `output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = Memory;
+INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
+SELECT flattenTuple(t) FROM t_flatten_tuple;
+```
+
+Result:
+
+``` text
+┌─flattenTuple(t)───────────┐
+│ ([1,2],['a','b'],3,'c',4) │
+└───────────────────────────┘
 ```
 
 ## Distance functions

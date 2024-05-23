@@ -88,19 +88,186 @@ Result:
 
 ## length
 
-Returns the length of a string in bytes (not: in characters or Unicode code points).
-
-The function also works for arrays.
+Returns the length of a string in bytes rather than in characters or Unicode code points. The function also works for arrays.
 
 Alias: `OCTET_LENGTH`
 
+**Syntax**
+
+```sql
+length(s)
+```
+
+**Parameters**
+
+- `s`: An input string or array. [String](../data-types/string)/[Array](../data-types/array).
+
+**Returned value**
+
+- Length of the string or array `s` in bytes. [UInt64](../data-types/int-uint).
+
+**Example**
+
+Query:
+
+```sql
+SELECT length('Hello, world!');
+```
+
+Result: 
+
+```response
+┌─length('Hello, world!')─┐
+│                      13 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT length([1, 2, 3, 4]);
+```
+
+Result: 
+
+```response
+┌─length([1, 2, 3, 4])─┐
+│                    4 │
+└──────────────────────┘
+```
+
+
 ## lengthUTF8
 
-Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-Alias:
+Aliases:
 - `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
+
+**Syntax**
+
+```sql
+lengthUTF8(s)
+```
+
+**Parameters**
+
+- `s`: String containing valid UTF-8 encoded text. [String](../data-types/string).
+
+**Returned value**
+
+- Length of the string `s` in Unicode code points. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT lengthUTF8('Здравствуй, мир!');
+```
+
+Result: 
+
+```response
+┌─lengthUTF8('Здравствуй, мир!')─┐
+│                             16 │
+└────────────────────────────────┘
+```
+
+## left
+
+Returns a substring of string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+left(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT left('Hello', 3);
+```
+
+Result:
+
+```response
+Hel
+```
+
+Query:
+
+```sql
+SELECT left('Hello', -3);
+```
+
+Result:
+
+```response
+He
+```
+
+## leftUTF8
+
+Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+leftUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+Прив
+```
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+Пр
+```
 
 ## leftPad
 
@@ -174,6 +341,100 @@ Result:
 ┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
 │ ***абвг                     │    дежз                │
 └─────────────────────────────┴────────────────────────┘
+```
+
+## right
+
+Returns a substring of string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+right(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT right('Hello', 3);
+```
+
+Result:
+
+```response
+llo
+```
+
+Query:
+
+```sql
+SELECT right('Hello', -3);
+```
+
+Result:
+
+```response
+lo
+```
+
+## rightUTF8
+
+Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+rightUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+ивет
+```
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+ет
 ```
 
 ## rightPad
@@ -254,7 +515,35 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
@@ -281,13 +570,13 @@ Alias: `ucase`
 Query:
 
 ``` sql
-SELECT upper('value') as Upper;
+SELECT upper('clickhouse');
 ```
 
 ``` response
-┌─Upper─┐
-│ VALUE │
-└───────┘
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
 ```
 
 ## lowerUTF8
@@ -769,7 +1058,7 @@ convertCharset(s, from, to)
 
 ## base58Encode
 
-Encodes a String using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) in the "Bitcoin" alphabet.
+Encodes a String using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -803,7 +1092,7 @@ Result:
 
 ## base58Decode
 
-Accepts a String and decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+Accepts a String and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -839,6 +1128,34 @@ Result:
 
 Like `base58Decode` but returns an empty string in case of error.
 
+**Syntax**
+
+```sql
+tryBase58Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
+```
+
 ## base64Encode
 
 Encodes a String or FixedString as base64.
@@ -854,6 +1171,30 @@ Alias: `FROM_BASE64`.
 ## tryBase64Decode
 
 Like `base64Decode` but returns an empty string in case of error.
+
+**Syntax**
+
+```sql
+tryBase64Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
+```
 
 ## endsWith {#endswith}
 

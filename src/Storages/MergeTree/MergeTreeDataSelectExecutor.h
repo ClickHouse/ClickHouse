@@ -166,6 +166,7 @@ public:
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
         const ActionsDAGPtr & filter_dag,

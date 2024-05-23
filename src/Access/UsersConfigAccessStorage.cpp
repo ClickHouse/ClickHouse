@@ -10,7 +10,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/SSHWrapper.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
 #include <Core/Settings.h>
@@ -371,6 +371,7 @@ namespace
             if (databases)
             {
                 user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+                user->access.grantWithGrantOption(AccessType::TABLE_ENGINE);
                 user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
                 for (const String & database : *databases)
                     user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
