@@ -26,8 +26,8 @@ def ch_cluster():
 
         os.system(
             "wget --quiet -O {gpt2_path} {gpt2_download_link}".format(
-                gpt2_path=os.path.join(SCRIPT_DIR, 'model/gpt2.ggml'),
-                gpt2_download_link="https://huggingface.co/ggerganov/ggml/resolve/main/ggml-model-gpt-2-117M.bin?download=true"
+                gpt2_path=os.path.join(SCRIPT_DIR, "model/gpt2.ggml"),
+                gpt2_download_link="https://huggingface.co/ggerganov/ggml/resolve/main/ggml-model-gpt-2-117M.bin?download=true",
             )
         )
         os.system(
@@ -43,7 +43,9 @@ def ch_cluster():
     finally:
         cluster.shutdown()
 
+
 # ---------------------------------------------------------------------------
+
 
 def testWalruses(ch_cluster):
     result = instance.query(
@@ -53,13 +55,14 @@ def testWalruses(ch_cluster):
 
     assert result == expected
 
+
 def testBasicArgumentTypes(ch_cluster):
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate(123, map('n_predict', 4), 'Did you know that walruses');"
     )
 
     assert (
-        'Illegal type UInt8 of first argument of function ggmlEvaluate, expected a string'
+        "Illegal type UInt8 of first argument of function ggmlEvaluate, expected a string"
         in err
     )
 
@@ -68,7 +71,7 @@ def testBasicArgumentTypes(ch_cluster):
     )
 
     assert (
-        'Illegal type UInt8 of second argument of function ggmlEvaluate, expected a map'
+        "Illegal type UInt8 of second argument of function ggmlEvaluate, expected a map"
         in err
     )
 
@@ -77,9 +80,10 @@ def testBasicArgumentTypes(ch_cluster):
     )
 
     assert (
-        'Illegal type UInt8 of third argument of function ggmlEvaluate, expected a string'
+        "Illegal type UInt8 of third argument of function ggmlEvaluate, expected a string"
         in err
     )
+
 
 def testFirstArgumentIsConstString(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
@@ -89,54 +93,47 @@ def testFirstArgumentIsConstString(ch_cluster):
         "SELECT ggmlEvaluate(a, map('n_predict', 4), 'Did you know that walruses') FROM T;"
     )
 
-    assert (
-        'First argument of function ggmlEvaluate must be a constant string'
-        in err
-    )
+    assert 'First argument of function ggmlEvaluate must be a constant string' in err
+
 
 def testArgumentCount(ch_cluster):
-    err = instance.query_and_get_error(
-        "SELECT ggmlEvaluate('gpt2');"
-    )
+    err = instance.query_and_get_error("SELECT ggmlEvaluate('gpt2');")
 
-    assert (
-        'Function ggmlEvaluate expects exactly 3 arguments. Got 1'
-        in err
-    )
+    assert 'Function ggmlEvaluate expects exactly 3 arguments. Got 1' in err
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4));"
     )
 
-    assert (
-        'Function ggmlEvaluate expects exactly 3 arguments. Got 2'
-        in err
-    )
+    assert 'Function ggmlEvaluate expects exactly 3 arguments. Got 2' in err
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses', ' are actually mammals');"
     )
 
-    assert (
-        'Function ggmlEvaluate expects exactly 3 arguments. Got 4'
-        in err
-    )
+    assert 'Function ggmlEvaluate expects exactly 3 arguments. Got 4' in err
+
 
 def testMultipleRows(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
-    _ = instance.query("INSERT INTO T (a) VALUES ('Did you know that walruses'), ('No one suspected him')")
+    _ = instance.query(
+        "INSERT INTO T (a) VALUES ('Did you know that walruses'), ('No one suspected him')"
+    )
 
     result = instance.query(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), a) from T;"
     )
-    expected = 'Did you know that walruses are actually mammals?\nNo one suspected him of anything except that\n'
+    expected = "Did you know that walruses are actually mammals?\nNo one suspected him of anything except that\n"
     assert result == expected
+
 
 def testTwoConsecutiveEvals(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
-    _ = instance.query("INSERT INTO T (a) VALUES ('Did you know that walruses'), ('No one suspected him')")
+    _ = instance.query(
+        "INSERT INTO T (a) VALUES ('Did you know that walruses'), ('No one suspected him')"
+    )
 
     result = instance.query(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 8), ggmlEvaluate('gpt2', map('n_predict', 4), a)) from T;"
