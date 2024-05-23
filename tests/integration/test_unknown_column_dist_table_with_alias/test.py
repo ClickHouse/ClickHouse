@@ -32,7 +32,7 @@ def test_distributed_table_with_alias(start_cluster):
     assert (
         str(
             node.query(
-                "WITH 'Hello' AS `alias` SELECT `alias` FROM default.dist GROUP BY `alias`;"
+                "WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;"
             )
         )
         == "Hello"
