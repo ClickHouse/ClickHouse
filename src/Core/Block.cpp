@@ -846,7 +846,7 @@ void materializeBlockInplace(Block & block)
         block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
-Block concatenateBlocks(const std::vector<Block> & blocks)
+Block concatenateBlocks(std::vector<Block> && blocks)
 {
     if (blocks.empty())
         return {};
@@ -861,10 +861,9 @@ Block concatenateBlocks(const std::vector<Block> & blocks)
     for (size_t i = 0; i < columns.size(); ++i)
     {
         columns[i]->reserve(num_rows);
-        for (const auto & block : blocks)
+        for (auto && block : blocks)
         {
-            const auto & tmp_column = *block.getByPosition(i).column;
-            columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
+            columns[i]->insertRangeFrom(*block.getByPosition(i).column, 0, block.rows());
         }
     }
 

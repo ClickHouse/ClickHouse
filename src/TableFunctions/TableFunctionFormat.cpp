@@ -122,7 +122,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
 
     /// In case when data contains more then 1 block we combine
     /// them all to one big block (this is considered a rare case).
-    return concatenateBlocks(blocks);
+    return concatenateBlocks(std::move(blocks));
 }
 
 StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const

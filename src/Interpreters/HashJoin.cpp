@@ -553,6 +553,7 @@ size_t HashJoin::getTotalRowCount() const
         }
     }
 
+    res += added_blocks_buffer.total_rows;
     return res;
 }
 
@@ -584,6 +585,7 @@ size_t HashJoin::getTotalByteCount() const
     res += data->blocks_allocated_size;
     res += data->blocks_nullmaps_allocated_size;
     res += data->pool.allocatedBytes();
+    res += added_blocks_buffer.total_bytes;
 
     if (data->type != Type::CROSS)
     {
@@ -775,6 +777,45 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
+void HashJoin::setTotals(const Block & block)
+{
+    IJoin::setTotals(block);
+    finish_filling_right_side = true;
+
+    /// flush buffered blocks
+    Block merged_block;
+    bool is_data_squashed = tryMergeBlocks(merged_block);
+    if (is_data_squashed)
+        addBlockToJoin(merged_block, true);
+}
+
+/// If size of blocks in buffer is smaller than threshold, just empalce back to buffer, otherwise merge buffered to one block.
+/// Returns true if there's block to process, and false if source block was consumed, but buffer is still small
+bool HashJoin::tryMergeBlocks(Block & source_block)
+{
+    if (source_block)
+    {
+        added_blocks_buffer.blocks.emplace_back(source_block);
+        added_blocks_buffer.total_rows += source_block.rows();
+        added_blocks_buffer.total_bytes += source_block.bytes();
+    }
+
+    bool force_flush = !bool(source_block);
+    bool buffer_full = added_blocks_buffer.total_bytes >= table_join->maxMergedBlockSize();
+    bool limit_exceeded = !table_join->sizeLimits().softCheck(getTotalRowCount(), getTotalByteCount());
+    if (force_flush || buffer_full || limit_exceeded)
+    {
+        Block merged_block = concatenateBlocks(std::move(added_blocks_buffer.blocks));
+        added_blocks_buffer.blocks.clear();
+        added_blocks_buffer.total_rows = 0;
+        added_blocks_buffer.total_bytes = 0;
+        source_block.swap(merged_block);
+        return bool(source_block);
+    }
+
+    return false;
+}
+
 bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 {
     if (!data)
@@ -793,6 +834,14 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         memory_usage_before_adding_blocks = getCurrentQueryMemoryUsage();
 
     Block source_block = source_block_;
+
+    if (table_join->preferMergeRightTable() && !finish_filling_right_side)
+    {
+        bool is_data_squashed = tryMergeBlocks(source_block);
+        if (!is_data_squashed)
+            return true;
+    }
+
     if (strictness == JoinStrictness::Asof)
     {
         chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
@@ -1082,8 +1131,10 @@ public:
 
     struct LazyOutput
     {
-        PaddedPODArray<UInt64> blocks;
-        PaddedPODArray<UInt32> row_nums;
+        PaddedPODArray<const Block *> blocks;
+        PaddedPODArray<UInt64> row_nums;
+
+        bool is_single_block = true;
     };
 
     AddedColumns(
@@ -1252,41 +1303,52 @@ template<> void AddedColumns<false>::buildOutput()
 template<>
 void AddedColumns<true>::buildOutput()
 {
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: is_single_block {}", __FILE__, __LINE__, lazy_output.is_single_block);
+
     for (size_t i = 0; i < this->size(); ++i)
     {
-        auto& col = columns[i];
-        size_t default_count = 0;
-        auto apply_default = [&]()
+        auto & column = columns[i];
+        if (lazy_output.is_single_block && !lazy_output.blocks.empty() && !is_join_get)
         {
-            if (default_count > 0)
-            {
-                JoinCommon::addDefaultValues(*col, type_name[i].type, default_count);
-                default_count = 0;
-            }
-        };
+            const auto & column_from_block = lazy_output.blocks[0]->getByPosition(right_indexes[i]);
+            column->insertIndicesFrom(*column_from_block.column, lazy_output.row_nums);
+            continue;
+        }
 
+        size_t defaults_count = 0;
         for (size_t j = 0; j < lazy_output.blocks.size(); ++j)
         {
             if (!lazy_output.blocks[j])
             {
-                default_count++;
+                defaults_count++;
                 continue;
             }
-            apply_default();
-            const auto & column_from_block = reinterpret_cast<const Block *>(lazy_output.blocks[j])->getByPosition(right_indexes[i]);
+
+            if (defaults_count > 0)
+            {
+                JoinCommon::addDefaultValues(*column, type_name[i].type, defaults_count);
+                defaults_count = 0;
+            }
+
+            const auto & column_from_block = lazy_output.blocks[j]->getByPosition(right_indexes[i]);
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             if (is_join_get)
             {
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get());
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(column.get());
                     nullable_col && !column_from_block.column->isNullable())
                 {
                     nullable_col->insertFromNotNullable(*column_from_block.column, lazy_output.row_nums[j]);
                     continue;
                 }
             }
-            col->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
+            column->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
         }
-        apply_default();
+
+        if (defaults_count > 0)
+        {
+            JoinCommon::addDefaultValues(*column, type_name[i].type, defaults_count);
+            defaults_count = 0;
+        }
     }
 }
 
@@ -1346,8 +1408,10 @@ void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bo
 #endif
     if (has_columns_to_add)
     {
-        lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
-        lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+        if (lazy_output.is_single_block)
+            lazy_output.is_single_block = lazy_output.blocks.empty() || lazy_output.blocks.back() == &block;
+        lazy_output.blocks.emplace_back(&block);
+        lazy_output.row_nums.emplace_back(row_num);
     }
 }
 template<>
@@ -1361,8 +1425,9 @@ void AddedColumns<true>::appendDefaultRow()
 {
     if (has_columns_to_add)
     {
-        lazy_output.blocks.emplace_back(0);
+        lazy_output.blocks.emplace_back(nullptr);
         lazy_output.row_nums.emplace_back(0);
+        lazy_output.is_single_block = false;
     }
 }
 
@@ -2442,6 +2507,10 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+
+    if (!added_blocks_buffer.blocks.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal HashJoin buffer was not flushed, contains {} blocks, first block {}",
+                        added_blocks_buffer.blocks.size(), added_blocks_buffer.blocks.front().dumpStructure());
 
     for (const auto & onexpr : table_join->getClauses())
     {

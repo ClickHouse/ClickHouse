@@ -111,7 +111,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    block = concatenateBlocks(dispatched_blocks);
+    block = concatenateBlocks(std::move(dispatched_blocks));
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const

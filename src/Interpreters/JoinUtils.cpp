@@ -614,7 +614,7 @@ static Blocks scatterBlockByHashForList(const Strings & key_columns_names, const
     result.reserve(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
     {
-        result.emplace_back(concatenateBlocks(scattered_blocks[i]));
+        result.emplace_back(concatenateBlocks(std::move(scattered_blocks[i])));
     }
     return result;
 }

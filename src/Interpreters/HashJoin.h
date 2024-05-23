@@ -388,6 +388,21 @@ public:
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
+
+    /// Concatenate blocks added via addBlockToJoin to larger blocks.
+    struct
+    {
+        Blocks blocks;
+        size_t total_rows = 0;
+        size_t total_bytes = 0;
+
+    } added_blocks_buffer;
+
+    bool finish_filling_right_side = false;
+
+    void setTotals(const Block & block) override;
+    bool tryMergeBlocks(Block & source_block);
+
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
     void setLock(TableLockHolder rwlock_holder)

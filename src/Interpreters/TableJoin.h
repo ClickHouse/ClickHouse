@@ -280,7 +280,13 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    bool preferMergeRightTable() const { return !isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH) && isInner(table_join.kind); }
+
+    bool preferMergeRightTable() const
+    {
+        return isInner(table_join.kind)
+            && !isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH)
+            && !isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    }
 
     bool joinUseNulls() const { return join_use_nulls; }
 

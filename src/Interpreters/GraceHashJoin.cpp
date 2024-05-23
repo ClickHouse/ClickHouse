@@ -64,14 +64,14 @@ namespace
                     eof = true;
                     if (blocks.size() == 1)
                         return blocks.front();
-                    return concatenateBlocks(blocks);
+                    return concatenateBlocks(std::move(blocks));
                 }
                 blocks.push_back(std::move(block));
             } while (rows_read < result_block_size);
 
             if (blocks.size() == 1)
                 return blocks.front();
-            return concatenateBlocks(blocks);
+            return concatenateBlocks(std::move(blocks));
         }
 
     private:
@@ -724,7 +724,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
             if (current_blocks.size() == 1)
                 current_block = std::move(current_blocks.front());
             else
-                current_block = concatenateBlocks(current_blocks);
+                current_block = concatenateBlocks(std::move(current_blocks));
         }
 
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num);

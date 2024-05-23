@@ -352,7 +352,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
     if (blocks.size() == 1)
         return blocks[0];
 
-    return concatenateBlocks(blocks);
+    return concatenateBlocks(std::move(blocks));
 }
 
 }

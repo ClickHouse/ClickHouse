@@ -162,7 +162,7 @@ Block executeMonoBlock(QueryPipeline & pipeline)
     if (blocks.size() == 1)
         return blocks[0];
 
-    return concatenateBlocks(blocks);
+    return concatenateBlocks(std::move(blocks));
 }
 
 StoragePtr TableFunctionExplain::executeImpl(
