@@ -50,7 +50,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "no_sign_request"
 };
 
-String StorageS3Configuration::getDataSourceDescription()
+String StorageS3Configuration::getDataSourceDescription() const
 {
     return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
 }

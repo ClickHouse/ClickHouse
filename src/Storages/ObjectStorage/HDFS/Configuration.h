@@ -31,7 +31,7 @@ public:
     std::string getPathWithoutGlobs() const override;
 
     String getNamespace() const override { return ""; }
-    String getDataSourceDescription() override { return url; }
+    String getDataSourceDescription() const override { return url; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;

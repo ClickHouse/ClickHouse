@@ -82,6 +82,21 @@ void StorageObjectStorageSource::setKeyCondition(const ActionsDAGPtr & filter_ac
     setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
 
+std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
+    const Configuration & configuration,
+    const ObjectInfo & object_info,
+    bool include_connection_info)
+{
+    auto path = object_info.getPath();
+    if (path.starts_with("/"))
+        path = path.substr(1);
+
+    if (include_connection_info)
+        return fs::path(configuration.getDataSourceDescription()) / path;
+    else
+        return fs::path(configuration.getNamespace()) / path;
+}
+
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
     ObjectStoragePtr object_storage,
@@ -183,7 +198,7 @@ Chunk StorageObjectStorageSource::generate()
             VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                fs::path(configuration->getNamespace()) / reader.getObjectInfo().getPath(),
+                getUniqueStoragePathIdentifier(*configuration, reader.getObjectInfo(), false),
                 object_info.metadata->size_bytes, &filename);
 
             return chunk;
@@ -212,7 +227,7 @@ Chunk StorageObjectStorageSource::generate()
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        fs::path(configuration->getDataSourceDescription()) / object_info.getPath(),
+        getUniqueStoragePathIdentifier(*configuration, object_info),
         configuration->format,
         format_settings,
         getContext());
@@ -222,7 +237,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
 std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const ObjectInfo & object_info)
 {
     const auto cache_key = getKeyForSchemaCache(
-        fs::path(configuration->getDataSourceDescription()) / object_info.getPath(),
+        getUniqueStoragePathIdentifier(*configuration, object_info),
         configuration->format,
         format_settings,
         getContext());
@@ -511,7 +526,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
             for (const auto & object_info : new_batch)
             {
                 chassert(object_info);
-                paths.push_back(fs::path(configuration->getNamespace()) / object_info->getPath());
+                paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
             }
 
             VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());

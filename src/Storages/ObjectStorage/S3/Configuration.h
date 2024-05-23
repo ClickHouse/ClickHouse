@@ -31,7 +31,7 @@ public:
     void setPaths(const Paths & paths) override { keys = paths; }
 
     String getNamespace() const override { return url.bucket; }
-    String getDataSourceDescription() override;
+    String getDataSourceDescription() const override;
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     bool isArchive() const override { return url.archive_pattern.has_value(); }

@@ -36,7 +36,7 @@ public:
     void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
     String getNamespace() const override { return container; }
-    String getDataSourceDescription() override { return std::filesystem::path(connection_url) / container; }
+    String getDataSourceDescription() const override { return std::filesystem::path(connection_url) / container; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;

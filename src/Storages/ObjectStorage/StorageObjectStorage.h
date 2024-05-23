@@ -161,7 +161,7 @@ public:
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;
 
-    virtual String getDataSourceDescription() = 0;
+    virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
     virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;

@@ -17,6 +17,7 @@ class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
     friend class StorageS3QueueSource;
 public:
+    using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
     using ObjectInfo = StorageObjectStorage::ObjectInfo;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
@@ -57,6 +58,11 @@ public:
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {});
+
+    static std::string getUniqueStoragePathIdentifier(
+        const Configuration & configuration,
+        const ObjectInfo & object_info,
+        bool include_connection_info = true);
 
 protected:
     const String name;
