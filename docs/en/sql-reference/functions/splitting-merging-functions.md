@@ -25,7 +25,7 @@ splitByChar(separator, s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 :::note
  Empty substrings may be selected when:
@@ -78,7 +78,7 @@ splitByString(separator, s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 :::note
 Empty substrings may be selected when:
@@ -135,7 +135,7 @@ splitByRegexp(regexp, s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 :::note
 Empty substrings may be selected when:
@@ -192,7 +192,7 @@ splitByWhitespace(s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
  
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -231,7 +231,7 @@ splitByNonAlpha(s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -293,7 +293,7 @@ Alias: `splitByAlpha`
 
 **Returned value(s)**
 
-Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
