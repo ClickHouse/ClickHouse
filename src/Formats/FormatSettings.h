@@ -44,9 +44,9 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
-    bool try_infer_integers = false;
-    bool try_infer_dates = false;
-    bool try_infer_datetimes = false;
+    bool try_infer_integers = true;
+    bool try_infer_dates = true;
+    bool try_infer_datetimes = true;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t

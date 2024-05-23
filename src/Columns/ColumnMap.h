@@ -104,6 +104,9 @@ public:
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 
     ColumnPtr compress() const override;
+
+    bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 
 }
