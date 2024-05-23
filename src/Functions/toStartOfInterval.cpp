@@ -241,14 +241,14 @@ private:
 
         if (isDate(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate *>(time_column_col);
 
             if (time_column_vec)
                 return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDateTime(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(&time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime *>(&time_column_col);
             if (time_column_vec)
                 return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
