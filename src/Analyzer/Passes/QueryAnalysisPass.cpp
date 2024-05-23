@@ -4617,6 +4617,36 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
     std::unordered_set<std::string> table_expression_column_names_to_skip;
 
+    QueryTreeNodesWithNames result;
+
+    if (matcher_node_typed.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+    {
+        auto identifiers = matcher_node_typed.getColumnsIdentifiers();
+        result.reserve(identifiers.size());
+
+        for (const auto & identifier : identifiers)
+        {
+            auto resolve_result = tryResolveIdentifier(IdentifierLookup{identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            if (!resolve_result.isResolved())
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Unknown identifier '{}' inside COLUMNS matcher. In scope {}",
+                        identifier.getFullName(), scope.dump());
+
+            // TODO: Introduce IdentifierLookupContext::COLUMN and get rid of this check
+            auto * resolved_column = resolve_result.resolved_identifier->as<ColumnNode>();
+            if (!resolved_column)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Identifier '{}' inside COLUMNS matcher must resolve into a column, but got {}. In scope {}",
+                        identifier.getFullName(),
+                        resolve_result.resolved_identifier->getNodeTypeName(),
+                        scope.scope_node->formatASTForErrorMessage());
+            result.emplace_back(resolve_result.resolved_identifier, resolved_column->getColumnName());
+        }
+        return result;
+    }
+
+    result.resize(matcher_node_typed.getColumnsIdentifiers().size());
+
     for (auto & table_expression : table_expressions_stack)
     {
         bool table_expression_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(table_expression.get());
@@ -4783,8 +4813,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
-
-    QueryTreeNodesWithNames result;
 
     for (auto & table_expression_column_nodes_with_names : table_expressions_column_nodes_with_names_stack)
     {
@@ -5090,14 +5118,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         auto * nearest_query_scope = scope.getNearestQueryScope();
 
         if (!nearest_query_scope)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window '{}' does not exists.", parent_window_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window '{}' does not exist.", parent_window_name);
 
         auto & scope_window_name_to_window_node = nearest_query_scope->window_name_to_window_node;
 
         auto window_node_it = scope_window_name_to_window_node.find(parent_window_name);
         if (window_node_it == scope_window_name_to_window_node.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window '{}' does not exists. In scope {}",
+                "Window '{}' does not exist. In scope {}",
                 parent_window_name,
                 nearest_query_scope->scope_node->formatASTForErrorMessage());
 
@@ -5861,7 +5889,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exists. In scope {}{}",
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
                             function_name, scope.scope_node->formatASTForErrorMessage(),
                             getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
@@ -5942,7 +5970,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name '{}' does not exists. In scope {}{}",
+                "Function with name '{}' does not exist. In scope {}{}",
                 function_name,
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
@@ -8070,7 +8098,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto window_node_it = scope.window_name_to_window_node.find(parent_window_name);
             if (window_node_it == scope.window_name_to_window_node.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window '{}' does not exists. In scope {}",
+                    "Window '{}' does not exist. In scope {}",
                     parent_window_name,
                     scope.scope_node->formatASTForErrorMessage());
 
@@ -8268,7 +8296,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         if (!has_node_in_alias_table)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Node {} with duplicate alias {} does not exists in alias table. In scope {}",
+                "Node {} with duplicate alias {} does not exist in alias table. In scope {}",
                 node->formatASTForErrorMessage(),
                 node_alias,
                 scope.scope_node->formatASTForErrorMessage());

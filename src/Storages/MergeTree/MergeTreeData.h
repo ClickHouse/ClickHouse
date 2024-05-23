@@ -736,6 +736,8 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
+    static void verifySortingKey(const KeyDescription & sorting_key);
+
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
