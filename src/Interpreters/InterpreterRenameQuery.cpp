@@ -40,7 +40,6 @@ BlockIO InterpreterRenameQuery::execute()
 
     getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
-    String path = getContext()->getPath();
     String current_database = getContext()->getCurrentDatabase();
 
     /** In case of error while renaming, it is possible that only part of tables was renamed

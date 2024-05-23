@@ -243,7 +243,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
 
-    return writeString(oss.str(), out);
+    writeString(oss.str(), out);
 }
 
 SerializationInfoByName SerializationInfoByName::readJSON(

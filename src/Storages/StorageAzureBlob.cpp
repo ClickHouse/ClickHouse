@@ -254,6 +254,10 @@ AzureObjectStorage::SettingsPtr StorageAzureBlob::createSettings(const ContextPt
     auto settings_ptr = std::make_unique<AzureObjectStorageSettings>();
     settings_ptr->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
     settings_ptr->max_single_read_retries = context_settings.azure_max_single_read_retries;
+    settings_ptr->strict_upload_part_size = context_settings.azure_strict_upload_part_size;
+    settings_ptr->max_upload_part_size = context_settings.azure_max_upload_part_size;
+    settings_ptr->max_blocks_in_multipart_upload = context_settings.azure_max_blocks_in_multipart_upload;
+    settings_ptr->min_upload_part_size = context_settings.azure_min_upload_part_size;
     settings_ptr->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
 
     return settings_ptr;
@@ -302,8 +306,8 @@ void registerStorageAzureBlob(StorageFactory & factory)
         auto settings = StorageAzureBlob::createSettings(args.getContext());
 
         return std::make_shared<StorageAzureBlob>(
-            std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
+            configuration,
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container, configuration.getConnectionURL().toString()),
             args.getContext(),
             args.table_id,
             args.columns,
@@ -491,6 +495,13 @@ Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
     return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
 }
 
+bool StorageAzureBlob::Configuration::withGlobsIgnorePartitionWildcard() const
+{
+    if (!withPartitionWildcard())
+        return withGlobs();
+
+    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+}
 
 StorageAzureBlob::StorageAzureBlob(
     const Configuration & configuration_,
@@ -792,7 +803,8 @@ private:
 
 void ReadFromAzureBlob::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -810,7 +822,7 @@ void StorageAzureBlob::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (partition_by && configuration.withWildcard())
+    if (partition_by && configuration.withPartitionWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned Azure storage is not implemented yet");
 
     auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
@@ -897,13 +909,17 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
 SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    if (configuration.withGlobsIgnorePartitionWildcard())
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
+
     auto path = configuration.blobs_paths.front();
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(path, configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && configuration.withWildcard();
+    bool is_partitioned_implementation = partition_by_ast && configuration.withPartitionWildcard();
 
     if (is_partitioned_implementation)
     {
@@ -919,10 +935,6 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
     }
     else
     {
-        if (configuration.withGlobs())
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
-
         if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(local_context, object_storage.get(), path, configuration.blobs_paths.size()))
         {
             configuration.blobs_paths.push_back(*new_path);

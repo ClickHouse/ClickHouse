@@ -193,8 +193,7 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
             throw;
         }
 
-        if (num > res)
-            res = num;
+        res = std::max(num, res);
     }
 
     return res;
@@ -927,7 +926,8 @@ void StorageDistributed::read(
         sharding_key_expr,
         sharding_key_column_name,
         distributed_settings,
-        additional_shard_filter_generator);
+        additional_shard_filter_generator,
+        /* is_remote_function= */ static_cast<bool>(owned_cluster));
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())

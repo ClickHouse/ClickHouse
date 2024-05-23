@@ -1,9 +1,8 @@
 #include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <widechar_width.h>
 #include <bit>
-
 
 namespace DB
 {
@@ -203,7 +202,6 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 }
 
 }
-
 
 size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 {
