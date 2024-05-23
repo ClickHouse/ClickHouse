@@ -39,8 +39,9 @@ template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictn
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Semi, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Semi, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 
-/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <bool force_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+/// Only ANTI LEFT and ANTI RIGHT are valid. INNER and FULL are here for templates instantiation.
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::Anti, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Anti, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Anti, force_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };

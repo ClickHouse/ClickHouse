@@ -1813,6 +1813,11 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                                 added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
                             }
                         }
+                        else if constexpr (join_features.is_anti_join)
+                        {
+                            if (need_flags)
+                                used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                        }
                         else
                         {
                             total_added_rows += 1;
@@ -1828,7 +1833,11 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
-                    if constexpr (need_replication)
+                    if constexpr (join_features.is_anti_join)
+                    {
+                        any_matched |= filter_flags[replicated_row];
+                    }
+                    else if constexpr (need_replication)
                     {
                         if (filter_flags[replicated_row])
                         {
@@ -1853,21 +1862,34 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     }
                 }
             }
-            if (!any_matched)
+
+            if constexpr (join_features.is_anti_join)
             {
-                if (add_missing)
-                    addNotFoundRow<true, need_replication>(added_columns, total_added_rows);
-                else
-                    addNotFoundRow<false, need_replication>(added_columns, total_added_rows);
+                if (!any_matched)
+                {
+                    if constexpr (join_features.left)
+                        setUsed<join_features.need_filter>(added_columns.filter, left_start_row + i - 1);
+                    addNotFoundRow<join_features.add_missing, need_replication>(added_columns, total_added_rows);
+                }
             }
             else
             {
-                if (!flag_per_row && need_flags)
-                    used_flags.template setUsed<true, false>(find_results[find_result_index]);
-                if (need_filter)
-                    setUsed<true>(added_columns.filter, left_start_row + i - 1);
-                if (add_missing)
-                    added_columns.applyLazyDefaults();
+                if (!any_matched)
+                {
+                    if (add_missing)
+                        addNotFoundRow<true, need_replication>(added_columns, total_added_rows);
+                    else
+                        addNotFoundRow<false, need_replication>(added_columns, total_added_rows);
+                }
+                else
+                {
+                    if (!flag_per_row && need_flags)
+                        used_flags.template setUsed<true, false>(find_results[find_result_index]);
+                    if (need_filter)
+                        setUsed<true>(added_columns.filter, left_start_row + i - 1);
+                    if (add_missing)
+                        added_columns.applyLazyDefaults();
+                }
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
@@ -2931,7 +2953,8 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
     }
 
     bool is_supported = ((strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind)))
-        || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any) && (isLeft(kind) || isRight(kind)));
+        || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any || strictness == JoinStrictness::Anti)
+            && (isLeft(kind) || isRight(kind)));
     if (!is_supported)
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
