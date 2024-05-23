@@ -1476,6 +1476,8 @@ try
             global_context->setMaxTableSizeToDrop(new_server_settings.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(new_server_settings.max_partition_size_to_drop);
             global_context->setMaxTableNumToWarn(new_server_settings.max_table_num_to_warn);
+            global_context->setMaxViewNumToWarn(new_server_settings.max_view_num_to_warn);
+            global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
