@@ -140,6 +140,70 @@ Same as `intDiv` but returns zero when dividing by zero or when dividing a minim
 intDivOrZero(a, b)
 ```
 
+## isFinite
+
+Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwise this function returns 0.
+
+**Syntax**
+
+```sql
+isFinite(x)
+```
+
+## isInfinite
+
+Returns 1 if the Float32 or Float64 argument is infinite, otherwise this function returns 0. Note that 0 is returned for a NaN.
+
+**Syntax**
+
+```sql
+isInfinite(x)
+```
+
+## ifNotFinite
+
+Checks whether a floating point value is finite.
+
+**Syntax**
+
+```sql
+ifNotFinite(x,y)
+```
+
+**Arguments**
+
+- `x` — Value to check for infinity. [Float\*](../../sql-reference/data-types/float.md).
+- `y` — Fallback value. [Float\*](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+- `x` if `x` is finite.
+- `y` if `x` is not finite.
+
+**Example**
+
+Query:
+
+    SELECT 1/0 as infimum, ifNotFinite(infimum,42)
+
+Result:
+
+    ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+    │     inf │                            42 │
+    └─────────┴───────────────────────────────┘
+
+You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
+
+## isNaN
+
+Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
+
+**Syntax**
+
+```sql
+isNaN(x)
+```
+
 ## modulo
 
 Calculates the remainder of the division of two values `a` by `b`.
