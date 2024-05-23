@@ -28,13 +28,11 @@ public:
 
     std::string getName() const override { return "FileCluster"; }
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
@@ -42,7 +40,6 @@ private:
     Strings paths;
     String filename;
     String format_name;
-    NamesAndTypesList virtual_columns;
 };
 
 }

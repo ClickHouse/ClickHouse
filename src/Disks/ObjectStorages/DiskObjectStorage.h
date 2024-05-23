@@ -4,8 +4,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Common/re2.h>
+
 
 namespace CurrentMetrics
 {
@@ -48,8 +48,6 @@ public:
 
     StoredObjects getStorageObjects(const String & local_path) const override;
 
-    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
-
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
     std::optional<UInt64> getTotalSpace() const override { return {}; }
@@ -86,6 +84,8 @@ public:
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
+    void truncateFile(const String & path, size_t size) override;
+
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
@@ -114,7 +114,7 @@ public:
 
     void clearDirectory(const String & path) override;
 
-    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
+    void moveDirectory(const String & from_path, const String & to_path) override;
 
     void removeDirectory(const String & path) override;
 
@@ -185,6 +185,8 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
+    bool supportsHardLinks() const override;
+
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
@@ -230,6 +232,7 @@ private:
     std::mutex reservation_mutex;
 
     bool tryReserve(UInt64 bytes);
+    void sendMoveMetadata(const String & from_path, const String & to_path);
 
     const bool send_metadata;
 

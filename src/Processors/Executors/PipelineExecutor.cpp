@@ -100,8 +100,7 @@ void PipelineExecutor::finish()
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
-    if (num_threads < 1)
-        num_threads = 1;
+    num_threads = std::max<size_t>(num_threads, 1);
 
     OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
     span.addAttribute("clickhouse.thread_num", num_threads);
@@ -391,7 +390,9 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
-            finish();
+            /// If finished_flag is not set, there was an exception.
+            /// Cancel execution in this case.
+            cancel();
             if (pool)
                 pool->wait();
         }

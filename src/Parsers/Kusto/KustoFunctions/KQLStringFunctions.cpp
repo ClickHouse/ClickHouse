@@ -102,7 +102,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool Extract::convertImpl(String & out, IParser::Pos & pos)
 {
-    ParserKeyword s_kql("typeof");
+    ParserKeyword s_kql(Keyword::TYPEOF);
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     Expected expected;
@@ -243,7 +243,7 @@ bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
 bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
 {
     String datatype = "String";
-    ParserKeyword s_kql("typeof");
+    ParserKeyword s_kql(Keyword::TYPEOF);
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     Expected expected;
@@ -442,7 +442,7 @@ bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
     {
         --pos;
         auto arg = getArgument(fn_name, pos);
-        auto result = kqlCallToExpression("dynamic", {arg}, pos.max_depth);
+        auto result = kqlCallToExpression("dynamic", {arg}, pos.max_depth, pos.max_backtracks);
         out = std::format("{}", result);
     }
     else
@@ -729,7 +729,7 @@ bool Trim::convertImpl(String & out, IParser::Pos & pos)
 
     const auto regex = getArgument(fn_name, pos, ArgumentState::Raw);
     const auto source = getArgument(fn_name, pos, ArgumentState::Raw);
-    out = kqlCallToExpression("trim_start", {regex, std::format("trim_end({0}, {1})", regex, source)}, pos.max_depth);
+    out = kqlCallToExpression("trim_start", {regex, std::format("trim_end({0}, {1})", regex, source)}, pos.max_depth, pos.max_backtracks);
 
     return true;
 }

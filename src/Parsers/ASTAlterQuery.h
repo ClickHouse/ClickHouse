@@ -166,9 +166,6 @@ public:
     /// For MODIFY_SQL_SECURITY
     IAST * sql_security = nullptr;
 
-    /// In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
-    IAST * values = nullptr;
-
     /// Target column name
     IAST * rename_to = nullptr;
 
@@ -238,7 +235,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType
+    enum class AlterObjectType : uint8_t
     {
         TABLE,
         DATABASE,

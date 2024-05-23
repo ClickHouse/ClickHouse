@@ -40,12 +40,10 @@ $CLICKHOUSE_CLIENT -q 'drop table data_02263'
 
 run_format_both 'insert into foo values'
 run_format_both 'insert into foo select 1'
-run_format_both 'insert into foo watch bar'
 run_format_both 'insert into foo format tsv'
 
 run_format_both 'insert into foo settings max_threads=1 values'
 run_format_both 'insert into foo settings max_threads=1 select 1'
-run_format_both 'insert into foo settings max_threads=1 watch bar'
 run_format_both 'insert into foo settings max_threads=1 format tsv'
 run_format_both 'insert into foo select 1 settings max_threads=1'
 run_format_both 'insert into foo settings max_threads=1 select 1 settings max_threads=1'

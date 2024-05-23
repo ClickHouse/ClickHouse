@@ -6,7 +6,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -94,6 +94,8 @@ void StorageInMemoryMetadata::setSQLSecurity(const ASTSQLSecurity & sql_security
 {
     if (sql_security.definer)
         definer = sql_security.definer->toString();
+    else
+        definer = std::nullopt;
 
     sql_security_type = sql_security.type;
 }

@@ -72,7 +72,7 @@ You can also add original ClickHouse repo address to your local repository to pu
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
 :::note 
-Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md) and so on.
+Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md), [on Linux for Linux/LoongArch](build-cross-loongarch.md) and so on.
 :::
 
 ## Build System {#build-system}
@@ -83,11 +83,17 @@ ClickHouse uses CMake and Ninja for building.
 
 - Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
 
-To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
+- ccache - a compiler cache. It speeds up recompilation by caching previous compilations and detecting when the same compilation is being done again.
 
-On CentOS, RedHat run `sudo yum install cmake ninja-build`.
+:::tip
+As an alternative for ccache a distributed [sccache](https://github.com/mozilla/sccache) could be used. To prefer it, `-DCOMPILER_CACHE=sccache` CMake flag should be used.
+:::
 
-If you use Arch or Gentoo, you probably know it yourself how to install CMake.
+To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build ccache`.
+
+On CentOS, RedHat run `sudo yum install cmake ninja-build ccache`.
+
+If you use Arch or Gentoo, you probably know it yourself how to install CMake and others.
 
 ## C++ Compiler {#c-compiler}
 
@@ -115,7 +121,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-18 CXX=clang++-18`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -152,6 +158,26 @@ While building messages about LLVM library may show up. They affect nothing and 
 Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
 
     ls -l programs/clickhouse
+
+### Advanced Building Process {#advanced-building-process}
+
+#### Minimal Build {#minimal-build}
+
+If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
+
+```
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+In case of problems with any of the development options, you are on your own!
+
+#### Rust support {#rust-support}
+
+Rust requires internet connection, in case you don't have it, you can disable Rust support:
+
+```
+cmake -DENABLE_RUST=OFF
+```
 
 ## Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
@@ -250,10 +276,3 @@ Most probably some of the builds will fail at first times. This is due to the fa
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
-
-If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
-```
--DENABLE_LIBRARIES=0
-```
-
-In case of problems with any of the development options, you are on your own!

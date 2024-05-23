@@ -4,7 +4,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -18,7 +20,7 @@ namespace DB
 namespace
 {
 
-enum class Kind
+enum class Kind : uint8_t
 {
     Current,
     Cumulative,
@@ -92,7 +94,7 @@ public:
 
 REGISTER_FUNCTION(Coverage)
 {
-    factory.registerFunction("coverageCurrent", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Current)); },
+    factory.registerFunction("coverageCurrent", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::Current); },
         FunctionDocumentation
         {
             .description=R"(
@@ -123,7 +125,7 @@ See https://clang.llvm.org/docs/SanitizerCoverage.html for more information.
             .categories{"Introspection"}
         });
 
-    factory.registerFunction("coverageCumulative", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Cumulative)); },
+    factory.registerFunction("coverageCumulative", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::Cumulative); },
         FunctionDocumentation
         {
             .description=R"(
@@ -139,7 +141,7 @@ See the `coverageCurrent` function for the details.
             .categories{"Introspection"}
         });
 
-    factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::All)); },
+    factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::All); },
         FunctionDocumentation
         {
             .description=R"(

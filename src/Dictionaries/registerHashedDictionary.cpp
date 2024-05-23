@@ -77,6 +77,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             require_nonempty,
             dict_lifetime,
             use_async_executor,
+            std::chrono::seconds(settings.max_execution_time.totalSeconds()),
         };
 
         if (source_ptr->hasUpdateField() && shards > 1)

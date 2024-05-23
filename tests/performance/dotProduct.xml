@@ -56,6 +56,7 @@
     </settings>
 
     <query>SELECT sum(dp) FROM (SELECT dotProduct(v, v) AS dp FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dp) FROM (SELECT dotProduct(a, v) AS dp FROM vecs_{element_type})</query>
 
     <drop_query>DROP TABLE vecs_{element_type}</drop_query>
 

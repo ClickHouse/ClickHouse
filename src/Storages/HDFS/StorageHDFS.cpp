@@ -241,8 +241,7 @@ StorageHDFS::StorageHDFS(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 namespace
@@ -625,6 +624,8 @@ HDFSSource::HDFSSource(
     initialize();
 }
 
+HDFSSource::~HDFSSource() = default;
+
 bool HDFSSource::initialize()
 {
     bool skip_empty_files = getContext()->getSettingsRef().hdfs_skip_empty_files;
@@ -870,6 +871,40 @@ private:
     bool cancelled = false;
 };
 
+namespace
+{
+    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, const String & uri, size_t sequence_number)
+    {
+        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
+
+        HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
+        HDFSFSPtr fs = createHDFSFS(builder.get());
+
+        if (context->getSettingsRef().hdfs_truncate_on_insert || hdfsExists(fs.get(), path_from_uri.c_str()))
+            return std::nullopt;
+
+        if (context->getSettingsRef().hdfs_create_new_file_on_insert)
+        {
+            auto pos = uri.find_first_of('.', uri.find_last_of('/'));
+            String new_uri;
+            do
+            {
+                new_uri = uri.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : uri.substr(pos));
+                ++sequence_number;
+            }
+            while (!hdfsExists(fs.get(), new_uri.c_str()));
+
+            return new_uri;
+        }
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "File with path {} already exists. If you want to overwrite it, enable setting hdfs_truncate_on_insert, "
+                "if you want to create new file on each insert, enable setting hdfs_create_new_file_on_insert",
+                path_from_uri);
+    }
+}
+
 class PartitionedHDFSSink : public PartitionedSink
 {
 public:
@@ -893,6 +928,8 @@ public:
     {
         auto path = PartitionedSink::replaceWildcards(uri, partition_id);
         PartitionedSink::validatePartitionKey(path, true);
+        if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(context, path, 1))
+            path = *new_path;
         return std::make_shared<HDFSSink>(path, format, sample_block, context, compression_method);
     }
 
@@ -957,7 +994,8 @@ private:
 
 void ReadFromHDFS::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -975,7 +1013,7 @@ void StorageHDFS::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_), virtual_columns);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context_->getSettingsRef().optimize_count_from_files;
 
@@ -1011,7 +1049,7 @@ void ReadFromHDFS::createIterator(const ActionsDAG::Node * predicate)
     else if (storage->is_path_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(storage->uris[0], predicate, storage->virtual_columns, context);
+        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(storage->uris[0], predicate, storage->getVirtualsList(), context);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
@@ -1019,7 +1057,7 @@ void ReadFromHDFS::createIterator(const ActionsDAG::Node * predicate)
     }
     else
     {
-        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(storage->uris, predicate, storage->virtual_columns, context);
+        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(storage->uris, predicate, storage->getVirtualsList(), context);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([uris_iterator]()
         {
             return uris_iterator->next();
@@ -1055,7 +1093,7 @@ void ReadFromHDFS::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
 SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
-    String current_uri = uris.back();
+    String current_uri = uris.front();
 
     bool has_wildcards = current_uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -1064,6 +1102,10 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
 
     if (is_partitioned_implementation)
     {
+        String path = current_uri.substr(current_uri.find('/', current_uri.find("//") + 2));
+        if (PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
+
         return std::make_shared<PartitionedHDFSSink>(
             partition_by_ast,
             current_uri,
@@ -1077,34 +1119,10 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
         if (is_path_with_globs)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
 
-        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_uri);
-
-        HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
-        HDFSFSPtr fs = createHDFSFS(builder.get());
-
-        bool truncate_on_insert = context_->getSettingsRef().hdfs_truncate_on_insert;
-        if (!truncate_on_insert && !hdfsExists(fs.get(), path_from_uri.c_str()))
+        if (auto new_uri = checkAndGetNewFileOnInsertIfNeeded(context_, uris.front(), uris.size()))
         {
-            if (context_->getSettingsRef().hdfs_create_new_file_on_insert)
-            {
-                auto pos = uris[0].find_first_of('.', uris[0].find_last_of('/'));
-                size_t index = uris.size();
-                String new_uri;
-                do
-                {
-                    new_uri = uris[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : uris[0].substr(pos));
-                    ++index;
-                }
-                while (!hdfsExists(fs.get(), new_uri.c_str()));
-                uris.push_back(new_uri);
-                current_uri = new_uri;
-            }
-            else
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "File with path {} already exists. If you want to overwrite it, enable setting hdfs_truncate_on_insert, "
-                    "if you want to create new file on each insert, enable setting hdfs_create_new_file_on_insert",
-                    path_from_uri);
+            uris.push_back(*new_uri);
+            current_uri = *new_uri;
         }
 
         return std::make_shared<HDFSSink>(current_uri,
@@ -1177,16 +1195,6 @@ void registerStorageHDFS(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessType::HDFS,
     });
-}
-
-NamesAndTypesList StorageHDFS::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names StorageHDFS::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)

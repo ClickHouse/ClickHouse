@@ -282,7 +282,7 @@ struct ResourceTestManager : public ResourceTestBase
         return link_data[link];
     }
 
-    // Use at least two threads for each queue to avoid queue being deactivated:
+    // Use exactly two threads for each queue to avoid queue being deactivated (happens with 1 thread) and reordering (happens with >2 threads):
     // while the first request is executing, the second request is in queue - holding it active.
     // use onEnqueue() and onExecute() functions for this purpose.
     void onEnqueue(ResourceLink link)

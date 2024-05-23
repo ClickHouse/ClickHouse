@@ -67,7 +67,7 @@ struct RangesInDataPart
 
 struct RangesInDataParts: public std::vector<RangesInDataPart>
 {
-    using std::vector<RangesInDataPart>::vector;
+    using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
     RangesInDataPartsDescription getDescriptions() const;
 

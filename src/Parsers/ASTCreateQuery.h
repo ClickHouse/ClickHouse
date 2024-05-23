@@ -122,7 +122,6 @@ public:
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
     ASTRefreshStrategy * refresh_strategy = nullptr; // For CREATE MATERIALIZED VIEW ... REFRESH ...
-    std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
     bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -149,6 +148,8 @@ public:
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
     bool isParameterizedView() const;
+
+    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

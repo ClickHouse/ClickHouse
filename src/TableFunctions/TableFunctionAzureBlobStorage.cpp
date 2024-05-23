@@ -16,6 +16,7 @@
 #include <Storages/StorageAzureBlob.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -80,7 +81,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
 
         if (engine_args.size() == 4)
         {
@@ -207,7 +208,7 @@ void TableFunctionAzureBlobStorage::updateStructureAndFormatArgumentsIfNeeded(AS
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
 
         /// (connection_string, container_name, blobpath)
         if (args.size() == 3)
@@ -332,7 +333,7 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
         auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
         auto settings = StorageAzureBlob::createSettings(context);
 
-        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings), configuration.container);
+        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings), configuration.container, configuration.getConnectionURL().toString());
         if (configuration.format == "auto")
             return StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, std::nullopt, context).first;
         return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
@@ -348,8 +349,7 @@ bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns(const Context
 
 std::unordered_set<String> TableFunctionAzureBlobStorage::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    auto virtual_column_names = StorageAzureBlob::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
@@ -365,7 +365,7 @@ StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_funct
 
     StoragePtr storage = std::make_shared<StorageAzureBlob>(
         configuration,
-        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
+        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container, configuration.getConnectionURL().toString()),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

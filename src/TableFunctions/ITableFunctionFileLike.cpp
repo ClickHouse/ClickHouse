@@ -7,6 +7,7 @@
 
 #include <Storages/StorageFile.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -35,6 +36,11 @@ std::optional<String> ITableFunctionFileLike::tryGetFormatFromFirstArgument()
 bool ITableFunctionFileLike::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
     return format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
+}
+
+NameSet ITableFunctionFileLike::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)

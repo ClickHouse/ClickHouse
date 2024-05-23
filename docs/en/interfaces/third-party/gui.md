@@ -8,6 +8,17 @@ sidebar_label: Visual Interfaces
 
 ## Open-Source {#open-source}
 
+### ch-ui {#ch-ui}
+
+[ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases, designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
+
+Features:
+
+- ClickHouse Integration: Easily manage connections and execute queries.
+- Responsive Tab Management: Dynamically handle multiple tabs, such as query and table tabs.
+- Performance Optimizations: Utilizes Indexed DB for efficient caching and state management.
+- Local Data Storage: All data is stored locally in the browser, ensuring no data is sent anywhere else.
+
 ### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
@@ -172,7 +183,7 @@ Features:
 
 ### ClickVisual {#clickvisual}
 
-[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
+[ClickVisual](https://clickvisual.net/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
 
 Features:
 
@@ -209,6 +220,18 @@ Features:
 - Promql-like language to query metrics.
 - Pre-built metrics dashboards.
 - Multiple users/projects via YAML config.
+
+### clickhouse-monitoring {#clickhouse-monitoring}
+
+[clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) is a simple Next.js dashboard that relies on `system.*` tables to help monitor and provide an overview of your ClickHouse cluster.
+
+Features:
+
+- Query monitor: current queries, query history, query resources (memory, parts read, file_open, ...), most expensive queries, most used tables or columns, etc.
+- Cluster monitor: total memory/CPU usage, distributed queue, global settings, mergetree settings, metrics, etc.
+- Tables and parts information: size, row count, compression, part size, etc., at the column level detail.
+- Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
+- Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
 ## Commercial {#commercial}
 

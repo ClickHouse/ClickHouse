@@ -15,7 +15,7 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -289,7 +289,7 @@ private:
         bool need_sync{false};
         /// End dependencies from previous stages
 
-        enum class State
+        enum class State : uint8_t
         {
             NEED_PREPARE,
             NEED_EXECUTE,
@@ -404,12 +404,17 @@ private:
 
     Stages::const_iterator stages_iterator = stages.begin();
 
-    /// Check for persisting block number column
-    static bool supportsBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
+    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
     {
-        return global_ctx->data->getSettings()->allow_experimental_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+        return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
     }
 
+    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
+    {
+        return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    }
+
+    static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };
 
 /// FIXME

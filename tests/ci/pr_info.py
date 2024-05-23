@@ -2,14 +2,11 @@
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
-# isort: off
-# for some reason this line moves to the end
 from unidiff import PatchSet  # type: ignore
-
-# isort: on
 
 from build_download_helper import get_gh_api
 from env_helper import (
@@ -18,13 +15,14 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
 )
+from lambda_shared_package.lambda_shared.pr import Labels
 
-SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
     ".md",
+    ".mdx",
     ".yml",
     ".txt",
     ".css",
@@ -43,11 +41,12 @@ RETRY_SLEEP = 0
 
 
 class EventType:
-    UNKNOWN = 0
-    PUSH = 1
-    PULL_REQUEST = 2
-    SCHEDULE = 3
-    DISPATCH = 4
+    UNKNOWN = "unknown"
+    PUSH = "commits"
+    PULL_REQUEST = "pull_request"
+    SCHEDULE = "schedule"
+    DISPATCH = "dispatch"
+    MERGE_QUEUE = "merge_group"
 
 
 def get_pr_for_commit(sha, ref):
@@ -113,6 +112,12 @@ class PRInfo:
         # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
         self.merged_pr = 0
+        self.labels = set()
+
+        repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
+        self.task_url = GITHUB_RUN_URL
+        self.repo_full_name = GITHUB_REPOSITORY
+
         self.event_type = EventType.UNKNOWN
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
@@ -153,11 +158,7 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = GITHUB_RUN_URL
-
-            self.repo_full_name = GITHUB_REPOSITORY
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
@@ -175,7 +176,7 @@ class PRInfo:
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
-            }  # type: Set[str]
+            }
 
             self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
             self.user_orgs = set()  # type: Set[str]
@@ -190,6 +191,30 @@ class PRInfo:
 
             self.diff_urls.append(self.compare_pr_url(github_event["pull_request"]))
 
+        elif (
+            EventType.MERGE_QUEUE in github_event
+        ):  # pull request and other similar events
+            self.event_type = EventType.MERGE_QUEUE
+            self.number = 0
+            self.sha = github_event[EventType.MERGE_QUEUE]["head_sha"]
+            self.base_ref = github_event[EventType.MERGE_QUEUE]["base_ref"]
+            base_sha = github_event[EventType.MERGE_QUEUE]["base_sha"]  # type: str
+            # ClickHouse/ClickHouse
+            self.base_name = github_event["repository"]["full_name"]
+            # any_branch-name - the name of working branch name
+            self.head_ref = github_event[EventType.MERGE_QUEUE]["head_ref"]
+            # parse underlying pr from ["head_ref": "refs/heads/gh-readonly-queue/test-merge-queue/pr-6751-4690229995a155e771c52e95fbd446d219c069bf"]
+            self.merged_pr = int(self.head_ref.split("/pr-")[-1].split("-")[0])
+            # UserName/ClickHouse or ClickHouse/ClickHouse
+            self.head_name = self.base_name
+            self.user_login = github_event["sender"]["login"]
+            self.diff_urls.append(
+                github_event["repository"]["compare_url"]
+                .replace("{base}", base_sha)
+                .replace("{head}", self.sha)
+            )
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
+
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
             # `head_commit` always comes with `commits`
@@ -202,13 +227,13 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = GITHUB_RUN_URL
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
-            self.repo_full_name = GITHUB_REPOSITORY
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
+
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
                 self.number = 0
+                if pull_request:
+                    self.merged_pr = pull_request["number"]
                 self.labels = set()
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
@@ -227,7 +252,7 @@ class PRInfo:
                 self.head_ref = pull_request["head"]["ref"]
                 self.head_name = pull_request["head"]["repo"]["full_name"]
                 self.pr_html_url = pull_request["html_url"]
-                if "pr-backport" in self.labels:
+                if Labels.PR_BACKPORT in self.labels:
                     # head1...head2 gives changes in head2 since merge base
                     # Thag's why we need {self.head_ref}...master to get
                     # files changed in upstream AND master...{self.head_ref}
@@ -250,7 +275,7 @@ class PRInfo:
                     ]
                 else:
                     self.diff_urls.append(self.compare_pr_url(pull_request))
-                if "release" in self.labels:
+                if Labels.RELEASE in self.labels:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
@@ -271,11 +296,7 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.labels = set()
-            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = GITHUB_RUN_URL
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
-            self.repo_full_name = GITHUB_REPOSITORY
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
@@ -285,16 +306,34 @@ class PRInfo:
         if need_changed_files:
             self.fetch_changed_files()
 
+    @property
     def is_master(self) -> bool:
         return self.number == 0 and self.head_ref == "master"
 
-    def is_release_branch(self) -> bool:
-        return self.number == 0
+    @property
+    def is_release(self) -> bool:
+        return self.number == 0 and bool(
+            re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
+        )
 
-    def is_scheduled(self):
+    @property
+    def is_release_branch(self) -> bool:
+        return self.number == 0 and not self.is_merge_queue
+
+    @property
+    def is_pr(self):
+        return self.event_type == EventType.PULL_REQUEST
+
+    @property
+    def is_scheduled(self) -> bool:
         return self.event_type == EventType.SCHEDULE
 
-    def is_dispatched(self):
+    @property
+    def is_merge_queue(self) -> bool:
+        return self.event_type == EventType.MERGE_QUEUE
+
+    @property
+    def is_dispatched(self) -> bool:
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:
@@ -309,6 +348,9 @@ class PRInfo:
         )
 
     def fetch_changed_files(self):
+        if self.changed_files_requested:
+            return
+
         if not getattr(self, "diff_urls", False):
             raise TypeError("The event does not have diff URLs")
 

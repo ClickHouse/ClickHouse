@@ -1,9 +1,10 @@
 #include <Planner/Planner.h>
 
-#include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -34,6 +35,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -1029,9 +1031,12 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
-    UInt64 limit_offset = query_analysis_result.limit_offset;
-    auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
-    query_plan.addStep(std::move(offsets_step));
+    /// If there is not a LIMIT but an offset
+    if (!query_analysis_result.limit_length && query_analysis_result.limit_offset)
+    {
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), query_analysis_result.limit_offset);
+        query_plan.addStep(std::move(offsets_step));
+    }
 }
 
 void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
@@ -1082,6 +1087,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     {
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
+        /// I don't know if this is a good decision,
+        /// But for now it is done in the same way as in old analyzer.
+        /// This would not ignore limits for subqueries (affects mutations only).
+        /// See test_build_sets_from_multiple_threads-analyzer.
+        subquery_options.ignore_limits = false;
         Planner subquery_planner(
             query_tree,
             subquery_options,
@@ -1181,7 +1191,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     if (select_query_options.is_subquery)
         updateContextForSubqueryExecution(mutable_context);
 
-    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
+    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -1219,8 +1229,9 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query to stage {}{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
@@ -1239,6 +1250,21 @@ void Planner::buildPlanForUnionNode()
     if (union_mode == SelectUnionMode::UNION_DEFAULT || union_mode == SelectUnionMode::EXCEPT_DEFAULT
         || union_mode == SelectUnionMode::INTERSECT_DEFAULT)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode must be initialized");
+
+    if (union_node.hasRecursiveCTETable())
+    {
+        const auto & recursive_cte_table = *union_node.getRecursiveCTETable();
+
+        ColumnsWithTypeAndName recursive_cte_columns;
+        recursive_cte_columns.reserve(recursive_cte_table.columns.size());
+        for (const auto & recursive_cte_table_column : recursive_cte_table.columns)
+            recursive_cte_columns.emplace_back(recursive_cte_table_column.type, recursive_cte_table_column.name);
+
+        auto read_from_recursive_cte_step = std::make_unique<ReadFromRecursiveCTEStep>(Block(std::move(recursive_cte_columns)), query_tree);
+        read_from_recursive_cte_step->setStepDescription(query_tree->toAST()->formatForErrorMessage());
+        query_plan.addStep(std::move(read_from_recursive_cte_step));
+        return;
+    }
 
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
@@ -1357,6 +1383,17 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
+    select_query_info.merge_tree_enable_remove_parts_from_snapshot_optimization = select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization;
+
+    if (!select_query_info.has_window && query_node.hasQualify())
+    {
+        if (query_node.hasHaving())
+            query_node.getHaving() = mergeConditionNodes({query_node.getHaving(), query_node.getQualify()}, query_context);
+        else
+            query_node.getHaving() = query_node.getQualify();
+
+        query_node.getQualify() = {};
+    }
 
     if (!select_query_info.need_aggregate && query_node.hasHaving())
     {
@@ -1373,7 +1410,7 @@ void Planner::buildPlanForQueryNode()
     const auto & settings = query_context->getSettingsRef();
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (planner_context->getPreparedSets().hasSubqueries())
+        if (!settings.parallel_replicas_allow_in_with_subquery && planner_context->getPreparedSets().hasSubqueries())
         {
             if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
@@ -1470,8 +1507,9 @@ void Planner::buildPlanForQueryNode()
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
-    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query from stage {} to stage {}{}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1626,6 +1664,9 @@ void Planner::buildPlanForQueryNode()
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
+
+            if (expression_analysis_result.hasQualify())
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute);
 
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", result_actions_to_execute);

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/boolean
-sidebar_position: 43
+sidebar_position: 22
 sidebar_label: Boolean
 ---
 

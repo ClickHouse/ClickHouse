@@ -1,6 +1,14 @@
+#include <Databases/DatabaseLazy.h>
+
+#include <base/sort.h>
+#include <iomanip>
+#include <filesystem>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -10,13 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 
-#include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
-#include <base/sort.h>
-#include <iomanip>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -152,7 +154,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
