@@ -737,6 +737,14 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::WAIT_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
+            FailPointInjection::pauseFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
+            break;
+        }
         case Type::RESET_COVERAGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM);
@@ -1430,6 +1438,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
