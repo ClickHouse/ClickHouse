@@ -844,7 +844,7 @@ SELECT xxHash64('')
 
 - Hash value. [UInt32/64](../data-types/int-uint.md).  
 
-note:::
+:::note
 The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
 :::
 
