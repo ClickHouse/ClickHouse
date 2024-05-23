@@ -37,7 +37,7 @@ getMacro(name);
 
 **Returned value**
 
-- Value of the specified macro.[String](../../sql-reference/data-types/string.md).
+- Value of the specified macro. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
