@@ -172,7 +172,7 @@ Result:
 ## visibleWidth
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
-This function is used by the system to implement [Pretty formats](../formats.mdx).
+This function is used by the system to implement [Pretty formats](../../interfaces/formats.md).
 
 `NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
 
@@ -335,7 +335,7 @@ The argument is internally still evaluated. Useful e.g. for benchmarks.
 **Syntax**
 
 ```sql
-ignore(…)
+ignore(x)
 ```
 
 ## sleep
@@ -540,60 +540,6 @@ Result:
 │                  0 │
 └────────────────────┘
 ```
-
-## isFinite
-
-Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwise this function returns 0.
-
-**Syntax**
-
-```sql
-isFinite(x)
-```
-
-## isInfinite
-
-Returns 1 if the Float32 or Float64 argument is infinite, otherwise this function returns 0. Note that 0 is returned for a NaN.
-
-**Syntax**
-
-```sql
-isInfinite(x)
-```
-
-## ifNotFinite
-
-Checks whether a floating point value is finite.
-
-**Syntax**
-
-```sql
-ifNotFinite(x,y)
-```
-
-**Arguments**
-
-- `x` — Value to check for infinity. [Float\*](../../sql-reference/data-types/float.md).
-- `y` — Fallback value. [Float\*](../../sql-reference/data-types/float.md).
-
-**Returned value**
-
-- `x` if `x` is finite.
-- `y` if `x` is not finite.
-
-**Example**
-
-Query:
-
-    SELECT 1/0 as infimum, ifNotFinite(infimum,42)
-
-Result:
-
-    ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
-    │     inf │                            42 │
-    └─────────┴───────────────────────────────┘
-
-You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
 ## isNaN
 
@@ -2303,7 +2249,7 @@ Accepts a path to a catboost model and model arguments (features). Returns Float
 **Syntax**
 
 ```sql
-catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
+catboostEvaluate(path_to_model, feature_1, feature_2, ..., feature_n)
 ```
 
 **Example**
@@ -2351,7 +2297,7 @@ Throw an exception if argument `x` is true.
 **Syntax**
 
 ```sql
-throwIf(x\[, message\[, error_code\]\])
+throwIf(x[, message[, error_code]])
 ```
 
 **Arguments**

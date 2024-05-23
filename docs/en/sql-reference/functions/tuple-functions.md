@@ -7,15 +7,15 @@ sidebar_label: Tuples
 ## tuple
 
 A function that allows grouping multiple columns.
-For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tuple containing these columns. There is no cost to execute the function.
+For columns with the types T1, T2, ..., it returns a Tuple(T1, T2, ...) type tuple containing these columns. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
 
-The function implements the operator `(x, y, …)`.
+The function implements the operator `(x, y, ...)`.
 
 **Syntax**
 
 ``` sql
-tuple(x, y, …)
+tuple(x, y, ...)
 ```
 
 ## tupleElement
