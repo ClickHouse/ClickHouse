@@ -45,6 +45,7 @@ from env_helper import (
     S3_BUILDS_BUCKET,
     TEMP_PATH,
     GITHUB_RUN_ID,
+    GITHUB_REPOSITORY,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
@@ -1913,7 +1914,7 @@ def _cancel_pr_wf(s3: S3Helper, pr_number: int) -> None:
         print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
     else:
         print(f"Canceling PR workflow run_id: [{run_id}], pr: [{pr_number}]")
-        GitHub.cancel_wf(run_id)
+        GitHub.cancel_wf(GITHUB_REPOSITORY, get_best_robot_token(), run_id)
 
 
 def main() -> int:
