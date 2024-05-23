@@ -37,8 +37,8 @@ public:
 protected:
     void onConsume(Chunk chunk) override
     {
-        if (auto block = squashing.add(std::move(chunk)))
-            cur_chunk.setColumns(block.getColumns(), block.rows());
+        if (auto res_chunk = squashing.add(std::move(chunk)))
+            cur_chunk.setColumns(res_chunk.getColumns(), res_chunk.getNumRows());
     }
 
     GenerateResult onGenerate() override
@@ -50,8 +50,8 @@ protected:
     }
     void onFinish() override
     {
-        auto block = squashing.add({});
-        finish_chunk.setColumns(block.getColumns(), block.rows());
+        auto chunk = squashing.add({});
+        finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
     }
 
 private:

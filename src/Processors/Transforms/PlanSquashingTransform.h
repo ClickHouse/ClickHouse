@@ -3,7 +3,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/Squashing.h>
-#include "Processors/Port.h"
 
 enum PlanningStatus
 {

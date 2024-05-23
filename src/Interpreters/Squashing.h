@@ -1,7 +1,5 @@
 #pragma once
 
-#include <list>
-#include <memory>
 #include <vector>
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
@@ -60,17 +58,17 @@ class ApplySquashing
 public:
     explicit ApplySquashing(Block header_);
 
-    Block add(Chunk && input_chunk);
+    Chunk add(Chunk && input_chunk);
 
 private:
     Block accumulated_block;
     const Block header;
 
-    Block addImpl(Chunk && chunk);
+    Chunk addImpl(Chunk && chunk);
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    void append(Chunk & input_chunk);
+    void append(const std::vector<Chunk> & input_chunks);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;

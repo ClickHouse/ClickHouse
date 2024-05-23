@@ -1,7 +1,6 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -135,46 +134,52 @@ ApplySquashing::ApplySquashing(Block header_)
 {
 }
 
-Block ApplySquashing::add(Chunk && input_chunk)
+Chunk ApplySquashing::add(Chunk && input_chunk)
 {
     return addImpl(std::move(input_chunk));
 }
 
-Block ApplySquashing::addImpl(Chunk && input_chunk)
+Chunk ApplySquashing::addImpl(Chunk && input_chunk)
 {
     if (!input_chunk.hasChunkInfo())
-        return Block();
+        return Chunk();
 
     const auto *info = getInfoFromChunk(input_chunk);
-    for (auto & chunk : info->chunks)
-        append(chunk);
+    append(info->chunks);
 
     Block to_return;
     std::swap(to_return, accumulated_block);
-    return to_return;
+    return Chunk(to_return.getColumns(), to_return.rows());
 }
 
-void ApplySquashing::append(Chunk & input_chunk)
+void ApplySquashing::append(const std::vector<Chunk> & input_chunks)
 {
-    if (input_chunk.getNumColumns() == 0)
-        return;
-    if (!accumulated_block)
+    std::vector<IColumn::MutablePtr> mutable_columns;
+    size_t rows = 0;
+    for (const Chunk & chunk : input_chunks)
+        rows += chunk.getNumRows();
+
+    for (const auto & input_chunk : input_chunks)
     {
-        for (size_t i = 0; i < input_chunk.getNumColumns(); ++ i)
+        if (!accumulated_block)
         {
-            ColumnWithTypeAndName col = ColumnWithTypeAndName(input_chunk.getColumns()[i], header.getDataTypes()[i], header.getNames()[i]);
-            accumulated_block.insert(accumulated_block.columns(), col);
+            for (size_t i = 0; i < input_chunks[0].getNumColumns(); ++i)
+            { // We can put this part of code out of the cycle, but it will consume more memory
+                ColumnWithTypeAndName col = ColumnWithTypeAndName(input_chunks[0].getColumns()[i],header.getDataTypes()[i], header.getNames()[i]);
+                mutable_columns.push_back(IColumn::mutate(col.column));
+                mutable_columns[i]->reserve(rows);
+                accumulated_block.insert(col);
+            }
+            continue;
         }
-        return;
-    }
 
-    for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
-    {
-        const auto source_column = input_chunk.getColumns()[i];
+        for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
+        {
+            const auto source_column = input_chunk.getColumns()[i];
 
-        auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
-        mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
-        accumulated_block.getByPosition(i).column = std::move(mutable_column);
+            mutable_columns[i]->insertRangeFrom(*source_column, 0, source_column->size());
+            accumulated_block.getByPosition(i).column = mutable_columns[i]->cloneFinalized();
+        }
     }
 }
 
@@ -283,7 +288,6 @@ bool PlanSquashing::isEnoughSize(const std::vector<Chunk> & chunks)
 
 bool PlanSquashing::isEnoughSize(size_t rows, size_t bytes) const
 {
-    LOG_TRACE(getLogger("Planning"), "rows: {}, bytes: {}", rows, bytes);
     return (!min_block_size_rows && !min_block_size_bytes)
         || (min_block_size_rows && rows >= min_block_size_rows)
         || (min_block_size_bytes && bytes >= min_block_size_bytes);
