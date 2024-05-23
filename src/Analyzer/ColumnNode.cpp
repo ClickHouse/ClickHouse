@@ -110,8 +110,8 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
         if (node_type == QueryTreeNodeType::TABLE ||
             node_type == QueryTreeNodeType::TABLE_FUNCTION ||
             node_type == QueryTreeNodeType::QUERY ||
-            node_type == QueryTreeNodeType::UNION ||
-            node_type == QueryTreeNodeType::ARRAY_JOIN)
+            node_type == QueryTreeNodeType::UNION)// ||
+            //node_type == QueryTreeNodeType::ARRAY_JOIN)
         {
             if (column_source->hasAlias())
             {

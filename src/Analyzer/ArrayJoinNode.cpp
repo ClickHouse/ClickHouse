@@ -55,7 +55,7 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
     auto array_join_ast = std::make_shared<ASTArrayJoin>();
     array_join_ast->kind = is_left ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
 
-    array_join_ast->setAlias(getAlias());
+    // array_join_ast->setAlias(getAlias());
 
     auto array_join_expressions_ast = std::make_shared<ASTExpressionList>();
     const auto & array_join_expressions = getJoinExpressions().getNodes();

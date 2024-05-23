@@ -247,12 +247,12 @@ void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & sta
     formatImplAfterTable(settings, state, frame);
 }
 
-static void writeAlias(const String & name, const ASTWithAlias::FormatSettings & settings)
-{
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
-    settings.writeIdentifier(name);
-    settings.ostr << (settings.hilite ? IAST::hilite_none : "");
-}
+// static void writeAlias(const String & name, const ASTWithAlias::FormatSettings & settings)
+// {
+//     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
+//     settings.writeIdentifier(name);
+//     settings.ostr << (settings.hilite ? IAST::hilite_none : "");
+// }
 
 void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -264,8 +264,8 @@ void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & sta
         << indent_str
         << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
-    if (!alias.empty())
-        writeAlias(alias, settings);
+    // if (!alias.empty())
+    //     writeAlias(alias, settings);
 
     settings.one_line
         ? expression_list->formatImpl(settings, state, frame)
