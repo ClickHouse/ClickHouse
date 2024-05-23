@@ -310,7 +310,7 @@ private:
         bool fill_gaps,
         ColumnPtr & res_ptr) const
     {
-        const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(series_column);
+        const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&series_column);
         const IColumn * series_data;
         const char8_t * null_map = nullptr;
 
@@ -390,7 +390,7 @@ private:
         bool fill_gaps,
         ColumnPtr & res_ptr) const
     {
-        const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(series_column);
+        const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&series_column);
         const IColumn * series_data;
         const char8_t * null_map = nullptr;
 
@@ -410,12 +410,12 @@ private:
         const PaddedPODArray<T> & series_vec = series_concrete->getData();
 
 
-        const ColumnVector<UInt64> * times_concrete = checkAndGetColumn<ColumnVector<UInt64>>(times_column);
+        const ColumnVector<UInt64> * times_concrete = checkAndGetColumn<ColumnVector<UInt64>>(&times_column);
         if (!times_concrete)
             return false;
         const PaddedPODArray<UInt64> & times_vec = times_concrete->getData();
 
-        const ColumnVector<UInt64> * times_predict_concrete = checkAndGetColumn<ColumnVector<UInt64>>(times_predict_column);
+        const ColumnVector<UInt64> * times_predict_concrete = checkAndGetColumn<ColumnVector<UInt64>>(&times_predict_column);
         if (!times_concrete)
             return false;
         const PaddedPODArray<UInt64> & times_predict_vec = times_predict_concrete->getData();
