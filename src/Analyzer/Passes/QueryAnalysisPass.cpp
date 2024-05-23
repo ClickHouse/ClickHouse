@@ -607,6 +607,8 @@ struct ScopeAliases
     std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
     std::vector<QueryTreeNodePtr> cloned_nodes_with_duplicated_aliases;
 
+    std::unordered_set<std::string> array_join_aliases;
+
     std::unordered_map<std::string, QueryTreeNodePtr> & getAliasMap(IdentifierLookupContext lookup_context)
     {
         switch (lookup_context)
@@ -2875,7 +2877,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
 
 bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr || scope.aliases.array_join_aliases.contains(identifier_lookup.identifier.front());
 }
 
 /** Resolve identifier from scope aliases.
@@ -2924,6 +2926,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     IdentifierResolveSettings identifier_resolve_settings)
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
+    // std::cerr << "tryResolveIdentifierFromAliases " << identifier_lookup.dump() << std::endl;
 
     auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
     if (it == nullptr)
@@ -2952,6 +2955,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     }
 
     auto node_type = alias_node->getNodeType();
+    // std::cerr << "tryResolveIdentifierFromAliases 1.5 \n" << alias_node->dumpTree() << std::endl;
 
     /// Resolve expression if necessary
     if (node_type == QueryTreeNodeType::IDENTIFIER)
@@ -2960,6 +2964,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
 
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
+        // std::cerr << "tryResolveIdentifierFromAliases 2 " << identifier.getFullName() << std::endl;
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
         if (!lookup_result.resolved_identifier)
         {
@@ -3136,6 +3141,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
     size_t identifier_column_qualifier_parts,
     bool can_be_not_found)
 {
+    // std::cerr << "tryResolveIdentifierFromStorage " << identifier.getFullName() << std::endl;
     auto identifier_without_column_qualifier = identifier;
     identifier_without_column_qualifier.popFirst(identifier_column_qualifier_parts);
 
@@ -3278,6 +3284,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
     {
         auto qualified_identifier_with_removed_part = qualified_identifier;
         qualified_identifier_with_removed_part.popFirst();
+        // std::cerr << "tryResolveIdentifierFromStorage qualified_identifier_with_removed_part" << qualified_identifier_with_removed_part.getFullName() << std::endl;
 
         if (qualified_identifier_with_removed_part.empty())
             break;
@@ -3896,7 +3903,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const Identifi
     auto resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
 
     // std::cerr << "tryResolveIdentifierFromArrayJoin 2 " << scope.table_expressions_in_resolve_process.contains(table_expression_node.get())
-    //  << ' ' << identifier_lookup.dump()  << '\n' << table_expression_node->dumpTree() << std::endl;
+    //  << ' ' << identifier_lookup.dump()  << ' ' << (resolved_identifier ? resolved_identifier->dumpTree() : "not resolved ") << std::endl;
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolved_identifier;
@@ -3914,14 +3921,48 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const Identifi
         auto & array_join_column_expression_typed = array_join_column_expression->as<ColumnNode &>();
         // std::cerr << "========== " << identifier_lookup.identifier.getFullName() << ' ' << from_array_join_node.getAlias() << ' ' << array_join_column_expression_typed.getAlias() << std::endl;
 
-        const auto & parts = identifier_lookup.identifier.getParts();
-        if (array_join_column_expression_typed.getAlias() == identifier_lookup.identifier.getFullName() ||
-            (parts.size() == 2 && parts.front() == from_array_join_node.getAlias() && parts.back() == array_join_column_expression_typed.getAlias()))
+        IdentifierView identifier_view(identifier_lookup.identifier);
+
+        if (identifier_view.isCompound() && from_array_join_node.hasAlias() && identifier_view.front() == from_array_join_node.getAlias())
+            identifier_view.popFirst();
+
+        const auto & alias_or_name = array_join_column_expression_typed.hasAlias()
+            ? array_join_column_expression_typed.getAlias()
+            : array_join_column_expression_typed.getColumnName();
+
+        if (identifier_view.front() == alias_or_name)
+            identifier_view.popFirst();
+        else if (identifier_view.getFullName() == alias_or_name)
+            identifier_view.popFirst(identifier_view.getPartsSize()); /// Clear
+        else
+            continue;
+
+        if (identifier_view.empty())
         {
             auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
                 array_join_column_expression_typed.getColumnSource());
             return array_join_column;
         }
+
+        auto compound_expr = tryResolveIdentifierFromCompoundExpression(
+            identifier_lookup.identifier,
+            identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize() /*identifier_bind_size*/,
+            array_join_column_expression,
+            {} /* compound_expression_source */,
+            scope,
+            true /* can_be_not_found */);
+
+        if (compound_expr)
+            return compound_expr;
+
+        // const auto & parts = identifier_lookup.identifier.getParts();
+        // if (array_join_column_expression_typed.getAlias() == identifier_lookup.identifier.getFullName() ||
+        //     (parts.size() == 2 && parts.front() == from_array_join_node.getAlias() && parts.back() == array_join_column_expression_typed.getAlias()))
+        // {
+        //     auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
+        //         array_join_column_expression_typed.getColumnSource());
+        //     return array_join_column;
+        // }
     }
 
     if (!resolved_identifier)
@@ -3993,7 +4034,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const Identifie
     if (identifier_lookup.isFunctionLookup())
         return {};
 
-    // std::cerr << "tryResolveIdentifier " << identifier_lookup.identifier.getFullName() << std::endl;
+    // std::cerr << "tryResolveIdentifierFromJoinTree " << identifier_lookup.identifier.getFullName() << std::endl;
 
     /// Try to resolve identifier from table columns
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
@@ -7613,15 +7654,18 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         for (const auto & elem : array_join_nodes)
         {
+            if (elem->hasAlias())
+                scope.aliases.array_join_aliases.insert(elem->getAlias());
             for (auto & child : elem->getChildren())
             {
                 //std::cerr << "<<<<<<<<<< " << child->dumpTree() << std::endl;
-                expressions_visitor.visit(child);
+                if (child)
+                    expressions_visitor.visit(child);
                 //visit(child);
             }
         }
 
-        //expressions_visitor.visit(array_join_expression);
+        // expressions_visitor.visit(array_join_expression);
 
         std::string identifier_full_name;
 
