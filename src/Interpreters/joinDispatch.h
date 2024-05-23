@@ -114,7 +114,7 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant &
 
 /// Call function on specified join map
 template <typename MapsVariant, typename Func>
-inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<const MapsVariant *> & mapsv, bool force_maps_all , Func && func)
+inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<const MapsVariant *> & mapsv, bool force_maps_all, Func && func)
 {
     return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
     {

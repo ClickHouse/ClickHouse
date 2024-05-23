@@ -1714,13 +1714,11 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
     bool need_filter [[maybe_unused]],
-    bool need_flags [[maybe_unused]],
-    bool add_missing [[maybe_unused]],
     bool flag_per_row [[maybe_unused]])
 {
     constexpr JoinFeaturesT join_features;
     size_t left_block_rows = added_columns.rows_to_add;
-    if (need_filter)
+    if constexpr (join_features.need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
     std::unique_ptr<Arena> pool;
@@ -1810,20 +1808,18 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                             if (used_once)
                             {
                                 total_added_rows += 1;
-                                added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
+                                added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
                             }
                         }
-                        else if constexpr (join_features.is_anti_join)
+                        else if constexpr (join_features.is_anti_join && join_features.need_flags)
                         {
-                            if (need_flags)
-                                used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
                         }
                         else
                         {
                             total_added_rows += 1;
-                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
-                            if (need_flags)
-                                used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                            used_flags.template setUsed<join_features.need_flags, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
                         }
                     }
                     ++selected_right_row_it;
@@ -1842,7 +1838,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
+                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
                             total_added_rows += 1;
                         }
                         ++selected_right_row_it;
@@ -1852,7 +1848,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
+                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
                             total_added_rows += 1;
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;
@@ -1868,32 +1864,30 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 if (!any_matched)
                 {
                     if constexpr (join_features.left)
-                        setUsed<join_features.need_filter>(added_columns.filter, left_start_row + i - 1);
-                    addNotFoundRow<join_features.add_missing, need_replication>(added_columns, total_added_rows);
+                        if (need_filter)
+                            setUsed<true>(added_columns.filter, left_start_row + i - 1);
+                    addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
                 }
             }
             else
             {
                 if (!any_matched)
                 {
-                    if (add_missing)
-                        addNotFoundRow<true, need_replication>(added_columns, total_added_rows);
-                    else
-                        addNotFoundRow<false, need_replication>(added_columns, total_added_rows);
+                    addNotFoundRow<join_features.add_missing, need_replication>(added_columns, total_added_rows);
                 }
                 else
                 {
-                    if (!flag_per_row && need_flags)
-                        used_flags.template setUsed<true, false>(find_results[find_result_index]);
+                    if (!flag_per_row)
+                        used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
                         setUsed<true>(added_columns.filter, left_start_row + i - 1);
-                    if (add_missing)
+                    if constexpr (join_features.add_missing)
                         added_columns.applyLazyDefaults();
                 }
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
-            if constexpr (need_replication)
+            if constexpr (join_features.need_replication)
             {
                 (*added_columns.offsets_to_replicate)[left_start_row + i - 1] = total_added_rows;
             }
@@ -1920,7 +1914,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
         copy_final_matched_rows(left_start_row, filter_col);
 
-        if constexpr (need_replication)
+        if constexpr (join_features.need_replication)
         {
             // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
             if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
@@ -1930,7 +1924,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         }
     }
 
-    if constexpr (need_replication)
+    if constexpr (join_features.need_replication)
     {
         added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
         added_columns.filter.resize_assume_reserved(left_row_iter);
@@ -2101,8 +2095,6 @@ size_t joinRightColumnsSwitchMultipleDisjuncts(
                added_columns,
                used_flags,
                need_filter,
-               join_features.need_flags,
-               join_features.add_missing,
                mark_per_row_used);
         }
     }
