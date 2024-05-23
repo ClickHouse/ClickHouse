@@ -12,7 +12,7 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-Block buildBlock(const Block & header, Chunk & chunk)
+Block buildBlock(const Block & header, Chunk chunk)
 {
     auto block = header.cloneWithColumns(chunk.detachColumns());
 
@@ -40,7 +40,7 @@ SquashingChunksTransform::SquashingChunksTransform(const Block & header, size_t 
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
-    if (auto block = squashing.add(buildBlock(getInputPort().getHeader(), chunk)))
+    if (auto block = squashing.add(buildBlock(getInputPort().getHeader(), std::move(chunk))))
         completeChunk(cur_chunk, std::move(block));
 }
 
@@ -55,7 +55,7 @@ SquashingChunksTransform::GenerateResult SquashingChunksTransform::onGenerate()
 void SquashingChunksTransform::onFinish()
 {
     auto block = squashing.add({});
-    finish_chunk.setColumns(block.getColumns(), block.rows());
+    completeChunk(finish_chunk, std::move(block));
 }
 
 void SquashingChunksTransform::work()
@@ -77,49 +77,34 @@ void SquashingChunksTransform::work()
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : ISimpleTransform(header, header, true), squashing(min_block_size_rows, min_block_size_bytes)
+    : IInflatingTransform(header, header), squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void SimpleSquashingChunksTransform::transform(Chunk & chunk)
+void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    if (!finished)
-    {
-        if (auto block = squashing.add(buildBlock(getInputPort().getHeader(), chunk)))
-            completeChunk(chunk, std::move(block));
-    }
-    else
-    {
-        if (chunk.hasRows())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
-
-        auto block = squashing.add({});
-        completeChunk(chunk, std::move(block));
-    }
+    Block current_block = squashing.add(buildBlock(getInputPort().getHeader(), std::move(chunk)));
+    completeChunk(squashed_chunk, std::move(current_block));
 }
 
-IProcessor::Status SimpleSquashingChunksTransform::prepare()
+Chunk SimpleSquashingChunksTransform::generate()
 {
-    if (!finished && input.isFinished())
-    {
-        if (output.isFinished())
-            return Status::Finished;
+    if (squashed_chunk.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-        if (!output.canPush())
-            return Status::PortFull;
+    return std::move(squashed_chunk);
+}
 
-        if (has_output)
-        {
-            output.pushData(std::move(output_data));
-            has_output = false;
-            return Status::PortFull;
-        }
+bool SimpleSquashingChunksTransform::canGenerate()
+{
+    return !squashed_chunk.empty();
+}
 
-        finished = true;
-        /// On the next call to transform() we will return all data buffered in `squashing` (if any)
-        return Status::Ready;
-    }
-    return ISimpleTransform::prepare();
+Chunk SimpleSquashingChunksTransform::getRemaining()
+{
+    Block current_block = squashing.add({});
+    completeChunk(squashed_chunk, std::move(current_block));
+    return std::move(squashed_chunk);
 }
 
 }
