@@ -263,7 +263,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// If mask contains only zeros, we can just create a column with default values as it will be ignored
         auto result_type = column_function->getResultType();
         auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
-        column = {std::move(default_column), result_type, ""};
+        column = {default_column, result_type, ""};
     }
     else if (mask_info.has_zeros)
     {
