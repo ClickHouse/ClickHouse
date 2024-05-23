@@ -2,6 +2,11 @@
 SELECT dictGet(\'dictdb_01376.dict_exists\', \'value\', toUInt64(1)) AS val
 FROM numbers(2)
 GROUP BY toUInt64(1)
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(1.1, \'Float64\') AS val
+FROM numbers(2) AS __table1
+GROUP BY _CAST(1.1, \'Float64\')
+SETTINGS allow_experimental_analyzer = 1
 QUERY id: 0
   PROJECTION COLUMNS
     val Float64

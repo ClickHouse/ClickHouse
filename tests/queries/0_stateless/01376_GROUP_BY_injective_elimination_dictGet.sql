@@ -32,7 +32,8 @@ LAYOUT(FLAT());
 
 SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) as val FROM numbers(2) GROUP BY val;
 
-EXPLAIN SYNTAX SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) as val FROM numbers(2) GROUP BY val;
+EXPLAIN SYNTAX SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) as val FROM numbers(2) GROUP BY val SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) as val FROM numbers(2) GROUP BY val SETTINGS allow_experimental_analyzer = 1;
 
 EXPLAIN QUERY TREE
 SELECT dictGet('dictdb_01376.dict_exists', 'value', number) as val
