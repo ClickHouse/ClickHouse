@@ -405,10 +405,11 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     /// There is no Point type, because for most of geometry functions it is useless.
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
-    /// There is some ambiguity, we don't take into consideration a name of a custom type.
-    // else if (factory.get("LineString")->equals(*type))
-    //     return f(ConverterType<ColumnToLineStringsConverter<Point>>());
-    else if (factory.get("Ring")->equals(*type))
+    /// We should take the name into consideration to avoid ambiguity.
+    /// Because for example both Ring and LineString are resolved to Array<Point>.
+    else if (factory.get("LineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "Ring")
+        return f(ConverterType<ColumnToLineStringsConverter<Point>>());
+    else if (factory.get("Ring")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "Ring")
         return f(ConverterType<ColumnToRingsConverter<Point>>());
     else if (factory.get("Polygon")->equals(*type))
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
