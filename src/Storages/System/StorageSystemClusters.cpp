@@ -54,6 +54,10 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
             if (auto database_cluster = replicated->tryGetCluster())
                 writeCluster(res_columns, {name_and_database.first, database_cluster},
                              replicated->tryGetAreReplicasActive(database_cluster));
+
+            if (auto database_cluster = replicated->tryGetAllGroupsCluster())
+                writeCluster(res_columns, {"all_groups." + name_and_database.first, database_cluster},
+                             replicated->tryGetAreReplicasActive(database_cluster));
         }
     }
 }
