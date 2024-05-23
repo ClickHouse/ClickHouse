@@ -1053,7 +1053,8 @@ buildId()
 
 ## blockNumber
 
-Returns the sequence number of the data block where the row is located.
+Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
+The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate.
 
 **Syntax**
 
@@ -1061,9 +1062,53 @@ Returns the sequence number of the data block where the row is located.
 blockNumber()
 ```
 
+**Returned value**
+
+- Sequence number of the data block where the row is located. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT blockNumber()
+FROM
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 10
+) SETTINGS max_block_size = 2
+```
+
+Result:
+
+```response
+┌─blockNumber()─┐
+│             7 │
+│             7 │
+└───────────────┘
+┌─blockNumber()─┐
+│             8 │
+│             8 │
+└───────────────┘
+┌─blockNumber()─┐
+│             9 │
+│             9 │
+└───────────────┘
+┌─blockNumber()─┐
+│            10 │
+│            10 │
+└───────────────┘
+┌─blockNumber()─┐
+│            11 │
+│            11 │
+└───────────────┘
+```
+
 ## rowNumberInBlock {#rowNumberInBlock}
 
-Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
+Returns for each [block](../../development/architecture.md#block) processed by `rowNumberInBlock` the number of the current row.
+The returned number starts for each block at 0.
 
 **Syntax**
 
@@ -1071,14 +1116,101 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 rowNumberInBlock()
 ```
 
+**Returned value**
+
+- Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT rowNumberInBlock()
+FROM
+(
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+) SETTINGS max_block_size = 2
+```
+
+Result:
+
+```response
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+```
+
 ## rowNumberInAllBlocks
 
-Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
+Returns a unique row number for each row processed by `rowNumberInAllBlocks`. The returned numbers start at 0.
 
 **Syntax**
 
 ```sql
 rowNumberInAllBlocks()
+```
+
+**Returned value**
+
+- Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT rowNumberInAllBlocks()
+FROM
+(
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+)
+SETTINGS max_block_size = 2
+```
+
+Result:
+
+```response
+┌─rowNumberInAllBlocks()─┐
+│                      0 │
+│                      1 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      4 │
+│                      5 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      2 │
+│                      3 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      6 │
+│                      7 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      8 │
+│                      9 │
+└────────────────────────┘
 ```
 
 ## neighbor

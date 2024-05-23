@@ -152,7 +152,7 @@ Configuration example:
 **Syntax**
 
 ``` sql
-cutToFirstSignificantSubdomain(URL, TLD)
+cutToFirstSignificantSubdomainCustom(URL, TLD)
 ```
 
 **Arguments**
