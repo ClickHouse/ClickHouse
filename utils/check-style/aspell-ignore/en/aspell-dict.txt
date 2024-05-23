@@ -766,6 +766,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+proportionsZTest
 Punycode
 PyArrow
 PyCharm
@@ -2764,6 +2765,7 @@ unixODBC
 unixodbc
 unoptimized
 unparsed
+unpooled
 unrealiable
 unreplicated
 unresolvable
