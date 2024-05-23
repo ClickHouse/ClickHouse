@@ -1908,13 +1908,26 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_wf(s3: S3Helper, pr_number: int) -> None:
-    run_id = CiMetadata(s3, pr_number).fetch_meta().run_id
-    if not run_id:
-        print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
+def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
+    wf_data = CiMetadata(s3, pr_number).fetch_meta()
+    if not cancel_sync:
+        if not wf_data.run_id:
+            print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
+        else:
+            print(
+                f"Canceling PR workflow run_id: [{wf_data.run_id}], pr: [{pr_number}]"
+            )
+            GitHub.cancel_wf(GITHUB_REPOSITORY, get_best_robot_token(), wf_data.run_id)
     else:
-        print(f"Canceling PR workflow run_id: [{run_id}], pr: [{pr_number}]")
-        GitHub.cancel_wf(GITHUB_REPOSITORY, get_best_robot_token(), run_id)
+        if not wf_data.sync_pr_run_id:
+            print("WARNING: Sync PR run id has not been found")
+        else:
+            print(f"Canceling sync PR workflow run_id: [{wf_data.sync_pr_run_id}]")
+            GitHub.cancel_wf(
+                "ClickHouse/clickhouse-private",
+                get_best_robot_token(),
+                wf_data.sync_pr_run_id,
+            )
 
 
 def main() -> int:
@@ -1947,7 +1960,7 @@ def main() -> int:
     if args.configure:
         if CI and pr_info.is_pr:
             # store meta on s3 (now we need it only for PRs)
-            meta = CiMetadata(s3, pr_info.number)
+            meta = CiMetadata(s3, pr_info.number, pr_info.head_ref)
             meta.run_id = int(GITHUB_RUN_ID)
             meta.push_meta()
 
@@ -2245,10 +2258,12 @@ def main() -> int:
 
     ### CANCEL PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
-        assert (
-            pr_info.is_merge_queue
-        ), "Currently it's supposed to be used in MQ wf to cancel running PR wf if any"
-        _cancel_pr_wf(s3, pr_info.merged_pr)
+        if pr_info.is_merge_queue:
+            _cancel_pr_wf(s3, pr_info.merged_pr)
+        elif pr_info.is_pr:
+            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
+        else:
+            assert False, "BUG! Not supported scenario"
 
     ### print results
     _print_results(result, args.outfile, args.pretty)
