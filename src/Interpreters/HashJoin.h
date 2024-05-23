@@ -73,6 +73,8 @@ public:
 
     template <bool use_flags, bool flag_per_row, typename T>
     bool setUsedOnce(const T & f);
+    template <bool use_flags, bool flag_per_row>
+    bool setUsedOnce(const Block * block, size_t row_num, size_t offset);
 };
 
 }
