@@ -1000,7 +1000,8 @@ Result:
 
 ## reinterpretAsInt(8\|16\|32\|64)
 
-## reinterpretAsFloat(32\|64)
+## reinterpretAsFloat*
+
 
 ## reinterpretAsDate
 
