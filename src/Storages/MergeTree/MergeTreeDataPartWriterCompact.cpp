@@ -67,12 +67,11 @@ void MergeTreeDataPartWriterCompact::initDynamicStreamsIfNeeded(const Block & bl
         return;
 
     is_dynamic_streams_initialized = true;
-    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
         if (column.type->hasDynamicSubcolumns())
         {
-            auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
+            auto compression = getCodecDescOrDefault(column.name, default_codec);
             addStreams(column, block.getByName(column.name).column, compression);
         }
     }
