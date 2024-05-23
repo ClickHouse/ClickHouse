@@ -45,40 +45,52 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    ParquetBloomFilterCondition(const ActionsDAGPtr & filter_actions_dag,
-                                const IndexToColumnBF & index_to_column_hasher,
-                                ContextPtr context_,
-                                const Block & header_);
+    ParquetBloomFilterCondition(const std::vector<RPNElement> & rpn_);
 
     bool mayBeTrueOnRowGroup(const IndexToColumnBF & bf);
 
 private:
-    const Block & header;
     std::vector<RPNElement> rpn;
+};
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node,
-                             const IndexToColumnBF & index_to_column_hasher,
-                             RPNElement & out);
+struct BloomFilterRPNBuilder
+{
+    using IndexToColumnBF = ParquetBloomFilterCondition::IndexToColumnBF;
+    using RPNElement = ParquetBloomFilterCondition::RPNElement;
 
-    bool traverseFunction(const RPNBuilderTreeNode & node,
-                          const IndexToColumnBF & index_to_column_hasher,
-                          RPNElement & out);
+    static std::vector<ParquetBloomFilterCondition::RPNElement> build(const ActionsDAGPtr & filter_actions_dag,
+                                                                      const IndexToColumnBF & index_to_column_hasher,
+                                                                      ContextPtr context_,
+                                                                      const Block & header_);
 
-    bool traverseTreeIn(
+private:
+    static bool extractAtomFromTree(const RPNBuilderTreeNode & node,
+                                    const IndexToColumnBF & index_to_column_hasher,
+                                    const Block & header,
+                                    RPNElement & out);
+
+    static bool traverseFunction(const RPNBuilderTreeNode & node,
+                                 const IndexToColumnBF & index_to_column_hasher,
+                                 const Block & header,
+                                 RPNElement & out);
+
+    static bool traverseTreeIn(
         const String & function_name,
         const RPNBuilderTreeNode & key_node,
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
         const IndexToColumnBF & index_to_column_hasher,
+        const Block & header,
         RPNElement & out);
 
-    bool traverseTreeEquals(
+    static bool traverseTreeEquals(
         const String & function_name,
         const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         const IndexToColumnBF & index_to_column_hasher,
+        const Block & header,
         RPNElement & out);
 };
 
