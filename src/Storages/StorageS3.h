@@ -432,6 +432,8 @@ private:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool prefersLargeBlocks() const override;
