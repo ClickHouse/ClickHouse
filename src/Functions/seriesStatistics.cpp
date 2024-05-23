@@ -480,13 +480,41 @@ struct SeriesKaufmansAMAImpl
 
 REGISTER_FUNCTION(seriesStatistics)
 {
-    factory.registerFunction<FunctionSeriesStatistics<SeriesEmaImpl>>();
-    factory.registerFunction<FunctionSeriesStatistics<SeriesKaufmansAMAImpl>>();
+    factory.registerFunction<FunctionSeriesStatistics<SeriesEmaImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionSeriesStatistics<SeriesKaufmansAMAImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
 
-    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowSumImpl>>();
-    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowAverageImpl>>();
-    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowStandardDeviationImpl>>();
-    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowMinImpl>>();
-    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowMaxImpl>>();
+    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowSumImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowAverageImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowStandardDeviationImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowMinImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionSeriesStatistics<SeriesWindowMaxImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
 }
 }

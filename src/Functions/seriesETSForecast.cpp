@@ -844,11 +844,35 @@ struct HoltWintersAdditiveDampedImpl
 
 REGISTER_FUNCTION(ETSForecast)
 {
-    factory.registerFunction<FunctionETSForecast<HoltsImpl>>();
-    factory.registerFunction<FunctionETSForecast<AdditiveDampedImpl>>();
-    factory.registerFunction<FunctionETSForecast<MultiplicativeDampedImpl>>();
-    factory.registerFunction<FunctionETSForecast<HoltWintersAdditiveImpl>>();
-    factory.registerFunction<FunctionETSForecast<HoltWintersMultiplicativeImpl>>();
-    factory.registerFunction<FunctionETSForecast<HoltWintersAdditiveDampedImpl>>();
+    factory.registerFunction<FunctionETSForecast<HoltsImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionETSForecast<AdditiveDampedImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionETSForecast<MultiplicativeDampedImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionETSForecast<HoltWintersAdditiveImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionETSForecast<HoltWintersMultiplicativeImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
+    factory.registerFunction<FunctionETSForecast<HoltWintersAdditiveDampedImpl>>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
 }
 }

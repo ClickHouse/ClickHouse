@@ -115,6 +115,10 @@ private:
 
 REGISTER_FUNCTION(SeriesKPSS)
 {
-    factory.registerFunction<FunctionSeriesKPSS>();
+    factory.registerFunction<FunctionSeriesKPSS>(FunctionDocumentation{
+        .description = R"(
+TODO
+)",
+        .categories{"Time series analysis"}});
 }
 }
