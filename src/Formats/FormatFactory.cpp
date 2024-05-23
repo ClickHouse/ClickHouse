@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
+#include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -15,7 +16,7 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <unistd.h>
+#include <Common/tryGetFileNameByFileDescriptor.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -175,7 +176,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.max_value_width_apply_for_single_value = settings.output_format_pretty_max_value_width_apply_for_single_value;
     format_settings.pretty.highlight_digit_groups = settings.output_format_pretty_highlight_digit_groups;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
-    format_settings.pretty.preserve_border_for_multiline_string = settings.output_format_pretty_preserve_border_for_multiline_string;
     format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
@@ -204,6 +204,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.tsv.try_detect_header = settings.input_format_tsv_detect_header;
     format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
+    format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
@@ -695,21 +696,12 @@ String FormatFactory::getFormatFromFileName(String file_name)
 
 std::optional<String> FormatFactory::tryGetFormatFromFileDescriptor(int fd)
 {
-#ifdef OS_LINUX
-    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
-    char file_path[PATH_MAX] = {'\0'};
-    if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
-        return tryGetFormatFromFileName(file_path);
+    std::optional<String> file_name = tryGetFileNameFromFileDescriptor(fd);
+
+    if (file_name)
+        return tryGetFormatFromFileName(*file_name);
+
     return std::nullopt;
-#elif defined(OS_DARWIN)
-    char file_path[PATH_MAX] = {'\0'};
-    if (fcntl(fd, F_GETPATH, file_path) != -1)
-        return tryGetFormatFromFileName(file_path);
-    return std::nullopt;
-#else
-    (void)fd;
-    return std::nullopt;
-#endif
 }
 
 String FormatFactory::getFormatFromFileDescriptor(int fd)

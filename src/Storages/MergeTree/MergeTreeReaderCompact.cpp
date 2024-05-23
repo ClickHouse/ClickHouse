@@ -232,7 +232,7 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
     ///
     /// Consider the following columns in nested "root":
     /// - root.array Array(UInt8) - exists
-    /// - root.nested_array Array(Array(UInt8)) - does not exists (only_offsets_level=1)
+    /// - root.nested_array Array(Array(UInt8)) - does not exist (only_offsets_level=1)
     ///
     /// For root.nested_array it will try to read multiple streams:
     /// - offsets (substream_path = {ArraySizes})

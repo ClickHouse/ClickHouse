@@ -19,7 +19,9 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/storage.xml"],
+            main_configs=["configs/storage_arm.xml"]
+            if is_arm()
+            else ["configs/storage_amd.xml"],
             with_minio=True,
             with_hdfs=not is_arm(),
         )

@@ -20,7 +20,7 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
@@ -557,7 +557,6 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
     auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
-    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 
     auto new_uri{uri};
     new_uri.bucket = new_namespace;

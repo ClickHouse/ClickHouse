@@ -262,10 +262,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             const auto & left_table_key_name = join_clause.key_names_left[i];
             const auto & right_table_key_name = join_clause.key_names_right[i];
-
-            if (!join_header.has(left_table_key_name) || !join_header.has(right_table_key_name))
-                continue;
-
             const auto & left_table_column = left_stream_input_header.getByName(left_table_key_name);
             const auto & right_table_column = right_stream_input_header.getByName(right_table_key_name);
 
@@ -338,9 +334,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto join_filter_push_down_actions = filter->getExpression()->splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         left_stream_available_columns_to_push_down,
-        left_stream_input_header.getColumnsWithTypeAndName(),
+        left_stream_input_header,
         right_stream_available_columns_to_push_down,
-        right_stream_input_header.getColumnsWithTypeAndName(),
+        right_stream_input_header,
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column);
@@ -428,6 +424,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// of the grouping sets, we could not push the filter down.
         if (aggregating->isGroupingSets())
         {
+            /// Cannot push down filter if type has been changed.
+            if (aggregating->isGroupByUseNulls())
+                return 0;
 
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());

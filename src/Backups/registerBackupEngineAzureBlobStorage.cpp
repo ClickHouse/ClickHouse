@@ -135,10 +135,12 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderAzureBlobStorage>(configuration,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+            auto reader = std::make_shared<BackupReaderAzureBlobStorage>(
+                configuration,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -150,11 +152,13 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         }
         else
         {
-            auto writer = std::make_shared<BackupWriterAzureBlobStorage>(configuration,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context,
-                                                           params.azure_attempt_to_create_container);
+            auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
+                configuration,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.azure_attempt_to_create_container);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
