@@ -474,6 +474,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         case MergeTreeData::MergingParams::Collapsing:
             add_mandatory_param("sign column");
             break;
+        case MergeTreeData::MergingParams::Aggregating:
+            add_mandatory_param("default aggregate function");
+            break;
         case MergeTreeData::MergingParams::Graphite:
             add_mandatory_param("'config_element_for_graphite_schema'");
             break;
@@ -574,6 +577,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
             --arg_cnt;
+        }
+    }
+    else if (merging_params.mode == MergeTreeData::MergingParams::Aggregating)
+    {
+        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.default_aggregate_function);
+            --arg_cnt;
+
+            if (!DataTypeCustomSimpleAggregateFunction::isSupportedFunction(merging_params.default_aggregate_function, false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_aggregate_function parameter must be a name of a SimpleAggregateFunction{}", verbose_help_message);
         }
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)

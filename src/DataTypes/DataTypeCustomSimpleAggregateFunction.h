@@ -41,6 +41,7 @@ public:
 
     AggregateFunctionPtr getFunction() const { return function; }
     String getName() const override;
+    static bool isSupportedFunction(const String & function_name, bool throw_unsupported);
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 

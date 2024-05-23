@@ -22,7 +22,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = AggregatingMergeTree()
+) ENGINE = AggregatingMergeTree([default_aggregate_function])
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
@@ -30,6 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
+
+### Параметры AggregatingMergeTree
+
+#### default_aggregate_function
+
+`default_aggregate_function` - название одной из [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md), которая будет применена ко всем столбцам, тип которых отличается от [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) или [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md).
+Функция по умолчанию не применяется к столбцам, входящим в первичный ключ.
+Необязательный параметр.
+
+Если `default_aggregate_function` не указан для колонки и тип колонки не AggregateFunction и не SimpleAggregateFunction, то в качестве значения будет взято любое (включая NULL) из значений в столбце в рамках того же первичного ключа.
 
 **Секции запроса**
 
