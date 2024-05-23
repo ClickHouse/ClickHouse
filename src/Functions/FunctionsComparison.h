@@ -1324,24 +1324,18 @@ public:
         {
             return res;
         }
-        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+        else if (
+            (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+            || ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6))
+        )
         {
-            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
-            /// CAST is customized for this case
+            /// Special treatment for FixedString(16) as a binary representation of IPv6 & for comparing IPv4 & IPv6 values -
+            /// CAST is customized for this cases
             ColumnPtr left_column = left_is_ipv6 ?
                 col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
             ColumnPtr right_column = right_is_ipv6 ?
                 col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
 
-            return executeGenericIdenticalTypes(left_column.get(), right_column.get());
-        }
-        else if ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6))
-        {
-            ColumnPtr left_column = left_is_ipv6 ?
-                col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
-            ColumnPtr right_column = right_is_ipv6 ?
-                col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
-            
             return executeGenericIdenticalTypes(left_column.get(), right_column.get());
         }
         else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
