@@ -1176,7 +1176,7 @@ public:
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || ((left.isIPv4() || left.isIPv6()) && (left.isIPv4() || left.isIPv6()))
+            || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
