@@ -471,6 +471,7 @@ struct TableExpressionData
         return buffer.str();
     }
 };
+
 class ExpressionsStack
 {
 public:
@@ -2857,22 +2858,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
 
 bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    //const auto & identifier_bind_part = identifier_lookup.identifier.front();
     return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
-
-    // auto get_alias_name_to_node_map = [&]() -> const std::unordered_map<std::string, QueryTreeNodePtr> &
-    // {
-    //     if (identifier_lookup.isExpressionLookup())
-    //         return *scope.alias_name_to_expression_node;
-    //     else if (identifier_lookup.isFunctionLookup())
-    //         return scope.alias_name_to_lambda_node;
-
-    //     return scope.alias_name_to_table_expression_node;
-    // };
-
-    // const auto & alias_name_to_node_map = get_alias_name_to_node_map();
-
-    // return alias_name_to_node_map.contains(identifier_bind_part);
 }
 
 /** Resolve identifier from scope aliases.
@@ -2922,23 +2908,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-    // auto get_alias_name_to_node_map = [&]() -> std::unordered_map<std::string, QueryTreeNodePtr> &
-    // {
-    //     if (identifier_lookup.isExpressionLookup())
-    //         return *scope.alias_name_to_expression_node;
-    //     else if (identifier_lookup.isFunctionLookup())
-    //         return scope.alias_name_to_lambda_node;
-
-    //     return scope.alias_name_to_table_expression_node;
-    // };
-
-    // auto & alias_name_to_node_map = get_alias_name_to_node_map();
-    // auto it = alias_name_to_node_map.find(identifier_bind_part);
-
-    // if (it == alias_name_to_node_map.end())
-    //     return {};
-
-    auto it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
+    auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
     if (it == nullptr)
         return {};
 
@@ -2988,20 +2958,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         }
 
         alias_node = lookup_result.resolved_identifier;
-
-        /** During collection of aliases if node is identifier and has alias, we cannot say if it is
-          * column or function node. Check QueryExpressionsAliasVisitor documentation for clarification.
-          *
-          * If we resolved identifier node as expression, we must remove identifier node alias from
-          * function alias map.
-          * If we resolved identifier node as function, we must remove identifier node alias from
-          * expression alias map.
-          */
-        // if (identifier_lookup.isExpressionLookup())
-        //     scope.alises.alias_name_to_lambda_node.erase(identifier_bind_part);
-        // else if (identifier_lookup.isFunctionLookup())
-        //     scope.aliases.alias_name_to_expression_node->erase(identifier_bind_part);
-
         scope.popExpressionNode();
     }
     else if (node_type == QueryTreeNodeType::FUNCTION)
@@ -4199,7 +4155,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
              */
 
             auto * alias_it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME);
-            //auto alias_it = scope.alias_name_to_expression_node->find(identifier_lookup.identifier.getFullName());
             if (alias_it && (*alias_it)->getNodeType() == QueryTreeNodeType::COLUMN)
             {
                 const auto & column_node = (*alias_it)->as<ColumnNode &>();
@@ -6395,16 +6350,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                     result_projection_names.push_back(projection_name_it->second);
             }
 
-            // if (resolved_identifier_node && !node_alias.empty())
-            //     scope.alias_name_to_lambda_node.erase(node_alias);
-
             if (!resolved_identifier_node && allow_lambda_expression)
-            {
                 resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
-
-                // if (resolved_identifier_node && !node_alias.empty())
-                //     scope.alias_name_to_expression_node->erase(node_alias);
-            }
 
             if (!resolved_identifier_node && allow_table_expression)
             {
