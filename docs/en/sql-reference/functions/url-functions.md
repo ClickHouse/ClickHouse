@@ -28,7 +28,7 @@ domain(url)
 
 **Arguments**
 
-- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -48,10 +48,8 @@ clickhouse.com
 
 **Returned values**
 
-- Host name. If ClickHouse can parse the input string as a URL.
-- Empty string. If ClickHouse can’t parse the input string as a URL.
-
-Type: `String`.
+- Host name. If ClickHouse can parse the input string as a URL. [String](../data-types/string.md).
+- Empty string. If ClickHouse can’t parse the input string as a URL. [String](../data-types/string.md).
 
 **Example**
 
@@ -79,7 +77,7 @@ topLevelDomain(url)
 
 **Arguments**
 
-- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -91,10 +89,8 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name. If ClickHouse can parse the input string as a URL.
-- Empty string. If ClickHouse cannot parse the input string as a URL.
-
-Type: `String`.
+- Domain name. If ClickHouse can parse the input string as a URL. [String](../../sql-reference/data-types/string.md).
+- Empty string. If ClickHouse cannot parse the input string as a URL. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -162,9 +158,7 @@ cutToFirstSignificantSubdomain(URL, TLD)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -216,9 +210,7 @@ cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -270,9 +262,7 @@ firstSignificantSubdomainCustom(URL, TLD)
 
 **Returned value**
 
-- First significant subdomain.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- First significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -422,9 +412,7 @@ netloc(URL)
 
 **Returned value**
 
-- `username:password@host:port`.
-
-Type: `String`.
+- `username:password@host:port`. [String](../data-types/string.md).
 
 **Example**
 
@@ -479,9 +467,7 @@ cutURLParameter(URL, name)
 
 **Returned value**
 
-- URL with `name` URL parameter removed.
-
-Type: `String`.
+- URL with `name` URL parameter removed. [String](../data-types/string.md).
 
 **Example**
 

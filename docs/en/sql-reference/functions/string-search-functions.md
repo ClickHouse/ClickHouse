@@ -896,14 +896,16 @@ extractAllGroupsHorizontal(haystack, pattern)
 
 **Arguments**
 
-- `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
-- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
+- `haystack` — Input string. [String](../../sql-reference/data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Type: [Array](../../sql-reference/data-types/array.md).
+- Array of arrays of matches. [Array](../../sql-reference/data-types/array.md).
 
+:::note
 If `haystack` does not match the `pattern` regex, an array of empty arrays is returned.
+:::
 
 **Example**
 
@@ -931,14 +933,16 @@ extractAllGroupsVertical(haystack, pattern)
 
 **Arguments**
 
-- `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
-- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
+- `haystack` — Input string. [String](../../sql-reference/data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Type: [Array](../../sql-reference/data-types/array.md).
+- Array of arrays of matches. [Array](../../sql-reference/data-types/array.md).
 
+:::note
 If `haystack` does not match the `pattern` regex, an empty array is returned.
+:::
 
 **Example**
 
@@ -1340,9 +1344,7 @@ countSubstrings(haystack, needle[, start_pos])
 
 **Returned values**
 
-- The number of occurrences.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The number of occurrences. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -1389,9 +1391,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 **Returned values**
 
-- The number of occurrences.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The number of occurrences. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -1443,9 +1443,7 @@ countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Returned values**
 
-- The number of occurrences.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The number of occurrences. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -1496,9 +1494,7 @@ countMatches(haystack, pattern)
 
 **Returned value**
 
-- The number of matches.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The number of matches. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -1543,9 +1539,7 @@ countMatchesCaseInsensitive(haystack, pattern)
 
 **Returned value**
 
-- The number of matches.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The number of matches. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -1583,9 +1577,7 @@ Alias: `REGEXP_EXTRACT(haystack, pattern[, index])`.
 
 **Returned values**
 
-`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.
-
-Type: `String`.
+`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression. [String](../data-types/string.md).
 
 **Examples**
 
@@ -1624,10 +1616,8 @@ hasSubsequence(haystack, needle)
 
 **Returned values**
 
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
+- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
+- 0, otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -1662,10 +1652,8 @@ hasSubsequenceCaseInsensitive(haystack, needle)
 
 **Returned values**
 
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
+- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
+- 0, otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -1700,10 +1688,8 @@ hasSubsequenceUTF8(haystack, needle)
 
 **Returned values**
 
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
+- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
+- 0, otherwise. [UInt8](../data-types/int-uint.md).
 
 Query:
 
@@ -1738,10 +1724,8 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 
 **Returned values**
 
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
+- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
+- 0, otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 

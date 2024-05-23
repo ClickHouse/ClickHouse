@@ -40,15 +40,10 @@ addressToLine(address_of_binary_instruction)
 
 **Returned value**
 
-- Source code filename and the line number in this file delimited by colon.
-
-        For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
-
-- Name of a binary, if the function couldn’t find the debug information.
-
-- Empty string, if the address is not valid.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Source code filename and the line number in this file delimited by colon. [String](../../sql-reference/data-types/string.md).
+    - For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+- Name of a binary, if the function couldn’t find the debug information. [String](../../sql-reference/data-types/string.md).
+- Empty string, if the address is not valid. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -137,9 +132,7 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 - Array with single element which is name of a binary, if the function couldn’t find the debug information.
 
-- Empty array, if the address is not valid.
-
-Type: [Array(String)](../../sql-reference/data-types/array.md).
+- Empty array, if the address is not valid. [Array(String)](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -236,10 +229,8 @@ addressToSymbol(address_of_binary_instruction)
 
 **Returned value**
 
-- Symbol from ClickHouse object files.
-- Empty string, if the address is not valid.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Symbol from ClickHouse object files. [String](../../sql-reference/data-types/string.md).
+- Empty string, if the address is not valid. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -333,10 +324,8 @@ demangle(symbol)
 
 **Returned value**
 
-- Name of the C++ function.
-- Empty string if a symbol is not valid.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Name of the C++ function. [String](../../sql-reference/data-types/string.md).
+- Empty string if a symbol is not valid. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 

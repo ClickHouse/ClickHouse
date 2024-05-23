@@ -631,9 +631,7 @@ toDateTime64(expr, scale, [timezone])
 
 **Returned value**
 
-- A calendar date and time of day, with sub-second precision.
-
-Type: [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
+- A calendar date and time of day, with sub-second precision. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -1749,9 +1747,7 @@ toLowCardinality(expr)
 
 **Returned values**
 
-- Result of `expr`.
-
-Type: `LowCardinality(expr_result_type)`
+- Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`. 
 
 **Example**
 

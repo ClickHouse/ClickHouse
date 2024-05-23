@@ -23,9 +23,7 @@ tumble(time_attr, interval [, timezone])
 
 **Returned values**
 
-- The inclusive lower and exclusive upper bound of the corresponding tumbling window.
-
-Type: `Tuple(DateTime, DateTime)`
+- The inclusive lower and exclusive upper bound of the corresponding tumbling window. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md))`.
 
 **Example**
 
@@ -60,9 +58,7 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 
 **Returned values**
 
-- The inclusive lower and exclusive upper bound of the corresponding hopping window. Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`.
-
-Type: `Tuple(DateTime, DateTime)`
+- The inclusive lower and exclusive upper bound of the corresponding hopping window. Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md))`.
 
 **Example**
 

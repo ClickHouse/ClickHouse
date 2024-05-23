@@ -842,9 +842,7 @@ degrees(x)
 
 **Returned value**
 
-- Value in degrees.
-
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- Value in degrees. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Example**
 

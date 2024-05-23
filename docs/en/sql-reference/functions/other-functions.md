@@ -27,9 +27,7 @@ getMacro(name);
 
 **Returned value**
 
-- Value of the specified macro.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Value of the specified macro. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -82,9 +80,7 @@ This function is case-insensitive.
 
 **Returned value**
 
-- String with the fully qualified domain name.
-
-Type: `String`.
+- String with the fully qualified domain name. [String](../data-types/string.md). 
 
 **Example**
 
@@ -207,9 +203,7 @@ byteSize(argument [, ...])
 
 **Returned value**
 
-- Estimation of byte size of the arguments in memory.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- Estimation of byte size of the arguments in memory. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -409,10 +403,8 @@ Aliases: `user()`, `USER()`, `current_user()`. Aliases are case insensitive.
 
 **Returned values**
 
-- The name of the current user.
-- In distributed queries, the login of the user who initiated the query.
-
-Type: `String`.
+- The name of the current user. [String](../data-types/string.md).
+- In distributed queries, the login of the user who initiated the query. [String](../data-types/string.md).
 
 **Example**
 
@@ -448,10 +440,8 @@ isConstant(x)
 
 **Returned values**
 
-- `1` if `x` is constant.
-- `0` if `x` is non-constant.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+- `1` if `x` is constant. [UInt8](../../sql-reference/data-types/int-uint.md).
+- `0` if `x` is non-constant. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -517,8 +507,8 @@ ifNotFinite(x,y)
 
 **Arguments**
 
-- `x` — Value to check for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
-- `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
+- `x` — Value to check for infinity. [Float\*](../../sql-reference/data-types/float.md).
+- `y` — Fallback value. [Float\*](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
@@ -924,9 +914,7 @@ uptime()
 
 **Returned value**
 
-- Time value of seconds.
-
-Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+- Time value of seconds. [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -971,7 +959,7 @@ None.
 
 **Returned value**
 
-Type: [String](../data-types/string)
+- Current version of ClickHouse. [String](../data-types/string).
 
 **Implementation details**
 
@@ -1041,7 +1029,9 @@ To prevent that you can create a subquery with [ORDER BY](../../sql-reference/st
 - Value of `column` with `offset` distance from current row, if `offset` is not outside the block boundaries.
 - The default value of `column` or `default_value` (if given), if `offset` is outside the block boundaries.
 
-Type: type of data blocks affected or default value type.
+:::note
+The return type will be that of the data blocks affected or the default value type.
+:::
 
 **Example**
 
@@ -1238,9 +1228,7 @@ runningConcurrency(start, end)
 
 **Returned values**
 
-- The number of concurrent events at each event start time.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md)
+- The number of concurrent events at each event start time. [UInt32](../../sql-reference/data-types/int-uint.md)
 
 **Example**
 
@@ -1535,7 +1523,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 **Returned value**
 
-Type: [Uint8](https://clickhouse.com/docs/en/data_types/int_uint/#diapazony-uint).
+- `1`. [Uint8](../data-types/int-uint.md).
 
 **Example**
 
@@ -1638,9 +1626,7 @@ SELECT replicate(x, arr);
 
 **Returned value**
 
-An array of the lame length as `arr` filled with value `x`.
-
-Type: `Array`.
+An array of the lame length as `arr` filled with value `x`. [Array](../data-types/array.md).
 
 **Example**
 
@@ -1670,9 +1656,7 @@ filesystemAvailable()
 
 **Returned value**
 
-- The amount of remaining space available in bytes.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The amount of remaining space available in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1702,9 +1686,7 @@ filesystemFree()
 
 **Returned value**
 
-- The amount of free space in bytes.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- The amount of free space in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1734,9 +1716,7 @@ filesystemCapacity()
 
 **Returned value**
 
-- Capacity of the filesystem in bytes.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+- Capacity of the filesystem in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1847,7 +1827,9 @@ finalizeAggregation(state)
 
 - Value/values that was aggregated.
 
-Type: Value of any types that was aggregated.
+:::note
+The return type is equal to that of any types which were aggregated.
+:::
 
 **Examples**
 
@@ -2284,9 +2266,7 @@ countDigits(x)
 
 **Returned value**
 
-Number of digits.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+Number of digits. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 :::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
@@ -2310,9 +2290,7 @@ Result:
 
 ## errorCodeToName
 
-Returns the textual name of an error code.
-
-Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+Returns the textual name of an error code. [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
 
 **Syntax**
 
@@ -2343,9 +2321,7 @@ tcpPort()
 
 **Returned value**
 
-- The TCP port number.
-
-Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+- The TCP port number. [UInt16](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -2381,9 +2357,7 @@ currentProfiles()
 
 **Returned value**
 
-- List of the current user settings profiles.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- List of the current user settings profiles. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## enabledProfiles
 
@@ -2397,9 +2371,7 @@ enabledProfiles()
 
 **Returned value**
 
-- List of the enabled settings profiles.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- List of the enabled settings profiles. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultProfiles
 
@@ -2413,9 +2385,7 @@ defaultProfiles()
 
 **Returned value**
 
-- List of the default settings profiles.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- List of the default settings profiles. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## currentRoles
 
@@ -2429,9 +2399,7 @@ currentRoles()
 
 **Returned value**
 
-- A list of the current roles for the current user.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- A list of the current roles for the current user. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## enabledRoles
 
@@ -2445,9 +2413,7 @@ enabledRoles()
 
 **Returned value**
 
-- List of the enabled roles for the current user.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- List of the enabled roles for the current user. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles
 
@@ -2461,9 +2427,7 @@ defaultRoles()
 
 **Returned value**
 
-- List of the default roles for the current user.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- List of the default roles for the current user. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## getServerPort
 
@@ -2492,9 +2456,7 @@ getServerPort(port_name)
 
 **Returned value**
 
-- The number of the server port.
-
-Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+- The number of the server port. [UInt16](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -2526,9 +2488,7 @@ queryID()
 
 **Returned value**
 
-- The ID of the current query.
-
-Type: [String](../../sql-reference/data-types/string.md)
+- The ID of the current query. [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
@@ -2562,9 +2522,7 @@ initialQueryID()
 
 **Returned value**
 
-- The ID of the initial current query.
-
-Type: [String](../../sql-reference/data-types/string.md)
+- The ID of the initial current query. [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
@@ -2597,9 +2555,7 @@ shardNum()
 
 **Returned value**
 
-- Shard index or constant `0`.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- Shard index or constant `0`. [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -2639,9 +2595,7 @@ shardCount()
 
 **Returned value**
 
-- Total number of shards or `0`.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- Total number of shards or `0`. [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **See Also**
 
@@ -2663,9 +2617,7 @@ getOSKernelVersion()
 
 **Returned value**
 
-- The current OS kernel version.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The current OS kernel version. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -2699,9 +2651,7 @@ zookeeperSessionUptime()
 
 **Returned value**
 
-- Uptime of the current ZooKeeper session in seconds.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- Uptime of the current ZooKeeper session in seconds. [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -2738,9 +2688,7 @@ All arguments must be constant.
 
 **Returned value**
 
-- Randomly generated table structure.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Randomly generated table structure. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 
@@ -2807,9 +2755,7 @@ structureToCapnProtoSchema(structure)
 
 **Returned value**
 
-- CapnProto schema
-
-Type: [String](../../sql-reference/data-types/string.md).
+- CapnProto schema. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 
@@ -2908,9 +2854,7 @@ structureToProtobufSchema(structure)
 
 **Returned value**
 
-- Protobuf schema
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Protobuf schema. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 

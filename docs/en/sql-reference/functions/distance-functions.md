@@ -24,9 +24,7 @@ Alias: `normL1`.
 
 **Returned value**
 
-- L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
-
-Type: [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance. [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 
 **Examples**
 
@@ -62,9 +60,7 @@ Alias: `normL2`.
 
 **Returned value**
 
-- L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -99,9 +95,7 @@ Alias: `normL2Squared`.
 
 **Returned value**
 
-- L2-norm squared.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- L2-norm squared. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -137,9 +131,7 @@ Alias: `normLinf`.
 
 **Returned value**
 
-- Linf-norm or the maximum absolute value.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- Linf-norm or the maximum absolute value. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -176,9 +168,7 @@ Alias: `normLp`.
 
 **Returned value**
 
-- [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -215,9 +205,7 @@ Alias: `distanceL1`.
 
 **Returned value**
 
-- 1-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- 1-norm distance. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -254,9 +242,7 @@ Alias: `distanceL2`.
 
 **Returned value**
 
-- 2-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- 2-norm distance. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -293,7 +279,7 @@ Alias: `distanceL2Squared`.
 
 **Returned value**
 
-Type: [Float](../../sql-reference/data-types/float.md).
+- Sum of the squares of the difference between the corresponding elements of two vectors. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -330,9 +316,7 @@ Alias: `distanceLinf`.
 
 **Returned value**
 
-- Infinity-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- Infinity-norm distance. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -370,9 +354,7 @@ Alias: `distanceLp`.
 
 **Returned value**
 
-- p-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- p-norm distance. [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -409,9 +391,7 @@ Alias: `normalizeL1`.
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -447,9 +427,7 @@ Alias: `normalizeL1`.
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -485,9 +463,7 @@ Alias: `normalizeLinf `.
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -524,9 +500,7 @@ Alias: `normalizeLp `.
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -561,9 +535,7 @@ cosineDistance(vector1, vector2)
 
 **Returned value**
 
-- Cosine of the angle between two vectors subtracted from one.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- Cosine of the angle between two vectors subtracted from one. [Float](../../sql-reference/data-types/float.md).
 
 **Examples**
 

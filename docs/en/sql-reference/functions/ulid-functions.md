@@ -65,9 +65,7 @@ ULIDStringToDateTime(ulid[, timezone])
 
 **Returned value**
 
-- Timestamp with milliseconds precision.
-
-Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
+- Timestamp with milliseconds precision. [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
 
 **Usage example**
 

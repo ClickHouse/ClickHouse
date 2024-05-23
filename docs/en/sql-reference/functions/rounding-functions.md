@@ -336,7 +336,7 @@ roundAge(num)
 - Returns `45`, for $45 \leq age \leq 54$.
 - Returns `55`, for $age \geq 55$.
 
-Type: [UInt8](../data-types/int-uint.md).
+Type: [UInt8](../data-types/int-uint.md) in all cases.
 
 **Example**
 

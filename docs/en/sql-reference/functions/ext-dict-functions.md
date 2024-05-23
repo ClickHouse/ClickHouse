@@ -243,10 +243,8 @@ dictHas('dict_name', id_expr)
 
 **Returned value**
 
-- 0, if there is no key.
-- 1, if there is a key.
-
-Type: `UInt8`.
+- 0, if there is no key. [UInt8](../data-types/int-uint.md).
+- 1, if there is a key. [UInt8](../data-types/int-uint.md).
 
 ## dictGetHierarchy
 
@@ -265,9 +263,7 @@ dictGetHierarchy('dict_name', key)
 
 **Returned value**
 
-- Parents for the key.
-
-Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
+- Parents for the key. [Array(UInt64)](../../sql-reference/data-types/array.md).
 
 ## dictIsIn
 
@@ -285,10 +281,8 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 **Returned value**
 
-- 0, if `child_id_expr` is not a child of `ancestor_id_expr`.
-- 1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`.
-
-Type: `UInt8`.
+- 0, if `child_id_expr` is not a child of `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
+- 1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
 
 ## dictGetChildren
 
@@ -307,9 +301,7 @@ dictGetChildren(dict_name, key)
 
 **Returned values**
 
-- First-level descendants for the key.
-
-Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+- First-level descendants for the key. [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -357,9 +349,7 @@ dictGetDescendants(dict_name, key, level)
 
 **Returned values**
 
-- Descendants for the key.
-
-Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+- Descendants for the key. [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 

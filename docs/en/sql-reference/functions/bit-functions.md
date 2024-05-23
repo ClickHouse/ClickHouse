@@ -188,9 +188,7 @@ SELECT bitTest(number, index)
 
 **Returned values**
 
-Returns a value of bit at specified position.
-
-Type: `UInt8`.
+Returns a value of bit at specified position. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -253,9 +251,7 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Returned values**
 
-Returns result of logical conjuction.
-
-Type: `UInt8`.
+Returns result of logical conjuction. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -318,9 +314,7 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 **Returned values**
 
-Returns result of logical disjunction.
-
-Type: `UInt8`.
+Returns result of logical disjunction. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -372,11 +366,11 @@ bitCount(x)
 
 **Returned value**
 
-- Number of bits set to one in the input number.
+- Number of bits set to one in the input number. [UInt8](../data-types/int-uint.md).
 
-The function does not convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
-
-Type: `UInt8`.
+:::note
+The function does not convert the input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
+:::
 
 **Example**
 
@@ -413,9 +407,7 @@ bitHammingDistance(int1, int2)
 
 **Returned value**
 
-- The Hamming distance.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+- The Hamming distance. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 

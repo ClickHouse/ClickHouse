@@ -25,13 +25,15 @@ splitByChar(separator, s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. Empty substrings may be selected when:
+Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+:::note
+ Empty substrings may be selected when:
 
 - A separator occurs at the beginning or end of the string;
 - There are multiple consecutive separators;
 - The original string `s` is empty.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+:::
 
 :::note
 The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11. In versions older than that, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
@@ -76,15 +78,17 @@ splitByString(separator, s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. Empty substrings may be selected when:
+Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+:::note
+Empty substrings may be selected when:
 
 - A non-empty separator occurs at the beginning or end of the string;
 - There are multiple consecutive non-empty separators;
 - The original string `s` is empty while the separator is not empty.
 
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+:::
 
 **Example**
 
@@ -131,15 +135,17 @@ splitByRegexp(regexp, s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings. Empty substrings may be selected when:
+Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+:::note
+Empty substrings may be selected when:
 
 - A non-empty regular expression match occurs at the beginning or end of the string;
 - There are multiple consecutive non-empty regular expression matches;
 - The original string `s` is empty while the regular expression is not empty.
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+:::
 
 **Example**
 
@@ -186,11 +192,11 @@ splitByWhitespace(s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
+Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+ 
+:::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+:::
 
 **Example**
 
@@ -225,11 +231,11 @@ splitByNonAlpha(s[, max_substrings]))
 
 **Returned value(s)**
 
-Returns an array of selected substrings.
+Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
+:::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+:::
 
 **Example**
 
@@ -287,11 +293,11 @@ Alias: `splitByAlpha`
 
 **Returned value(s)**
 
-Returns an array of selected substrings.
+Returns an array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
+:::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+:::
 
 **Example**
 
@@ -322,11 +328,8 @@ extractAllGroups(text, regexp)
 
 **Returned values**
 
-- If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`).
-
-- If there is no matching group, returns an empty array.
-
-Type: [Array](../data-types/array.md).
+- If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`). [Array](../data-types/array.md).
+- If there is no matching group, returns an empty array. [Array](../data-types/array.md).
 
 **Example**
 
@@ -359,9 +362,7 @@ ngrams(string, ngramsize)
 
 **Returned values**
 
-- Array with n-grams.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- Array with n-grams. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
 
@@ -387,9 +388,7 @@ Splits a string into tokens using non-alphanumeric ASCII characters as separator
 
 **Returned value**
 
-- The resulting array of tokens from input string.
-
-Type: [Array](../data-types/array.md).
+- The resulting array of tokens from input string. [Array](../data-types/array.md).
 
 **Example**
 

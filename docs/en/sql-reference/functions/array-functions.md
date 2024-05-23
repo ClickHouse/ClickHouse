@@ -30,9 +30,7 @@ The function also works for [strings](string-functions.md#empty) or [UUID](uuid-
 
 **Returned value**
 
-- Returns `1` for an empty array or `0` for a non-empty array.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty array or `0` for a non-empty array. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -74,9 +72,7 @@ The function also works for [strings](string-functions.md#notempty) or [UUID](uu
 
 **Returned value**
 
-- Returns `1` for a non-empty array or `0` for an empty array.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty array or `0` for an empty array. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -797,9 +793,11 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 
 **Returned value**
 
-- The dot product of the two vectors.
+- The dot product of the two vectors. [Numeric](https://clickhouse.com/docs/en/native-protocol/columns#numeric-types).
 
-Type: numeric - determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+:::note
+The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+:::
 
 **Examples**
 
@@ -1186,9 +1184,7 @@ arrayShingles(array, length)
 
 **Returned value**
 
-- An array of generated shingles.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array of generated shingles. [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -1562,9 +1558,7 @@ arrayDifference(array)
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements.
-
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+Returns an array of differences between adjacent array elements. [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 **Example**
 
@@ -1841,9 +1835,7 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 **Returned value**
 
-- Array containing results of the aggregate function over specified ranges.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Array containing results of the aggregate function over specified ranges. [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -1986,9 +1978,7 @@ arrayCompact(arr)
 
 **Returned value**
 
-The array without duplicate.
-
-Type: `Array`.
+The array without duplicate. [Array](../data-types/array.md).
 
 **Example**
 
@@ -2024,9 +2014,7 @@ The function can take any number of arrays of different types. All the input arr
 
 **Returned value**
 
-- Array with elements from the source arrays grouped into [tuples](../../sql-reference/data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Array with elements from the source arrays grouped into [tuples](../../sql-reference/data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -2383,7 +2371,8 @@ arrayMin([func,] arr)
 
 - The minimum of function values (or the array minimum).
 
-Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
+:::note
+If `func` is specified, then the return type matches the return value type of `func`, otherwise it matches the type of the array elements.
 
 **Examples**
 
@@ -2438,7 +2427,9 @@ arrayMax([func,] arr)
 
 - The maximum of function values (or the array maximum).
 
-Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
+:::note
+if `func` is specified then the return type matches the return value type of `func`, otherwise it matches the type of the array elements.
+:::
 
 **Examples**
 
@@ -2493,7 +2484,14 @@ arraySum([func,] arr)
 
 - The sum of the function values (or the array sum).
 
-Type: for decimal numbers in source array (or for converted values, if `func` is specified) — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [UInt64](../../sql-reference/data-types/int-uint.md), and for numeric signed — [Int64](../../sql-reference/data-types/int-uint.md).
+:::note
+Return type:
+
+- For decimal numbers in the source array (or for converted values, if `func` is specified) — [Decimal128](../../sql-reference/data-types/decimal.md).
+- For floating point numbers — [Float64](../../sql-reference/data-types/float.md).
+- For numeric unsigned — [UInt64](../../sql-reference/data-types/int-uint.md). 
+- For numeric signed — [Int64](../../sql-reference/data-types/int-uint.md).
+:::
 
 **Examples**
 
@@ -2546,9 +2544,7 @@ arrayAvg([func,] arr)
 
 **Returned value**
 
-- The average of function values (or the array average).
-
-Type: [Float64](../../sql-reference/data-types/float.md).
+- The average of function values (or the array average). [Float64](../../sql-reference/data-types/float.md).
 
 **Examples**
 
@@ -2596,9 +2592,7 @@ arrayCumSum(arr)
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array.
-
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 Example:
 
@@ -2630,9 +2624,7 @@ arrayCumSumNonNegative(arr)
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array.
-
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
@@ -2662,9 +2654,7 @@ arrayProduct(arr)
 
 **Returned value**
 
-- A product of array's elements.
-
-Type: [Float64](../../sql-reference/data-types/float.md).
+- A product of array's elements. [Float64](../../sql-reference/data-types/float.md).
 
 **Examples**
 
@@ -2714,9 +2704,7 @@ arrayRotateLeft(arr, n)
 
 **Returned value**
 
-- An array rotated to the left by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array rotated to the left by the specified number of elements. [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -2780,9 +2768,7 @@ arrayRotateRight(arr, n)
 
 **Returned value**
 
-- An array rotated to the right by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array rotated to the right by the specified number of elements. [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -2848,9 +2834,7 @@ arrayShiftLeft(arr, n[, default])
 
 **Returned value**
 
-- An array shifted to the left by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array shifted to the left by the specified number of elements. [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -2944,9 +2928,7 @@ arrayShiftRight(arr, n[, default])
 
 **Returned value**
 
-- An array shifted to the right by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array shifted to the right by the specified number of elements. [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -3038,9 +3020,7 @@ arrayRandomSample(arr, samples)
 
 **Returned Value**
 
-- An array containing a random sample of elements from the input array.
-
-Type: [Array](../data-types/array.md).
+- An array containing a random sample of elements from the input array. [Array](../data-types/array.md).
 
 **Examples**
 

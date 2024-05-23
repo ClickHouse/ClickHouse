@@ -289,9 +289,7 @@ The function also works for [Arrays](array-functions.md#function-empty) and [Str
 
 **Returned value**
 
-- Returns `1` for an empty UUID or `0` for a non-empty UUID.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty UUID or `0` for a non-empty UUID. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -331,9 +329,7 @@ The function also works for [Arrays](array-functions.md#function-notempty) or [S
 
 **Returned value**
 
-- Returns `1` for a non-empty UUID or `0` for an empty UUID.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty UUID or `0` for an empty UUID. [UInt8](../data-types/int-uint.md).
 
 **Example**
 

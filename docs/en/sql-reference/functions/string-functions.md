@@ -30,9 +30,7 @@ empty(x)
 
 **Returned value**
 
-- Returns `1` for an empty string or `0` for a non-empty string.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty string or `0` for a non-empty string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -68,9 +66,7 @@ notEmpty(x)
 
 **Returned value**
 
-- Returns `1` for a non-empty string or `0` for an empty string string.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty string or `0` for an empty string string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -289,9 +285,7 @@ Alias: `LPAD`
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -325,9 +319,7 @@ leftPadUTF8(string, length[, pad_string])
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -457,9 +449,7 @@ Alias: `RPAD`
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -493,9 +483,7 @@ rightPadUTF8(string, length[, pad_string])
 
 **Returned value**
 
-- A right-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A right-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -676,9 +664,7 @@ Alias: `REPEAT`
 
 **Returned value**
 
-A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.
-
-Type: `String`.
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -712,9 +698,7 @@ Alias: `SPACE`.
 
 **Returned value**
 
-The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.
-
-Type: `String`.
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -913,9 +897,7 @@ Alias:
 
 **Returned value**
 
-A substring of `s` with `length` many bytes, starting at index `offset`.
-
-Type: `String`.
+A substring of `s` with `length` many bytes, starting at index `offset`. [String](../data-types/string.md).
 
 **Example**
 
@@ -1072,9 +1054,7 @@ base58Encode(plaintext)
 
 **Returned value**
 
-- A string containing the encoded value of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string containing the encoded value of the argument. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1106,9 +1086,7 @@ base58Decode(encoded)
 
 **Returned value**
 
-- A string containing the decoded value of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -1284,9 +1262,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Returned value**
 
-A string without leading and/or trailing specified characters.
-
-Type: `String`.
+A string without leading and/or trailing specified characters. [String](../data-types/string.md).
 
 **Example**
 
@@ -1320,9 +1296,7 @@ Alias: `ltrim(input_string)`.
 
 **Returned value**
 
-A string without leading common whitespaces.
-
-Type: `String`.
+A string without leading common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -1356,9 +1330,7 @@ Alias: `rtrim(input_string)`.
 
 **Returned value**
 
-A string without trailing common whitespaces.
-
-Type: `String`.
+A string without trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -1392,9 +1364,7 @@ Alias: `trim(input_string)`.
 
 **Returned value**
 
-A string without leading and trailing common whitespaces.
-
-Type: `String`.
+A string without leading and trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -1444,9 +1414,7 @@ normalizeQuery(x)
 
 **Returned value**
 
-- Sequence of characters with placeholders.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Sequence of characters with placeholders. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1478,9 +1446,7 @@ normalizedQueryHash(x)
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Example**
 
@@ -1512,9 +1478,7 @@ normalizeUTF8NFC(words)
 
 **Returned value**
 
-- String transformed to NFC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFC normalization form. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1546,9 +1510,7 @@ normalizeUTF8NFD(words)
 
 **Returned value**
 
-- String transformed to NFD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFD normalization form. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1580,9 +1542,7 @@ normalizeUTF8NFKC(words)
 
 **Returned value**
 
-- String transformed to NFKC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFKC normalization form. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1614,9 +1574,7 @@ normalizeUTF8NFKD(words)
 
 **Returned value**
 
-- String transformed to NFKD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFKD normalization form. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1651,9 +1609,7 @@ encodeXMLComponent(x)
 
 **Returned value**
 
-- The escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The escaped string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1691,9 +1647,7 @@ decodeXMLComponent(x)
 
 **Returned value**
 
-- The un-escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The un-escaped string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1727,9 +1681,7 @@ decodeHTMLComponent(x)
 
 **Returned value**
 
-- The un-escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The un-escaped string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -1782,9 +1734,7 @@ extractTextFromHTML(x)
 
 **Returned value**
 
-- Extracted text.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Extracted text. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 

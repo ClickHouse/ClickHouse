@@ -134,7 +134,9 @@ Tuples should have the same type of the elements.
 
 - The Hamming distance.
 
-Type: The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+:::note
+The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+:::
 
 ``` sql
 SELECT
@@ -200,9 +202,7 @@ tupleToNameValuePairs(tuple)
 
 **Returned value**
 
-- An array with (name, value) pairs.
-
-Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+- An array with (name, value) pairs. [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
 
 **Example**
 
@@ -278,9 +278,7 @@ Alias: `vectorSum`.
 
 **Returned value**
 
-- Tuple with the sum.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the sum. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 
@@ -317,9 +315,7 @@ Alias: `vectorDifference`.
 
 **Returned value**
 
-- Tuple with the result of subtraction.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of subtraction. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 
@@ -354,9 +350,7 @@ tupleMultiply(tuple1, tuple2)
 
 **Returned value**
 
-- Tuple with the multiplication.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the multiplication. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 
@@ -391,9 +385,7 @@ tupleDivide(tuple1, tuple2)
 
 **Returned value**
 
-- Tuple with the result of division.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of division. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 
@@ -427,9 +419,7 @@ tupleNegate(tuple)
 
 **Returned value**
 
-- Tuple with the result of negation.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of negation. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 
@@ -464,9 +454,7 @@ tupleMultiplyByNumber(tuple, number)
 
 **Returned value**
 
-- Tuple with multiplied values.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with multiplied values. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 
@@ -501,9 +489,7 @@ tupleDivideByNumber(tuple, number)
 
 **Returned value**
 
-- Tuple with divided values.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with divided values. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Example**
 

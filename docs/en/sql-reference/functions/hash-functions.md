@@ -341,9 +341,7 @@ Even in these cases, we recommend applying the function offline and pre-calculat
 
 **Returned value**
 
-- SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64).
-
-Type: [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+- SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64). [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -381,9 +379,7 @@ This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust 
 
 **Return value**
 
-- BLAKE3 hash as a byte array with type FixedString(32).
-
-Type: [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+- BLAKE3 hash as a byte array with type FixedString(32). [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -540,9 +536,7 @@ This is just [JavaHash](#javahash) with zeroed out sign bit. This function is us
 
 **Returned value**
 
-A `Int32` data type hash value.
-
-Type: `hiveHash`.
+- `hiveHash` hash value. [Int32](../data-types/int-uint.md).
 
 **Example**
 
@@ -679,9 +673,7 @@ gccMurmurHash(par1, ...)
 
 **Returned value**
 
-- Calculated hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Calculated hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -718,9 +710,7 @@ MurmurHash(par1, ...)
 
 **Returned value**
 
-- Calculated hash value.
-
-Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+- Calculated hash value. [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -786,9 +776,7 @@ murmurHash3_128(expr)
 
 **Returned value**
 
-A 128-bit `MurmurHash3` hash value.
-
-Type: [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `MurmurHash3` hash value. [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -822,9 +810,7 @@ xxh3(expr)
 
 **Returned value**
 
-A 64-bit `xxh3` hash value.
-
-Type:  [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+A 64-bit `xxh3` hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -856,9 +842,11 @@ SELECT xxHash64('')
 
 **Returned value**
 
-A `UInt32` or `UInt64` data type hash value.
+- Hash value. [UInt32/64](../data-types/int-uint.md).  
 
-Type: `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
+note:::
+The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
+:::
 
 **Example**
 
@@ -899,9 +887,7 @@ ngramSimHash(string[, ngramsize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -938,9 +924,7 @@ ngramSimHashCaseInsensitive(string[, ngramsize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -977,9 +961,7 @@ ngramSimHashUTF8(string[, ngramsize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1016,9 +998,7 @@ ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1055,9 +1035,7 @@ wordShingleSimHash(string[, shinglesize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1094,9 +1072,7 @@ wordShingleSimHashCaseInsensitive(string[, shinglesize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1133,9 +1109,7 @@ wordShingleSimHashUTF8(string[, shinglesize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1172,9 +1146,7 @@ wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1208,9 +1180,7 @@ wyHash64(string)
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Hash value. [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1248,9 +1218,7 @@ ngramMinHash(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1288,9 +1256,7 @@ ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1328,9 +1294,7 @@ ngramMinHashUTF8(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1368,9 +1332,7 @@ ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1406,9 +1368,7 @@ ngramMinHashArg(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1444,9 +1404,7 @@ ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1482,9 +1440,7 @@ ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1520,9 +1476,7 @@ ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` n-grams each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1560,9 +1514,7 @@ wordShingleMinHash(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1600,9 +1552,7 @@ wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1640,9 +1590,7 @@ wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1680,9 +1628,7 @@ wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two hashes — the minimum and the maximum.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([UInt64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1718,9 +1664,7 @@ wordShingleMinHashArg(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1756,9 +1700,7 @@ wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1794,9 +1736,7 @@ wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 
@@ -1832,9 +1772,7 @@ wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 **Returned value**
 
-- Tuple with two tuples with `hashnum` word shingles each.
-
-Type: [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](/docs/en/sql-reference/data-types/tuple.md)([Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md)), [Tuple](/docs/en/sql-reference/data-types/tuple.md)([String](/docs/en/sql-reference/data-types/string.md))).
 
 **Example**
 

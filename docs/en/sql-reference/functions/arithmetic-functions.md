@@ -320,9 +320,7 @@ multiplyDecimal(a, b[, result_scale])
 
 **Returned value**
 
-- The result of multiplication with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
+- The result of multiplication with given scale. [Decimal256](../../sql-reference/data-types/decimal.md).
 
 **Example**
 
@@ -396,9 +394,7 @@ divideDecimal(a, b[, result_scale])
 
 **Returned value**
 
-- The result of division with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
+- The result of division with given scale. [Decimal256](../../sql-reference/data-types/decimal.md).
 
 **Example**
 

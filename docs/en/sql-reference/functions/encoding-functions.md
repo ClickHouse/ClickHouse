@@ -22,9 +22,7 @@ char(number_1, [number_2, ..., number_n]);
 
 **Returned value**
 
-- a string of given bytes.
-
-Type: `String`.
+- a string of given bytes. [String](../data-types/string.md).
 
 **Example**
 
@@ -102,9 +100,7 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Returned value**
 
-- A string with the hexadecimal representation of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string with the hexadecimal representation of the argument. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 
@@ -185,15 +181,13 @@ unhex(arg)
 
 **Arguments**
 
-- `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `arg` — A string containing any number of hexadecimal digits. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
-- A binary string (BLOB).
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A binary string (BLOB). [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -251,9 +245,7 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Returned value**
 
-- A string with the binary representation of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string with the binary representation of the argument. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 
@@ -342,9 +334,7 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 **Returned value**
 
-- A binary string (BLOB).
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A binary string (BLOB). [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 
@@ -400,9 +390,7 @@ bitPositionsToArray(arg)
 
 **Returned value**
 
-- An array containing a list of positions of bits that equal `1`, in ascending order.
-
-Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+- An array containing a list of positions of bits that equal `1`, in ascending order. [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -458,9 +446,7 @@ mortonEncode(args)
 
 **Returned value**
 
-- A UInt64 code
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+- A UInt64 code. [UInt64](../../sql-reference/data-types/int-uint.md)
 
 **Example**
 
@@ -500,9 +486,7 @@ Note: when using columns for `args` the provided `range_mask` tuple should still
 
 **Returned value**
 
-- A UInt64 code
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+- A UInt64 code. [UInt64](../../sql-reference/data-types/int-uint.md)
 
 
 **Example**
@@ -621,9 +605,7 @@ mortonDecode(tuple_size, code)
 
 **Returned value**
 
-- [tuple](../../sql-reference/data-types/tuple.md) of the specified size.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+- [tuple](../../sql-reference/data-types/tuple.md) of the specified size. [UInt64](../../sql-reference/data-types/int-uint.md)
 
 **Example**
 

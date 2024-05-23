@@ -533,9 +533,7 @@ JSONExtractKeys(json[, a, b, c...])
 
 **Returned value**
 
-Array with the keys of the JSON.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+Array with the keys of the JSON. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
 
@@ -595,10 +593,8 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Returned values**
 
-- Array with `('key', 'value')` tuples. Both tuple members are strings.
-- Empty array if the requested object does not exist, or input JSON is invalid.
-
-Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
+- Array with `('key', 'value')` tuples. Both tuple members are strings. [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
+- Empty array if the requested object does not exist, or input JSON is invalid. [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
 
 **Examples**
 
@@ -739,9 +735,7 @@ toJSONString(value)
 
 **Returned value**
 
-- JSON representation of the value.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- JSON representation of the value. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -786,9 +780,7 @@ Alias: `JSON_ARRAY_LENGTH(json)`.
 
 **Returned value**
 
-- If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
-
-Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+- If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL. [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -819,9 +811,7 @@ jsonMergePatch(json1, json2, ...)
 
 **Returned value**
 
-- If JSON object strings are valid, return the merged JSON object string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- If JSON object strings are valid, return the merged JSON object string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 

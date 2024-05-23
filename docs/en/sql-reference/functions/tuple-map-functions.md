@@ -21,9 +21,7 @@ map(key1, value1[, key2, value2, ...])
 
 **Returned value**
 
-- Data structure as `key:value` pairs.
-
-Type: [Map(key, value)](../../sql-reference/data-types/map.md).
+- Data structure as `key:value` pairs. [Map(key, value)](../../sql-reference/data-types/map.md).
 
 **Examples**
 
@@ -387,9 +385,7 @@ mapContains(map, key)
 
 **Returned value**
 
-- `1` if `map` contains `key`, `0` if not.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+- `1` if `map` contains `key`, `0` if not. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -431,9 +427,7 @@ mapKeys(map)
 
 **Returned value**
 
-- Array containing all keys from the `map`.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Array containing all keys from the `map`. [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -474,9 +468,7 @@ mapValues(map)
 
 **Returned value**
 
-- Array containing all the values from `map`.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Array containing all the values from `map`. [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 

@@ -50,9 +50,7 @@ Alias:
 
 **Returned value**
 
-- A date created from the arguments.
-
-Type: [Date](../../sql-reference/data-types/date.md).
+- A date created from the arguments. [Date](../../sql-reference/data-types/date.md).
 
 **Example**
 
@@ -109,9 +107,7 @@ makeDateTime(year, month, day, hour, minute, second[, timezone])
 
 **Returned value**
 
-- A date with time created from the arguments.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- A date with time created from the arguments. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -152,7 +148,7 @@ Alias: `TIMESTAMP`
 
 **Arguments**
 
-- `expr` - Date or date with time. Type: [String](../../sql-reference/data-types/string.md).
+- `expr` - Date or date with time. [String](../../sql-reference/data-types/string.md).
 - `expr_time` - Optional parameter. Time to add. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
@@ -200,9 +196,7 @@ Alias: `timezone`.
 
 **Returned value**
 
-- Timezone.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Timezone. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -237,9 +231,7 @@ Alias: `serverTimezone`.
 
 **Returned value**
 
--   Timezone.
-
-Type: [String](../../sql-reference/data-types/string.md).
+-   Timezone. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -278,9 +270,7 @@ Alias: `toTimezone`.
 
 **Returned value**
 
-- Date and time.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- Date and time. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -336,9 +326,7 @@ Alias: `timezoneOf`.
 
 **Returned value**
 
-- Timezone name.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Timezone name. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -373,9 +361,7 @@ Alias: `timezoneOffset`.
 
 **Returned value**
 
-- Offset from UTC in seconds.
-
-Type: [Int32](../../sql-reference/data-types/int-uint.md).
+- Offset from UTC in seconds. [Int32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -410,9 +396,7 @@ Alias: `YEAR`
 
 **Returned value**
 
-- The year of the given date/time
-
-Type: `UInt16`
+- The year of the given date/time. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -446,9 +430,7 @@ Alias: `QUARTER`
 
 **Returned value**
 
-- The quarter of the year (1, 2, 3 or 4) of the given date/time
-
-Type: `UInt8`
+- The quarter of the year (1, 2, 3 or 4) of the given date/time. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -482,9 +464,7 @@ Alias: `MONTH`
 
 **Returned value**
 
-- The month of the year (1 - 12) of the given date/time
-
-Type: `UInt8`
+- The month of the year (1 - 12) of the given date/time. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -518,9 +498,7 @@ Alias: `DAYOFYEAR`
 
 **Returned value**
 
-- The day of the year (1 - 366) of the given date/time
-
-Type: `UInt16`
+- The day of the year (1 - 366) of the given date/time. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -554,9 +532,7 @@ Aliases: `DAYOFMONTH`, `DAY`
 
 **Returned value**
 
-- The day of the month (1 - 31) of the given date/time
-
-Type: `UInt8`
+- The day of the month (1 - 31) of the given date/time. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -643,9 +619,7 @@ Alias: `HOUR`
 
 **Returned value**
 
-- The hour of the day (0 - 23) of the given date/time
-
-Type: `UInt8`
+- The hour of the day (0 - 23) of the given date/time. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -679,9 +653,7 @@ Alias: `MINUTE`
 
 **Returned value**
 
-- The minute of the hour (0 - 59) of the given date/time
-
-Type: `UInt8`
+- The minute of the hour (0 - 59) of the given date/time. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -715,9 +687,7 @@ Alias: `SECOND`
 
 **Returned value**
 
-- The second in the minute (0 - 59) of the given date/time
-
-Type: `UInt8`
+- The second in the minute (0 - 59) of the given date/time. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -763,9 +733,7 @@ Result:
 
 **Returned value**
 
-- The millisecond in the minute (0 - 59) of the given date/time
-
-Type: `UInt16`
+- The millisecond in the minute (0 - 59) of the given date/time. [UInt16](../data-types/int-uint.md).
 
 ## toUnixTimestamp
 
@@ -782,9 +750,7 @@ toUnixTimestamp(str, [timezone])
 
 **Returned value**
 
-- Returns the unix timestamp.
-
-Type: `UInt32`.
+- Returns the unix timestamp. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -842,9 +808,7 @@ toStartOfYear(value)
 
 **Returned value**
 
-- The first day of the year of the input date/time
-
-Type: `Date`
+- The first day of the year of the input date/time. [Date](../data-types/date.md).
 
 **Example**
 
@@ -876,9 +840,7 @@ toStartOfISOYear(value)
 
 **Returned value**
 
-- The first day of the year of the input date/time
-
-Type: `Date`
+- The first day of the year of the input date/time. [Date](../data-types/date.md).
 
 **Example**
 
@@ -911,9 +873,7 @@ toStartOfQuarter(value)
 
 **Returned value**
 
-- The first day of the quarter of the given date/time
-
-Type: `Date`
+- The first day of the quarter of the given date/time. [Date](../data-types/date.md).
 
 **Example**
 
@@ -945,9 +905,7 @@ toStartOfMonth(value)
 
 **Returned value**
 
-- The first day of the month of the given date/time
-
-Type: `Date`
+- The first day of the month of the given date/time. [Date](../data-types/date.md).
 
 **Example**
 
@@ -985,9 +943,7 @@ Alias: `LAST_DAY`
 
 **Returned value**
 
-- The last day of the month of the given date/time
-
-Type: `Date`
+- The last day of the month of the given date/time=. [Date](../data-types/date.md).
 
 **Example**
 
@@ -1019,9 +975,7 @@ toMonday(value)
 
 **Returned value**
 
-- The date of the nearest Monday on or prior to the given date
-
-Type: `Date`
+- The date of the nearest Monday on or prior to the given date. [Date](../data-types/date.md).
 
 **Example**
 
@@ -1057,9 +1011,7 @@ toStartOfWeek(t[, mode[, timezone]])
 
 **Returned value**
 
-- The date of the nearest Sunday or Monday on or prior to the given date, depending on the mode
-
-Type: `Date`
+- The date of the nearest Sunday or Monday on or prior to the given date, depending on the mode. [Date](../data-types/date.md).
 
 **Example**
 
@@ -1102,9 +1054,7 @@ toLastDayOfWeek(t[, mode[, timezone]])
 
 **Returned value**
 
-- The date of the nearest Sunday or Monday on or after the given date, depending on the mode
-
-Type: `Date`
+- The date of the nearest Sunday or Monday on or after the given date, depending on the mode. [Date](../data-types/date.md).
 
 **Example**
 
@@ -1144,9 +1094,7 @@ toStartOfDay(value)
 
 **Returned value**
 
-- The start of the day of the given date/time
-
-Type: `DateTime`
+- The start of the day of the given date/time. [DateTime](../data-types/datetime.md).
 
 **Example**
 
@@ -1178,9 +1126,7 @@ toStartOfHour(value)
 
 **Returned value**
 
-- The start of the hour of the given date/time
-
-Type: `DateTime`
+- The start of the hour of the given date/time. [DateTime](../data-types/datetime.md).
 
 **Example**
 
@@ -1214,9 +1160,7 @@ toStartOfMinute(value)
 
 **Returned value**
 
-- The start of the minute of the given date/time
-
-Type: `DateTime`
+- The start of the minute of the given date/time. [DateTime](../data-types/datetime.md).
 
 **Example**
 
@@ -1253,9 +1197,7 @@ toStartOfSecond(value, [timezone])
 
 **Returned value**
 
-- Input value without sub-seconds.
-
-Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
+- Input value without sub-seconds. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Examples**
 
@@ -1309,9 +1251,7 @@ toStartOfFiveMinutes(value)
 
 **Returned value**
 
-- The start of the five-minute interval of the given date/time
-
-Type: `DateTime`
+- The start of the five-minute interval of the given date/time. [DateTime](../data-types/datetime.md).
 
 **Example**
 
@@ -1349,9 +1289,7 @@ toStartOfTenMinutes(value)
 
 **Returned value**
 
-- The start of the ten-minute interval of the given date/time
-
-Type: `DateTime`
+- The start of the ten-minute interval of the given date/time. [DateTime](../data-types/datetime.md).
 
 **Example**
 
@@ -1389,9 +1327,7 @@ toStartOfFifteenMinutes(value)
 
 **Returned value**
 
-- The start of the fifteen-minute interval of the given date/time
-
-Type: `DateTime`
+- The start of the fifteen-minute interval of the given date/time. [DateTime](../data-types/datetime.md).
 
 **Example**
 
@@ -1603,9 +1539,7 @@ Alias: `TO_DAYS`
 
 **Returned value**
 
-The number of days passed since date 0000-01-01.
-
-Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+The number of days passed since date 0000-01-01. [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1645,9 +1579,7 @@ Alias: `FROM_DAYS`
 
 **Returned value**
 
-The date corresponding to the number of days passed since year zero.
-
-Type: [Date](../../sql-reference/data-types/date.md).
+The date corresponding to the number of days passed since year zero. [Date](../../sql-reference/data-types/date.md).
 
 **Example**
 
@@ -1709,9 +1641,7 @@ age('unit', startdate, enddate, [timezone])
 
 **Returned value**
 
-Difference between `enddate` and `startdate` expressed in `unit`.
-
-Type: [Int](../../sql-reference/data-types/int-uint.md).
+Difference between `enddate` and `startdate` expressed in `unit`. [Int](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1787,9 +1717,7 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 
 **Returned value**
 
-Difference between `enddate` and `startdate` expressed in `unit`.
-
-Type: [Int](../../sql-reference/data-types/int-uint.md).
+Difference between `enddate` and `startdate` expressed in `unit`. [Int](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -1858,9 +1786,7 @@ Alias: `dateTrunc`.
 
 **Returned value**
 
-- Value, truncated to the specified part of date.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- Value, truncated to the specified part of date. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -1935,9 +1861,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
 **Returned value**
 
-Date or date with time obtained by adding `value`, expressed in `unit`, to `date`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+Date or date with time obtained by adding `value`, expressed in `unit`, to `date`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2012,9 +1936,7 @@ Aliases: `dateSub`, `DATE_SUB`.
 
 **Returned value**
 
-Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2079,9 +2001,7 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 **Returned value**
 
-Date or date with time with the specified `value` expressed in `unit` added to `date`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+Date or date with time with the specified `value` expressed in `unit` added to `date`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2130,9 +2050,7 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Returned value**
 
-Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2167,9 +2085,7 @@ addDate(date, interval)
 
 **Returned value**
 
-Date or date with time obtained by adding `interval` to `date`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+Date or date with time obtained by adding `interval` to `date`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2210,9 +2126,7 @@ subDate(date, interval)
 
 **Returned value**
 
-Date or date with time obtained by subtracting `interval` from `date`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+Date or date with time obtained by subtracting `interval` from `date`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2252,9 +2166,7 @@ now([timezone])
 
 **Returned value**
 
-- Current date and time.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- Current date and time. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -2303,9 +2215,7 @@ now64([scale], [timezone])
 
 **Returned value**
 
-- Current date and time with sub-second precision.
-
-Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
+- Current date and time with sub-second precision. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -2339,9 +2249,7 @@ nowInBlock([timezone])
 
 **Returned value**
 
-- Current date and time at the moment of processing of each block of data.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- Current date and time at the moment of processing of each block of data. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -2381,9 +2289,7 @@ today()
 
 **Returned value**
 
-- Current date
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- Current date. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -2491,9 +2397,7 @@ YYYYMMDDToDate(yyyymmdd);
 
 **Returned value**
 
-- a date created from the arguments.
-
-Type: [Date](../../sql-reference/data-types/date.md).
+- a date created from the arguments. [Date](../../sql-reference/data-types/date.md).
 
 **Example**
 
@@ -2534,9 +2438,7 @@ YYYYMMDDhhmmssToDateTime(yyyymmddhhmmss[, timezone]);
 
 **Returned value**
 
-- a date with time created from the arguments.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+- a date with time created from the arguments. [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -3743,9 +3645,7 @@ dateName(date_part, date)
 
 **Returned value**
 
-- The specified part of date.
-
-Type: [String](../../sql-reference/data-types/string.md#string)
+- The specified part of date. [String](../../sql-reference/data-types/string.md#string)
 
 **Example**
 
@@ -3781,9 +3681,7 @@ monthName(date)
 
 **Returned value**
 
-- The name of the month.
-
-Type: [String](../../sql-reference/data-types/string.md#string)
+- The name of the month. [String](../../sql-reference/data-types/string.md#string)
 
 **Example**
 
@@ -3878,9 +3776,7 @@ toModifiedJulianDay(date)
 
 **Returned value**
 
-- Modified Julian Day number.
-
-Type: [Int32](../../sql-reference/data-types/int-uint.md).
+- Modified Julian Day number. [Int32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -3912,9 +3808,7 @@ toModifiedJulianDayOrNull(date)
 
 **Returned value**
 
-- Modified Julian Day number.
-
-Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
+- Modified Julian Day number. [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -3946,9 +3840,7 @@ fromModifiedJulianDay(day)
 
 **Returned value**
 
-- Date in text form.
-
-Type: [String](../../sql-reference/data-types/string.md)
+- Date in text form. [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
@@ -3980,9 +3872,7 @@ fromModifiedJulianDayOrNull(day)
 
 **Returned value**
 
-- Date in text form.
-
-Type: [Nullable(String)](../../sql-reference/data-types/string.md)
+- Date in text form. [Nullable(String)](../../sql-reference/data-types/string.md)
 
 **Example**
 
