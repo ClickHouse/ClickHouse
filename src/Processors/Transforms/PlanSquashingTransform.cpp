@@ -35,7 +35,10 @@ IProcessor::Status PlanSquashingTransform::prepare()
                 break; /// never reached
         }
     }
-    status = finish();
+    if (status == Status::Ready)
+        status = finish();
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There should be a Ready status to finish the PlanSquashing");
 
     return status;
 }
