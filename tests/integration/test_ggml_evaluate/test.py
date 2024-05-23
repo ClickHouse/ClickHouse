@@ -1,13 +1,14 @@
 import os
 import sys
-import time
 
 import pytest
+
+from helpers.cluster import ClickHouseCluster
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -16,6 +17,7 @@ instance = cluster.add_instance(
     stay_alive=True,
     main_configs=["config/models_config.xml"],
 )
+
 
 @pytest.fixture(scope="module")
 def ch_cluster():
@@ -56,19 +58,28 @@ def testBasicArgumentTypes(ch_cluster):
         "SELECT ggmlEvaluate(123, map('n_predict', 4), 'Did you know that walruses');"
     )
 
-    assert ('Illegal type UInt8 of first argument of function ggmlEvaluate, expected a string' in err)
+    assert (
+        'Illegal type UInt8 of first argument of function ggmlEvaluate, expected a string'
+        in err
+    )
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', 123, 'Did you know that walruses');"
     )
 
-    assert ('Illegal type UInt8 of second argument of function ggmlEvaluate, expected a map' in err)
+    assert (
+        'Illegal type UInt8 of second argument of function ggmlEvaluate, expected a map'
+        in err
+    )
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 123);"
     )
 
-    assert ('Illegal type UInt8 of third argument of function ggmlEvaluate, expected a string' in err)
+    assert (
+        'Illegal type UInt8 of third argument of function ggmlEvaluate, expected a string'
+        in err
+    )
 
 def testFirstArgumentIsConstString(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
@@ -78,26 +89,38 @@ def testFirstArgumentIsConstString(ch_cluster):
         "SELECT ggmlEvaluate(a, map('n_predict', 4), 'Did you know that walruses') FROM T;"
     )
 
-    assert ('First argument of function ggmlEvaluate must be a constant string' in err)
+    assert (
+        'First argument of function ggmlEvaluate must be a constant string'
+        in err
+    )
 
 def testArgumentCount(ch_cluster):
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2');"
     )
 
-    assert ('Function ggmlEvaluate expects exactly 3 arguments. Got 1' in err)
+    assert (
+        'Function ggmlEvaluate expects exactly 3 arguments. Got 1'
+        in err
+    )
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4));"
     )
 
-    assert ('Function ggmlEvaluate expects exactly 3 arguments. Got 2' in err)
+    assert (
+        'Function ggmlEvaluate expects exactly 3 arguments. Got 2'
+        in err
+    )
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses', ' are actually mammals');"
     )
 
-    assert ('Function ggmlEvaluate expects exactly 3 arguments. Got 4' in err)
+    assert (
+        'Function ggmlEvaluate expects exactly 3 arguments. Got 4'
+        in err
+    )
 
 def testMultipleRows(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
