@@ -13,34 +13,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void SerializationVariantElement::enumerateStreams(
-    DB::ISerialization::EnumerateStreamsSettings & settings,
-    const DB::ISerialization::StreamCallback & callback,
-    const DB::ISerialization::SubstreamData & data) const
-{
-    /// We will need stream for discriminators during deserialization.
-    settings.path.push_back(Substream::VariantDiscriminators);
-    callback(settings.path);
-    settings.path.pop_back();
-
-    addVariantToPath(settings.path);
-    settings.path.back().data = data;
-    nested_serialization->enumerateStreams(settings, callback, data);
-    removeVariantFromPath(settings.path);
-}
-
-void SerializationVariantElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationVariantElement");
-}
-
-void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationVariantElement");
-}
-
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
 {
     /// During deserialization discriminators and variant streams can be shared.
@@ -56,6 +28,40 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
 };
+
+void SerializationVariantElement::enumerateStreams(
+    DB::ISerialization::EnumerateStreamsSettings & settings,
+    const DB::ISerialization::StreamCallback & callback,
+    const DB::ISerialization::SubstreamData & data) const
+{
+    /// We will need stream for discriminators during deserialization.
+    settings.path.push_back(Substream::VariantDiscriminators);
+    callback(settings.path);
+    settings.path.pop_back();
+
+    const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
+    addVariantToPath(settings.path);
+    auto nested_data = SubstreamData(nested_serialization)
+                       .withType(data.type ? removeNullableOrLowCardinalityNullable(data.type) : nullptr)
+                       .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
+                       .withSerializationInfo(data.serialization_info)
+                       .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
+    settings.path.back().data = nested_data;
+    nested_serialization->enumerateStreams(settings, callback, nested_data);
+    removeVariantFromPath(settings.path);
+}
+
+void SerializationVariantElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationVariantElement");
+}
+
+void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationVariantElement");
+}
 
 void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const

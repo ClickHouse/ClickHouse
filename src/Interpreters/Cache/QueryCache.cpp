@@ -186,6 +186,9 @@ String queryStringFromAST(ASTPtr ast)
 
 }
 
+/// Hashing of ASTs must consider aliases (issue #56258)
+static constexpr bool ignore_aliases = false;
+
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
@@ -193,7 +196,7 @@ QueryCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast(removeQueryCacheSettings(ast_))
+    : ast_hash(removeQueryCacheSettings(ast_)->getTreeHash(ignore_aliases))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -209,18 +212,14 @@ QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vecto
 {
 }
 
-/// Hashing of ASTs must consider aliases (issue #56258)
-static constexpr bool ignore_aliases = false;
-
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
+    return ast_hash == other.ast_hash;
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
-    return hash.low64;
+    return key.ast_hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const

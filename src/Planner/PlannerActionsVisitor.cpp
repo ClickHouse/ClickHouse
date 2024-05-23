@@ -160,7 +160,17 @@ public:
                 const auto & function_node = node->as<FunctionNode &>();
                 if (function_node.getFunctionName() == "__actionName")
                 {
-                    result = toString(function_node.getArguments().getNodes().at(1)->as<ConstantNode>()->getValue());
+                    /// Perform sanity check, because user may call this function with unexpected arguments
+                    const auto & function_argument_nodes = function_node.getArguments().getNodes();
+                    if (function_argument_nodes.size() == 2)
+                    {
+                        if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
+                            result = toString(second_argument->getValue());
+                    }
+
+                    /// Empty node name is not allowed and leads to logical errors
+                    if (result.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
                     break;
                 }
 
@@ -233,8 +243,34 @@ public:
             }
             case QueryTreeNodeType::LAMBDA:
             {
-                auto lambda_hash = node->getTreeHash();
-                result = "__lambda_" + toString(lambda_hash);
+                /// Initially, the action name was `"__lambda_" + toString(node->getTreeHash());`.
+                /// This is not a good idea because:
+                ///   * hash is different on initiator and shard if the default database is changed in cluster
+                ///   * hash is reliable only within one node; any change will break queries in between versions
+                ///
+                /// Now, we calculate execution name as (names + types) for lambda arguments + action name (expression)
+                /// and this should be more reliable (as long as we trust the calculation of action name for functions)
+
+                WriteBufferFromOwnString buffer;
+
+                const auto & lambda_node = node->as<LambdaNode &>();
+                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+
+                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+                for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
+                {
+                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
+                    buffer << calculateActionNodeName(lambda_argument_node);
+                    buffer << ' ';
+                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
+
+                    if (i + 1 != lambda_arguments_nodes_size)
+                        buffer << ", ";
+                }
+
+                buffer << " -> " << calculateActionNodeName(lambda_node.getExpression());
+
+                result = buffer.str();
                 break;
             }
             default:

@@ -799,7 +799,7 @@ If you only want to search multiple substrings in a string, you can use function
 **Syntax**
 
 ```sql
-multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiMatchAnyIndex
@@ -809,7 +809,7 @@ Like `multiMatchAny` but returns any index that matches the haystack.
 **Syntax**
 
 ```sql
-multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiMatchAllIndices
@@ -819,7 +819,7 @@ Like `multiMatchAny` but returns the array of all indices that match the haystac
 **Syntax**
 
 ```sql
-multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAny
@@ -833,7 +833,7 @@ Like `multiMatchAny` but returns 1 if any pattern matches the haystack within a 
 **Syntax**
 
 ```sql
-multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAnyIndex
@@ -843,7 +843,7 @@ Like `multiFuzzyMatchAny` but returns any index that matches the haystack within
 **Syntax**
 
 ```sql
-multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAllIndices
@@ -853,7 +853,7 @@ Like `multiFuzzyMatchAny` but returns the array of all indices in any order that
 **Syntax**
 
 ```sql
-multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## extract
@@ -1322,9 +1322,9 @@ Result:
 
 ## countSubstrings
 
-Returns how often substring `needle` occurs in string `haystack`.
+Returns how often a substring `needle` occurs in a string `haystack`.
 
-Functions `countSubstringsCaseInsensitive` and `countSubstringsCaseInsensitiveUTF8` provide a case-insensitive and case-insensitive + UTF-8 variants of this function.
+Functions [`countSubstringsCaseInsensitive`](#countsubstringscaseinsensitive) and [`countSubstringsCaseInsensitiveUTF8`](#countsubstringscaseinsensitiveutf8) provide case-insensitive and case-insensitive + UTF-8 variants of this function respectively.
 
 **Syntax**
 
@@ -1370,6 +1370,113 @@ Result:
 ┌─countSubstrings('abc___abc', 'abc', 4)─┐
 │                                      1 │
 └────────────────────────────────────────┘
+```
+## countSubstringsCaseInsensitive
+
+Returns how often a substring `needle` occurs in a string `haystack`. Ignores case.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitive(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+- The number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+```
+
+Example with `start_pos` argument:
+
+Query:
+
+```sql
+SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitiveUTF8
+
+Returns how often a substring `needle` occurs in a string `haystack`. Ignores case and assumes that `haystack` is a UTF8 string.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+- The number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Example with `start_pos` argument:
+
+Query:
+
+```sql
+SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## countMatches
@@ -1421,7 +1528,40 @@ Result:
 
 ## countMatchesCaseInsensitive
 
-Like `countMatches(haystack, pattern)` but matching ignores the case.
+Returns the number of regular expression matches for a pattern in a haystack like [`countMatches`](#countmatches) but matching ignores the case.
+
+**Syntax**
+
+``` sql
+countMatchesCaseInsensitive(haystack, pattern)
+```
+
+**Arguments**
+
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The number of matches.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countMatchesCaseInsensitive('AAAA', 'aa');
+```
+
+Result:
+
+``` text
+┌─countMatchesCaseInsensitive('AAAA', 'aa')────┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+```
 
 ## regexpExtract
 

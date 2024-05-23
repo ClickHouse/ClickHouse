@@ -139,7 +139,7 @@ Format the `pattern` string with the values (strings, integers, etc.) listed in 
 **Syntax**
 
 ```sql
-format(pattern, s0, s1, …)
+format(pattern, s0, s1, ...)
 ```
 
 **Example**
@@ -208,7 +208,7 @@ translateUTF8(s, from, to)
 
 **Returned value**
 
-- `s`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
 
 **Examples**
 

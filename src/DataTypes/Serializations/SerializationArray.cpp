@@ -254,7 +254,8 @@ void SerializationArray::enumerateStreams(
     auto next_data = SubstreamData(nested)
         .withType(type_array ? type_array->getNestedType() : nullptr)
         .withColumn(column_array ? column_array->getDataPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+        .withSerializationInfo(data.serialization_info)
+        .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();

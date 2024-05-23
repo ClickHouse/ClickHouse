@@ -68,8 +68,8 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-
         const auto & index = part->getIndex();
+
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -79,7 +79,19 @@ protected:
             if (index_header.has(column_name))
             {
                 size_t index_position = index_header.getPositionByName(column_name);
-                result_columns[pos] = index[index_position];
+
+                /// Some of the columns from suffix of primary index may be not loaded
+                /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
+                if (index_position < index->size())
+                {
+                    result_columns[pos] = index->at(index_position);
+                }
+                else
+                {
+                    const auto & index_type = index_header.getByPosition(index_position).type;
+                    auto index_column = index_type->createColumnConstWithDefaultValue(num_rows);
+                    result_columns[pos] = index_column->convertToFullColumnIfConst();
+                }
             }
             else if (column_name == part_name_column.name)
             {
@@ -268,7 +280,8 @@ private:
 
 void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 }

@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
+from lambda_shared_package.lambda_shared.pr import Labels
 from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -405,11 +406,11 @@ class Release:
     def _bump_release_branch(self):
         # Update only git, original version stays the same
         self._git.update()
-        new_version = self.version.patch_update()
+        new_version = self.version.copy()
         version_type = self.get_stable_release_type()
-        pr_labels = "--label release"
+        pr_labels = f"--label {Labels.RELEASE}"
         if version_type == VersionType.LTS:
-            pr_labels += " --label release-lts"
+            pr_labels += f" --label {Labels.RELEASE_LTS}"
         new_version.with_description(version_type)
         self._update_cmake_contributors(new_version)
         self._commit_cmake_contributors(new_version)
@@ -431,9 +432,10 @@ class Release:
                         "changes with it.'",
                         dry_run=self.dry_run,
                     )
-                    with self._create_gh_release(False):
-                        # Here the release branch part is done
-                        yield
+                    # Here the release branch part is done.
+                    # We don't create a release itself automatically to have a
+                    # safe window to backport possible bug fixes.
+                    yield
 
     @contextmanager
     def _bump_version_in_master(self, helper_branch: str) -> Iterator[None]:

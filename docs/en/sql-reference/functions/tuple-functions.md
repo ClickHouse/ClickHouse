@@ -7,15 +7,15 @@ sidebar_label: Tuples
 ## tuple
 
 A function that allows grouping multiple columns.
-For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tuple containing these columns. There is no cost to execute the function.
+For columns with the types T1, T2, ..., it returns a Tuple(T1, T2, ...) type tuple containing these columns. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
 
-The function implements the operator `(x, y, …)`.
+The function implements the operator `(x, y, ...)`.
 
 **Syntax**
 
 ``` sql
-tuple(x, y, …)
+tuple(x, y, ...)
 ```
 
 ## tupleElement
@@ -815,6 +815,42 @@ Result:
 ┌─tupleModuloByNumber((15, 10, 5), 2)─┐
 │ (1,0,1)                             │
 └─────────────────────────────────────┘
+```
+
+## flattenTuple
+
+Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
+
+**Syntax**
+
+```sql
+flattenTuple(input)
+```
+
+**Parameters**
+
+- `input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
+
+**Returned value**
+
+- `output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = Memory;
+INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
+SELECT flattenTuple(t) FROM t_flatten_tuple;
+```
+
+Result:
+
+``` text
+┌─flattenTuple(t)───────────┐
+│ ([1,2],['a','b'],3,'c',4) │
+└───────────────────────────┘
 ```
 
 ## Distance functions

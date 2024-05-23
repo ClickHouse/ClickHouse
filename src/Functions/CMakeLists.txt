@@ -3,7 +3,7 @@ add_subdirectory(divide)
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
-extract_into_parent_list(clickhouse_functions_sources dbms_sources
+set(DBMS_FUNCTIONS
     IFunction.cpp
     FunctionFactory.cpp
     FunctionHelpers.cpp
@@ -15,7 +15,10 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     checkHyperscanRegexp.cpp
     array/has.cpp
     CastOverloadResolver.cpp
+    # Provides dependency for cast - createFunctionBaseCast()
+    FunctionsConversion.cpp
 )
+extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
     FunctionFactory.h
@@ -26,6 +29,10 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
+    set_source_files_properties(${DBMS_FUNCTIONS} DIRECTORY .. PROPERTIES COMPILE_FLAGS "-g0")
+endif()
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 
@@ -46,6 +53,7 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
+        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
@@ -59,10 +67,6 @@ endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
-endif()
-
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
 endif()
 
 if (TARGET ch_contrib::icu)

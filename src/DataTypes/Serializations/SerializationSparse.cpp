@@ -152,7 +152,7 @@ void SerializationSparse::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_sparse = data.column ? &assert_cast<const ColumnSparse &>(*data.column) : nullptr;
+    const auto * column_sparse = data.column ? typeid_cast<const ColumnSparse *>(data.column.get()) : nullptr;
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
@@ -170,7 +170,7 @@ void SerializationSparse::enumerateStreams(
 
     auto next_data = SubstreamData(nested)
         .withType(data.type)
-        .withColumn(column_sparse ? column_sparse->getValuesPtr() : nullptr)
+        .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
         .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);

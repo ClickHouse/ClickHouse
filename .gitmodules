@@ -6,7 +6,7 @@
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/ClickHouse/lz4
+	url = https://github.com/lz4/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -317,6 +317,9 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/expected"]
+	path = contrib/expected
+	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
@@ -360,6 +363,9 @@
 [submodule "contrib/idna"]
 	path = contrib/idna
 	url = https://github.com/ada-url/idna.git
+[submodule "contrib/rust_vendor"]
+	path = contrib/rust_vendor
+	url = https://github.com/ClickHouse/rust_vendor.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/ClickHouse/openssl.git

@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
@@ -451,6 +452,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {

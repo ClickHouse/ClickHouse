@@ -12,10 +12,11 @@ function install_test_backup()
     local test_backup_filename="$1"
     local test_backup_path="$CURDIR/backups/${test_backup_filename}"
 
-    local backups_disk_root=$($CLICKHOUSE_CLIENT --query "SELECT path FROM system.disks WHERE name='backups'")
+    local backups_disk_root
+    backups_disk_root=$($CLICKHOUSE_CLIENT --query "SELECT path FROM system.disks WHERE name='backups'")
 
     if [ -z "${backups_disk_root}" ]; then
-        echo Disk \'${backups_disk_root}\' not found
+        echo "Disk '${backups_disk_root}' not found"
         exit 1
     fi
 

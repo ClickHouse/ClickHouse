@@ -3,20 +3,3 @@ select splitByRegexp('', 'abcde');
 select splitByRegexp('<[^<>]*>', x) from (select arrayJoin(['<h1>hello<h2>world</h2></h1>', 'gbye<split>bug']) x);
 select splitByRegexp('ab', '');
 select splitByRegexp('', '');
-
-SELECT 'Test fallback of splitByRegexp to splitByChar if regexp is trivial';
-select splitByRegexp(' ', 'a b c');
-select splitByRegexp('-', 'a-b-c');
-select splitByRegexp('.', 'a.b.c');
-select splitByRegexp('^', 'a^b^c');
-select splitByRegexp('$', 'a$b$c');
-select splitByRegexp('+', 'a+b+c'); -- { serverError CANNOT_COMPILE_REGEXP }
-select splitByRegexp('?', 'a?b?c'); -- { serverError CANNOT_COMPILE_REGEXP }
-select splitByRegexp('(', 'a(b(c'); -- { serverError CANNOT_COMPILE_REGEXP }
-select splitByRegexp(')', 'a)b)c');
-select splitByRegexp('[', 'a[b[c'); -- { serverError CANNOT_COMPILE_REGEXP }
-select splitByRegexp(']', 'a]b]c');
-select splitByRegexp('{', 'a{b{c');
-select splitByRegexp('}', 'a}b}c');
-select splitByRegexp('|', 'a|b|c');
-select splitByRegexp('\\', 'a\\b\\c');

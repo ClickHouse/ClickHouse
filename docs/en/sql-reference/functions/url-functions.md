@@ -16,7 +16,7 @@ If the relevant part isn’t present in a URL, an empty string is returned.
 
 Extracts the protocol from a URL.
 
-Examples of typical returned values: http, https, ftp, mailto, tel, magnet…
+Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
 
 ### domain
 
@@ -152,7 +152,7 @@ Configuration example:
 **Syntax**
 
 ``` sql
-cutToFirstSignificantSubdomain(URL, TLD)
+cutToFirstSignificantSubdomainCustom(URL, TLD)
 ```
 
 **Arguments**

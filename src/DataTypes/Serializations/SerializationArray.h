@@ -72,7 +72,6 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;

@@ -196,6 +196,8 @@ String getNameForSubstreamPath(
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
             stream_name += "." + it->variant_element_name;
+        else if (it->type == SubstreamType::DynamicStructure)
+            stream_name += ".dynamic_structure";
     }
 
     return stream_name;

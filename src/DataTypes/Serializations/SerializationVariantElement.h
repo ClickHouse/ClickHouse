@@ -60,21 +60,6 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-private:
-    friend SerializationVariant;
-
-    struct DeserializeBinaryBulkStateVariantElement;
-
-    size_t deserializeCompactDiscriminators(
-        ColumnPtr & discriminators_column,
-        size_t limit,
-        ReadBuffer * stream,
-        bool continuous_reading,
-        DeserializeBinaryBulkStateVariantElement & variant_element_state) const;
-
-    void addVariantToPath(SubstreamPath & path) const;
-    void removeVariantFromPath(SubstreamPath & path) const;
-
     struct VariantSubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr local_discriminators;
@@ -92,6 +77,20 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;
     };
+private:
+    friend SerializationVariant;
+
+    struct DeserializeBinaryBulkStateVariantElement;
+
+    size_t deserializeCompactDiscriminators(
+        ColumnPtr & discriminators_column,
+        size_t limit,
+        ReadBuffer * stream,
+        bool continuous_reading,
+        DeserializeBinaryBulkStateVariantElement & variant_element_state) const;
+
+    void addVariantToPath(SubstreamPath & path) const;
+    void removeVariantFromPath(SubstreamPath & path) const;
 };
 
 }
