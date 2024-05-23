@@ -238,11 +238,13 @@ Chunk StorageS3QueueSource::generate()
                              key_with_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
+                appendLogElement(reader.getObjectInfo().getPath(), *file_status, processed_rows_from_file, false);
             }
 
             break;
         }
+
+        const auto & path = reader.getObjectInfo().getPath();
 
         if (shutdown_called)
         {
@@ -253,7 +255,7 @@ Chunk StorageS3QueueSource::generate()
             {
                 LOG_DEBUG(
                     log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
-                    processed_rows_from_file, reader.getRelativePath());
+                    processed_rows_from_file, path);
 
                 try
                 {
@@ -265,7 +267,7 @@ Chunk StorageS3QueueSource::generate()
                               key_with_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
+                appendLogElement(path, *file_status, processed_rows_from_file, false);
 
                 /// Leave the file half processed. Table is being dropped, so we do not care.
                 break;
@@ -273,7 +275,7 @@ Chunk StorageS3QueueSource::generate()
 
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
                      "Will process the file fully and then shutdown",
-                     reader.getRelativePath(), processed_rows_from_file);
+                     path, processed_rows_from_file);
         }
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
@@ -287,31 +289,31 @@ Chunk StorageS3QueueSource::generate()
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), reader.getRelativePath());
+                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
 
                 file_status->processed_rows += chunk.getNumRows();
                 processed_rows_from_file += chunk.getNumRows();
 
                 VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                    chunk, requested_virtual_columns, reader.getRelativePath(), reader.getObjectInfo().metadata->size_bytes);
+                    chunk, requested_virtual_columns, path, reader.getObjectInfo().metadata->size_bytes);
                 return chunk;
             }
         }
         catch (...)
         {
             const auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getRelativePath(), message);
+            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
             files_metadata->setFileFailed(key_with_info->processing_holder, message);
 
-            appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
+            appendLogElement(path, *file_status, processed_rows_from_file, false);
             throw;
         }
 
         files_metadata->setFileProcessed(key_with_info->processing_holder);
-        applyActionAfterProcessing(reader.getRelativePath());
+        applyActionAfterProcessing(path);
 
-        appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, true);
+        appendLogElement(path, *file_status, processed_rows_from_file, true);
         file_status.reset();
         processed_rows_from_file = 0;
 
@@ -327,7 +329,7 @@ Chunk StorageS3QueueSource::generate()
         if (!reader)
             break;
 
-        file_status = files_metadata->getFileStatus(reader.getRelativePath());
+        file_status = files_metadata->getFileStatus(reader.getObjectInfo().getPath());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.

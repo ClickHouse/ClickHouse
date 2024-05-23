@@ -13,6 +13,7 @@ public:
     using FileIterator = std::shared_ptr<StorageObjectStorageSource::IIterator>;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
     using ObjectInfoPtr = StorageObjectStorage::ObjectInfoPtr;
+    using ObjectInfo = StorageObjectStorage::ObjectInfo;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
     ReadBufferIterator(
@@ -41,7 +42,7 @@ public:
     std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override;
 
 private:
-    SchemaCache::Key getKeyForSchemaCache(const String & path, const String & format_name) const;
+    SchemaCache::Key getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const;
     SchemaCache::Keys getKeysForSchemaCache() const;
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);

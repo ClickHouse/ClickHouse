@@ -183,14 +183,14 @@ Chunk StorageObjectStorageSource::generate()
             VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                fs::path(configuration->getNamespace()) / reader.getRelativePath(),
+                fs::path(configuration->getNamespace()) / reader.getObjectInfo().getPath(),
                 object_info.metadata->size_bytes, &filename);
 
             return chunk;
         }
 
         if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
-            addNumRowsToCache(reader.getRelativePath(), total_rows_in_file);
+            addNumRowsToCache(reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -209,29 +209,28 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
-void StorageObjectStorageSource::addNumRowsToCache(const String & path, size_t num_rows)
+void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        fs::path(configuration->getDataSourceDescription()) / path,
+        fs::path(configuration->getDataSourceDescription()) / object_info.getPath(),
         configuration->format,
         format_settings,
         getContext());
-
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const ObjectInfoPtr & object_info)
+std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const ObjectInfo & object_info)
 {
     const auto cache_key = getKeyForSchemaCache(
-        fs::path(configuration->getDataSourceDescription()) / object_info->getPath(),
+        fs::path(configuration->getDataSourceDescription()) / object_info.getPath(),
         configuration->format,
         format_settings,
         getContext());
 
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
-        return object_info->metadata
-            ? std::optional<size_t>(object_info->metadata->last_modified.epochTime())
+        return object_info.metadata
+            ? std::optional<size_t>(object_info.metadata->last_modified.epochTime())
             : std::nullopt;
     };
     return schema_cache.tryGetNumRows(cache_key, get_last_mod_time);
@@ -263,7 +262,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     std::optional<size_t> num_rows_from_cache = need_only_count
         && getContext()->getSettingsRef().use_cache_for_count_from_files
-        ? tryGetNumRowsFromCache(object_info)
+        ? tryGetNumRowsFromCache(*object_info)
         : std::nullopt;
 
     if (num_rows_from_cache)
@@ -505,7 +504,6 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 
         index = 0;
 
-        LOG_TEST(logger, "Filter: {}", filter_dag != nullptr);
         if (filter_dag)
         {
             std::vector<String> paths;

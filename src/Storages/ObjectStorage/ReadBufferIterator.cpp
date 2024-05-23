@@ -35,9 +35,10 @@ ReadBufferIterator::ReadBufferIterator(
         format = configuration->format;
 }
 
-SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const String & path, const String & format_name) const
+SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
 {
-    auto source = std::filesystem::path(configuration->getDataSourceDescription()) / path;
+    chassert(!object_info.getPath().starts_with("/"));
+    auto source = std::filesystem::path(configuration->getDataSourceDescription()) / object_info.getPath();
     return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext());
 }
 
@@ -50,6 +51,7 @@ SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
         std::back_inserter(sources),
         [&](const auto & elem)
         {
+            chassert(!elem->getPath().starts_with("/"));
             return std::filesystem::path(configuration->getDataSourceDescription()) / elem->getPath();
         });
     return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
@@ -78,7 +80,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
         if (format)
         {
-            auto cache_key = getKeyForSchemaCache(object_info->getPath(), *format);
+            const auto cache_key = getKeyForSchemaCache(*object_info, *format);
             if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                 return columns;
         }
@@ -89,7 +91,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             /// If we have such entry for some format, we can use this format to read the file.
             for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
             {
-                auto cache_key = getKeyForSchemaCache(object_info->getPath(), format_name);
+                const auto cache_key = getKeyForSchemaCache(*object_info, format_name);
                 if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                 {
                     /// Now format is known. It should be the same for all files.
@@ -99,14 +101,13 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             }
         }
     }
-
     return std::nullopt;
 }
 
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
     if (query_settings.schema_inference_use_cache)
-        schema_cache.addNumRows(getKeyForSchemaCache(current_object_info->getPath(), *format), num_rows);
+        schema_cache.addNumRows(getKeyForSchemaCache(*current_object_info, *format), num_rows);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
@@ -114,7 +115,7 @@ void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
     if (query_settings.schema_inference_use_cache
         && query_settings.schema_inference_mode == SchemaInferenceMode::UNION)
     {
-        schema_cache.addColumns(getKeyForSchemaCache(current_object_info->getPath(), *format), columns);
+        schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
     }
 }
 
@@ -135,7 +136,7 @@ void ReadBufferIterator::setFormatName(const String & format_name)
 String ReadBufferIterator::getLastFileName() const
 {
     if (current_object_info)
-        return current_object_info->getFileName();
+        return current_object_info->getPath();
     else
         return "";
 }
@@ -255,17 +256,21 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             }
         }
 
+        LOG_TEST(getLogger("KSSENII"), "Will read columns from {}", current_object_info->getPath());
+
         std::unique_ptr<ReadBuffer> read_buf;
         CompressionMethod compression_method;
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
-            compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
+            LOG_TEST(getLogger("KSSENII"), "Will read columns from {} from archive", current_object_info->getPath());
+            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
+            LOG_TEST(getLogger("KSSENII"), "Will read columns from {} from s3", current_object_info->getPath());
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             read_buf = object_storage->readObject(
                 StoredObject(current_object_info->getPath()),

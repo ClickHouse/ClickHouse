@@ -94,7 +94,6 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        std::string getRelativePath() const { return object_info->getPath(); }
         const ObjectInfo & getObjectInfo() const { return *object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
@@ -115,8 +114,8 @@ protected:
     std::future<ReaderHolder> createReaderAsync(size_t processor = 0);
     std::unique_ptr<ReadBuffer> createReadBuffer(const ObjectInfo & object_info);
 
-    void addNumRowsToCache(const String & path, size_t num_rows);
-    std::optional<size_t> tryGetNumRowsFromCache(const ObjectInfoPtr & object_info);
+    void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const ObjectInfo & object_info);
     void lazyInitialize(size_t processor);
 };
 
