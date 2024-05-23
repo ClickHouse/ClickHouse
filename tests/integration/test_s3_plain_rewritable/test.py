@@ -11,6 +11,8 @@ NUM_WORKERS = 5
 
 MAX_ROWS = 1000
 
+dirs_created = []
+
 
 def gen_insert_values(size):
     return ",".join(
@@ -105,6 +107,22 @@ def test_insert():
             != -1
         )
 
+        created = int(
+            node.query(
+                "SELECT value FROM system.events WHERE event = 'DiskPlainRewritableS3DirectoryCreated'"
+            )
+        )
+        assert created > 0
+        dirs_created.append(created)
+        assert (
+            int(
+                node.query(
+                    "SELECT value FROM system.metrics WHERE metric = 'DiskPlainRewritableS3DirectoryMapSize'"
+                )
+            )
+            == created
+        )
+
 
 @pytest.mark.order(1)
 def test_restart():
@@ -140,6 +158,14 @@ def test_drop():
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
         node.query("DROP TABLE IF EXISTS test SYNC")
+
+        removed = int(
+            node.query(
+                "SELECT value FROM system.events WHERE event = 'DiskPlainRewritableS3DirectoryRemoved'"
+            )
+        )
+
+        assert dirs_created[i] == removed
 
     it = cluster.minio_client.list_objects(
         cluster.minio_bucket, "data/", recursive=True
