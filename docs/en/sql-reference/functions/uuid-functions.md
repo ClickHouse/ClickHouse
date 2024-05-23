@@ -674,7 +674,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## serverUUID()
+## serverUUID
 
 Returns the random UUID generated during the first start of the ClickHouse server. The UUID is stored in file `uuid` in the ClickHouse server directory (e.g. `/var/lib/clickhouse/`) and retained between server restarts.
 
@@ -692,9 +692,9 @@ Type: [UUID](../data-types/uuid.md).
 
 ## generateSnowflakeID
 
-Generates a [Snowflake ID](https://github.com/twitter-archive/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231).
+Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
-Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
 For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
 In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
 
@@ -756,11 +756,14 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 
 ## generateSnowflakeIDThreadMonotonic
 
-Generates a [Snowflake ID](https://github.com/twitter-archive/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231).
+Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
-Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
+In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
 
-This function behaves like `generateSnowflakeID` but gives no guarantee on counter monotony across different simultaneous requests. Monotonicity within one timestamp is guaranteed only within the same thread calling this function to generate Snowflake IDs.
+This function behaves like `generateSnowflakeID` but gives no guarantee on counter monotony across different simultaneous requests.
+Monotonicity within one timestamp is guaranteed only within the same thread calling this function to generate Snowflake IDs.
 
 ```
  0                   1                   2                   3
@@ -814,6 +817,146 @@ SELECT generateSnowflakeIDThreadMonotonic(1), generateSnowflakeIDThreadMonotonic
 ┌─generateSnowflakeIDThreadMonotonic(1)─┬─generateSnowflakeIDThreadMonotonic(2)─┐
 │                   7199082940311945216 │                   7199082940316139520 │
 └───────────────────────────────────────┴───────────────────────────────────────┘
+```
+
+## snowflakeToDateTime
+
+Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](/docs/en/sql-reference/data-types/datetime.md) format.
+
+**Syntax**
+
+``` sql
+snowflakeToDateTime(value[, time_zone])
+```
+
+**Arguments**
+
+- `value` — Snowflake ID. [Int64](/docs/en/sql-reference/data-types/int-uint.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The timestamp component of `value` as a [DateTime](/docs/en/sql-reference/data-types/datetime.md) value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+```
+
+Result:
+
+```response
+
+┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
+│                                              2021-08-15 10:57:56 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## snowflakeToDateTime64
+
+Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) format.
+
+**Syntax**
+
+``` sql
+snowflakeToDateTime64(value[, time_zone])
+```
+
+**Arguments**
+
+- `value` — Snowflake ID. [Int64](/docs/en/sql-reference/data-types/int-uint.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The timestamp component of `value` as a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+```
+
+Result:
+
+```response
+
+┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
+│                                            2021-08-15 10:58:19.841 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## dateTimeToSnowflake
+
+Converts a [DateTime](/docs/en/sql-reference/data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+
+**Syntax**
+
+``` sql
+dateTimeToSnowflake(value)
+```
+
+**Arguments**
+
+- `value` — Date with time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+- Input value converted to the [Int64](/docs/en/sql-reference/data-types/int-uint.md) data type as the first Snowflake ID at that time.
+
+**Example**
+
+Query:
+
+``` sql
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
+```
+
+Result:
+
+```response
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
+```
+
+## dateTime64ToSnowflake
+
+Convert a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+
+**Syntax**
+
+``` sql
+dateTime64ToSnowflake(value)
+```
+
+**Arguments**
+
+- `value` — Date with time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
+
+**Returned value**
+
+- Input value converted to the [Int64](/docs/en/sql-reference/data-types/int-uint.md) data type as the first Snowflake ID at that time.
+
+**Example**
+
+Query:
+
+``` sql
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
+```
+
+Result:
+
+```response
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
 ```
 
 ## See also
