@@ -9,7 +9,6 @@ from time import sleep
 from typing import List, Optional, Tuple, Union
 
 import github
-import requests
 
 # explicit reimport
 # pylint: disable=useless-import-alias
@@ -21,9 +20,6 @@ from github.Issue import Issue as Issue
 from github.NamedUser import NamedUser as NamedUser
 from github.PullRequest import PullRequest as PullRequest
 from github.Repository import Repository as Repository
-
-from env_helper import GITHUB_REPOSITORY
-from get_robot_token import get_best_robot_token
 
 # pylint: enable=useless-import-alias
 
@@ -264,18 +260,3 @@ class GitHub(github.Github):
     def retries(self, value: int) -> None:
         assert isinstance(value, int)
         self._retries = value
-
-    # minimalistic static methods not using pygithub
-    @staticmethod
-    def cancel_wf(run_id, strict=False):
-        token = get_best_robot_token()
-        headers = {"Authorization": f"token {token}"}
-        url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/runs/{run_id}/cancel"
-        try:
-            response = requests.post(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            print(f"NOTE: Workflow [{run_id}] has been cancelled")
-        except Exception as ex:
-            print("ERROR: Got exception executing wf cancel request", ex)
-            if strict:
-                raise ex

@@ -144,11 +144,6 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
-
-    if pr_info.is_merge_queue and args.push:
-        print("Auto style fix will be disabled for Merge Queue workflow")
-        args.push = False
-
     run_cpp_check = True
     run_shell_check = True
     run_python_check = True

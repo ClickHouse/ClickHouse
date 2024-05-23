@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -38,8 +38,6 @@
 
 #include <cassert>
 #include <chrono>
-
-#include <boost/range/adaptor/map.hpp>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -833,7 +831,8 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    num_streams = std::min(num_streams, max_streams);
+    if (num_streams > max_streams)
+        num_streams = max_streams;
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);

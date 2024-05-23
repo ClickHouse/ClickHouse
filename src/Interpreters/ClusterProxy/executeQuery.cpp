@@ -38,8 +38,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
-    bool is_remote_function,
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
@@ -47,16 +46,8 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     LoggerPtr log,
     const DistributedSettings * distributed_settings)
 {
-    ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
-
-    /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.
-    if (is_remote_function)
-    {
-        const auto & address = cluster.getShardsAddresses().front().front();
-        new_client_info.initial_user = address.user;
-    }
 
     /// If "secret" (in remote_servers) is not in use,
     /// user on the shard is not the same as the user on the initiator,
@@ -177,22 +168,8 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
-    new_context->setClientInfo(new_client_info);
     return new_context;
 }
-
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table)
-{
-    return updateSettingsAndClientInfoForCluster(cluster,
-        /* is_remote_function= */ false,
-        context,
-        settings,
-        main_table,
-        /* additional_filter_ast= */ {},
-        /* log= */ {},
-        /* distributed_settings= */ {});
-}
-
 
 static ThrottlerPtr getThrottler(const ContextPtr & context)
 {
@@ -232,8 +209,7 @@ void executeQuery(
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function)
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -246,8 +222,8 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
-        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log,
+        &distributed_settings);
     if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
         && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
            != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
@@ -269,15 +245,11 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             auto query_for_shard = query_info.query_tree->clone();
-            if (sharding_key_expr &&
-                query_info.optimized_cluster &&
-                settings.optimize_skip_unused_shards_rewrite_in &&
-                shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+            if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
+                    sharding_key_expr->getSampleBlock().getByPosition(0).type,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
@@ -310,15 +282,11 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             ASTPtr query_ast_for_shard = query_info.query->clone();
-            if (sharding_key_expr &&
-                query_info.optimized_cluster &&
-                settings.optimize_skip_unused_shards_rewrite_in &&
-                shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+            if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
+                    sharding_key_expr->getSampleBlock().getByPosition(0).type,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
@@ -396,9 +364,7 @@ void executeQuery(
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    const StorageID & storage_id,
-    const Block & header,
-    QueryProcessingStage::Enum processed_stage,
+    SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
@@ -487,10 +453,9 @@ void executeQueryWithParallelReplicas(
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
         new_cluster,
-        storage_id,
         std::move(coordinator),
-        header,
-        processed_stage,
+        stream_factory.header,
+        stream_factory.processed_stage,
         new_context,
         getThrottler(new_context),
         std::move(scalars),

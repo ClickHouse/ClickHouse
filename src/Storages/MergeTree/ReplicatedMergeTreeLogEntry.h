@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/CopyableAtomic.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
@@ -10,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
+#include <mutex>
 #include <condition_variable>
 
 
@@ -174,7 +174,7 @@ struct ReplicatedMergeTreeLogEntryData
     size_t quorum = 0;
 
     /// Used only in tests for permanent fault injection for particular queue entry.
-    CopyableAtomic<bool> fault_injected{false};
+    bool fault_injected = false;
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const

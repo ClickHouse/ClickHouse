@@ -1,13 +1,10 @@
 #pragma once
 
-#include <cstdint>
-
-
 namespace DB
 {
 
 /// Strictness mode for loading a table or database
-enum class LoadingStrictnessLevel : uint8_t
+enum class LoadingStrictnessLevel
 {
     /// Do all possible sanity checks
     CREATE = 0,

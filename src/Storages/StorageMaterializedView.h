@@ -110,10 +110,6 @@ private:
 
     bool has_inner_table = false;
 
-    /// If false, inner table is replaced on each refresh. In that case, target_table_id doesn't
-    /// have UUID, and we do inner table lookup by name instead.
-    bool fixed_uuid = true;
-
     friend class RefreshTask;
 
     void checkStatementCanBeForwarded() const;

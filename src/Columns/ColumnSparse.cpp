@@ -346,7 +346,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     }
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
-    return create(res_values, std::move(res_offsets), res_offset);
+    return this->create(res_values, std::move(res_offsets), res_offset);
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -577,7 +577,7 @@ void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, I
         return;
     }
 
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
 void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -590,7 +590,7 @@ void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction
 void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int null_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(

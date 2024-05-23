@@ -51,7 +51,7 @@ class MergeTreeTransaction;
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
-enum class DataPartRemovalState : uint8_t
+enum class DataPartRemovalState
 {
     NOT_ATTEMPTED,
     VISIBLE_TO_TRANSACTIONS,
@@ -79,7 +79,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = std::shared_ptr<const Columns>;
+    using Index = Columns;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -183,8 +183,6 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    void loadRowsCountFileForUnexpectedPart();
-
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
@@ -248,7 +246,7 @@ public:
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
     /// However in some special cases Clickhouse can make a decision without asking keeper.
-    enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
+    enum class BlobsRemovalPolicyForTemporaryParts
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
@@ -369,10 +367,8 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    Index getIndex() const;
-    void setIndex(const Columns & cols_);
-    void setIndex(Columns && cols_);
-    void unloadIndex();
+    const Index & getIndex() const;
+    void setIndex(Columns index_);
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -445,15 +441,7 @@ public:
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
-    void loadProjections(
-        bool require_columns_checksums,
-        bool check_consistency,
-        bool & has_broken_projection,
-        bool if_not_loaded = false,
-        bool only_metadata = false);
-
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
-    void loadChecksums(bool require);
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -678,6 +666,9 @@ private:
     void loadColumns(bool require);
 
     static void appendFilesOfColumns(Strings & files);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    void loadChecksums(bool require);
 
     static void appendFilesOfChecksums(Strings & files);
 

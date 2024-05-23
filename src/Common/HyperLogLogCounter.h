@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 
 /// Sets denominator type.
-enum class DenominatorMode : uint8_t
+enum class DenominatorMode
 {
     Compact,        /// Compact denominator.
     StableIfBig,    /// Stable denominator falling back to Compact if rank storage is not big enough.
@@ -246,7 +246,7 @@ struct RankWidth<UInt64>
 
 
 /// Sets behavior of HyperLogLog class.
-enum class HyperLogLogMode : uint8_t
+enum class HyperLogLogMode
 {
     Raw,            /// No error correction.
     LinearCounting, /// LinearCounting error correction.

@@ -17,7 +17,11 @@
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
-#    include <openssl/evp.h>
+#    if USE_BORINGSSL
+#        include <openssl/digest.h>
+#    else
+#        include <openssl/evp.h>
+#    endif
 #endif
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file

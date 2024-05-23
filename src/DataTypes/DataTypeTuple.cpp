@@ -1,6 +1,6 @@
 #include <base/map.h>
 #include <base/range.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>

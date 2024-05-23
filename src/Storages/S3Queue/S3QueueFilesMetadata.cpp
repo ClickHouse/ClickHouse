@@ -1,5 +1,9 @@
 #include "config.h"
 
+#include <base/sleep.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/randomSeed.h>
+#include <Common/getRandomASCIIString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -8,12 +12,6 @@
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
-#include <base/sleep.h>
-#include <Common/CurrentThread.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/getRandomASCIIString.h>
-#include <Common/randomSeed.h>
-
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -24,8 +22,6 @@ namespace ProfileEvents
     extern const Event S3QueueSetFileProcessingMicroseconds;
     extern const Event S3QueueSetFileProcessedMicroseconds;
     extern const Event S3QueueSetFileFailedMicroseconds;
-    extern const Event S3QueueFailedFiles;
-    extern const Event S3QueueProcessedFiles;
     extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event S3QueueLockLocalFileStatusesMicroseconds;
     extern const Event CannotRemoveEphemeralNode;
@@ -140,7 +136,7 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(const fs::path & zookeeper_path_, con
     , zookeeper_failed_path(zookeeper_path_ / "failed")
     , zookeeper_shards_path(zookeeper_path_ / "shards")
     , zookeeper_cleanup_lock_path(zookeeper_path_ / "cleanup_lock")
-    , log(getLogger("StorageS3Queue(" + zookeeper_path_.string() + ")"))
+    , log(getLogger("S3QueueFilesMetadata"))
 {
     if (mode == S3QueueMode::UNORDERED && (max_set_size || max_set_age_sec))
     {
@@ -474,7 +470,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string &
     if (code == Coordination::Error::ZOK)
     {
         auto holder = std::make_unique<ProcessingNodeHolder>(
-            node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client, log);
+            node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client);
         return std::pair{SetFileProcessingResult::Success, std::move(holder)};
     }
 
@@ -560,7 +556,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
         if (code == Coordination::Error::ZOK)
         {
             auto holder = std::make_unique<ProcessingNodeHolder>(
-                node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client, log);
+                node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client);
 
             LOG_TEST(log, "File {} is ready to be processed", path);
             return std::pair{SetFileProcessingResult::Success, std::move(holder)};
@@ -602,17 +598,13 @@ void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
     {
         case S3QueueMode::ORDERED:
         {
-            setFileProcessedForOrderedMode(holder);
-            break;
+            return setFileProcessedForOrderedMode(holder);
         }
         case S3QueueMode::UNORDERED:
         {
-            setFileProcessedForUnorderedMode(holder);
-            break;
+            return setFileProcessedForUnorderedMode(holder);
         }
     }
-
-    ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
 }
 
 void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder)
@@ -630,7 +622,7 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
     Coordination::Responses responses;
     if (holder->remove(&requests, &responses))
     {
-        LOG_TRACE(log, "Moved file `{}` to processed", path);
+        LOG_TEST(log, "Moved file `{}` to processed", path);
         if (max_loading_retries)
             zk_client->tryRemove(zookeeper_failed_path / (node_name + ".retriable"), -1);
         return;
@@ -655,7 +647,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
         ? zookeeper_processed_path / toString(getProcessingIdForPath(holder->path))
         : zookeeper_processed_path;
 
-    setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
+    return setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
 }
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
@@ -667,7 +659,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = getZooKeeper();
 
-    LOG_TRACE(log, "Setting file `{}` as processed (at {})", path, processed_node_path);
+    LOG_TEST(log, "Setting file `{}` as processed (at {})", path, processed_node_path);
     while (true)
     {
         std::string res;
@@ -697,7 +689,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
         {
             if (holder->remove(&requests, &responses))
             {
-                LOG_TRACE(log, "Moved file `{}` to processed", path);
+                LOG_TEST(log, "Moved file `{}` to processed", path);
                 if (max_loading_retries)
                     zk_client->tryRemove(zookeeper_failed_path / (node_name + ".retriable"), -1);
                 return;
@@ -708,7 +700,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
             auto code = zk_client->tryMulti(requests, responses);
             if (code == Coordination::Error::ZOK)
             {
-                LOG_TRACE(log, "Moved file `{}` to processed", path);
+                LOG_TEST(log, "Moved file `{}` to processed", path);
                 return;
             }
         }
@@ -716,8 +708,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
         /// Failed to update max processed node, retry.
         if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
         {
-            LOG_TRACE(log, "Failed to update processed node for path {} ({}). Will retry.",
-                      path, magic_enum::enum_name(responses[0]->error));
+            LOG_TRACE(log, "Failed to update processed node ({}). Will retry.", magic_enum::enum_name(responses[0]->error));
             continue;
         }
 
@@ -757,8 +748,6 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
         file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
 
-    ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
-
     SCOPE_EXIT({
         file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileFailedMicroseconds, timer.get());
         timer.cancel();
@@ -781,7 +770,7 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
         Coordination::Responses responses;
         if (holder->remove(&requests, &responses))
         {
-            LOG_TRACE(log, "File `{}` failed to process and will not be retried. "
+            LOG_TEST(log, "File `{}` failed to process and will not be retried. "
                      "Error: {}", path, exception_message);
             return;
         }
@@ -795,7 +784,6 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
         LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
                     "does not exist with expected processing id does not exist, "
                     "this could be a result of expired zookeeper session", path);
-
         return;
     }
 
@@ -820,7 +808,7 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
         file_status->retries = node_metadata.retries;
     }
 
-    LOG_TRACE(log, "File `{}` failed to process, try {}/{} (Error: {})",
+    LOG_TEST(log, "File `{}` failed to process, try {}/{} (Error: {})",
              path, node_metadata.retries, max_loading_retries, exception_message);
 
     /// Check if file can be retried further or not.
@@ -876,14 +864,13 @@ S3QueueFilesMetadata::ProcessingNodeHolder::ProcessingNodeHolder(
     const std::string & path_,
     const std::string & zk_node_path_,
     FileStatusPtr file_status_,
-    zkutil::ZooKeeperPtr zk_client_,
-    LoggerPtr logger_)
+    zkutil::ZooKeeperPtr zk_client_)
     : zk_client(zk_client_)
     , file_status(file_status_)
     , path(path_)
     , zk_node_path(zk_node_path_)
     , processing_id(processing_id_)
-    , log(logger_)
+    , log(getLogger("ProcessingNodeHolder"))
 {
 }
 
@@ -948,7 +935,7 @@ bool S3QueueFilesMetadata::ProcessingNodeHolder::remove(Coordination::Requests *
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-        LOG_ERROR(log, "Failed to remove processing node for file {}: {}", path, getCurrentExceptionMessage(true));
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + zk_node_path);
     }
     return false;
 }
@@ -967,7 +954,7 @@ void S3QueueFilesMetadata::cleanupThreadFunc()
     }
     catch (...)
     {
-        LOG_ERROR(log, "Failed to cleanup nodes in zookeeper: {}", getCurrentExceptionMessage(true));
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (shutdown)
@@ -979,51 +966,37 @@ void S3QueueFilesMetadata::cleanupThreadFunc()
 void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueCleanupMaxSetSizeOrTTLMicroseconds);
-    const auto zk_client = getZooKeeper();
-
-    Strings processed_nodes;
-    auto code = zk_client->tryGetChildren(zookeeper_processed_path, processed_nodes);
-    if (code != Coordination::Error::ZOK)
-    {
-        if (code == Coordination::Error::ZNONODE)
-        {
-            LOG_TEST(log, "Path {} does not exist", zookeeper_processed_path.string());
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
-    }
-
-    Strings failed_nodes;
-    code = zk_client->tryGetChildren(zookeeper_failed_path, failed_nodes);
-    if (code != Coordination::Error::ZOK)
-    {
-        if (code == Coordination::Error::ZNONODE)
-        {
-            LOG_TEST(log, "Path {} does not exist", zookeeper_failed_path.string());
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
-    }
-
-    const size_t nodes_num = processed_nodes.size() + failed_nodes.size();
-    if (!nodes_num)
-    {
-        LOG_TEST(log, "There are neither processed nor failed nodes");
-        return;
-    }
 
     chassert(max_set_size || max_set_age_sec);
+
     const bool check_nodes_limit = max_set_size > 0;
     const bool check_nodes_ttl = max_set_age_sec > 0;
 
-    const bool nodes_limit_exceeded = nodes_num > max_set_size;
-    if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
+    const auto zk_client = getZooKeeper();
+    Strings nodes;
+    auto code = zk_client->tryGetChildren(zookeeper_processed_path, nodes);
+    if (code != Coordination::Error::ZOK)
+    {
+        if (code == Coordination::Error::ZNONODE)
+        {
+            LOG_TEST(log, "A `processed` not is not yet created");
+            return;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
+    }
+
+    if (nodes.empty())
+    {
+        LOG_TEST(log, "A set of nodes is empty");
+        return;
+    }
+
+    const bool nodes_limit_exceeded = nodes.size() > max_set_size;
+    if (!nodes_limit_exceeded && check_nodes_limit && !check_nodes_ttl)
     {
         LOG_TEST(log, "No limit exceeded");
         return;
     }
-
-    LOG_TRACE(log, "Will check limits for {} nodes", nodes_num);
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
@@ -1037,7 +1010,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
     struct Node
     {
-        std::string zk_path;
+        std::string name;
         NodeMetadata metadata;
     };
     auto node_cmp = [](const Node & a, const Node & b)
@@ -1049,57 +1022,24 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     /// Ordered in ascending order of timestamps.
     std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
 
-    for (const auto & node : processed_nodes)
+    LOG_TRACE(log, "Found {} nodes", nodes.size());
+
+    for (const auto & node : nodes)
     {
-        const std::string path = zookeeper_processed_path / node;
         try
         {
             std::string metadata_str;
-            if (zk_client->tryGet(path, metadata_str))
+            if (zk_client->tryGet(zookeeper_processed_path / node, metadata_str))
             {
-                sorted_nodes.emplace(path, NodeMetadata::fromString(metadata_str));
-                LOG_TEST(log, "Fetched metadata for node {}", path);
+                sorted_nodes.emplace(node, NodeMetadata::fromString(metadata_str));
+                LOG_TEST(log, "Fetched metadata for node {}", node);
             }
             else
-                LOG_ERROR(log, "Failed to fetch node metadata {}", path);
+                LOG_TEST(log, "Failed to fetch node metadata {}", node);
         }
-        catch (const zkutil::KeeperException & e)
+        catch (...)
         {
-            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
-            {
-                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                chassert(false);
-            }
-
-            /// Will retry with a new zk connection.
-            throw;
-        }
-    }
-
-    for (const auto & node : failed_nodes)
-    {
-        const std::string path = zookeeper_failed_path / node;
-        try
-        {
-            std::string metadata_str;
-            if (zk_client->tryGet(path, metadata_str))
-            {
-                sorted_nodes.emplace(path, NodeMetadata::fromString(metadata_str));
-                LOG_TEST(log, "Fetched metadata for node {}", path);
-            }
-            else
-                LOG_ERROR(log, "Failed to fetch node metadata {}", path);
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
-            {
-                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                chassert(false);
-            }
-
-            /// Will retry with a new zk connection.
-            throw;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -1112,35 +1052,37 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     };
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", max_set_size, max_set_age_sec, get_nodes_str());
 
-    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - max_set_size : 0;
+    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes.size() - max_set_size : 0;
     for (const auto & node : sorted_nodes)
     {
         if (nodes_to_remove)
         {
-            LOG_TRACE(log, "Removing node at path {} ({}) because max files limit is reached",
-                     node.metadata.file_path, node.zk_path);
+            auto path = zookeeper_processed_path / node.name;
+            LOG_TEST(log, "Removing node at path {} ({}) because max files limit is reached",
+                     node.metadata.file_path, path.string());
 
             local_file_statuses.remove(node.metadata.file_path, /* if_exists */true);
 
-            code = zk_client->tryRemove(node.zk_path);
+            code = zk_client->tryRemove(path);
             if (code == Coordination::Error::ZOK)
                 --nodes_to_remove;
             else
-                LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", node.zk_path, code);
+                LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", path.string(), code);
         }
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
             if (node_age >= max_set_age_sec)
             {
-                LOG_TRACE(log, "Removing node at path {} ({}) because file is reached",
-                        node.metadata.file_path, node.zk_path);
+                auto path = zookeeper_processed_path / node.name;
+                LOG_TEST(log, "Removing node at path {} ({}) because file is reached",
+                        node.metadata.file_path, path.string());
 
                 local_file_statuses.remove(node.metadata.file_path, /* if_exists */true);
 
-                code = zk_client->tryRemove(node.zk_path);
+                code = zk_client->tryRemove(path);
                 if (code != Coordination::Error::ZOK)
-                    LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", node.zk_path, code);
+                    LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", path.string(), code);
             }
             else if (!nodes_to_remove)
             {

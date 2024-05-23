@@ -87,7 +87,6 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
-        WAIT_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
@@ -101,7 +100,6 @@ public:
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
-        UNLOAD_PRIMARY_KEY,
         END
     };
 

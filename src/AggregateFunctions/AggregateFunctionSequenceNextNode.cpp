@@ -41,13 +41,13 @@ namespace ErrorCodes
 namespace
 {
 
-enum class SequenceDirection : uint8_t
+enum class SequenceDirection
 {
     Forward,
     Backward,
 };
 
-enum SequenceBase : uint8_t
+enum SequenceBase
 {
     Head,
     Tail,
