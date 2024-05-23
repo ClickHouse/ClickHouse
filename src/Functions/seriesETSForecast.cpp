@@ -846,32 +846,32 @@ REGISTER_FUNCTION(ETSForecast)
 {
     factory.registerFunction<FunctionETSForecast<HoltsImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionETSForecast<AdditiveDampedImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionETSForecast<MultiplicativeDampedImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionETSForecast<HoltWintersAdditiveImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionETSForecast<HoltWintersMultiplicativeImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionETSForecast<HoltWintersAdditiveDampedImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
 }

@@ -482,38 +482,38 @@ REGISTER_FUNCTION(seriesStatistics)
 {
     factory.registerFunction<FunctionSeriesStatistics<SeriesEmaImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionSeriesStatistics<SeriesKaufmansAMAImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
 
     factory.registerFunction<FunctionSeriesStatistics<SeriesWindowSumImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionSeriesStatistics<SeriesWindowAverageImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionSeriesStatistics<SeriesWindowStandardDeviationImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionSeriesStatistics<SeriesWindowMinImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
     factory.registerFunction<FunctionSeriesStatistics<SeriesWindowMaxImpl>>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
 }

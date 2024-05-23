@@ -117,7 +117,7 @@ REGISTER_FUNCTION(SeriesKPSS)
 {
     factory.registerFunction<FunctionSeriesKPSS>(FunctionDocumentation{
         .description = R"(
-TODO
+TODOTODOTODOTODO
 )",
         .categories{"Time series analysis"}});
 }
