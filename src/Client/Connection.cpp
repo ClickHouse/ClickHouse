@@ -71,6 +71,7 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
+    const String & proto_send_chunked_, const String & proto_recv_chunked_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
     const String & quota_key_,
     const String & cluster_,
@@ -80,6 +81,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
+    , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
 #if USE_SSH
     , ssh_private_key(ssh_private_key_)
 #endif
@@ -206,13 +208,46 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello(timeouts.handshake_timeout);
 
+        bool out_chunked = false;
+        bool in_chunked = false;
+
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            auto is_chunked = [](const String & chunked_srv_str, const String & chunked_cl_str, const String & direction)
+            {
+                bool chunked_srv = chunked_srv_str.starts_with("chunked");
+                bool optional_srv = chunked_srv_str.ends_with("_optional");
+                bool chunked_cl = chunked_cl_str.starts_with("chunked");
+                bool optional_cl = chunked_cl_str.ends_with("_optional");
+
+                if (optional_srv)
+                    return chunked_cl;
+                if (optional_cl)
+                    return chunked_srv;
+                if (chunked_cl != chunked_srv)
+                    throw NetException(
+                        ErrorCodes::NETWORK_ERROR,
+                        "Incompatible protocol: {} set to {}, server requires {}",
+                        direction,
+                        chunked_cl ? "chunked" : "notchunked",
+                        chunked_srv ? "chunked" : "notchunked");
+
+                return chunked_srv;
+            };
+
+            out_chunked = is_chunked(proto_recv_chunked_srv, proto_send_chunked, "send");
+            in_chunked = is_chunked(proto_send_chunked_srv, proto_recv_chunked, "recv");
+        }
+
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
-            in->enableChunked();
-            out->enableChunked();
+            if (out_chunked)
+                out->enableChunked();
+            if (in_chunked)
+                in->enableChunked();
         }
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
@@ -359,6 +394,13 @@ void Connection::sendAddendum()
 {
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
         writeStringBinary(quota_key, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+    {
+        writeStringBinary(proto_send_chunked, *out);
+        writeStringBinary(proto_recv_chunked, *out);
+    }
+
     out->next();
 }
 
@@ -437,6 +479,12 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readVarUInt(server_version_patch, *in);
         else
             server_version_patch = server_revision;
+
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            readStringBinary(proto_send_chunked_srv, *in);
+            readStringBinary(proto_recv_chunked_srv, *in);
+        }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
@@ -1327,6 +1375,8 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
+        parameters.proto_send_chunked,
+        parameters.proto_recv_chunked,
         parameters.ssh_private_key,
         parameters.quota_key,
         "", /* cluster */

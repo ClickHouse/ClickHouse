@@ -188,6 +188,8 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
+    String proto_send_chunked_cl;
+    String proto_recv_chunked_cl;
     String quota_key;
 
     /// Connection settings, which are extracted from a context.

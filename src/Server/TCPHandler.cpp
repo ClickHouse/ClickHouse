@@ -1,6 +1,7 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
+#include <base/find_symbols.h>
 #include <algorithm>
 #include <exception>
 #include <iterator>
@@ -99,6 +100,7 @@ namespace DB::ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
+    extern const int NETWORK_ERROR;
 }
 
 namespace
@@ -279,8 +281,35 @@ void TCPHandler::runImpl()
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
-            in->enableChunked();
-            out->enableChunked();
+            auto is_chunked = [](const String & chunked_srv_str, const String & chunked_cl_str, const String & direction)
+            {
+                bool chunked_srv = chunked_srv_str.starts_with("chunked");
+                bool optional_srv = chunked_srv_str.ends_with("_optional");
+                bool chunked_cl = chunked_cl_str.starts_with("chunked");
+                bool optional_cl = chunked_cl_str.ends_with("_optional");
+
+                if (optional_srv)
+                    return chunked_cl;
+                if (optional_cl)
+                    return chunked_srv;
+                if (chunked_cl != chunked_srv)
+                    throw NetException(
+                        ErrorCodes::NETWORK_ERROR,
+                        "Incompatible protocol: {} is {}, client requested {}",
+                        direction,
+                        chunked_srv ? "chunked" : "notchunked",
+                        chunked_cl ? "chunked" : "notchunked");
+
+                return chunked_srv;
+            };
+
+            bool out_chunked = is_chunked(server.config().getString("proto_caps.send", "notchunked_optional"), proto_recv_chunked_cl, "send");
+            bool in_chunked = is_chunked(server.config().getString("proto_caps.recv", "notchunked_optional"), proto_send_chunked_cl, "recv");
+
+            if (out_chunked)
+                out->enableChunked();
+            if (in_chunked)
+                in->enableChunked();
         }
 
         if (!is_interserver_mode)
@@ -1575,6 +1604,12 @@ void TCPHandler::receiveAddendum()
 
     if (!is_interserver_mode)
         session->setQuotaClientKey(quota_key);
+
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+    {
+        readStringBinary(proto_send_chunked_cl, *in);
+        readStringBinary(proto_recv_chunked_cl, *in);
+    }
 }
 
 
@@ -1608,6 +1643,11 @@ void TCPHandler::sendHello()
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(VERSION_PATCH, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+    {
+        writeStringBinary(server.config().getString("proto_caps.send", "notchunked_optional"), *out);
+        writeStringBinary(server.config().getString("proto_caps.recv", "notchunked_optional"), *out);
+    }
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();

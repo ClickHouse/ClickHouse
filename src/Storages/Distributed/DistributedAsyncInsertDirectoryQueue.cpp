@@ -273,6 +273,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.default_database,
             address.user,
             address.password,
+            address.proto_send_chunked,
+            address.proto_recv_chunked,
             address.quota_key,
             address.cluster,
             address.cluster_secret,

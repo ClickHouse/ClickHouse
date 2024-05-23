@@ -103,6 +103,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 #endif
     }
 
+    proto_send_chunked = config.getString("proto_caps.send", "notchunked_optional");
+    proto_recv_chunked = config.getString("proto_caps.recv", "notchunked_optional");
+
     quota_key = config.getString("quota_key", "");
 
     /// By default compression is disabled if address looks like localhost.

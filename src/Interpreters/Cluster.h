@@ -114,6 +114,8 @@ public:
         UInt16 port{0};
         String user;
         String password;
+        String proto_send_chunked;
+        String proto_recv_chunked;
         String quota_key;
 
         /// For inter-server authorization

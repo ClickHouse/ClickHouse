@@ -52,6 +52,7 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const String & proto_send_chunked_, const String & proto_recv_chunked_,
         const SSHKey & ssh_private_key_,
         const String & quota_key_,
         const String & cluster_,
@@ -169,6 +170,10 @@ private:
     String default_database;
     String user;
     String password;
+    String proto_send_chunked;
+    String proto_recv_chunked;
+    String proto_send_chunked_srv;
+    String proto_recv_chunked_srv;
 #if USE_SSH
     SSHKey ssh_private_key;
 #endif

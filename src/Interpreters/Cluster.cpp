@@ -113,6 +113,9 @@ Cluster::Address::Address(
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
+    proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked_optional");
+    proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "notchunked_optional");
+
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
 
@@ -425,7 +428,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             auto pool = ConnectionPoolFactory::instance().get(
                 static_cast<unsigned>(settings.distributed_connections_pool_size),
                 address.host_name, address.port,
-                address.default_database, address.user, address.password, address.quota_key,
+                address.default_database, address.user, address.password,
+                address.proto_send_chunked, address.proto_recv_chunked,
+                address.quota_key,
                 address.cluster, address.cluster_secret,
                 "server", address.compression,
                 address.secure, address.priority);
@@ -589,6 +594,8 @@ void Cluster::addShard(
             replica.default_database,
             replica.user,
             replica.password,
+            replica.proto_send_chunked,
+            replica.proto_recv_chunked,
             replica.quota_key,
             replica.cluster,
             replica.cluster_secret,
@@ -744,6 +751,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     address.default_database,
                     address.user,
                     address.password,
+                    address.proto_send_chunked,
+                    address.proto_recv_chunked,
                     address.quota_key,
                     address.cluster,
                     address.cluster_secret,
