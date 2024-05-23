@@ -1,6 +1,5 @@
 #pragma once
 #include <atomic>
-#include <vector>
 #include <map>
 #include <mutex>
 #include <Poco/AutoPtr.h>

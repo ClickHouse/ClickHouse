@@ -172,6 +172,11 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
+bool Keeper::allowTextLog() const
+{
+    return false;
+}
+
 void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
 {
     if (arg == "force-recovery")
