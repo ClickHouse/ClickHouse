@@ -1,6 +1,5 @@
 #include <any>
 #include <limits>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -271,21 +270,6 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
     else
         JoinCommon::removeColumnNullability(column);
-}
-
-template <typename Map>
-void checkMapType();
-template <>
-void checkMapType<HashJoin::MapsAll>()
-{
-}
-template <>
-void checkMapType<HashJoin::MapsOne>()
-{
-}
-template <>
-void checkMapType<HashJoin::MapsAsof>()
-{
 }
 
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
@@ -1706,7 +1690,6 @@ template <
     typename JoinFeaturesT,
     typename KeyGetter,
     typename Map,
-    bool need_replication,
     typename AddedColumns>
 NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
@@ -1718,12 +1701,12 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
 {
     constexpr JoinFeaturesT join_features;
     size_t left_block_rows = added_columns.rows_to_add;
-    if constexpr (join_features.need_filter)
+    if (need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
     std::unique_ptr<Arena> pool;
 
-    if constexpr (need_replication)
+    if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(left_block_rows);
 
     std::vector<size_t> row_replicate_offset;
@@ -1750,7 +1733,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         selected_rows.clear();
         for (; left_row_iter < left_block_rows; ++left_row_iter)
         {
-            if constexpr (need_replication)
+            if constexpr (join_features.need_replication)
             {
                 if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows))
                 {
@@ -1811,9 +1794,10 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                                 added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
                             }
                         }
-                        else if constexpr (join_features.is_anti_join && join_features.need_flags)
+                        else if constexpr (join_features.is_anti_join)
                         {
-                            used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            if constexpr (join_features.right && join_features.need_flags)
+                                used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
                         }
                         else
                         {
@@ -1833,7 +1817,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     {
                         any_matched |= filter_flags[replicated_row];
                     }
-                    else if constexpr (need_replication)
+                    else if constexpr (join_features.need_replication)
                     {
                         if (filter_flags[replicated_row])
                         {
@@ -1873,7 +1857,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             {
                 if (!any_matched)
                 {
-                    addNotFoundRow<join_features.add_missing, need_replication>(added_columns, total_added_rows);
+                    addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
                 }
                 else
                 {
@@ -2089,7 +2073,7 @@ size_t joinRightColumnsSwitchMultipleDisjuncts(
         {
            bool mark_per_row_used
                = join_features.right || join_features.full || mapv.size() > 1;
-           return joinRightColumnsWithAddtitionalFilter<JoinFeaturesT, KeyGetter, Map, join_features.need_replication>(
+           return joinRightColumnsWithAddtitionalFilter<JoinFeaturesT, KeyGetter, Map>(
                std::forward<std::vector<KeyGetter>>(key_getter_vector),
                mapv,
                added_columns,
@@ -2145,7 +2129,6 @@ size_t switchJoinRightColumns(
                 using MapTypeVal = typename KeyGetter::MappedType;
                 std::vector<const MapTypeVal *> a_map_type_vector;
                 a_map_type_vector.emplace_back();
-                checkMapType<Maps>();
                 using JoinFeatureT = JoinFeatures<KIND, STRICTNESS, Maps>;
                 return joinRightColumnsSwitchNullability<JoinFeatureT, KeyGetter>(
                         std::move(key_getter_vector), a_map_type_vector, added_columns, used_flags);
@@ -2165,7 +2148,6 @@ size_t switchJoinRightColumns(
                 a_map_type_vector[d] = mapv[d]->TYPE.get();              \
                 key_getter_vector.push_back(std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes))); \
             } \
-            checkMapType<Maps>(); \
             using JoinFeatureT = JoinFeatures<KIND, STRICTNESS, Maps>;  \
             return joinRightColumnsSwitchNullability<JoinFeatureT, KeyGetter>( \
                               std::move(key_getter_vector), a_map_type_vector, added_columns, used_flags); \

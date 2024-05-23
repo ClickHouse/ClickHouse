@@ -23,8 +23,7 @@ template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictne
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, force_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::Any, false> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <> struct MapGetter<JoinKind::Right, JoinStrictness::Any, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool force_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Any, force_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Any, force_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 
 template <bool force_use_maps_all> struct MapGetter<JoinKind::Left, JoinStrictness::All, force_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
