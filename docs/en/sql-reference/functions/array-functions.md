@@ -2373,6 +2373,7 @@ arrayMin([func,] arr)
 
 :::note
 If `func` is specified, then the return type matches the return value type of `func`, otherwise it matches the type of the array elements.
+:::
 
 **Examples**
 
