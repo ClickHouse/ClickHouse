@@ -93,25 +93,25 @@ def testFirstArgumentIsConstString(ch_cluster):
         "SELECT ggmlEvaluate(a, map('n_predict', 4), 'Did you know that walruses') FROM T;"
     )
 
-    assert 'First argument of function ggmlEvaluate must be a constant string' in err
+    assert "First argument of function ggmlEvaluate must be a constant string" in err
 
 
 def testArgumentCount(ch_cluster):
     err = instance.query_and_get_error("SELECT ggmlEvaluate('gpt2');")
 
-    assert 'Function ggmlEvaluate expects exactly 3 arguments. Got 1' in err
+    assert "Function ggmlEvaluate expects exactly 3 arguments. Got 1" in err
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4));"
     )
 
-    assert 'Function ggmlEvaluate expects exactly 3 arguments. Got 2' in err
+    assert "Function ggmlEvaluate expects exactly 3 arguments. Got 2" in err
 
     err = instance.query_and_get_error(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses', ' are actually mammals');"
     )
 
-    assert 'Function ggmlEvaluate expects exactly 3 arguments. Got 4' in err
+    assert "Function ggmlEvaluate expects exactly 3 arguments. Got 4" in err
 
 
 def testMultipleRows(ch_cluster):
