@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_AN_AGGREGATE;
 }
 
 namespace
@@ -398,8 +397,7 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
 SortAnalysisResult analyzeSort(const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    ActionsChain & actions_chain,
-    std::optional<AggregationAnalysisResult> aggregation_analysis_result_optional)
+    ActionsChain & actions_chain)
 {
     ActionsDAGPtr before_sort_actions = std::make_shared<ActionsDAG>(input_columns);
     auto & before_sort_actions_outputs = before_sort_actions->getOutputs();
@@ -570,7 +568,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
     {
-        sort_analysis_result_optional = analyzeSort(query_node, current_output_columns, planner_context, actions_chain, aggregation_analysis_result_optional);
+        sort_analysis_result_optional = analyzeSort(query_node, current_output_columns, planner_context, actions_chain);
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
