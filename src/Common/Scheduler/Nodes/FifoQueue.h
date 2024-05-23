@@ -6,8 +6,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <boost/intrusive/list.hpp>
-
+#include <deque>
 #include <mutex>
 
 
@@ -16,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
 }
 
@@ -41,20 +39,21 @@ public:
 
     void enqueueRequest(ResourceRequest * request) override
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
+        request->enqueue_ns = clock_gettime_ns();
         queue_cost += request->cost;
         bool was_empty = requests.empty();
-        requests.push_back(*request);
+        requests.push_back(request);
         if (was_empty)
             scheduleActivation();
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         if (requests.empty())
             return {nullptr, false};
-        ResourceRequest * result = &requests.front();
+        ResourceRequest * result = requests.front();
         requests.pop_front();
         if (requests.empty())
             busy_periods++;
@@ -64,34 +63,9 @@ public:
         return {result, !requests.empty()};
     }
 
-    bool cancelRequest(ResourceRequest * request) override
-    {
-        std::lock_guard lock(mutex);
-        if (request->is_linked())
-        {
-            // It's impossible to check that `request` is indeed inserted to this queue and not another queue.
-            // It's up to caller to make sure this is the case. Otherwise, list sizes will be corrupted.
-            // Not tracking list sizes is not an option, because another problem appears: removing from list w/o locking.
-            // Another possible solution - keep track if request `is_cancelable` guarded by `mutex`
-            // Simple check for list size corruption
-            if (requests.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "trying to cancel request (linked into another queue) from empty queue: {}", getPath());
-
-            requests.erase(requests.iterator_to(*request));
-
-            if (requests.empty())
-                busy_periods++;
-            queue_cost -= request->cost;
-            canceled_requests++;
-            canceled_cost += request->cost;
-            return true;
-        }
-        return false;
-    }
-
     bool isActive() override
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         return !requests.empty();
     }
 
@@ -124,14 +98,14 @@ public:
 
     std::pair<UInt64, Int64> getQueueLengthAndCost()
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         return {requests.size(), queue_cost};
     }
 
 private:
     std::mutex mutex;
     Int64 queue_cost = 0;
-    boost::intrusive::list<ResourceRequest> requests;
+    std::deque<ResourceRequest *> requests;
 };
 
 }

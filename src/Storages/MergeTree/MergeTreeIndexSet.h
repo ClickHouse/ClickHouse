@@ -5,6 +5,9 @@
 
 #include <Interpreters/SetVariants.h>
 
+#include <memory>
+#include <set>
+
 
 namespace DB
 {
@@ -34,6 +37,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     const String index_name;
     const size_t max_rows;
+    const Block index_sample_block;
 
     Block block;
 };
@@ -126,7 +130,6 @@ private:
 
     std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
-    String actions_output_column_name;
 };
 
 

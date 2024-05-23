@@ -5,10 +5,10 @@
 namespace DB
 {
 
-class StorageSystemCollations final : public IStorageSystemOneBlock
+class StorageSystemCollations final : public IStorageSystemOneBlock<StorageSystemCollations>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 

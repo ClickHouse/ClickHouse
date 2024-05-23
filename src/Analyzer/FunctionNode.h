@@ -201,19 +201,16 @@ public:
 
     void convertToNullable() override
     {
-        /// Ignore other function kinds.
-        /// We might try to convert aggregate/window function for invalid query
-        /// before the validation happened.
-        if (kind == FunctionKind::ORDINARY)
-            wrap_with_nullable = true;
+        chassert(kind == FunctionKind::ORDINARY);
+        wrap_with_nullable = true;
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
-    void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
+    void updateTreeHashImpl(HashState & hash_state) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

@@ -1,5 +1,6 @@
 #include "LibraryBridgeHandlers.h"
 
+#include "CatBoostLibraryHandler.h"
 #include "CatBoostLibraryHandlerFactory.h"
 #include "Common/ProfileEvents.h"
 #include "ExternalDictionaryLibraryHandler.h"
@@ -10,8 +11,10 @@
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/ThreadPool.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -284,6 +287,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
         else if (method == "extDict_loadIds")
         {
             LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
+            String ids_string;
             std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
             auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);

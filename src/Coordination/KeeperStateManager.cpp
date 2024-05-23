@@ -30,7 +30,7 @@ bool isLocalhost(const std::string & hostname)
 {
     try
     {
-        return isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(hostname).front());
+        return isLocalAddress(DNSResolver::instance().resolveHost(hostname));
     }
     catch (...)
     {
@@ -508,7 +508,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
     }
 
     /// After that remove old ones
-    for (const auto & [old_id, server_config] : old_ids)
+    for (auto [old_id, server_config] : old_ids)
         if (!new_ids.contains(old_id))
             result.emplace_back(RemoveRaftServer{old_id});
 

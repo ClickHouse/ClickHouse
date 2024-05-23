@@ -331,10 +331,6 @@ StorageKeeperMap::StorageKeeperMap(
 
     setInMemoryMetadata(metadata);
 
-    VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
-    setVirtuals(std::move(virtuals));
-
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
         << "columns: " << metadata.columns.toString()
@@ -638,6 +634,12 @@ void StorageKeeperMap::drop()
     dropTable(client, metadata_drop_lock);
 }
 
+NamesAndTypesList StorageKeeperMap::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {std::string{version_column_name}, std::make_shared<DataTypeInt32>()}};
+}
+
 namespace
 {
 
@@ -846,7 +848,7 @@ void StorageKeeperMap::restoreDataImpl(
     bool allow_non_empty_tables,
     const DiskPtr & temporary_disk)
 {
-    const auto & table_id = toString(getStorageID().uuid);
+    auto table_id = toString(getStorageID().uuid);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
 
@@ -960,7 +962,7 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
 {
     std::lock_guard lock{init_mutex};
     if (table_is_valid.has_value())
-        return table_is_valid;
+        return *table_is_valid;
 
     [&]
     {

@@ -74,7 +74,6 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
-        chassert(table);
         table->formatImpl(settings, state, frame);
     }
 
@@ -123,8 +122,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << delim;
         select->formatImpl(settings, state, frame);
     }
+    else if (watch)
+    {
+        settings.ostr << delim;
+        watch->formatImpl(settings, state, frame);
+    }
 
-    if (!select)
+    if (!select && !watch)
     {
         if (!format.empty())
         {

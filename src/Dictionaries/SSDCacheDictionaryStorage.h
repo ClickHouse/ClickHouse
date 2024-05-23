@@ -470,7 +470,7 @@ public:
         auto path = std::filesystem::path{file_path};
         auto parent_path_directory = path.parent_path();
 
-        /// If cache file is in directory that does not exist create it
+        /// If cache file is in directory that does not exists create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
                 throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
@@ -721,13 +721,14 @@ public:
                 if (!block.checkCheckSum())
                 {
                     std::string calculated_check_sum = std::to_string(block.calculateCheckSum());
-                    std::string expected_check_sum = std::to_string(block.getCheckSum());
+                    std::string check_sum = std::to_string(block.getCheckSum());
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "Cache data corrupted. Checksum validation failed. Calculated {} expected in block {}, in file {}",
-                        calculated_check_sum, expected_check_sum, file_path);
+                        "Cache data corrupted. Checksum validation failed. Calculated {} in block {}",
+                        calculated_check_sum,
+                        check_sum);
                 }
 
-                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
+                std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
 
                 processed[block_to_fetch_index] = true;
             }
@@ -869,7 +870,7 @@ public:
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * const default_mask) override
+        IColumn::Filter * const default_mask = nullptr) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
@@ -906,7 +907,7 @@ public:
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * const default_mask) override
+        IColumn::Filter * const default_mask = nullptr) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request, default_mask);

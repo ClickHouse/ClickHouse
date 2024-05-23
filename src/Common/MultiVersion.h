@@ -41,9 +41,9 @@ public:
     }
 
     /// There is no copy constructor because only one MultiVersion should own the same object.
-    MultiVersion(MultiVersion && src) { *this = std::move(src); } /// NOLINT
+    MultiVersion(MultiVersion && src) { *this = std::move(src); }
 
-    MultiVersion & operator=(MultiVersion && src) /// NOLINT
+    MultiVersion & operator=(MultiVersion && src)
     {
         if (this != &src)
         {

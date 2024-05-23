@@ -298,6 +298,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     };
 
     Coordination::Stat entity_stat;
+    String object_create_query;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 
@@ -313,8 +314,7 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef().max_parser_depth,
-                global_context->getSettingsRef().max_parser_backtracks);
+                global_context->getSettingsRef().max_parser_depth);
             return ast;
         }
     }

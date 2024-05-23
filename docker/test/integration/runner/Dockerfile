@@ -127,6 +127,7 @@ RUN set -x \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
+COPY compose/ /compose/
 COPY misc/ /misc/
 
 

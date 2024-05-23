@@ -63,7 +63,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    enum class FileStatus : uint8_t
+    enum class FileStatus
     {
         OPEN, /// First time open file after table start up.
         NO_CHANGE,
@@ -101,6 +101,8 @@ public:
 
     String getFullMetaPath(const String & file_name) const { return std::filesystem::path(metadata_base_path) / file_name; }
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
+
+    NamesAndTypesList getVirtuals() const override;
 
     static UInt64 getInode(const String & file_name);
 
@@ -177,7 +179,7 @@ private:
     };
     std::shared_ptr<TaskContext> task;
 
-    std::unique_ptr<FileLogDirectoryWatcher> directory_watch;
+    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
 
     void loadFiles();
 
@@ -210,8 +212,6 @@ private:
         UInt64 inode = 0;
     };
     ReadMetadataResult readMetadata(const String & filename) const;
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

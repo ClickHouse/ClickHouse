@@ -1,4 +1,3 @@
 <clickhouse>
     <aggregate_function_group_array_max_element_size>10</aggregate_function_group_array_max_element_size>
-    <aggregate_function_group_array_has_limit_size>false</aggregate_function_group_array_has_limit_size>
 </clickhouse>

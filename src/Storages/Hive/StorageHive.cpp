@@ -45,7 +45,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/VirtualColumnUtils.h>
 
 namespace CurrentMetrics
 {
@@ -445,7 +444,6 @@ StorageHive::StorageHive(
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 void StorageHive::lazyInitialize()
@@ -921,7 +919,9 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     }
 
     sources_info->hive_files = std::move(*hive_files);
-    num_streams = std::min(num_streams, sources_info->hive_files.size());
+
+    if (num_streams > sources_info->hive_files.size())
+        num_streams = sources_info->hive_files.size();
 
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)
@@ -1018,6 +1018,13 @@ HiveFiles StorageHive::collectHiveFiles(
 SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
+}
+
+NamesAndTypesList StorageHive::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const

@@ -42,6 +42,10 @@ class ThreadStatus;
 class ProcessListEntry;
 
 
+/** List of currently executing queries.
+  * Also implements limit on their number.
+  */
+
 /** Information of process list element.
   * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
   */
@@ -110,13 +114,8 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
-    /// Number of threads for the query that are waiting for load jobs
-    std::atomic<UInt64> waiting_threads{0};
-
-    /// For initialization of ProcessListForUser during process insertion.
     void setUserProcessList(ProcessListForUser * user_process_list_);
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
-    ProcessListForUser * getUserProcessList() { return user_process_list; }
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
     /// Sets an entry in the ProcessList associated with this QueryStatus.
@@ -128,7 +127,7 @@ protected:
 
     struct ExecutorHolder
     {
-        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
 
         void cancel();
 
@@ -143,14 +142,14 @@ protected:
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
     std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
-    enum class QueryStreamsStatus : uint8_t
+    enum QueryStreamsStatus
     {
         NotInitialized,
         Initialized,
         Released
     };
 
-    QueryStreamsStatus query_streams_status{QueryStreamsStatus::NotInitialized};
+    QueryStreamsStatus query_streams_status{NotInitialized};
 
     ProcessListForUser * user_process_list = nullptr;
 
@@ -284,9 +283,6 @@ struct ProcessListForUser
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 
-    /// Number of queries waiting on load jobs
-    std::atomic<UInt64> waiting_queries_amount{0};
-
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
     /// Clears MemoryTracker for the user.
@@ -322,7 +318,7 @@ public:
     ~ProcessListEntry();
 
     QueryStatusPtr getQueryStatus() { return *it; }
-    QueryStatusPtr getQueryStatus() const { return *it; }
+    const QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
 
@@ -345,9 +341,6 @@ protected:
 };
 
 
-/** List of currently executing queries.
-  * Also implements limit on their number.
-  */
 class ProcessList : public ProcessListBase
 {
 public:
@@ -406,20 +399,9 @@ protected:
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
 
-    /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
-    std::atomic<UInt64> max_waiting_queries_amount{0};
-
-    /// amounts of waiting queries
-    std::atomic<UInt64> waiting_queries_amount{0};
-    std::atomic<UInt64> waiting_insert_queries_amount{0};
-    std::atomic<UInt64> waiting_select_queries_amount{0};
-
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
-
-    void increaseWaitingQueryAmount(const QueryStatusPtr & status);
-    void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -475,21 +457,6 @@ public:
         auto lock = unsafeLock();
         return max_select_queries_amount;
     }
-
-    void setMaxWaitingQueriesAmount(UInt64 max_waiting_queries_amount_)
-    {
-        max_waiting_queries_amount.store(max_waiting_queries_amount_);
-        // NOTE: We cannot cancel waiting queries when limit is lowered. They have to wait anyways, but new queries will be canceled instead of waiting.
-    }
-
-    size_t getMaxWaitingQueriesAmount() const
-    {
-        return max_waiting_queries_amount.load();
-    }
-
-    // Handlers for AsyncLoader waiters
-    void incrementWaiters();
-    void decrementWaiters();
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);

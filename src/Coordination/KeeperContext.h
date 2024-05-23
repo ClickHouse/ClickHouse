@@ -76,10 +76,21 @@ public:
 
     void waitLocalLogsPreprocessedOrShutdown();
 
-    uint64_t lastCommittedIndex() const;
-    void setLastCommitIndex(uint64_t commit_index);
-    /// returns true if the log is committed, false if timeout happened
-    bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
+    uint64_t lastCommittedIndex() const
+    {
+        return last_committed_log_idx.load(std::memory_order_relaxed);
+    }
+
+    void setLastCommitIndex(uint64_t commit_index)
+    {
+        last_committed_log_idx.store(commit_index, std::memory_order_relaxed);
+        last_committed_log_idx.notify_all();
+    }
+
+    void waitLastCommittedIndexUpdated(uint64_t current_last_committed_idx)
+    {
+        last_committed_log_idx.wait(current_last_committed_idx, std::memory_order_relaxed);
+    }
 
     const CoordinationSettingsPtr & getCoordinationSettings() const;
 
@@ -130,11 +141,6 @@ private:
     std::atomic<UInt64> memory_soft_limit = 0;
 
     std::atomic<UInt64> last_committed_log_idx = 0;
-
-    /// will be set by dispatcher when waiting for certain commits
-    std::optional<UInt64> wait_commit_upto_idx = 0;
-    std::mutex last_committed_log_idx_cv_mutex;
-    std::condition_variable last_committed_log_idx_cv;
 
     CoordinationSettingsPtr coordination_settings;
 };

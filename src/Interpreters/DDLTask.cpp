@@ -2,8 +2,6 @@
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -16,6 +14,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
@@ -44,11 +43,6 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
     try
     {
         return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
-    }
-    catch (const DB::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -155,8 +149,7 @@ void DDLLogEntry::parse(const String & data)
             rb >> "settings: " >> settings_str >> "\n";
             ParserSetQuery parser{true};
             constexpr UInt64 max_depth = 16;
-            constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth, max_backtracks);
+            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -199,7 +192,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)

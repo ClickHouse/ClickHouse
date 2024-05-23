@@ -6,11 +6,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
+#ifdef __clang__
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wnewline-eof"
+#endif
 #    include <ada/idna/punycode.h>
 #    include <ada/idna/unicode_transcoding.h>
+#ifdef __clang__
 #    pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -24,7 +28,7 @@ namespace ErrorCodes
 /// Implementation of
 /// - punycodeEncode(), punycodeDecode() and tryPunycodeDecode(), see https://en.wikipedia.org/wiki/Punycode
 
-enum class ErrorHandling : uint8_t
+enum class ErrorHandling
 {
     Throw,  /// Throw exception
     Empty   /// Return empty string

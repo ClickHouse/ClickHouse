@@ -4,7 +4,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -29,7 +28,7 @@ namespace ErrorCodes
     String cluster;
     bool parsed_on_cluster = false;
 
-    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
             return false;
@@ -53,7 +52,7 @@ namespace ErrorCodes
     if (!parsed_table && require_table)
         return false;
 
-    if (!parsed_on_cluster && ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    if (!parsed_on_cluster && ParserKeyword{"ON"}.ignore(pos, expected))
         if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
             return false;
 
@@ -67,7 +66,7 @@ namespace ErrorCodes
     return true;
 }
 
-enum class SystemQueryTargetType : uint8_t
+enum class SystemQueryTargetType
 {
     Model,
     Function,
@@ -83,7 +82,7 @@ enum class SystemQueryTargetType : uint8_t
     String cluster;
     bool parsed_on_cluster = false;
 
-    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
             return false;
@@ -109,7 +108,7 @@ enum class SystemQueryTargetType : uint8_t
             return false;
     }
 
-    if (!parsed_on_cluster && ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    if (!parsed_on_cluster && ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
             return false;
@@ -143,7 +142,7 @@ enum class SystemQueryTargetType : uint8_t
                                     Expected & expected)
 {
     String cluster_str;
-    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -163,29 +162,29 @@ enum class SystemQueryTargetType : uint8_t
         return false;
     res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (ParserKeyword{Keyword::FROM_SHARD}.ignore(pos, expected))
+    if (ParserKeyword{"FROM SHARD"}.ignore(pos, expected))
     {
         if (!ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
         res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
     }
 
-    if (ParserKeyword{Keyword::FROM}.ignore(pos, expected))
+    if (ParserKeyword{"FROM"}.ignore(pos, expected))
     {
         // way 1. parse replica database
         // way 2. parse replica table
         // way 3. parse replica zkpath
-        if (ParserKeyword{Keyword::DATABASE}.ignore(pos, expected))
+        if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
         {
             ParserIdentifier database_parser;
             if (!database_parser.parse(pos, res->database, expected))
                 return false;
         }
-        else if (!database && ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
+        else if (!database && ParserKeyword{"TABLE"}.ignore(pos, expected))
         {
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
         }
-        else if (ParserKeyword{Keyword::ZKPATH}.ignore(pos, expected))
+        else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
         {
             ASTPtr path_ast;
             if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
@@ -206,7 +205,7 @@ enum class SystemQueryTargetType : uint8_t
 
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{Keyword::SYSTEM}.ignore(pos, expected))
+    if (!ParserKeyword{"SYSTEM"}.ignore(pos, expected))
         return false;
 
     using Type = ASTSystemQuery::Type;
@@ -217,7 +216,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     for (const auto & type : magic_enum::enum_values<Type>())
     {
-        if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
+        if (ParserKeyword{ASTSystemQuery::typeToString(type)}.ignore(pos, expected))
         {
             res->type = type;
             found = true;
@@ -263,7 +262,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
             if (ParserIdentifier{}.parse(pos, ast, expected))
@@ -283,12 +281,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (res->type == Type::SYNC_REPLICA)
             {
-                if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
+                if (ParserKeyword{"STRICT"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
-                else if (ParserKeyword{Keyword::LIGHTWEIGHT}.ignore(pos, expected))
+                else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
                 {
                     res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
-                    if (ParserKeyword{Keyword::FROM}.ignore(pos, expected))
+                    if (ParserKeyword{"FROM"}.ignore(pos, expected))
                     {
                         do
                         {
@@ -299,7 +297,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                         } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
                     }
                 }
-                else if (ParserKeyword{Keyword::PULL}.ignore(pos, expected))
+                else if (ParserKeyword{"PULL"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::PULL;
             }
             break;
@@ -323,7 +321,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         /// START/STOP DISTRIBUTED SENDS does not require table
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
-        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
@@ -331,21 +328,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         case Type::FLUSH_DISTRIBUTED:
-        {
-            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
-                return false;
-
-            ParserKeyword s_settings(Keyword::SETTINGS);
-            if (s_settings.ignore(pos, expected))
-            {
-                ParserSetQuery parser_settings(/* parse_only_internals_= */ true);
-                if (!parser_settings.parse(pos, res->query_settings, expected))
-                    return false;
-            }
-
-            break;
-        }
-
         case Type::RESTORE_REPLICA:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
@@ -378,7 +360,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return true;
             };
 
-            if (ParserKeyword{Keyword::ON_VOLUME}.ignore(pos, expected))
+            if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
             {
                 if (!parse_on_volume())
                     return false;
@@ -387,7 +369,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (!parseQueryWithOnCluster(res, pos, expected))
                     return false;
-                if (ParserKeyword{Keyword::ON_VOLUME}.ignore(pos, expected))
+                if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
                 {
                     if (!parse_on_volume())
                         return false;
@@ -437,10 +419,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
 
-            if (ParserKeyword{Keyword::UNSET_FAKE_TIME}.ignore(pos, expected))
+            if (ParserKeyword{"UNSET FAKE TIME"}.ignore(pos, expected))
                 break;
 
-            if (!ParserKeyword{Keyword::SET_FAKE_TIME}.ignore(pos, expected))
+            if (!ParserKeyword{"SET FAKE TIME"}.ignore(pos, expected))
                 return false;
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -460,9 +442,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
 
             ASTPtr seconds;
-            if (!(ParserKeyword{Keyword::FOR}.ignore(pos, expected)
+            if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
                 && ParserUnsignedInteger().parse(pos, seconds, expected)
-                && ParserKeyword{Keyword::SECOND}.ignore(pos, expected)))   /// SECOND, not SECONDS to be consistent with INTERVAL parsing in SQL
+                && ParserKeyword{"SECOND"}.ignore(pos, expected)))   /// SECOND, not SECONDS to be consistent with INTERVAL parsing in SQL
             {
                 return false;
             }
@@ -477,10 +459,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (path_parser.parse(pos, ast, expected))
             {
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
-                if (ParserKeyword{Keyword::KEY}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
+                if (ParserKeyword{"KEY"}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
                 {
                     res->key_to_drop = ast->as<ASTIdentifier>()->name();
-                    if (ParserKeyword{Keyword::OFFSET}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
+                    if (ParserKeyword{"OFFSET"}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
                         res->offset_to_drop = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
                 }
             }
@@ -504,18 +486,18 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_SCHEMA_CACHE:
         {
-            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
             {
-                if (ParserKeyword{Keyword::FILE}.ignore(pos, expected))
-                    res->schema_cache_storage = toStringView(Keyword::FILE);
-                else if (ParserKeyword{Keyword::S3}.ignore(pos, expected))
-                    res->schema_cache_storage = toStringView(Keyword::S3);
-                else if (ParserKeyword{Keyword::HDFS}.ignore(pos, expected))
-                    res->schema_cache_storage = toStringView(Keyword::HDFS);
-                else if (ParserKeyword{Keyword::URL}.ignore(pos, expected))
-                    res->schema_cache_storage = toStringView(Keyword::URL);
-                else if (ParserKeyword{Keyword::AZURE}.ignore(pos, expected))
-                    res->schema_cache_storage = toStringView(Keyword::AZURE);
+                if (ParserKeyword{"FILE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "FILE";
+                else if (ParserKeyword{"S3"}.ignore(pos, expected))
+                    res->schema_cache_storage = "S3";
+                else if (ParserKeyword{"HDFS"}.ignore(pos, expected))
+                    res->schema_cache_storage = "HDFS";
+                else if (ParserKeyword{"URL"}.ignore(pos, expected))
+                    res->schema_cache_storage = "URL";
+                else if (ParserKeyword{"AZURE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "AZURE";
                 else
                     return false;
             }
@@ -523,11 +505,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_FORMAT_SCHEMA_CACHE:
         {
-            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
             {
-                if (ParserKeyword{Keyword::PROTOBUF}.ignore(pos, expected))
-                    res->schema_cache_format = toStringView(Keyword::PROTOBUF);
-
+                if (ParserKeyword{"Protobuf"}.ignore(pos, expected))
+                    res->schema_cache_format = "Protobuf";
                 else
                     return false;
             }
@@ -536,7 +517,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::UNFREEZE:
         {
             ASTPtr ast;
-            if (ParserKeyword{Keyword::WITH_NAME}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
+            if (ParserKeyword{"WITH NAME"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
             {
                 res->backup_name = ast->as<ASTLiteral &>().value.get<const String &>();
             }
@@ -560,7 +541,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
                 for (const auto & cur_type : magic_enum::enum_values<ServerType::Type>())
                 {
-                    if (ParserKeyword::createDeprecated(ServerType::serverTypeToString(cur_type)).ignore(pos, expected))
+                    if (ParserKeyword{ServerType::serverTypeToString(cur_type)}.ignore(pos, expected))
                     {
                         type = cur_type;
                         break;
@@ -592,7 +573,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parse_server_type(base_type, base_custom_name))
                 return false;
 
-            if (ParserKeyword{Keyword::EXCEPT}.ignore(pos, expected))
+            if (ParserKeyword{"EXCEPT"}.ignore(pos, expected))
             {
                 if (base_type != ServerType::Type::QUERIES_ALL &&
                     base_type != ServerType::Type::QUERIES_DEFAULT &&
@@ -634,8 +615,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         res->children.push_back(res->database);
     if (res->table)
         res->children.push_back(res->table);
-    if (res->query_settings)
-        res->children.push_back(res->query_settings);
 
     node = std::move(res);
     return true;

@@ -9,8 +9,7 @@
     <style>
         :root {
             --color: black;
-            --background-color-1: #00CCFF;
-            --background: linear-gradient(to bottom, var(--background-color-1), #00D0D0);
+            --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --moving-shadow-color: rgba(0, 0, 0, 0.5);
@@ -34,8 +33,7 @@
 
         [data-theme="dark"] {
             --color: white;
-            --background-color-1: #151C2C;
-            --background: var(--background-color-1);
+            --background: #151C2C;
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
             --moving-shadow-color: rgba(255, 255, 255, 0.25);
@@ -121,18 +119,6 @@
             display: flex;
             flex-flow: column nowrap;
             justify-content: center;
-
-            position: sticky;
-            top: -1rem;
-            margin-top: -1rem;
-            margin-left: -1rem;
-            margin-right: -1rem;
-            border-top: 1rem solid var(--background-color-1);
-            border-left: 1rem solid var(--background-color-1);
-            border-right: 1rem solid var(--background-color-1);
-            box-sizing: content-box;
-            z-index: 1000;
-            background: var(--background-color-1);
         }
 
         .inputs.unconnected {
@@ -537,60 +523,47 @@ let default_params = {
 let params = default_params;
 
 /// Palette generation for charts
-function generatePalette(numColors) {
-    // oklch() does not work in firefox<=125 inside <canvas> element so we convert it back to rgb for now.
-    // Based on https://github.com/color-js/color.js/blob/main/src/spaces/oklch.js
-    const multiplyMatrices = (A, B) => {
-        return [
-            A[0]*B[0] + A[1]*B[1] + A[2]*B[2],
-            A[3]*B[0] + A[4]*B[1] + A[5]*B[2],
-            A[6]*B[0] + A[7]*B[1] + A[8]*B[2]
-        ];
-    }
-
-    const oklch2oklab = ([l, c, h]) => [
-        l,
-        isNaN(h) ? 0 : c * Math.cos(h * Math.PI / 180),
-        isNaN(h) ? 0 : c * Math.sin(h * Math.PI / 180)
-    ]
-
-    const srgbLinear2rgb = rgb => rgb.map(c =>
-        Math.abs(c) > 0.0031308 ?
-            (c < 0 ? -1 : 1) * (1.055 * (Math.abs(c) ** (1 / 2.4)) - 0.055) :
-            12.92 * c
-    )
-
-    const oklab2xyz = lab => {
-        const LMSg = multiplyMatrices([
-            1,  0.3963377773761749,  0.2158037573099136,
-            1, -0.1055613458156586, -0.0638541728258133,
-            1, -0.0894841775298119, -1.2914855480194092,
-        ], lab)
-        const LMS = LMSg.map(val => val ** 3)
-        return multiplyMatrices([
-            1.2268798758459243,  -0.5578149944602171,  0.2813910456659647,
-            -0.0405757452148008,  1.1122868032803170, -0.0717110580655164,
-            -0.0763729366746601, -0.4214933324022432,  1.5869240198367816
-        ], LMS)
-    }
-
-    const xyz2rgbLinear = xyz => {
-        return multiplyMatrices([
-            3.2409699419045226,  -1.537383177570094,   -0.4986107602930034,
-           -0.9692436362808796,   1.8759675015077202,   0.04155505740717559,
-            0.05563007969699366, -0.20397695888897652,  1.0569715142428786
-        ], xyz)
-    }
-
-    const oklch2rgb = lch =>  srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
-
-    palette = [];
+function generatePalette(baseColor, numColors) {
+    const baseHSL = hexToHsl(baseColor);
+    const hueStep = 360 / numColors;
+    const palette = [];
     for (let i = 0; i < numColors; i++) {
-        //palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
-        let rgb = oklch2rgb([theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors]);
-        palette.push(`rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`);
+        const hue = Math.round((baseHSL.h + i * hueStep) % 360);
+        const color = `hsl(${hue}, ${baseHSL.s}%, ${baseHSL.l}%)`;
+        palette.push(color);
     }
     return palette;
+}
+
+/// Helper function to convert hex color to HSL
+function hexToHsl(hex) {
+    hex = hex.replace(/^#/, '');
+    const bigint = parseInt(hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    const r_norm = r / 255;
+    const g_norm = g / 255;
+    const b_norm = b / 255;
+    const max = Math.max(r_norm, g_norm, b_norm);
+    const min = Math.min(r_norm, g_norm, b_norm);
+    const l = (max + min) / 2;
+    let s = 0;
+    if (max !== min) {
+        s = l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
+    }
+    let h = 0;
+    if (max !== min) {
+        if (max === r_norm) {
+            h = (g_norm - b_norm) / (max - min) + (g_norm < b_norm ? 6 : 0);
+        } else if (max === g_norm) {
+            h = (b_norm - r_norm) / (max - min) + 2;
+        } else {
+            h = (r_norm - g_norm) / (max - min) + 4;
+        }
+    }
+    h = Math.round(h * 60);
+    return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
 let theme = 'light';
@@ -1234,7 +1207,7 @@ async function draw(idx, chart, url_params, query) {
     // Treat every column as series
     const series_count = reply.meta.length;
     const fill = series_count == 2 ? fill_color : undefined;
-    const palette = series_count == 2 ? [line_color] : generatePalette(series_count);
+    const palette = generatePalette(line_color, series_count);
     let max_value = Number.NEGATIVE_INFINITY;
     for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;

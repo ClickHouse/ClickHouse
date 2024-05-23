@@ -32,7 +32,7 @@ public:
 class Unfreezer
 {
 public:
-    explicit Unfreezer(ContextPtr context);
+    Unfreezer(ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory);
     BlockIO systemUnfreeze(const String & backup_name);
 private:

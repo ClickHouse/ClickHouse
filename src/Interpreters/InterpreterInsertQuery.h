@@ -69,7 +69,7 @@ public:
     bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
 
 private:
-    static Block getSampleBlockImpl(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);
+    static Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool allow_materialized);
 
     ASTPtr query_ptr;
     const bool allow_materialized;

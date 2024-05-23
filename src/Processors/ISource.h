@@ -44,7 +44,7 @@ public:
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
     /// Default implementation for all the sources.
-    std::optional<ReadProgress> getReadProgress() override;
+    std::optional<ReadProgress> getReadProgress() final;
 
     void addTotalRowsApprox(size_t value);
     void addTotalBytes(size_t value);

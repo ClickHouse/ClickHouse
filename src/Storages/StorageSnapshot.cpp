@@ -1,4 +1,6 @@
 #include <Storages/StorageSnapshot.h>
+#include <Storages/LightweightDeleteDescription.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
@@ -16,49 +18,6 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
-{
-}
-
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    VirtualsDescriptionPtr virtual_columns_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(std::move(virtual_columns_))
-{
-}
-
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    ColumnsDescription object_columns_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
-    , object_columns(std::move(object_columns_))
-{
-}
-
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    ColumnsDescription object_columns_,
-    DataPtr data_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
-    , object_columns(std::move(object_columns_))
-    , data(std::move(data_))
-{
-}
-
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
@@ -69,12 +28,15 @@ std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
     return res;
 }
 
-ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
+void StorageSnapshot::init()
 {
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-    auto column_names_and_types = getColumns(get_column_options);
+    for (const auto & [name, type] : storage.getVirtuals())
+        virtual_columns[name] = type;
 
-    return ColumnsDescription{column_names_and_types};
+    if (storage.hasLightweightDeletedMask())
+        system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
+
+    system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
@@ -84,20 +46,33 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
     if (options.with_extended_objects)
         extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
 
-    if (options.virtuals_kind != VirtualsKind::None && !virtual_columns->empty())
+    NameSet column_names;
+    if (options.with_virtuals)
     {
-        NameSet column_names;
-        for (const auto & column : all_columns)
-            column_names.insert(column.name);
-
-        auto virtuals_list = virtual_columns->getNamesAndTypesList(options.virtuals_kind);
-        for (const auto & column : virtuals_list)
+        /// Virtual columns must be appended after ordinary,
+        /// because user can override them.
+        if (!virtual_columns.empty())
         {
-            if (column_names.contains(column.name))
-                continue;
+            for (const auto & column : all_columns)
+                column_names.insert(column.name);
 
-            all_columns.emplace_back(column.name, column.type);
+            for (const auto & [name, type] : virtual_columns)
+                if (!column_names.contains(name))
+                    all_columns.emplace_back(name, type);
         }
+    }
+
+    if (options.with_system_columns)
+    {
+        if (!system_columns.empty() && column_names.empty())
+        {
+            for (const auto & column : all_columns)
+                column_names.insert(column.name);
+        }
+
+        for (const auto & [name, type] : system_columns)
+            if (!column_names.contains(name))
+                all_columns.emplace_back(name, type);
     }
 
     return all_columns;
@@ -125,11 +100,18 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
             return object_column;
     }
 
-    if (options.virtuals_kind != VirtualsKind::None)
+    if (options.with_virtuals)
     {
-        auto virtual_column = virtual_columns->tryGet(column_name, options.virtuals_kind);
-        if (virtual_column)
-            return NameAndTypePair{virtual_column->name, virtual_column->type};
+        auto it = virtual_columns.find(column_name);
+        if (it != virtual_columns.end())
+            return NameAndTypePair(column_name, it->second);
+    }
+
+    if (options.with_system_columns)
+    {
+        auto it = system_columns.find(column_name);
+        if (it != system_columns.end())
+            return NameAndTypePair(column_name, it->second);
     }
 
     return {};
@@ -142,47 +124,6 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", column_name);
 
     return *column;
-}
-
-CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
-            : default_codec;
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec;
-}
-
-CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_name) const
-{
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr StorageSnapshot::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec ? column_desc.codec : default_codec->getFullCodecDesc();
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec->getFullCodecDesc();
 }
 
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
@@ -202,11 +143,11 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
         {
             res.insert({object_column->type->createColumn(), object_column->type, column_name});
         }
-        else if (auto virtual_column = virtual_columns->tryGet(column_name))
+        else if (auto it = virtual_columns.find(column_name); it != virtual_columns.end())
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            const auto & type = virtual_column->type;
+            const auto & type = it->second;
             res.insert({type->createColumn(), type, column_name});
         }
         else
@@ -234,11 +175,12 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
         {
             res.add(*object_column, "", false, false);
         }
-        else if (auto virtual_column = virtual_columns->tryGet(name))
+        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            res.add({name, virtual_column->type});
+            const auto & type = it->second;
+            res.add({name, type});
         }
         else
         {
@@ -274,7 +216,7 @@ void StorageSnapshot::check(const Names & column_names) const
     {
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
             || object_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
-            || virtual_columns->has(name);
+            || virtual_columns.contains(name);
 
         if (!has_column)
         {

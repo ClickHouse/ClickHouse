@@ -15,44 +15,25 @@ namespace DB
   */
 
 /** Used as an input for parsers.
-  * All whitespace and comment tokens are transparently skipped if `skip_insignificant`.
+  * All whitespace and comment tokens are transparently skipped.
   */
 class Tokens
 {
 private:
     std::vector<Token> data;
-    Lexer lexer;
-    bool skip_insignificant;
+    std::size_t last_accessed_index = 0;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
-        : lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant = true);
+
+    ALWAYS_INLINE inline const Token & operator[](size_t index)
     {
+        assert(index < data.size());
+        last_accessed_index = std::max(last_accessed_index, index);
+        return data[index];
     }
 
-    const Token & operator[] (size_t index)
-    {
-        while (true)
-        {
-            if (index < data.size())
-                return data[index];
-
-            if (!data.empty() && data.back().isEnd())
-                return data.back();
-
-            Token token = lexer.nextToken();
-
-            if (!skip_insignificant || token.isSignificant())
-                data.emplace_back(token);
-        }
-    }
-
-    const Token & max()
-    {
-        if (data.empty())
-            return (*this)[0];
-        return data.back();
-    }
+    ALWAYS_INLINE inline const Token & max() { return data[last_accessed_index]; }
 };
 
 
@@ -78,6 +59,18 @@ public:
     ALWAYS_INLINE TokenIterator & operator--()
     {
         --index;
+        return *this;
+    }
+
+    ALWAYS_INLINE TokenIterator & operator-=(int value)
+    {
+        index -= value;
+        return *this;
+    }
+
+    ALWAYS_INLINE TokenIterator & operator+=(int value)
+    {
+        index += value;
         return *this;
     }
 

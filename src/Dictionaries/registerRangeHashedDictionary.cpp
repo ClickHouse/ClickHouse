@@ -1,8 +1,5 @@
-#include <Dictionaries/RangeHashedDictionary.h>
-
+#include "RangeHashedDictionary.h"
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/ClickHouseDictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 
 namespace DB

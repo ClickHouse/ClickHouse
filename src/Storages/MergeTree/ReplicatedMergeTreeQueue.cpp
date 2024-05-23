@@ -6,11 +6,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/noexcept_scope.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
-#include <Storages/MutationCommands.h>
-#include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <ranges>
@@ -379,11 +376,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             ///
             /// NOTE actual_new_part_name is very confusing and error-prone. This approach must be fixed.
             removeCoveredPartsFromMutations(entry->actual_new_part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
-        }
-        for (const auto & actual_part : entry->replace_range_actual_new_part_names)
-        {
-            LOG_TEST(log, "Entry {} has actual new part name {}, removing it from mutations", entry->znode_name, actual_part);
-            removeCoveredPartsFromMutations(actual_part, /*remove_part = */ false, /*remove_covered_parts = */ true);
         }
 
         LOG_TEST(log, "Adding parts [{}] to current parts", fmt::join(entry_virtual_parts, ", "));
@@ -945,14 +937,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                         mutations_by_partition.erase(partition_and_block_num.first);
                 }
 
-                if (!it->second.is_done)
-                {
-                    const auto commands = entry.commands;
-                    it = mutations_by_znode.erase(it);
-                    updateAlterConversionsMutations(commands, alter_conversions_mutations, /* remove= */ true);
-                }
-                else
-                    it = mutations_by_znode.erase(it);
+                it = mutations_by_znode.erase(it);
             }
             else
                 ++it;
@@ -1001,15 +986,12 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version))
                     .first->second;
 
-                updateAlterConversionsMutations(entry->commands, alter_conversions_mutations, /* remove= */ false);
-                NOEXCEPT_SCOPE({
-                    for (const auto & pair : entry->block_numbers)
-                    {
-                        const String & partition_id = pair.first;
-                        Int64 block_num = pair.second;
-                        mutations_by_partition[partition_id].emplace(block_num, &mutation);
-                    }
-                });
+                for (const auto & pair : entry->block_numbers)
+                {
+                    const String & partition_id = pair.first;
+                    Int64 block_num = pair.second;
+                    mutations_by_partition[partition_id].emplace(block_num, &mutation);
+                }
                 LOG_TRACE(log, "Adding mutation {} for {} partitions (data versions: {})",
                           entry->znode_name, entry->block_numbers.size(), entry->getBlockNumbersForLogs());
 
@@ -1075,8 +1057,6 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         }
 
         mutations_by_znode.erase(it);
-        /// updateAlterConversionsMutations() will be called in updateMutations()
-
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
@@ -1262,9 +1242,9 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
     if (entry_for_same_part_it != future_parts.end())
     {
         const LogEntry & another_entry = *entry_for_same_part_it->second;
-        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {})"
+        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
                                     "because another log entry {} of type {} for the same part ({}) is being processed.";
-        LOG_INFO(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.type, entry.new_part_name, new_part_name,
+        LOG_INFO(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.type, entry.new_part_name,
                  another_entry.znode_name, another_entry.type, another_entry.new_part_name);
         return true;
 
@@ -1280,7 +1260,6 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
     auto result_part = MergeTreePartInfo::fromPartName(new_part_name, format_version);
 
     /// It can slow down when the size of `future_parts` is large. But it can not be large, since background pool is limited.
-    /// (well, it can actually, thanks to REPLACE_RANGE, but it's a rare case)
     for (const auto & future_part_elem : future_parts)
     {
         auto future_part = MergeTreePartInfo::fromPartName(future_part_elem.first, format_version);
@@ -1417,13 +1396,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
-        if (merger_mutator.merges_blocker.isCancelled())
-        {
-            constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
-            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
-            return false;
-        }
-
         /** If any of the required parts are now fetched or in merge process, wait for the end of this operation.
           * Otherwise, even if all the necessary parts for the merge are not present, you should try to make a merge.
           * If any parts are missing, instead of merge, there will be an attempt to download a part.
@@ -1443,8 +1415,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
             if (part)
             {
-                if (entry.type == LogEntry::MERGE_PARTS)
-                    sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
+                if (auto part_in_memory = asInMemoryPart(part))
+                    sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
 
@@ -1457,6 +1429,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                         return false;
                 }
             }
+        }
+        if (merger_mutator.merges_blocker.isCancelled())
+        {
+            constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
+            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+            return false;
         }
 
         const auto data_settings = data.getSettings();
@@ -1695,39 +1673,26 @@ void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(
     std::unique_lock<std::mutex> & state_lock,
     std::vector<LogEntryPtr> & covered_entries_to_wait)
 {
-    if (actual_part_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Actual part name is empty");
-
     if (!entry.actual_new_part_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} actual part isn't empty yet: '{}'. This is a bug.",
-                        entry.znode_name, entry.actual_new_part_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry actual part isn't empty yet. This is a bug.");
 
-    auto actual_part_info = MergeTreePartInfo::fromPartName(actual_part_name, queue.format_version);
-    for (const auto & other_part_name : entry.replace_range_actual_new_part_names)
-        if (!MergeTreePartInfo::fromPartName(other_part_name, queue.format_version).isDisjoint(actual_part_info))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} already has actual part {} non-disjoint with {}. This is a bug.",
-                            entry.actual_new_part_name, other_part_name, actual_part_name);
+    entry.actual_new_part_name = actual_part_name;
 
     /// Check if it is the same (and already added) part.
-    if (actual_part_name == entry.new_part_name)
+    if (entry.actual_new_part_name == entry.new_part_name)
         return;
 
-    if (!queue.future_parts.emplace(actual_part_name, entry.shared_from_this()).second)
+    if (!queue.future_parts.emplace(entry.actual_new_part_name, entry.shared_from_this()).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attaching already existing future part {}. This is a bug. "
                                                    "It happened on attempt to execute {}: {}",
-                                                   actual_part_name, entry.znode_name, entry.toString());
-
-    if (entry.type == LogEntry::REPLACE_RANGE)
-        entry.replace_range_actual_new_part_names.insert(actual_part_name);
-    else
-        entry.actual_new_part_name = actual_part_name;
+                                                   entry.actual_new_part_name, entry.znode_name, entry.toString());
 
     for (LogEntryPtr & covered_entry : covered_entries_to_wait)
     {
         if (&entry == covered_entry.get())
             continue;
-        LOG_TRACE(queue.log, "Waiting for {} producing {} to finish before executing {} producing not disjoint part {} (actual part {})",
-                  covered_entry->znode_name, covered_entry->new_part_name, entry.znode_name, entry.new_part_name, actual_part_name);
+        LOG_TRACE(queue.log, "Waiting for {} producing {} to finish before executing {} producing not disjoint part {}",
+                  covered_entry->znode_name, covered_entry->new_part_name, entry.znode_name, entry.new_part_name);
         covered_entry->execution_complete.wait(state_lock, [&covered_entry] { return !covered_entry->currently_executing; });
     }
 }
@@ -1746,27 +1711,25 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
 
-    auto erase_and_check = [this](const String & part_name)
+    for (const String & new_part_name : entry->getVirtualPartNames(queue.format_version))
     {
-        if (!queue.future_parts.erase(part_name))
+        if (!queue.future_parts.erase(new_part_name))
         {
-            LOG_ERROR(queue.log, "Untagging already untagged future part {}. This is a bug.", part_name);
+            LOG_ERROR(queue.log, "Untagging already untagged future part {}. This is a bug.", new_part_name);
             assert(false);
         }
-    };
-
-    for (const String & new_part_name : entry->getVirtualPartNames(queue.format_version))
-        erase_and_check(new_part_name);
+    }
 
     if (!entry->actual_new_part_name.empty())
-        erase_and_check(entry->actual_new_part_name);
+    {
+        if (entry->actual_new_part_name != entry->new_part_name && !queue.future_parts.erase(entry->actual_new_part_name))
+        {
+            LOG_ERROR(queue.log, "Untagging already untagged future part {}. This is a bug.", entry->actual_new_part_name);
+            assert(false);
+        }
 
-    entry->actual_new_part_name.clear();
-
-    for (const auto & actual_part : entry->replace_range_actual_new_part_names)
-        erase_and_check(actual_part);
-
-    entry->replace_range_actual_new_part_names.clear();
+        entry->actual_new_part_name.clear();
+    }
 }
 
 
@@ -1902,15 +1865,6 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 
 MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    int32_t part_metadata_version = part->getMetadataVersion();
-    int32_t metadata_version = storage.getInMemoryMetadataPtr()->getMetadataVersion();
-
-    chassert(alter_conversions_mutations >= 0);
-    /// NOTE: that just checking part_metadata_version is not enough, since we
-    /// need to check for non-metadata mutations as well.
-    if (alter_conversions_mutations == 0 && metadata_version == part_metadata_version)
-        return {};
-
     std::unique_lock lock(state_mutex);
 
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
@@ -1918,17 +1872,12 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
         return {};
 
     Int64 part_data_version = part->info.getDataVersion();
+    Int64 part_metadata_version = part->getMetadataVersion();
+
     MutationCommands result;
 
     bool seen_all_data_mutations = false;
     bool seen_all_metadata_mutations = false;
-
-    auto add_to_result = [&](const ReplicatedMergeTreeMutationEntryPtr & entry)
-    {
-        for (const auto & command : entry->commands | std::views::reverse)
-            if (AlterConversions::supportsMutationCommandType(command.type))
-                result.emplace_back(command);
-    };
 
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
@@ -1940,22 +1889,28 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
 
         auto & entry = mutation_status->entry;
 
+        auto add_to_result = [&] {
+            for (const auto & command : entry->commands | std::views::reverse)
+                if (AlterConversions::supportsMutationCommandType(command.type))
+                    result.emplace_back(command);
+        };
+
         auto alter_version = entry->alter_version;
         if (alter_version != -1)
         {
-            if (alter_version > metadata_version)
+            if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
                 continue;
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                add_to_result(entry);
+                add_to_result();
             else
                 seen_all_metadata_mutations = true;
         }
         else
         {
             if (mutation_version > part_data_version)
-                add_to_result(entry);
+                add_to_result();
             else
                 seen_all_data_mutations = true;
         }
@@ -2042,8 +1997,6 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                                   "were executed concurrently on different replicas.", znode);
                     mutation.parts_to_do.clear();
                 }
-
-                updateAlterConversionsMutations(mutation.entry->commands, alter_conversions_mutations, /* remove= */ true);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2100,7 +2053,6 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
-                updateAlterConversionsMutations(entry->commands, alter_conversions_mutations, /* remove= */ true);
             }
         }
     }
@@ -2379,7 +2331,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     const MergeTreeTransaction *,
-    PreformattedMessage & out_reason) const
+    String & out_reason) const
 {
     if (left)
         return canMergeTwoParts(left, right, out_reason);
@@ -2391,7 +2343,7 @@ template<typename VirtualPartsT, typename MutationsStateT>
 bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
-    PreformattedMessage & out_reason) const
+    String & out_reason) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -2435,19 +2387,19 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     {
         if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
         {
-            out_reason = PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
+            out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
             return false;
         }
 
         if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
         {
-            out_reason = PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name);
+            out_reason = "Quorum insert for part " + part->name + " is currently in progress";
             return false;
         }
 
         if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
         {
-            out_reason = PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name);
+            out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
             return false;
         }
     }
@@ -2461,7 +2413,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     {
         if (partition_ids_hint && !partition_ids_hint->contains(left->info.partition_id))
         {
-            out_reason = PreformattedMessage::create("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
+            out_reason = fmt::format("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
             return false;
         }
 
@@ -2473,7 +2425,8 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
             auto block_it = block_numbers.upper_bound(left_max_block);
             if (block_it != block_numbers.end() && *block_it < right_min_block)
             {
-                out_reason = PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", *block_it, left->name, right->name);
+                out_reason = "Block number " + toString(*block_it) + " is still being inserted between parts "
+                    + left->name + " and " + right->name;
                 return false;
             }
         }
@@ -2492,7 +2445,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
             String containing_part = virtual_parts_->getContainingPart(part->info);
             if (containing_part != part->name)
             {
-                out_reason = PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part);
+                out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
                 return false;
             }
         }
@@ -2509,9 +2462,9 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
             Strings covered = virtual_parts_->getPartsCoveredBy(gap_part_info);
             if (!covered.empty())
             {
-                out_reason = PreformattedMessage::create("There are {} parts (from {} to {}) "
-                             "that are still not present or being processed by other background process "
-                             "on this replica between {} and {}", covered.size(), covered.front(), covered.back(), left->name, right->name);
+                out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
+                    + " to " + covered.back() + ") that are still not present or being processed by "
+                    + " other background process on this replica between " + left->name + " and " + right->name;
                 return false;
             }
         }
@@ -2527,8 +2480,8 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
 
         if (left_mutation_ver != right_mutation_ver)
         {
-            out_reason = PreformattedMessage::create("Current mutation versions of parts {} and {} differ: "
-                         "{} and {} respectively", left->name, right->name, left_mutation_ver, right_mutation_ver);
+            out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
+                + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
             return false;
         }
     }
@@ -2539,23 +2492,23 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
 template<typename VirtualPartsT, typename MutationsStateT>
 bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
-    PreformattedMessage & out_reason) const
+    String & out_reason) const
 {
     if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
     {
-        out_reason = PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
+        out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
         return false;
     }
 
     if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
     {
-        out_reason = PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name);
+        out_reason = fmt::format("Quorum insert for part {} is currently in progress", part->name);
         return false;
     }
 
     if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
     {
-        out_reason = PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name);
+        out_reason = fmt::format("Entry for part {} hasn't been read from the replication log yet", part->name);
         return false;
     }
 
@@ -2570,7 +2523,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
         String containing_part = virtual_parts_->getContainingPart(part->info);
         if (containing_part != part->name)
         {
-            out_reason = PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part);
+            out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
             return false;
         }
     }
@@ -2579,7 +2532,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
 }
 
 
-bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const
+bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const
 {
     std::lock_guard lock(queue.state_mutex);
     for (const auto & entry : queue.queue)
@@ -2592,7 +2545,7 @@ bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const Mer
             if (part->info.isDisjoint(MergeTreePartInfo::fromPartName(part_name, queue.format_version)))
                 continue;
 
-            out_reason = PreformattedMessage::create("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
+            out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
             return true;
         }
     }

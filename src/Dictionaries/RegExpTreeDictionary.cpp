@@ -27,7 +27,6 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/RegExpTreeDictionary.h>
 #include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
@@ -569,7 +568,7 @@ bool RegExpTreeDictionary::setAttributesShortCircuit(
     const String & data,
     std::unordered_set<UInt64> & visited_nodes,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    std::unordered_set<String> * defaults) const
+    std::unordered_set<String> * const defaults) const
 {
     if (visited_nodes.contains(id))
         return attributes_to_set.attributesFull() == attributes.size();
@@ -982,6 +981,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                             "to represent regular expressions");
         }
 
+        String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);

@@ -1,6 +1,4 @@
 #include <IO/S3/Client.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -29,10 +27,6 @@
 
 #include <base/sleep.h>
 
-
-#ifdef ADDRESS_SANITIZER
-#include <sanitizer/lsan_interface.h>
-#endif
 
 namespace ProfileEvents
 {
@@ -310,9 +304,6 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.setApiMode(api_mode);
 
-    if (isS3ExpressBucket())
-        request.setIsS3ExpressBucket();
-
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -384,8 +375,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return enrichErrorMessage(
-        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
+    return HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
@@ -405,8 +395,7 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return enrichErrorMessage(
-        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
+    return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
@@ -541,11 +530,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-
-    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
-    if (client_settings.is_s3express_bucket)
-        request.setIsS3ExpressBucket();
-    else if (client_settings.disable_checksum)
+    if (client_settings.disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -654,14 +639,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 if constexpr (IsReadMethod)
                 {
-                    if (isClientForDisk())
+                    if (client_configuration.for_disk_s3)
                         ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
                 }
                 else
                 {
-                    if (isClientForDisk())
+                    if (client_configuration.for_disk_s3)
                         ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
@@ -689,23 +674,6 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     };
 
     return doRequest(request, with_retries);
-}
-
-template <typename RequestResult>
-RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
-{
-    if (outcome.IsSuccess() || !isClientForDisk())
-        return std::forward<RequestResult>(outcome);
-
-    String enriched_message = fmt::format(
-        "{} {}",
-        outcome.GetError().GetMessage(),
-        "This error happened for S3 disk.");
-
-    auto error = outcome.GetError();
-    error.SetMessage(enriched_message);
-
-    return RequestResult(error);
 }
 
 bool Client::supportsMultiPartCopy() const
@@ -880,14 +848,7 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    {
-#ifdef ADDRESS_SANITIZER
-        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
-        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
-        __lsan::ScopedDisabler lsan_disabler;
-#endif
-        Aws::InitAPI(aws_options);
-    }
+    Aws::InitAPI(aws_options);
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
@@ -954,9 +915,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
-        client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
-                                            : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings);
+        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        client_settings
+    );
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
@@ -995,11 +956,6 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
-bool isS3ExpressEndpoint(const std::string & endpoint)
-{
-    /// On one hand this check isn't 100% reliable, on the other - all it will change is whether we attach checksums to the requests.
-    return endpoint.contains("s3express");
-}
 }
 
 }

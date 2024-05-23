@@ -97,12 +97,8 @@ protected:
     {
         try
         {
-            auto buf = BuilderRWBufferFromHTTP(getPingURI())
-                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withTimeouts(getHTTPTimeouts())
-                           .create(credentials);
-
-            return checkString(PING_OK_ANSWER, *buf);
+            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, getHTTPTimeouts(), credentials);
+            return checkString(PING_OK_ANSWER, buf);
         }
         catch (...)
         {
@@ -202,14 +198,10 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            auto buf = BuilderRWBufferFromHTTP(uri)
-                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(getHTTPTimeouts())
-                           .create(credentials);
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
 
-            bool res = false;
-            readBoolText(res, *buf);
+            bool res;
+            readBoolText(res, buf);
             is_schema_allowed = res;
         }
 
@@ -228,18 +220,14 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            auto buf = BuilderRWBufferFromHTTP(uri)
-                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(getHTTPTimeouts())
-                           .create(credentials);
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
 
             std::string character;
-            readStringBinary(character, *buf);
+            readStringBinary(character, buf);
             if (character.length() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
                     character, BridgeHelperMixin::serviceAlias());
-            else if (character.empty())
+            else if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
             else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;

@@ -17,8 +17,6 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <azure/storage/common/storage_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -42,10 +40,6 @@
 
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 using namespace Azure::Storage::Blobs;
 
@@ -74,6 +68,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+
 }
 
 namespace
@@ -172,7 +167,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
-        return s == "auto" || FormatFactory::instance().exists(s);
+        return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
     };
 
     if (engine_args.size() == 4)
@@ -205,7 +200,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     else if (engine_args.size() == 6)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+        if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
@@ -223,7 +218,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     else if (engine_args.size() == 7)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+        if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
@@ -254,10 +249,6 @@ AzureObjectStorage::SettingsPtr StorageAzureBlob::createSettings(const ContextPt
     auto settings_ptr = std::make_unique<AzureObjectStorageSettings>();
     settings_ptr->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
     settings_ptr->max_single_read_retries = context_settings.azure_max_single_read_retries;
-    settings_ptr->strict_upload_part_size = context_settings.azure_strict_upload_part_size;
-    settings_ptr->max_upload_part_size = context_settings.azure_max_upload_part_size;
-    settings_ptr->max_blocks_in_multipart_upload = context_settings.azure_max_blocks_in_multipart_upload;
-    settings_ptr->min_upload_part_size = context_settings.azure_min_upload_part_size;
     settings_ptr->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
 
     return settings_ptr;
@@ -306,8 +297,8 @@ void registerStorageAzureBlob(StorageFactory & factory)
         auto settings = StorageAzureBlob::createSettings(args.getContext());
 
         return std::make_shared<StorageAzureBlob>(
-            configuration,
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container, configuration.getConnectionURL().toString()),
+            std::move(configuration),
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
             args.getContext(),
             args.table_id,
             args.columns,
@@ -342,38 +333,33 @@ static bool containerExists(std::unique_ptr<BlobServiceClient> &blob_service_cli
     return false;
 }
 
-AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container)
+AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only)
 {
     AzureClientPtr result;
 
     if (configuration.is_connection_string)
     {
-        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
         std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(configuration.connection_url));
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
+        bool container_exists = containerExists(blob_service_client,configuration.container);
 
-        if (attempt_to_create_container)
+        if (!container_exists)
         {
-            bool container_exists = containerExists(blob_service_client,configuration.container);
-            if (!container_exists)
-            {
-                if (is_read_only)
-                    throw Exception(
-                        ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "AzureBlobStorage container does not exist '{}'",
-                        configuration.container);
+            if (is_read_only)
+                throw Exception(
+                    ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "AzureBlobStorage container does not exist '{}'",
+                    configuration.container);
 
-                try
+            try
+            {
+                result->CreateIfNotExists();
+            } catch (const Azure::Storage::StorageException & e)
+            {
+                if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                    && e.ReasonPhrase == "The specified container already exists."))
                 {
-                    result->CreateIfNotExists();
-                }
-                catch (const Azure::Storage::StorageException & e)
-                {
-                    if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                        && e.ReasonPhrase == "The specified container already exists."))
-                    {
-                        throw;
-                    }
+                    throw;
                 }
             }
         }
@@ -388,28 +374,19 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
 
         std::unique_ptr<BlobServiceClient> blob_service_client;
-        size_t pos = configuration.connection_url.find('?');
-        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential;
         if (storage_shared_key_credential)
         {
             blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
         }
         else
         {
-            /// If conneciton_url does not have '?', then its not SAS
-            if (pos == std::string::npos)
-            {
-                auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, workload_identity_credential);
-            }
-            else
-            {
-                managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
-            }
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
         }
 
+        bool container_exists = containerExists(blob_service_client,configuration.container);
+
         std::string final_url;
+        size_t pos = configuration.connection_url.find('?');
         if (pos != std::string::npos)
         {
             auto url_without_sas = configuration.connection_url.substr(0, pos);
@@ -420,30 +397,12 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             final_url
                 = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
 
-        if (!attempt_to_create_container)
-        {
-            if (storage_shared_key_credential)
-                return std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-            else
-                return std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
-        }
-
-        bool container_exists = containerExists(blob_service_client,configuration.container);
         if (container_exists)
         {
             if (storage_shared_key_credential)
                 result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
             else
-            {
-                /// If conneciton_url does not have '?', then its not SAS
-                if (pos == std::string::npos)
-                {
-                    auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                    result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
-                }
-                else
-                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
-            }
+                result = std::make_unique<BlobContainerClient>(final_url);
         }
         else
         {
@@ -455,8 +414,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             try
             {
                 result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            }
-            catch (const Azure::Storage::StorageException & e)
+            } catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
                       && e.ReasonPhrase == "The specified container already exists.")
@@ -464,16 +422,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                     if (storage_shared_key_credential)
                         result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
                     else
-                    {
-                        /// If conneciton_url does not have '?', then its not SAS
-                        if (pos == std::string::npos)
-                        {
-                            auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                            result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
-                        }
-                        else
-                            result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
-                    }
+                        result = std::make_unique<BlobContainerClient>(final_url);
                 }
                 else
                 {
@@ -495,13 +444,6 @@ Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
     return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
 }
 
-bool StorageAzureBlob::Configuration::withGlobsIgnorePartitionWildcard() const
-{
-    if (!withPartitionWildcard())
-        return withGlobs();
-
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
-}
 
 StorageAzureBlob::StorageAzureBlob(
     const Configuration & configuration_,
@@ -550,11 +492,12 @@ StorageAzureBlob::StorageAzureBlob(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     StoredObjects objects;
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -673,36 +616,6 @@ private:
     std::mutex cancel_mutex;
 };
 
-namespace
-{
-    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, AzureObjectStorage * object_storage, const String & path, size_t sequence_number)
-    {
-        if (context->getSettingsRef().azure_truncate_on_insert || !object_storage->exists(StoredObject(path)))
-            return std::nullopt;
-
-        if (context->getSettingsRef().azure_create_new_file_on_insert)
-        {
-            auto pos = path.find_first_of('.');
-            String new_path;
-            do
-            {
-            new_path = path.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : path.substr(pos));
-                ++sequence_number;
-            }
-            while (object_storage->exists(StoredObject(new_path)));
-
-            return new_path;
-        }
-
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Object with key {} already exists. "
-            "If you want to overwrite it, enable setting azure_truncate_on_insert, if you "
-            "want to create a new file on each insert, enable setting azure_create_new_file_on_insert",
-            path);
-    }
-}
-
 class PartitionedStorageAzureBlobSink : public PartitionedSink, WithContext
 {
 public:
@@ -729,8 +642,6 @@ public:
     {
         auto partition_key = replaceWildcards(blob, partition_id);
         validateKey(partition_key);
-        if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(getContext(), object_storage, partition_key, 1))
-            partition_key = *new_path;
 
         return std::make_shared<StorageAzureBlobSink>(
             format,
@@ -803,8 +714,7 @@ private:
 
 void ReadFromAzureBlob::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -822,12 +732,12 @@ void StorageAzureBlob::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (partition_by && configuration.withPartitionWildcard())
+    if (partition_by && configuration.withWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned Azure storage is not implemented yet");
 
     auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -863,13 +773,13 @@ void ReadFromAzureBlob::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             storage->object_storage.get(), configuration.container, configuration.blob_path,
-            predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
+            predicate, storage->virtual_columns, context, nullptr, context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
             storage->object_storage.get(), configuration.container, configuration.blobs_paths,
-            predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
+            predicate, storage->virtual_columns, context, nullptr, context->getFileProgressCallback());
     }
 }
 
@@ -909,17 +819,12 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
 SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    if (configuration.withGlobsIgnorePartitionWildcard())
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
-
-    auto path = configuration.blobs_paths.front();
     auto sample_block = metadata_snapshot->getSampleBlock();
-    auto chosen_compression_method = chooseCompressionMethod(path, configuration.compression_method);
+    auto chosen_compression_method = chooseCompressionMethod(configuration.blobs_paths.back(), configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && configuration.withPartitionWildcard();
+    bool is_partitioned_implementation = partition_by_ast && configuration.withWildcard();
 
     if (is_partitioned_implementation)
     {
@@ -931,14 +836,44 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             format_settings,
             chosen_compression_method,
             object_storage.get(),
-            path);
+            configuration.blobs_paths.back());
     }
     else
     {
-        if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(local_context, object_storage.get(), path, configuration.blobs_paths.size()))
+        if (configuration.withGlobs())
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
+
+        bool truncate_in_insert = local_context->getSettingsRef().azure_truncate_on_insert;
+
+        if (!truncate_in_insert && object_storage->exists(StoredObject(configuration.blob_path)))
         {
-            configuration.blobs_paths.push_back(*new_path);
-            path = *new_path;
+
+            if (local_context->getSettingsRef().azure_create_new_file_on_insert)
+            {
+                size_t index = configuration.blobs_paths.size();
+                const auto & first_key = configuration.blobs_paths[0];
+                auto pos = first_key.find_first_of('.');
+                String new_key;
+
+                do
+                {
+                    new_key = first_key.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : first_key.substr(pos));
+                    ++index;
+                }
+                while (object_storage->exists(StoredObject(new_key)));
+
+                configuration.blobs_paths.push_back(new_key);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Object in bucket {} with key {} already exists. "
+                    "If you want to overwrite it, enable setting azure_truncate_on_insert, if you "
+                    "want to create a new file on each insert, enable setting azure_create_new_file_on_insert",
+                    configuration.container, configuration.blobs_paths.back());
+            }
         }
 
         return std::make_shared<StorageAzureBlobSink>(
@@ -948,8 +883,18 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             format_settings,
             chosen_compression_method,
             object_storage.get(),
-            path);
+            configuration.blobs_paths.back());
     }
+}
+
+NamesAndTypesList StorageAzureBlob::getVirtuals() const
+{
+    return virtual_columns;
+}
+
+Names StorageAzureBlob::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageAzureBlob::supportsPartitionBy() const
@@ -1238,7 +1183,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
-    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(create_reader_pool, "AzureReader"))
+    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
     if (reader)

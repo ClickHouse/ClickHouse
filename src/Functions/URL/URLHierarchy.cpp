@@ -29,7 +29,7 @@ public:
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"URL", &isString<IDataType>, nullptr, "String"},
         };
 
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
@@ -67,13 +67,11 @@ public:
              * (http, file - fit, mailto, magnet - do not fit), and after two slashes still at least something is there.
              * For the rest, just return an empty array.
              */
-            if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
+            if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
             {
                 pos = end;
                 return false;
             }
-            else
-                pos += 3;
 
             /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
