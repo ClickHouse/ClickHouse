@@ -541,16 +541,6 @@ Result:
 └────────────────────┘
 ```
 
-## isNaN
-
-Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
-
-**Syntax**
-
-```sql
-isNaN(x)
-```
-
 ## hasColumnInTable
 
 Given the database name, the table name, and the column name as constant strings, returns 1 if the given column exists, otherwise 0.

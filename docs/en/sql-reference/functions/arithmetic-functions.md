@@ -194,6 +194,16 @@ Result:
 
 You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
+## isNaN
+
+Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
+
+**Syntax**
+
+```sql
+isNaN(x)
+```
+
 ## modulo
 
 Calculates the remainder of the division of two values `a` by `b`.
