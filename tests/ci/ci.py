@@ -1917,7 +1917,7 @@ def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> No
             print(
                 f"Canceling PR workflow run_id: [{wf_data.run_id}], pr: [{pr_number}]"
             )
-            GitHub.cancel_wf(GITHUB_REPOSITORY, get_best_robot_token(), wf_data.run_id)
+            GitHub.cancel_wf(GITHUB_REPOSITORY, wf_data.run_id, get_best_robot_token())
     else:
         if not wf_data.sync_pr_run_id:
             print("WARNING: Sync PR run id has not been found")
@@ -1925,8 +1925,8 @@ def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> No
             print(f"Canceling sync PR workflow run_id: [{wf_data.sync_pr_run_id}]")
             GitHub.cancel_wf(
                 "ClickHouse/clickhouse-private",
-                get_best_robot_token(),
                 wf_data.sync_pr_run_id,
+                get_best_robot_token(),
             )
 
 
