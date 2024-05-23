@@ -274,15 +274,25 @@ public:
         }
 
         Int64 result;
-        if (isDateOrDate32(result_type))
+        if (isDate(result_type) || isDate32(result_type))
             result = date_lut.makeDayNum(year, month, day);
         else if (isDateTime(result_type))
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
+#ifndef __clang_analyzer__
+            /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
+            /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
+            /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
             result = DecimalUtils::decimalFromComponents<DateTime64>(
                 date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
-                static_cast<Int64>(fraction),
+                fraction,
                 static_cast<UInt32>(scale));
+#else
+        {
+            UNUSED(fraction);
+            result = 0;
+        }
+#endif
 
         if (result < min_date)
             return min_date;
