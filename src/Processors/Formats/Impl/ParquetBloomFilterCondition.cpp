@@ -120,24 +120,9 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 
 }
 
-ParquetBloomFilterCondition::ParquetBloomFilterCondition(
-    const DB::ActionsDAGPtr & filter_actions_dag,
-    const IndexToColumnBF & index_to_column_hasher,
-    DB::ContextPtr context_,
-    const DB::Block & header_)
-: header(header_)
+ParquetBloomFilterCondition::ParquetBloomFilterCondition(const std::vector<RPNElement> & rpn_)
+: rpn(rpn_)
 {
-    if (!filter_actions_dag)
-    {
-        rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
-    RPNBuilder<RPNElement> builder(
-        filter_actions_dag->getOutputs().at(0),
-        context_,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, index_to_column_hasher, out); });
-    rpn = std::move(builder).extractRPN();
 }
 
 bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & column_index_to_bf)
@@ -216,9 +201,10 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
     return rpn_stack[0].can_be_true;
 }
 
-bool ParquetBloomFilterCondition::extractAtomFromTree(
+bool BloomFilterRPNBuilder::extractAtomFromTree(
     const RPNBuilderTreeNode & node,
     const IndexToColumnBF & index_to_column_hasher,
+    const Block & header,
     ParquetBloomFilterCondition::RPNElement & out)
 {
     {
@@ -247,16 +233,17 @@ bool ParquetBloomFilterCondition::extractAtomFromTree(
         }
     }
 
-    return traverseFunction(node, index_to_column_hasher, out);
+    return traverseFunction(node, index_to_column_hasher, header, out);
 }
 
-bool ParquetBloomFilterCondition::traverseTreeIn(
+bool BloomFilterRPNBuilder::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const ConstSetPtr &,
     const DataTypePtr & type,
     const ColumnPtr & column,
     const IndexToColumnBF & index_to_column_hasher,
+    const Block & header,
     ParquetBloomFilterCondition::RPNElement & out)
 {
     auto key_node_column_name = key_node.getColumnName();
@@ -302,7 +289,7 @@ bool ParquetBloomFilterCondition::traverseTreeIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < key_node_function_arguments_size; ++index)
-                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], index_to_column_hasher, out);
+                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], index_to_column_hasher, header, out);
 
             return match_with_subtype;
         }
@@ -311,9 +298,10 @@ bool ParquetBloomFilterCondition::traverseTreeIn(
     return false;
 }
 
-bool ParquetBloomFilterCondition::traverseFunction(
+bool BloomFilterRPNBuilder::traverseFunction(
     const RPNBuilderTreeNode & node,
     const IndexToColumnBF & index_to_column_hasher,
+    const Block & header,
     ParquetBloomFilterCondition::RPNElement & out)
 {
     bool maybe_useful = false;
@@ -327,7 +315,7 @@ bool ParquetBloomFilterCondition::traverseFunction(
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
-            if (traverseFunction(argument, index_to_column_hasher, out))
+            if (traverseFunction(argument, index_to_column_hasher, header, out))
                 maybe_useful = true;
         }
 
@@ -346,7 +334,7 @@ bool ParquetBloomFilterCondition::traverseFunction(
                     if (prepared_set->hasExplicitSetElements())
                     {
                         const auto prepared_info = getPreparedSetInfo(prepared_set);
-                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, index_to_column_hasher, out))
+                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, index_to_column_hasher, header, out))
                             maybe_useful = true;
                     }
                 }
@@ -363,12 +351,12 @@ bool ParquetBloomFilterCondition::traverseFunction(
 
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, index_to_column_hasher, out))
+                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, index_to_column_hasher, header, out))
                     maybe_useful = true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, index_to_column_hasher, out))
+                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, index_to_column_hasher, header, out))
                     maybe_useful = true;
             }
         }
@@ -377,12 +365,13 @@ bool ParquetBloomFilterCondition::traverseFunction(
     return maybe_useful;
 }
 
-bool ParquetBloomFilterCondition::traverseTreeEquals(
+bool BloomFilterRPNBuilder::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
     const IndexToColumnBF & index_to_column_hasher,
+    const Block & header,
     ParquetBloomFilterCondition::RPNElement & out)
 {
     auto key_column_name = key_node.getColumnName();
@@ -482,6 +471,27 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
     }
 
     return true;
+}
+
+std::vector<ParquetBloomFilterCondition::RPNElement> BloomFilterRPNBuilder::build(
+    const DB::ActionsDAGPtr & filter_actions_dag,
+    const DB::BloomFilterRPNBuilder::IndexToColumnBF & index_to_column_hasher,
+    DB::ContextPtr context,
+    const DB::Block & header)
+{
+    if (!filter_actions_dag)
+    {
+        std::vector<ParquetBloomFilterCondition::RPNElement> rpn;
+        rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+        return rpn;
+    }
+
+    RPNBuilder<RPNElement> builder(
+        filter_actions_dag->getOutputs().at(0),
+        context,
+        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, index_to_column_hasher, header, out); });
+
+    return std::move(builder).extractRPN();
 }
 
 }
