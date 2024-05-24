@@ -490,11 +490,6 @@ def trigger_mergeable_check(
 
     state: StatusType = SUCCESS
 
-    if success:
-        description = ", ".join(success)
-    else:
-        description = "awaiting job statuses"
-
     if fail:
         description = "failed: " + ", ".join(fail)
         state = FAILURE
@@ -503,6 +498,11 @@ def trigger_mergeable_check(
         state = FAILURE
     elif pending:
         description = "pending: " + ", ".join(pending)
+        state = PENDING
+    else:
+        # all good
+        description = ", ".join(success)
+
     description = format_description(description)
 
     if not set_if_green and state == SUCCESS:
