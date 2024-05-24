@@ -210,7 +210,8 @@ void SerializationObject<Parser>::serializeBinaryBulkStateSuffix(
 template <typename Parser>
 void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     checkSerializationIsSupported(settings);
     if (state)
@@ -258,7 +259,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectData);
-    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state);
+    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state, cache);
     settings.path.pop_back();
 
     state = std::move(state_object);
