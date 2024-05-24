@@ -328,8 +328,7 @@ extractAllGroups(text, regexp)
 
 **Returned values**
 
-- If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`). [Array](../data-types/array.md).
-- If there is no matching group, returns an empty array. [Array](../data-types/array.md).
+- If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`). If there is no matching group, it returns an empty array. [Array](../data-types/array.md).
 
 **Example**
 

@@ -40,7 +40,7 @@ Alias:
 - `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
-**Returned values**
+**Returned value**
 
 - Starting position in bytes and counting from 1, if the substring was found. [UInt64](../data-types/int-uint.md).
 - 0, if the substring was not found. [UInt64](../data-types/int-uint.md).
@@ -206,7 +206,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md).
 
-**Returned values**
+**Returned value**
 
 - Array of the starting position in bytes and counting from 1, if the substring was found.
 - 0, if the substring was not found.
@@ -492,8 +492,7 @@ multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
 
 **Returned value**
 
-- index (starting from 1) of the leftmost found needle.
-- 0, if there was no match.
+- index (starting from 1) of the leftmost found needle. Otherwise 0, if there was no match. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -526,8 +525,7 @@ multiSearchFirstIndexCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
 
 **Returned value**
 
-- index (starting from 1) of the leftmost found needle.
-- 0, if there was no match.
+- index (starting from 1) of the leftmost found needle. Otherwise 0, if there was no match. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -560,8 +558,7 @@ multiSearchFirstIndexUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Returned value**
 
-- index (starting from 1) of the leftmost found needle.
-- 0, if there was no match.
+- index (starting from 1) of the leftmost found needle, Otherwise 0, if there was no match. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -596,8 +593,7 @@ multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needl
 
 **Returned value**
 
-- index (starting from 1) of the leftmost found needle.
-- 0, if there was no match.
+- index (starting from 1) of the leftmost found needle. Otherwise 0, if there was no match. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -1340,7 +1336,7 @@ countSubstrings(haystack, needle[, start_pos])
 - `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
-**Returned values**
+**Returned value**
 
 - The number of occurrences. [UInt64](../data-types/int-uint.md).
 
@@ -1387,7 +1383,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 - `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
-**Returned values**
+**Returned value**
 
 - The number of occurrences. [UInt64](../data-types/int-uint.md).
 
@@ -1439,7 +1435,7 @@ countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 - `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
-**Returned values**
+**Returned value**
 
 - The number of occurrences. [UInt64](../data-types/int-uint.md).
 
@@ -1573,7 +1569,7 @@ Alias: `REGEXP_EXTRACT(haystack, pattern[, index])`.
 - `pattern` — String, regexp expression, must be constant. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `index` – An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../data-types/int-uint.md). Optional.
 
-**Returned values**
+**Returned value**
 
 `pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression. [String](../data-types/string.md).
 
@@ -1612,10 +1608,9 @@ hasSubsequence(haystack, needle)
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-**Returned values**
+**Returned value**
 
-- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
-- 0, otherwise. [UInt8](../data-types/int-uint.md).
+- 1, if needle is a subsequence of haystack, 0 otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -1648,10 +1643,9 @@ hasSubsequenceCaseInsensitive(haystack, needle)
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-**Returned values**
+**Returned value**
 
-- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
-- 0, otherwise. [UInt8](../data-types/int-uint.md).
+- 1, if needle is a subsequence of haystack, 0 otherwise [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -1684,10 +1678,9 @@ hasSubsequenceUTF8(haystack, needle)
 - `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-**Returned values**
+**Returned value**
 
-- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
-- 0, otherwise. [UInt8](../data-types/int-uint.md).
+- 1, if needle is a subsequence of haystack, 0, otherwise. [UInt8](../data-types/int-uint.md).
 
 Query:
 
@@ -1720,10 +1713,9 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 - `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-**Returned values**
+**Returned value**
 
-- 1, if needle is a subsequence of haystack. [UInt8](../data-types/int-uint.md).
-- 0, otherwise. [UInt8](../data-types/int-uint.md).
+- 1, if needle is a subsequence of haystack, 0 otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -1758,8 +1750,7 @@ hasToken(haystack, token)
 
 **Returned value**
 
-- 1, if the token is present in the haystack.
-- 0, if the token is not present.
+- 1, if the token is present in the haystack, 0 otherwise. [UInt8](../data-types/int-uint.md).
 
 **Implementation details**
 
@@ -1794,9 +1785,7 @@ hasTokenOrNull(haystack, token)
 
 **Returned value**
 
-- 1, if the token is present in the haystack.
-- 0, if the token is not present in the haystack.
-- null, if the token is ill-formed.
+- 1, if the token is present in the haystack, 0 if it is not present, and null if the token is ill formed. 
 
 **Implementation details**
 
@@ -1833,8 +1822,7 @@ hasTokenCaseInsensitive(haystack, token)
 
 **Returned value**
 
-- 1, if the token is present in the haystack.
-- 0, otherwise.
+- 1, if the token is present in the haystack, 0 otherwise. [UInt8](../data-types/int-uint.md).
 
 **Implementation details**
 
@@ -1869,9 +1857,7 @@ hasTokenCaseInsensitiveOrNull(haystack, token)
 
 **Returned value**
 
-- 1, if the token is present in the haystack.
-- 0, if token is not present.
-- null, if the token is ill-formed.
+- 1, if the token is present in the haystack, 0 if the token is not present, otherwise [`null`](../data-types/nullable.md) if the token is ill-formed. [UInt8](../data-types/int-uint.md).
 
 **Implementation details**
 

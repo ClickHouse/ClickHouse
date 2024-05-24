@@ -48,8 +48,7 @@ clickhouse.com
 
 **Returned values**
 
-- Host name. If ClickHouse can parse the input string as a URL. [String](../data-types/string.md).
-- Empty string. If ClickHouse can’t parse the input string as a URL. [String](../data-types/string.md).
+- Host name if ClickHouse can parse the input string as a URL, otherwise an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -89,8 +88,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name. If ClickHouse can parse the input string as a URL. [String](../data-types/string.md).
-- Empty string. If ClickHouse cannot parse the input string as a URL. [String](../data-types/string.md).
+- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../data-types/string.md).
 
 **Example**
 

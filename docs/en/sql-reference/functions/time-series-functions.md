@@ -79,8 +79,7 @@ seriesPeriodDetectFFT(series);
 
 **Returned value**
 
-- A real value equal to the period of series data. [Float64](../data-types/float.md).
-- Returns NAN when number of data points are less than four. [nan](../data-types/float.md/#nan-and-inf).
+- A real value equal to the period of series data. NaN when number of data points are less than four. [Float64](../data-types/float.md).
 
 **Examples**
 
