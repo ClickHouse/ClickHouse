@@ -12,3 +12,19 @@ FROM
 ORDER BY
     msg ASC,
     time ASC
+SETTINGS allow_experimental_analyzer = 0
+SELECT
+    __table1.msg AS msg,
+    toDateTime(intDiv(__table1.ms, 1000)) AS time
+FROM
+(
+    SELECT
+        \'hello\' AS msg,
+        toUInt64(__table2.t) * 1000 AS ms
+    FROM generateRandom(\'t DateTime\') AS __table2
+    LIMIT _CAST(10, \'UInt64\')
+) AS __table1
+ORDER BY
+    __table1.msg ASC,
+    toDateTime(intDiv(__table1.ms, 1000)) ASC
+SETTINGS allow_experimental_analyzer = 1
