@@ -28,7 +28,7 @@ domain(url)
 
 **Arguments**
 
-- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -77,7 +77,7 @@ topLevelDomain(url)
 
 **Arguments**
 
-- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -89,8 +89,8 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name. If ClickHouse can parse the input string as a URL. [String](../../sql-reference/data-types/string.md).
-- Empty string. If ClickHouse cannot parse the input string as a URL. [String](../../sql-reference/data-types/string.md).
+- Domain name. If ClickHouse can parse the input string as a URL. [String](../data-types/string.md).
+- Empty string. If ClickHouse cannot parse the input string as a URL. [String](../data-types/string.md).
 
 **Example**
 
@@ -153,12 +153,12 @@ cutToFirstSignificantSubdomainCustom(URL, TLD)
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `URL` — URL. [String](../data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../data-types/string.md).
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../data-types/string.md).
 
 **Example**
 
@@ -205,12 +205,12 @@ cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `URL` — URL. [String](../data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../data-types/string.md).
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../data-types/string.md).
 
 **Example**
 
@@ -257,12 +257,12 @@ firstSignificantSubdomainCustom(URL, TLD)
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `URL` — URL. [String](../data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../data-types/string.md).
 
 **Returned value**
 
-- First significant subdomain. [String](../../sql-reference/data-types/string.md).
+- First significant subdomain. [String](../data-types/string.md).
 
 **Example**
 
@@ -408,7 +408,7 @@ netloc(URL)
 
 **Arguments**
 
-- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -462,8 +462,8 @@ cutURLParameter(URL, name)
 
 **Arguments**
 
-- `url` — URL. [String](../../sql-reference/data-types/string.md).
-- `name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
+- `url` — URL. [String](../data-types/string.md).
+- `name` — name of URL parameter. [String](../data-types/string.md) or [Array](../data-types/array.md) of Strings.
 
 **Returned value**
 

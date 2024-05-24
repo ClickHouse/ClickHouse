@@ -19,13 +19,13 @@ splitByChar(separator, s[, max_substrings]))
 
 **Arguments**
 
-- `separator` — The separator which should contain exactly one character. [String](../../sql-reference/data-types/string.md).
-- `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+- `separator` — The separator which should contain exactly one character. [String](../data-types/string.md).
+- `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
  Empty substrings may be selected when:
@@ -72,13 +72,13 @@ splitByString(separator, s[, max_substrings]))
 
 **Arguments**
 
-- `separator` — The separator. [String](../../sql-reference/data-types/string.md).
-- `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+- `separator` — The separator. [String](../data-types/string.md).
+- `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 Empty substrings may be selected when:
@@ -129,13 +129,13 @@ splitByRegexp(regexp, s[, max_substrings]))
 **Arguments**
 
 - `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+- `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 Empty substrings may be selected when:
@@ -186,13 +186,13 @@ splitByWhitespace(s[, max_substrings]))
 
 **Arguments**
 
-- `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+- `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
  
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -225,13 +225,13 @@ splitByNonAlpha(s[, max_substrings]))
 
 **Arguments**
 
-- `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+- `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -288,12 +288,12 @@ Alias: `splitByAlpha`
 
 **Arguments**
 
-- `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+- `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -357,12 +357,12 @@ ngrams(string, ngramsize)
 
 **Arguments**
 
-- `string` — String. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `ngramsize` — The size of an n-gram. [UInt](../../sql-reference/data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `ngramsize` — The size of an n-gram. [UInt](../data-types/int-uint.md).
 
 **Returned values**
 
-- Array with n-grams. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+- Array with n-grams. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Example**
 
@@ -384,7 +384,7 @@ Splits a string into tokens using non-alphanumeric ASCII characters as separator
 
 **Arguments**
 
-- `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
 
 **Returned value**
 

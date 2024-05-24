@@ -17,8 +17,8 @@ tumble(time_attr, interval [, timezone])
 ```
 
 **Arguments**
-- `time_attr` - Date and time. [DateTime](../../sql-reference/data-types/datetime.md) data type.
-- `interval` - Window interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type.
+- `time_attr` - Date and time. [DateTime](../data-types/datetime.md) data type.
+- `interval` - Window interval in [Interval](../data-types/special-data-types/interval.md) data type.
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). 
 
 **Returned values**
@@ -51,9 +51,9 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 
 **Arguments**
 
-- `time_attr` - Date and time. [DateTime](../../sql-reference/data-types/datetime.md) data type.
-- `hop_interval` - Hop interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type. Should be a positive number.
-- `window_interval` - Window interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type. Should be a positive number.
+- `time_attr` - Date and time. [DateTime](../data-types/datetime.md) data type.
+- `hop_interval` - Hop interval in [Interval](../data-types/special-data-types/interval.md) data type. Should be a positive number.
+- `window_interval` - Window interval in [Interval](../data-types/special-data-types/interval.md) data type. Should be a positive number.
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). 
 
 **Returned values**

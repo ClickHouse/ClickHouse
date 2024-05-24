@@ -18,7 +18,7 @@ char(number_1, [number_2, ..., number_n]);
 
 **Arguments**
 
-- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
+- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../data-types/int-uint.md), [Float](../data-types/float.md).
 
 **Returned value**
 
@@ -86,21 +86,21 @@ The function is using uppercase letters `A-F` and not using any prefixes (like `
 
 For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if the leading digit is zero.
 
-Values of type [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
+Values of type [Date](../data-types/date.md) and [DateTime](../data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
 
-For [String](../../sql-reference/data-types/string.md) and [FixedString](../../sql-reference/data-types/fixedstring.md), all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
+For [String](../data-types/string.md) and [FixedString](../data-types/fixedstring.md), all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
 
-Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+Values of [Float](../data-types/float.md) and [Decimal](../data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
 Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order string.
 
 **Arguments**
 
-- `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `arg` — A value to convert to hexadecimal. Types: [String](../data-types/string.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md), [Date](../data-types/date.md) or [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
-- A string with the hexadecimal representation of the argument. [String](../../sql-reference/data-types/string.md).
+- A string with the hexadecimal representation of the argument. [String](../data-types/string.md).
 
 **Examples**
 
@@ -181,13 +181,13 @@ unhex(arg)
 
 **Arguments**
 
-- `arg` — A string containing any number of hexadecimal digits. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `arg` — A string containing any number of hexadecimal digits. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
 
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
-- A binary string (BLOB). [String](../../sql-reference/data-types/string.md).
+- A binary string (BLOB). [String](../data-types/string.md).
 
 **Example**
 
@@ -231,21 +231,21 @@ Alias: `BIN`.
 
 For integer arguments, it prints bin digits from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte if the leading digit is zero.
 
-Values of type [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for `Date` and the value of Unix Timestamp for `DateTime`).
+Values of type [Date](../data-types/date.md) and [DateTime](../data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for `Date` and the value of Unix Timestamp for `DateTime`).
 
-For [String](../../sql-reference/data-types/string.md) and [FixedString](../../sql-reference/data-types/fixedstring.md), all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
+For [String](../data-types/string.md) and [FixedString](../data-types/fixedstring.md), all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
 
-Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+Values of [Float](../data-types/float.md) and [Decimal](../data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
 Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order string.
 
 **Arguments**
 
-- `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
+- `arg` — A value to convert to binary. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md), [Date](../data-types/date.md), or [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
-- A string with the binary representation of the argument. [String](../../sql-reference/data-types/string.md).
+- A string with the binary representation of the argument. [String](../data-types/string.md).
 
 **Examples**
 
@@ -330,11 +330,11 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 **Arguments**
 
-- `arg` — A string containing any number of binary digits. [String](../../sql-reference/data-types/string.md).
+- `arg` — A string containing any number of binary digits. [String](../data-types/string.md).
 
 **Returned value**
 
-- A binary string (BLOB). [String](../../sql-reference/data-types/string.md).
+- A binary string (BLOB). [String](../data-types/string.md).
 
 **Examples**
 
@@ -386,11 +386,11 @@ bitPositionsToArray(arg)
 
 **Arguments**
 
-- `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
+- `arg` — Integer value. [Int/UInt](../data-types/int-uint.md).
 
 **Returned value**
 
-- An array containing a list of positions of bits that equal `1`, in ascending order. [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+- An array containing a list of positions of bits that equal `1`, in ascending order. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -442,11 +442,11 @@ mortonEncode(args)
 
 **Parameters**
 
-- `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+- `args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
 
 **Returned value**
 
-- A UInt64 code. [UInt64](../../sql-reference/data-types/int-uint.md)
+- A UInt64 code. [UInt64](../data-types/int-uint.md)
 
 **Example**
 
@@ -463,7 +463,7 @@ Result:
 
 ### Expanded mode
 
-Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
+Accepts a range mask ([tuple](../data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../data-types/int-uint.md) as other arguments.
 
 Each number in the mask configures the amount of range expansion:<br/>
 1 - no expansion<br/>
@@ -480,13 +480,13 @@ mortonEncode(range_mask, args)
 
 **Parameters**
 - `range_mask`: 1-8.
-- `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+- `args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
 
 Note: when using columns for `args` the provided `range_mask` tuple should still be a constant. 
 
 **Returned value**
 
-- A UInt64 code. [UInt64](../../sql-reference/data-types/int-uint.md)
+- A UInt64 code. [UInt64](../data-types/int-uint.md)
 
 
 **Example**
@@ -579,7 +579,7 @@ Result:
 
 **implementation details**
 
-Please note that you can fit only so many bits of information into Morton code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each, three arguments a range of max 2^21 (64/3) each and so on. All overflow will be clamped to zero.
+Please note that you can fit only so many bits of information into Morton code as [UInt64](../data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each, three arguments a range of max 2^21 (64/3) each and so on. All overflow will be clamped to zero.
 
 ## mortonDecode
 
@@ -601,11 +601,11 @@ mortonDecode(tuple_size, code)
 
 **Parameters**
 - `tuple_size`: integer value no more than 8.
-- `code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
+- `code`: [UInt64](../data-types/int-uint.md) code.
 
 **Returned value**
 
-- [tuple](../../sql-reference/data-types/tuple.md) of the specified size. [UInt64](../../sql-reference/data-types/int-uint.md)
+- [tuple](../data-types/tuple.md) of the specified size. [UInt64](../data-types/int-uint.md)
 
 **Example**
 

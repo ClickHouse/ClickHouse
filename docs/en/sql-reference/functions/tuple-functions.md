@@ -35,7 +35,7 @@ tupleElement(tuple, name, [, default_value])
 
 ## untuple
 
-Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+Performs syntactic substitution of [tuple](../data-types/tuple.md#tuplet1-t2) elements in the call location.
 
 The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
 
@@ -49,7 +49,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Arguments**
 
-- `x` — A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
+- `x` — A `tuple` function, column, or tuple of elements. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
@@ -111,7 +111,7 @@ Result:
 
 **See Also**
 
-- [Tuple](../../sql-reference/data-types/tuple.md)
+- [Tuple](../data-types/tuple.md)
 
 ## tupleHammingDistance
 
@@ -125,8 +125,8 @@ tupleHammingDistance(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 Tuples should have the same type of the elements.
 
@@ -198,11 +198,11 @@ tupleToNameValuePairs(tuple)
 
 **Arguments**
 
-- `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
+- `tuple` — Named tuple. [Tuple](../data-types/tuple.md) with any types of values.
 
 **Returned value**
 
-- An array with (name, value) pairs. [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+- An array with (name, value) pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), ...)).
 
 **Example**
 
@@ -273,12 +273,12 @@ Alias: `vectorSum`.
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the sum. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the sum. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -310,12 +310,12 @@ Alias: `vectorDifference`.
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of subtraction. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of subtraction. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -345,12 +345,12 @@ tupleMultiply(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the multiplication. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the multiplication. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -380,12 +380,12 @@ tupleDivide(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of division. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of division. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -415,11 +415,11 @@ tupleNegate(tuple)
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of negation. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of negation. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -449,12 +449,12 @@ tupleMultiplyByNumber(tuple, number)
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
-- `number` — Multiplier. [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
+- `number` — Multiplier. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Returned value**
 
-- Tuple with multiplied values. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with multiplied values. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -484,12 +484,12 @@ tupleDivideByNumber(tuple, number)
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
-- `number` — Divider. [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
+- `number` — Divider. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Returned value**
 
-- Tuple with divided values. [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with divided values. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -517,7 +517,7 @@ tupleConcat(tuples)
 
 **Arguments**
 
-- `tuples` – Arbitrary number of arguments of [Tuple](../../sql-reference/data-types/tuple.md) type.
+- `tuples` – Arbitrary number of arguments of [Tuple](../data-types/tuple.md) type.
 
 **Example**
 

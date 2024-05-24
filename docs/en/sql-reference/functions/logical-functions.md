@@ -6,7 +6,7 @@ sidebar_label: Logical
 
 # Logical Functions
 
-Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../../sql-reference/data-types/int-uint.md) or in some cases `NULL`.
+Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../data-types/int-uint.md) or in some cases `NULL`.
 
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 
@@ -26,13 +26,13 @@ Alias: The [AND operator](../../sql-reference/operators/index.md#logical-and-ope
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
-- `0`, if at least one argument evaluates to `false`. [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
+- `0`, if at least one argument evaluates to `false`. [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
 - `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`. [NULL](../../sql-reference/syntax.md/#null).
-- `1`, otherwise. [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
+- `1`, otherwise. [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
 
 **Example**
 
@@ -78,7 +78,7 @@ Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-opera
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
@@ -86,7 +86,7 @@ Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-opera
 - `0`, if all arguments evaluate to `false`,
 - `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`.
 
-Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
+Type: [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
 
 **Example**
 
@@ -130,12 +130,12 @@ Alias: The [Negation operator](../../sql-reference/operators/index.md#logical-ne
 
 **Arguments**
 
-- `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val` — The value. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
-- `1`, if `val` evaluates to `false`. [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
-- `0`, if `val` evaluates to `true`. [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
+- `1`, if `val` evaluates to `false`. [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
+- `0`, if `val` evaluates to `true`. [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
 - `NULL`, if `val` is `NULL`. [NULL](../../sql-reference/syntax.md/#null).
 
 **Example**
@@ -164,12 +164,12 @@ xor(val1, val2...)
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
-- `1`, for two values: if one of the values evaluates to `false` and other does not. [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
-- `0`, for two values: if both values evaluate to `false` or to both `true`. [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
+- `1`, for two values: if one of the values evaluates to `false` and other does not. [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
+- `0`, for two values: if both values evaluate to `false` or to both `true`. [UInt8](../data-types/int-uint.md) or [Nullable](../data-types/nullable.md)([UInt8](../data-types/int-uint.md)).
 - `NULL`, if at least one of the inputs is `NULL`. [NULL](../../sql-reference/syntax.md/#null).
 
 **Example**
