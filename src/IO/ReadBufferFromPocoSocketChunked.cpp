@@ -44,6 +44,13 @@ void ReadBufferFromPocoSocketChunked::setAsyncCallback(AsyncCallback async_callb
     buffer_socket.setAsyncCallback(async_callback_);
 }
 
+bool ReadBufferFromPocoSocketChunked::hasBufferedData() const
+{
+    if (chunked)
+        return hasPendingData() || buffer_socket.hasPendingData();
+    return hasPendingData();
+}
+
 bool ReadBufferFromPocoSocketChunked::startChunk()
 {
     if (buffer_socket.read(reinterpret_cast<char *>(&chunk_left), sizeof(chunk_left)) < sizeof(chunk_left))

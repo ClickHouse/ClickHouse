@@ -16,7 +16,7 @@ public:
     bool poll(size_t timeout_microseconds);
     void setAsyncCallback(AsyncCallback async_callback_);
 
-    bool hasBufferedData() const { return hasPendingData() || buffer_socket.hasPendingData(); }
+    bool hasBufferedData() const;
 
     Poco::Net::SocketAddress peerAddress() { return peer_address; }
     Poco::Net::SocketAddress ourAddress() { return our_address; }
