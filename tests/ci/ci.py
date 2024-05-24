@@ -1938,6 +1938,7 @@ def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> No
 def _set_pending_statuses(pr_info: PRInfo) -> None:
     commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
     try:
+        print("Set SYNC status to pending")
         commit.create_status(
             state=PENDING,
             target_url="",
@@ -2284,7 +2285,7 @@ def main() -> int:
             assert False, "BUG! Not supported scenario"
 
     ### SET PENDING STATUS
-    elif args.cancel_previous_run:
+    elif args.set_pending_status:
         if pr_info.is_pr:
             _set_pending_statuses(pr_info)
         else:
