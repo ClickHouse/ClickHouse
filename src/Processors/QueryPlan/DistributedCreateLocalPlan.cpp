@@ -78,7 +78,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         new_context->setSetting("enable_positional_arguments", Field(false));
         auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
         // std::cerr << interpreter.getQueryTree()->dumpTree() << std::endl;
-        // query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
         // WriteBufferFromOwnString buf;
         // query_plan->explainPlan(buf, {.header=true, .actions=true});
         // std::cerr << buf.str() << std::endl;
