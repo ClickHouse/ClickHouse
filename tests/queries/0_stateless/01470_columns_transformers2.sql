@@ -7,4 +7,5 @@ SELECT  * EXCEPT 'bytes', COLUMNS('bytes') APPLY formatReadableSize FROM columns
 DROP TABLE IF EXISTS columns_transformers;
 
 SELECT * APPLY x->argMax(x, number) FROM numbers(1);
-EXPLAIN SYNTAX SELECT * APPLY x->argMax(x, number) FROM numbers(1);
+EXPLAIN SYNTAX SELECT * APPLY x->argMax(x, number) FROM numbers(1) SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT * APPLY x->argMax(x, number) FROM numbers(1) SETTINGS allow_experimental_analyzer = 1;

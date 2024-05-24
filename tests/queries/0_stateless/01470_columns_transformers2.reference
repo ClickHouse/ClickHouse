@@ -2,3 +2,7 @@
 0
 SELECT argMax(number, number)
 FROM numbers(1)
+SETTINGS allow_experimental_analyzer = 0
+SELECT argMax(__table1.number, __table1.number) AS `argMax(number, number)`
+FROM numbers(1) AS __table1
+SETTINGS allow_experimental_analyzer = 1
