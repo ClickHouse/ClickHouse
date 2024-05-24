@@ -10,7 +10,7 @@ namespace DB
 class OrderedFileMetadata : public IFileMetadata
 {
 public:
-    using Processor = size_t;
+    using Processor = std::string;
     using Bucket = size_t;
 
     explicit OrderedFileMetadata(
@@ -21,12 +21,15 @@ public:
         size_t max_loading_retries_,
         LoggerPtr log_);
 
-    struct BucketHolder
-    {
-        BucketHolder();
-        ~BucketHolder();
-    };
-    // static bool tryAcquireBucket(const Bucket & bucket, const Processor & processor);
+    struct BucketHolder;
+    using BucketHolderPtr = std::shared_ptr<BucketHolder>;
+
+    static BucketHolderPtr tryAcquireBucket(
+        const std::filesystem::path & zk_path,
+        const Bucket & bucket,
+        const Processor & processor);
+
+    static OrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
 
 private:
     const size_t buckets_num;

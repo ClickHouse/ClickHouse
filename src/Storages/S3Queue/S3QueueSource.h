@@ -66,6 +66,7 @@ public:
         LoggerPtr log;
 
         std::optional<Bucket> current_bucket;
+        OrderedFileMetadata::BucketHolderPtr bucket_holder;
         std::mutex buckets_mutex;
         struct ListedKeys
         {

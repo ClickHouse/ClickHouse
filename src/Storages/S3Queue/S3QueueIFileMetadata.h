@@ -18,23 +18,26 @@ public:
             Failed,
             None
         };
-        State state = State::None;
-        std::atomic<size_t> processed_rows = 0;
-        time_t processing_start_time = 0;
-        time_t processing_end_time = 0;
-        size_t retries = 0;
-        std::string last_exception;
-        ProfileEvents::Counters profile_counters;
+
+        void onProcessing();
+        void onProcessed();
+        void onFailed(const std::string & exception);
+        void updateState(State state_) { state = state_; }
+
+        std::string getException() const;
 
         std::mutex processing_lock;
-        std::mutex metadata_lock;
 
-        void updateState(const FileStatus::State & state_, time_t processing_start_time_ = 0)
-        {
-            std::lock_guard lock(metadata_lock);
-            state = state_;
-            processing_start_time = processing_start_time_;
-        }
+        std::atomic<State> state = State::None;
+        std::atomic<size_t> processed_rows = 0;
+        std::atomic<time_t> processing_start_time = 0;
+        std::atomic<time_t> processing_end_time = 0;
+        std::atomic<size_t> retries = 0;
+        ProfileEvents::Counters profile_counters;
+
+    private:
+        mutable std::mutex last_exception_mutex;
+        std::string last_exception;
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
@@ -47,9 +50,7 @@ public:
         size_t max_loading_retries_,
         LoggerPtr log_);
 
-    /// TODO: remove processing node in desctructor
-
-    virtual ~IFileMetadata() = default;
+    virtual ~IFileMetadata();
 
     bool setProcessing();
     void setProcessed();
@@ -71,6 +72,8 @@ public:
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void setProcessedImpl() = 0;
+    void setFailedNonRetriable();
+    void setFailedRetriable();
 
     const std::string path;
     const std::string node_name;

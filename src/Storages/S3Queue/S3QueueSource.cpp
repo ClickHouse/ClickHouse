@@ -64,7 +64,7 @@ void StorageS3QueueSource::FileIterator::releaseAndResetCurrentBucket()
     {
         if (current_bucket.has_value())
         {
-            metadata->releaseBucket(current_bucket.value());
+            bucket_holder.reset(); /// Release the bucket.
             current_bucket.reset();
         }
     }
@@ -170,7 +170,8 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::getNext
                     continue;
                 }
 
-                if (!metadata->tryAcquireBucket(bucket, current_processor))
+                bucket_holder = metadata->tryAcquireBucket(bucket, current_processor);
+                if (!bucket)
                 {
                     LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
                              bucket, bucket_keys.size());
@@ -473,7 +474,6 @@ void StorageS3QueueSource::appendLogElement(
 
     S3QueueLogElement elem{};
     {
-        std::lock_guard lock(file_status_.metadata_lock);
         elem = S3QueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
@@ -486,7 +486,7 @@ void StorageS3QueueSource::appendLogElement(
             .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
-            .exception = file_status_.last_exception,
+            .exception = file_status_.getException(),
         };
     }
     s3_queue_log->add(std::move(elem));

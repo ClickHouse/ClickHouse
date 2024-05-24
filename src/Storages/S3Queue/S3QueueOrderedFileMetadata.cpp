@@ -2,14 +2,22 @@
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
-    OrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num)
+    OrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
     {
         return sipHash64(path) % buckets_num;
     }
@@ -17,7 +25,7 @@ namespace
     std::string getProcessedPath(const std::filesystem::path & zk_path, const std::string & path, size_t buckets_num)
     {
         if (buckets_num > 1)
-            return zk_path / "buckets" / toString(getBucketForPath(path, buckets_num)) / "processed";
+            return zk_path / "buckets" / toString(getBucketForPathImpl(path, buckets_num)) / "processed";
         else
             return zk_path / "processed";
     }
@@ -27,6 +35,37 @@ namespace
         return Context::getGlobalContextInstance()->getZooKeeper();
     }
 }
+
+struct OrderedFileMetadata::BucketHolder
+{
+    BucketHolder(const std::string & bucket_lock_path_, zkutil::ZooKeeperPtr zk_client_)
+        : bucket_lock_path(bucket_lock_path_), zk_client(zk_client_) {}
+
+    void release()
+    {
+        if (released)
+            return;
+        released = true;
+        zk_client->remove(bucket_lock_path);
+    }
+
+    ~BucketHolder()
+    {
+        try
+        {
+            release();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+private:
+    const std::string bucket_lock_path;
+    const zkutil::ZooKeeperPtr zk_client;
+    bool released = false;
+};
 
 OrderedFileMetadata::OrderedFileMetadata(
     const std::filesystem::path & zk_path,
@@ -45,6 +84,47 @@ OrderedFileMetadata::OrderedFileMetadata(
         log_)
     , buckets_num(buckets_num_)
 {
+}
+
+OrderedFileMetadata::Bucket OrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
+{
+    return getBucketForPathImpl(path_, buckets_num);
+}
+
+static std::string getProcessorInfo(const std::string & processor_id)
+{
+    Poco::JSON::Object json;
+    json.set("hostname", DNSResolver::instance().getHostName());
+    json.set("processor_id", processor_id);
+
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+OrderedFileMetadata::BucketHolderPtr OrderedFileMetadata::tryAcquireBucket(
+    const std::filesystem::path & zk_path,
+    const Bucket & bucket,
+    const Processor & processor)
+{
+    const auto zk_client = getZooKeeper();
+    const auto bucket_lock_path = zk_path / "buckets" / toString(bucket) / "lock";
+    const auto processor_info = getProcessorInfo(processor);
+
+    zk_client->createAncestors(bucket_lock_path);
+
+    auto code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Ephemeral);
+    if (code == Coordination::Error::ZOK)
+        return std::make_shared<BucketHolder>(bucket_lock_path, zk_client);
+
+    if (code == Coordination::Error::ZNODEEXISTS)
+        return nullptr;
+
+    if (Coordination::isHardwareError(code))
+        return nullptr;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
 }
 
 std::pair<bool, IFileMetadata::FileStatus::State> OrderedFileMetadata::setProcessingImpl()

@@ -51,23 +51,21 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
             res_columns[i++]->insert(zookeeper_path);
             res_columns[i++]->insert(file_name);
 
-            std::lock_guard lock(file_status->metadata_lock);
-
             res_columns[i++]->insert(file_status->processed_rows.load());
-            res_columns[i++]->insert(magic_enum::enum_name(file_status->state));
+            res_columns[i++]->insert(magic_enum::enum_name(file_status->state.load()));
 
             if (file_status->processing_start_time)
-                res_columns[i++]->insert(file_status->processing_start_time);
+                res_columns[i++]->insert(file_status->processing_start_time.load());
             else
                 res_columns[i++]->insertDefault();
             if (file_status->processing_end_time)
-                res_columns[i++]->insert(file_status->processing_end_time);
+                res_columns[i++]->insert(file_status->processing_end_time.load());
             else
                 res_columns[i++]->insertDefault();
 
             ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
 
-            res_columns[i++]->insert(file_status->last_exception);
+            res_columns[i++]->insert(file_status->getException());
         }
     }
 }

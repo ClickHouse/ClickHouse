@@ -7,6 +7,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include "S3QueueIFileMetadata.h"
+#include "S3QueueOrderedFileMetadata.h"
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
@@ -67,8 +68,7 @@ public:
     /// The file will be processed by a thread related to this processing id.
     Bucket getBucketForPath(const std::string & path) const;
 
-    bool tryAcquireBucket(const Bucket & bucket, const Processor & processor);
-    void releaseBucket(const Bucket & bucket);
+    OrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
 private:
     const S3QueueMode mode;
@@ -84,9 +84,6 @@ private:
 
     std::atomic_bool shutdown_called = false;
     BackgroundSchedulePool::TaskHolder task;
-
-    fs::path getBucketLockPath(const Bucket & bucket) const;
-    std::string getProcessorInfo(const std::string & processor_id);
 
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();

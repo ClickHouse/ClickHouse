@@ -32,7 +32,6 @@ namespace ProfileEvents
     extern const Event S3QueueProcessedFiles;
     extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event S3QueueLockLocalFileStatusesMicroseconds;
-    extern const Event CannotRemoveEphemeralNode;
 };
 
 namespace DB
@@ -173,53 +172,12 @@ bool S3QueueFilesMetadata::useBucketsForProcessing() const
 
 S3QueueFilesMetadata::Bucket S3QueueFilesMetadata::getBucketForPath(const std::string & path) const
 {
-    return sipHash64(path) % buckets_num;
+    return OrderedFileMetadata::getBucketForPath(path, buckets_num);
 }
 
-std::string S3QueueFilesMetadata::getProcessorInfo(const std::string & processor_id)
+OrderedFileMetadata::BucketHolderPtr S3QueueFilesMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
 {
-    Poco::JSON::Object json;
-    json.set("hostname", DNSResolver::instance().getHostName());
-    json.set("processor_id", processor_id);
-
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss.exceptions(std::ios::failbit);
-    Poco::JSON::Stringifier::stringify(json, oss);
-    return oss.str();
-}
-
-bool S3QueueFilesMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
-{
-    const auto zk_client = getZooKeeper();
-    const auto bucket_lock_path = getBucketLockPath(bucket);
-    const auto processor_info = getProcessorInfo(processor);
-
-    zk_client->createAncestors(bucket_lock_path);
-
-    auto code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Ephemeral);
-    if (code == Coordination::Error::ZOK)
-        return true;
-
-    if (code == Coordination::Error::ZNODEEXISTS)
-        return false;
-
-    if (Coordination::isHardwareError(code))
-        return false;
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
-}
-
-void S3QueueFilesMetadata::releaseBucket(const Bucket & bucket)
-{
-    const auto zk_client = getZooKeeper();
-    const auto bucket_lock_path = getBucketLockPath(bucket);
-    zk_client->remove(bucket_lock_path); /// TODO: Add version
-    LOG_TEST(log, "Released the bucket: {}", bucket);
-}
-
-fs::path S3QueueFilesMetadata::getBucketLockPath(const Bucket & bucket) const
-{
-    return zookeeper_path / "buckets" / toString(bucket) / "lock";
+    return OrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor);
 }
 
 void S3QueueFilesMetadata::cleanupThreadFunc()
