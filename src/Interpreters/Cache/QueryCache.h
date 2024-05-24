@@ -88,6 +88,7 @@ public:
 
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
+            const String & current_database,
             Block header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
@@ -95,7 +96,7 @@ public:
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_, const String & current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
