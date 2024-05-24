@@ -362,7 +362,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+    const auto stats_collecting_params = StatsCollectingParams(
         select_query_info.query,
         settings.collect_hash_table_stats_during_aggregation,
         settings.max_entries_for_hash_table_stats,

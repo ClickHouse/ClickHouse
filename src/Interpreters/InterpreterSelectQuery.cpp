@@ -2664,7 +2664,7 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold,
     size_t group_by_two_level_threshold_bytes)
 {
-    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+    const auto stats_collecting_params = StatsCollectingParams(
         query_ptr,
         settings.collect_hash_table_stats_during_aggregation,
         settings.max_entries_for_hash_table_stats,
