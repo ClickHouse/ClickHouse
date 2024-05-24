@@ -80,3 +80,6 @@ GROUP BY
 -- { echoOff }
 
 DROP TABLE test_table;
+
+select [1, 2] as arr, x from system.one array join arr as x;
+select x + 1 as x from (select [number] as arr from numbers(2)) as s array join arr as x;
