@@ -20,7 +20,6 @@ from github.Repository import Repository
 from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
 from env_helper import (
     GITHUB_REPOSITORY,
-    GITHUB_RUN_URL,
     GITHUB_UPSTREAM_REPOSITORY,
     TEMP_PATH,
 )
@@ -557,13 +556,12 @@ def update_upstream_sync_status(
     post_commit_status(
         last_synced_upstream_commit,
         sync_status,
-        "",  # let's won't expose any urls from cloud
+        "",
         "",
         StatusNames.SYNC,
     )
     trigger_mergeable_check(
         last_synced_upstream_commit,
         get_commit_filtered_statuses(last_synced_upstream_commit),
-        True,
         set_if_green=can_set_green_mergeable_status,
     )

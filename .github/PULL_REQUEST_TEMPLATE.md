@@ -46,9 +46,8 @@ At a minimum, the following information should be added (but add more as needed)
 
 **NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
 **NOTE:** Checked options will be applied if set before CI RunConfig/PrepareRunConfig step
----
 - [ ] <!---ci_include_integration--> Allow: Integration Tests
-- [ ] <!---ci_include_stateless--> Allow:: Stateless tests
+- [ ] <!---ci_include_stateless--> Allow: Stateless tests
 - [ ] <!---ci_include_stateful--> Allow: Stateful tests
 - [ ] <!---ci_include_unit--> Allow: Unit tests
 - [ ] <!---ci_include_performance--> Allow: Performance tests
@@ -74,8 +73,8 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---do_not_test--> do not test (only style check)
 - [ ] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
 - [ ] <!---no_ci_cache--> disable CI cache (job reuse)
-- [ ] <!---batch_0--> only batch 1 for multi-batch jobs
-- [ ] <!---batch_1--> only batch 2 for multi-batch jobs
-- [ ] <!---batch_2--> only batch 3 for multi-batch jobs
-- [ ] <!---batch_3--> only batch 4 for multi-batch jobs
+- [ ] <!---batch_0--> allow: batch 1 for multi-batch jobs
+- [ ] <!---batch_1--> allow: batch 2
+- [ ] <!---batch_2--> allow: batch 3
+- [ ] <!---batch_3_4_5--> allow: batch 4, 5 and 6
 </details>
