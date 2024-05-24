@@ -125,7 +125,10 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("\nShowed first ", out);
+        if (last_rows_offset)
+            writeCString("\nShowed ", out);
+        else
+            writeCString("\nShowed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
         writeCString(".\n", out);
     }
