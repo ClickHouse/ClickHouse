@@ -51,7 +51,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
     auto logger = getLogger("RemoteProxyConfigurationResolver");
 
-    auto & [endpoint, proxy_protocol_string, proxy_port, cache_ttl_] = remote_server_configuration;
+    auto & [endpoint, proxy_protocol_string, proxy_port, cache_ttl] = remote_server_configuration;
 
     LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
 
@@ -106,7 +106,7 @@ void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & co
 
     std::lock_guard lock(cache_mutex);
 
-    if (!cache_ttl.count() || !cache_valid)
+    if (!remote_server_configuration.cache_ttl_.count() || !cache_valid)
         return;
 
     if (std::tie(cached_config.protocol, cached_config.host, cached_config.port)

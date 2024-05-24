@@ -43,7 +43,7 @@ namespace
             endpoint,
             proxy_scheme,
             proxy_port,
-            cache_ttl
+            std::chrono::seconds {cache_ttl}
         };
 
         return std::make_shared<RemoteProxyConfigurationResolver>(

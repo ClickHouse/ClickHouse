@@ -35,7 +35,7 @@ public:
         Poco::URI endpoint;
         String proxy_protocol;
         unsigned proxy_port;
-        unsigned cache_ttl_;
+        const std::chrono::seconds cache_ttl_;
     };
 
     RemoteProxyConfigurationResolver(
@@ -55,7 +55,6 @@ private:
     std::mutex cache_mutex;
     bool cache_valid = false;
     std::chrono::time_point<std::chrono::system_clock> cache_timestamp;
-    const std::chrono::seconds cache_ttl{0};
     ProxyConfiguration cached_config;
 };
 
