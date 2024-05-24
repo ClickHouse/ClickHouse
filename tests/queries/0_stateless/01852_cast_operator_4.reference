@@ -1,19 +1,47 @@
 3
 SELECT CAST([3, 4, 5][1], \'Int32\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(3, \'Int32\') AS `CAST(arrayElement([3, 4, 5], 1), \'Int32\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 4
 SELECT CAST(CAST(\'[3,4,5]\', \'Array(Int64)\')[2], \'Int8\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(4, \'Int8\') AS `CAST(arrayElement(CAST(\'[3,4,5]\', \'Array(Int64)\'), 2), \'Int8\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 0
 1
 2
 SELECT CAST(CAST(\'[1,2,3]\', \'Array(UInt64)\')[CAST(CAST([number, number], \'Array(UInt8)\')[number], \'UInt64\')], \'UInt8\')
 FROM numbers(3)
+SETTINGS allow_experimental_analyzer = 0
+SELECT CAST(_CAST([1, 2, 3], \'Array(UInt64)\')[CAST(CAST([__table1.number, __table1.number], \'Array(UInt8)\')[__table1.number], \'UInt64\')], \'UInt8\') AS `CAST(arrayElement(CAST(\'[1,2,3]\', \'Array(UInt64)\'), CAST(arrayElement(CAST([number, number], \'Array(UInt8)\'), number), \'UInt64\')), \'UInt8\')`
+FROM numbers(3) AS __table1
+SETTINGS allow_experimental_analyzer = 1
 3
 WITH [3, 4, 5] AS x
 SELECT CAST(x[1], \'Int32\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(3, \'Int32\') AS `CAST(arrayElement(x, 1), \'Int32\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 3
 SELECT CAST((3, 4, 5).1, \'Int32\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(3, \'Int32\') AS `CAST(tupleElement((3, 4, 5), 1), \'Int32\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 4
 SELECT CAST(CAST((3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\').1, \'Int32\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(3, \'Int32\') AS `CAST(tupleElement(CAST((3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\'), 1), \'Int32\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 3
 WITH (3, 4, 5) AS x
 SELECT CAST(x.1, \'Int32\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(3, \'Int32\') AS `CAST(tupleElement(x, 1), \'Int32\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
