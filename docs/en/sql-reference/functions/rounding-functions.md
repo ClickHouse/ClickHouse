@@ -328,14 +328,15 @@ roundAge(num)
 
 **Returned value**
 
-- Returns `0`, for $age \lt 1$. [UInt8](../data-types/int-uint.md).
-- Returns `17`, for $1 \leq age \leq 17$. [UInt8](../data-types/int-uint.md).
-- Returns `18`, for $18 \leq age \leq 24$. [UInt8](../data-types/int-uint.md).
-- Returns `25`, for $25 \leq age \leq 34$. [UInt8](../data-types/int-uint.md).
-- Returns `35`, for $35 \leq age \leq 44$. [UInt8](../data-types/int-uint.md).
-- Returns `45`, for $45 \leq age \leq 54$. [UInt8](../data-types/int-uint.md).
-- Returns `55`, for $age \geq 55$. [UInt8](../data-types/int-uint.md).
+- Returns `0`, for $age \lt 1$.
+- Returns `17`, for $1 \leq age \leq 17$.
+- Returns `18`, for $18 \leq age \leq 24$.
+- Returns `25`, for $25 \leq age \leq 34$.
+- Returns `35`, for $35 \leq age \leq 44$.
+- Returns `45`, for $45 \leq age \leq 54$.
+- Returns `55`, for $age \geq 55$.
 
+Type: [UInt8](../data-types/int-uint.md).
 **Example**
 
 Query:
