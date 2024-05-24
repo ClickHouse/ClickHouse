@@ -288,7 +288,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     writeString(middle_names_separator_s, out);
 
-    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : 0;
+    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : format_settings.pretty.max_rows;
 
     for (size_t i = 0; i < num_rows && total_rows + i < format_settings.pretty.max_rows; ++i)
     {
