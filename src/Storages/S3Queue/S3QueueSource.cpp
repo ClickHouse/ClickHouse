@@ -34,7 +34,7 @@ namespace ErrorCodes
 StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
         const std::string & key_,
         std::optional<S3::ObjectInfo> info_,
-        Metadata::ProcessingNodeHolderPtr processing_holder_)
+        Metadata::FileMetadataPtr processing_holder_)
     : StorageS3Source::KeyWithInfo(key_, info_)
     , processing_holder(processing_holder_)
 {
@@ -253,18 +253,10 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
             return {};
         }
 
-        auto processing_holder = metadata->trySetFileAsProcessing(val->key);
-        if (shutdown_called)
+        auto file_metadata = metadata->getFileMetadata(val->key);
+        if (file_metadata->setProcessing())
         {
-            LOG_TEST(log, "Shutdown was called, stopping file iterator");
-            return {};
-        }
-
-        LOG_TEST(log, "Checking if can process key {}", val->key);
-
-        if (processing_holder)
-        {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
+            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, file_metadata);
         }
     }
     return {};
@@ -337,7 +329,8 @@ Chunk StorageS3QueueSource::generate()
             break;
 
         const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
-        auto file_status = key_with_info->processing_holder->getFileStatus();
+        auto file_metadata = key_with_info->processing_holder;
+        auto file_status = file_metadata->getFileStatus();
 
         if (isCancelled())
         {
@@ -347,7 +340,7 @@ Chunk StorageS3QueueSource::generate()
             {
                 try
                 {
-                    files_metadata->setFileFailed(key_with_info->processing_holder, "Cancelled");
+                    file_metadata->setFailed("Cancelled");
                 }
                 catch (...)
                 {
@@ -374,7 +367,7 @@ Chunk StorageS3QueueSource::generate()
 
                 try
                 {
-                    files_metadata->setFileFailed(key_with_info->processing_holder, "Table is dropped");
+                    file_metadata->setFailed("Table is dropped");
                 }
                 catch (...)
                 {
@@ -418,13 +411,13 @@ Chunk StorageS3QueueSource::generate()
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getFile(), message);
 
-            files_metadata->setFileFailed(key_with_info->processing_holder, message);
+            file_metadata->setFailed(message);
 
             appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
             throw;
         }
 
-        files_metadata->setFileProcessed(key_with_info->processing_holder);
+        file_metadata->setProcessed();
         applyActionAfterProcessing(reader.getFile());
 
         appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, true);

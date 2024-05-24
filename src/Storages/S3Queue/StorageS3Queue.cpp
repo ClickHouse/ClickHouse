@@ -181,7 +181,7 @@ StorageS3Queue::StorageS3Queue(
 
     if (s3queue_settings->mode == S3QueueMode::ORDERED && !s3queue_settings->s3queue_last_processed_path.value.empty())
     {
-        files_metadata->setFileProcessed(s3queue_settings->s3queue_last_processed_path.value);
+        // files_metadata->setFileProcessed(s3queue_settings->s3queue_last_processed_path.value);
     }
 }
 
@@ -204,7 +204,7 @@ void StorageS3Queue::shutdown(bool is_drop)
 
     if (files_metadata)
     {
-        files_metadata->deactivateCleanupTask();
+        files_metadata->shutdown();
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
