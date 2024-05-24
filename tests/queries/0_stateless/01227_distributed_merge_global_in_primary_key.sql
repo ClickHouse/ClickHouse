@@ -1,8 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/64211
 
-create database test;
-use test;
-
 CREATE TABLE test_local (name String) 
 ENGINE = MergeTree
 ORDER BY name as select 'x';
@@ -80,4 +77,3 @@ DROP TABLE test_merge_distributed;
 DROP TABLE test_distributed_merge;
 DROP TABLE test_distributed;
 DROP TABLE test_local;
-drop  database test;
