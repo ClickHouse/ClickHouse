@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Common/Allocator.h>
 #include <Common/BitHelpers.h>
 #include <Common/memcpySmall.h>
@@ -11,10 +13,14 @@
 #include <cstddef>
 #include <cassert>
 #include <algorithm>
-#include <memory>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
+#endif
+
+#if USE_GWP_ASAN
+#    include <gwp_asan/platform_specific/guarded_pool_allocator_tls.h>
+
 #endif
 
 /** Whether we can use memcpy instead of a loop with assignment to T from U.
@@ -112,6 +118,10 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
+#if USE_GWP_ASAN
+        gwp_asan::getThreadLocals()->NextSampleCounter = 1;
+#endif
+
         char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
         c_start = allocated + pad_left;
@@ -140,6 +150,10 @@ protected:
             alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
         }
+
+#if USE_GWP_ASAN
+        gwp_asan::getThreadLocals()->NextSampleCounter = 1;
+#endif
 
         unprotect();
 

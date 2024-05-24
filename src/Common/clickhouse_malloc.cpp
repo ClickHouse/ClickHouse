@@ -1,13 +1,14 @@
 #include <Common/memory.h>
 #include <cstdlib>
 
-
 /** These functions can be substituted instead of regular ones when memory tracking is needed.
   */
 
 extern "C" void * clickhouse_malloc(size_t size)
 {
-    void * res = malloc(size);
+    void * res = nullptr;
+    res = malloc(size);
+
     if (res)
     {
         AllocationTrace trace;

@@ -5,6 +5,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/ProfileEvents.h>
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -17,12 +18,23 @@
 
 #if USE_GWP_ASAN
 #    include <gwp_asan/guarded_pool_allocator.h>
+#    include <gwp_asan/optional/options_parser.h>
 
-static gwp_asan::GuardedPoolAllocator GuardedAlloc;
 #endif
+
+namespace ProfileEvents
+{
+    extern const Event GWPAsanAllocateSuccess;
+    extern const Event GWPAsanAllocateFailed;
+    extern const Event GWPAsanFree;
+}
 
 namespace Memory
 {
+
+#if USE_GWP_ASAN
+extern gwp_asan::GuardedPoolAllocator GuardedAlloc;
+#endif
 
 inline ALWAYS_INLINE size_t alignToSizeT(std::align_val_t align) noexcept
 {
@@ -39,12 +51,26 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
         if constexpr (sizeof...(TAlign) == 1)
         {
             if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align...)))
+            {
+                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+            }
         }
         else
         {
             if (void * ptr = GuardedAlloc.allocate(size))
+            {
+                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+            }
 
         }
     }
@@ -69,7 +95,14 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
     if (unlikely(GuardedAlloc.shouldSample()))
     {
         if (void * ptr = GuardedAlloc.allocate(size))
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 #endif
     return malloc(size);
@@ -81,7 +114,14 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align)
     if (unlikely(GuardedAlloc.shouldSample()))
     {
         if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align)))
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 #endif
     return aligned_alloc(static_cast<size_t>(align), size);
@@ -92,6 +132,7 @@ inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 #if USE_GWP_ASAN
     if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
     {
+        ProfileEvents::increment(ProfileEvents::GWPAsanFree);
         GuardedAlloc.deallocate(ptr);
         return;
     }
@@ -111,6 +152,7 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... al
 #if USE_GWP_ASAN
     if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
     {
+        ProfileEvents::increment(ProfileEvents::GWPAsanFree);
         GuardedAlloc.deallocate(ptr);
         return;
     }
@@ -131,6 +173,7 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
 #if USE_GWP_ASAN
     if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
     {
+        ProfileEvents::increment(ProfileEvents::GWPAsanFree);
         GuardedAlloc.deallocate(ptr);
         return;
     }
