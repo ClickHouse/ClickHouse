@@ -39,7 +39,10 @@ struct QueryFlags
 struct QueryData
 {
     ASTPtr ast;
+
     std::unique_ptr<ReadBuffer> istr;
+    std::unique_ptr<PODArray<char>> parse_buf;
+
     std::string query;
     std::string query_for_logging;
 };

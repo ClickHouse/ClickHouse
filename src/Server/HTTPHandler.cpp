@@ -39,7 +39,11 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
+#include "Parsers/ASTFunction.h"
+#include "Parsers/ASTSelectQuery.h"
+#include "Parsers/ASTSelectWithUnionQuery.h"
 #include "Parsers/formatAST.h"
+#include "Server/HTTP/HTTPQueryAST.h"
 #include "config.h"
 
 #include <Poco/Base64Decoder.h>
@@ -549,6 +553,46 @@ bool HTTPHandler::authenticateUser(
     return true;
 }
 
+void combineWhereExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> & where_expressions)
+{
+    ASTPtr where_expression;
+    if (auto where = select_query->where())
+        where_expression = where;
+
+    for (auto expression : where_expressions)
+        if (!where_expression)
+            where_expression = expression;
+        else
+            where_expression = makeASTFunction("and", std::move(where_expression), std::move(expression));
+
+    select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+}
+
+void combineSelectQuery(ASTSelectQuery * select_query, HTTPQueryAST & http_query_ast)
+{
+    if (!http_query_ast.where_expressions.empty())
+        combineWhereExpressions(select_query, http_query_ast.where_expressions);
+}
+
+QueryData combineQueryWithParams(ReadBuffer & in, HTMLForm & params, ContextMutablePtr context)
+{
+    auto query_data = getQueryData(in, context);
+    auto http_query_ast = getHTTPQueryAST(params);
+
+    if (auto * select_query = query_data.ast->as<ASTSelectQuery>())
+    {
+        combineSelectQuery(select_query, http_query_ast);
+    }
+    else if (auto * select_union_query = query_data.ast->as<ASTSelectWithUnionQuery>())
+    {
+        for (auto child : select_union_query->list_of_selects->children)
+            if (auto * child_select_query = child->as<ASTSelectQuery>())
+                combineSelectQuery(child_select_query, http_query_ast);
+    }
+
+    return query_data;
+}
+
 
 void HTTPHandler::processQuery(
     HTTPServerRequest & request,
@@ -717,10 +761,23 @@ void HTTPHandler::processQuery(
     else
         in_post_maybe_compressed = std::move(in_post);
 
-    std::unique_ptr<ReadBuffer> in;
-
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
+    static const NameSet reserved_param_names{
+        "compress",
+        "decompress",
+        "user",
+        "password",
+        "quota_key",
+        "query_id",
+        "stacktrace",
+        "role",
+        "buffer_size",
+        "wait_end_of_query",
+        "session_id",
+        "session_timeout",
+        "session_check",
+        "client_protocol_version",
+        "close_session",
+        "where"};
 
     Names reserved_param_suffixes;
 
@@ -839,10 +896,6 @@ void HTTPHandler::processQuery(
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
 
-    // here is query
-    const auto & query = getQuery(request, params, context);
-    std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
-
     used_output.out_holder->setSendProgress(settings.send_progress_in_http_headers);
     used_output.out_holder->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
@@ -887,9 +940,6 @@ void HTTPHandler::processQuery(
                 context->killCurrentQuery();
         });
     }
-
-    customizeContext(request, context, *in_post_maybe_compressed);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     auto set_query_result = [&response, this] (const QueryResultDetails & details)
     {
@@ -937,10 +987,19 @@ void HTTPHandler::processQuery(
         }
     };
 
-    // auto query_data = getQueryData(*in, context);
+    customizeContext(request, context, *in_post_maybe_compressed);
+
+    auto query = getQuery(request, params, context);
+    std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
+
+    std::unique_ptr<ReadBuffer> in;
+    in = has_external_data ? std::move(in_param)
+                           : std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
+
+    auto query_data = combineQueryWithParams(*in, params, context);
 
     executeQuery(
-        *in,
+        query_data,
         *used_output.out_maybe_delayed_and_compressed,
         /* allow_into_outfile = */ false,
         context,
