@@ -1,9 +1,21 @@
 SELECT data
 FROM executable(\'\', \'JSON\', \'data String\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT __table1.data AS data
+FROM executable(\'\', \'JSON\', \'data String\') AS __table1
+SETTINGS allow_experimental_analyzer = 1
 --------------------
 SELECT data
 FROM executable(\'\', \'JSON\', \'data String\', SETTINGS max_command_execution_time = 100)
+SETTINGS allow_experimental_analyzer = 0
+SELECT __table1.data AS data
+FROM executable(\'\', \'JSON\', \'data String\', SETTINGS max_command_execution_time = 100) AS __table1
+SETTINGS allow_experimental_analyzer = 1
 --------------------
 SELECT data
 FROM executable(\'\', \'JSON\', \'data String\', SETTINGS max_command_execution_time = 100, command_read_timeout = 1)
+SETTINGS allow_experimental_analyzer = 0
+SELECT __table1.data AS data
+FROM executable(\'\', \'JSON\', \'data String\', SETTINGS max_command_execution_time = 100, command_read_timeout = 1) AS __table1
+SETTINGS allow_experimental_analyzer = 1
 --------------------
