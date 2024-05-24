@@ -64,7 +64,8 @@ ORDER BY left_table.id, val_left, val_middle, val_right;
 explain syntax select left_table.id,val_left, val_middle, val_right from left_table
                                                               inner join middle_table on left_table.id = middle_table.id
                                                               inner join right_table on middle_table.id = right_table.id
-ORDER BY left_table.id, val_left, val_middle, val_right;
+ORDER BY left_table.id, val_left, val_middle, val_right
+SETTINGS allow_experimental_analyzer = 0;
 SELECT
     `_--left_table.id` AS `left_table.id`,
     val_left,
@@ -100,6 +101,28 @@ ORDER BY
     val_left ASC,
     val_middle ASC,
     val_right ASC
+SETTINGS allow_experimental_analyzer = 0
+explain syntax select left_table.id,val_left, val_middle, val_right from left_table
+                                                              inner join middle_table on left_table.id = middle_table.id
+                                                              inner join right_table on middle_table.id = right_table.id
+ORDER BY left_table.id, val_left, val_middle, val_right
+SETTINGS allow_experimental_analyzer = 1;
+SELECT
+    __table1.id AS `left_table.id`,
+    __table1.val_left AS val_left,
+    __table2.val_middle AS val_middle,
+    __table3.val_right AS val_right
+FROM default.left_table AS __table1
+FINAL
+ALL INNER JOIN default.middle_table AS __table2 ON __table1.id = __table2.id
+ALL INNER JOIN default.right_table AS __table3
+FINAL ON __table2.id = __table3.id
+ORDER BY
+    __table1.id ASC,
+    __table1.val_left ASC,
+    __table2.val_middle ASC,
+    __table3.val_right ASC
+SETTINGS allow_experimental_analyzer = 1
 -- extra: same with subquery
 select left_table.id,val_left, val_middle, val_right from left_table
                                                               inner join middle_table on left_table.id = middle_table.id
