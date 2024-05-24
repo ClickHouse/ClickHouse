@@ -1176,6 +1176,7 @@ public:
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
+    size_t output_row_list_number = 0;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -1295,25 +1296,65 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
 
 template<> void AddedColumns<true>::buildOutputFromRowRefList()
 {
-    for (size_t i = 0; i < this->size(); ++i)
+    if (output_row_list_number == lazy_output.row_refs.size())
     {
-        auto & col = columns[i];
+        PaddedPODArray<const Block *> blocks;
+        PaddedPODArray<UInt32> row_nums;
+        blocks.reserve(lazy_output.row_refs.size());
+        row_nums.reserve(lazy_output.row_refs.size());
         for (auto row_ref_i : lazy_output.row_refs)
         {
+            const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
             if (!row_ref_i)
             {
-                lazy_defaults_count++;
-                continue;
+                blocks.emplace_back(nullptr);
+                row_nums.emplace_back(0);
             }
-            applyLazyDefaults(true, i);
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-            for (auto it = row_ref_list->begin(); it.ok(); ++it)
+            else
             {
-                const auto & src = it->block->getByPosition(right_indexes[i]);
-                col->insertFrom(*src.column, it->row_num);
+                blocks.emplace_back(row_ref->block);
+                row_nums.emplace_back(row_ref->row_num);
             }
         }
-        applyLazyDefaults(true, i);
+        for (size_t i = 0; i < this->size(); ++i)
+        {
+            auto & col = columns[i];
+            for (size_t j = 0; j < blocks.size(); j++)
+            {
+                if (!blocks[j])
+                {
+                    lazy_defaults_count++;
+                    continue;
+                }
+                applyLazyDefaults(true, i);
+                const auto & src = blocks[j]->getByPosition(right_indexes[i]);
+                col->insertFrom(*src.column, row_nums[j]);
+            }
+            applyLazyDefaults(true, i);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < this->size(); ++i)
+        {
+            auto & col = columns[i];
+            for (auto row_ref_i : lazy_output.row_refs)
+            {
+                if (!row_ref_i)
+                {
+                    lazy_defaults_count++;
+                    continue;
+                }
+                applyLazyDefaults(true, i);
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                {
+                    const auto & src = it->block->getByPosition(right_indexes[i]);
+                    col->insertFrom(*src.column, it->row_num);
+                }
+            }
+            applyLazyDefaults(true, i);
+        }
     }
 }
 
@@ -1538,6 +1579,7 @@ void addFoundRowAll(
     {
         added.appendFromBlock(&mapped, false);
         current_offset += mapped.rows;
+        added.output_row_list_number = current_offset;
     }
     else
     {
