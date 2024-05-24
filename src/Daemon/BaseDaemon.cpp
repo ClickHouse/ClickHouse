@@ -6,6 +6,7 @@
 #include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Common/memory.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -155,6 +156,19 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
+
+    const auto is_gwp_asan = [&]
+    {
+        auto state = ::Memory::GuardedAlloc.getAllocatorState();
+        if (state->FailureType != gwp_asan::Error::UNKNOWN && state->FailureAddress != 0)
+            return true;
+
+        auto addr = reinterpret_cast<uintptr_t>(info->si_addr);
+        return addr < state->GuardedPagePoolEnd && state->GuardedPagePool <= addr;
+    };
+
+    if (is_gwp_asan())
+        std::cerr << "GWPAsan caught something!" << std::endl;
 
     writeBinary(sig, out);
     writePODBinary(*info, out);

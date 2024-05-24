@@ -1,7 +1,8 @@
-#include <gwp_asan/guarded_pool_allocator.h>
 #include <Common/memory.h>
 
 #if USE_GWP_ASAN
+#include <gwp_asan/guarded_pool_allocator.h>
+
 namespace Memory
 {
 gwp_asan::GuardedPoolAllocator GuardedAlloc;

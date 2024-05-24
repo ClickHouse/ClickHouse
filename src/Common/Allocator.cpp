@@ -94,9 +94,7 @@ void * allocNoTrack(size_t size, size_t alignment)
         if constexpr (clear_memory)
             buf = ::calloc(size, 1);
         else
-        {
             buf = ::malloc(size);
-        }
 
         if (nullptr == buf)
             throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(size));
