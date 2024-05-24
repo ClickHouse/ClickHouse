@@ -1633,24 +1633,24 @@ struct WindowFunctionHelpers
 
     ALWAYS_INLINE static bool checkPartitionEnterLastRow(const WindowTransform * transform)
     {
-        /// when partition_ended is false, it means that we don't reach the last row in this partition.
-        /// But when partition_ended is true, it doesn't mean that we reach the last row in this partition.
-        /// partition_ended is true when
-        /// - the input has finished. or
-        /// - current block contains next partition's data.
         /// This is for fast check.
         if (!transform->partition_ended)
             return false;
 
         auto current_row = transform->current_row;
+        /// checkPartitionEnterLastRow is called on each row, also move on current_row.row here.
         current_row.row++;
         const auto & partition_end_row = transform->partition_end;
-        /// If current_row == partitoin_end_row, return true. otherwise
+
+        /// The partition end is reached, when following is true
+        /// - current row is the partition end row,
+        /// - or current row is the last row of all input.
         if (current_row != partition_end_row)
         {
+            /// when current row is not the partition end row, we need to check whether it's the last
+            /// input row.
             if (current_row.row < transform->blockRowsNumber(current_row))
                 return false;
-            /// Next row to current_row may belong to next block.
             if (partition_end_row.block != current_row.block + 1 || partition_end_row.row)
                 return false;
         }
@@ -2268,7 +2268,8 @@ public:
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
             if (transform->window_description.frame.type != WindowFrame::FrameType::RANGE
-                || transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+                || transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
+                || transform->window_description.frame.end_type != WindowFrame::BoundaryType::Current)
             {
                 LOG_ERROR(
                     getLogger("WindowFunctionPercentRank"),
@@ -2305,20 +2306,20 @@ public:
         }
 
         UInt64 remaining_rows = state.current_partition_rows;
-        Float64 percent_rank_denominator = state.current_partition_rows - 1;
+        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : remaining_rows - 1;
 
-        if (remaining_rows <= 1)
-            return;
         while (remaining_rows > 0)
         {
             auto block_rows_number = transform->blockRowsNumber(state.start_row);
             auto available_block_rows = block_rows_number - state.start_row.row;
             if (available_block_rows <= remaining_rows)
             {
+                /// This partition involves multiple blocks. Finish current block and move on to the
+                /// next block.
                 auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
                 for (size_t i = state.start_row.row; i < block_rows_number; ++i)
-                    data[i] = data[i] / percent_rank_denominator;
+                    data[i] = (data[i] - 1) / percent_rank_denominator;
 
                 state.start_row.block++;
                 state.start_row.row = 0;
@@ -2326,11 +2327,12 @@ public:
             }
             else
             {
+                /// The partition ends in current block.s
                 auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
                 for (size_t i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
                 {
-                    data[i] = data[i]/percent_rank_denominator;
+                    data[i] = (data[i] - 1) / percent_rank_denominator;
                 }
                 state.start_row.row += remaining_rows;
                 remaining_rows = 0;
