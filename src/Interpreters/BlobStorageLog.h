@@ -51,7 +51,17 @@ struct BlobStorageLogElement
 
 class BlobStorageLog : public SystemLog<BlobStorageLogElement>
 {
+public:
     using SystemLog<BlobStorageLogElement>::SystemLog;
+
+    /// We should not log events for table itself to avoid infinite recursion
+    bool shouldIgnorePath(const String & path) const;
+protected:
+    void prepareTable() override;
+    ContextMutablePtr getQueryContext(const ContextPtr & context_) const override;
+
+private:
+    String prefix_to_ignore;
 };
 
 }

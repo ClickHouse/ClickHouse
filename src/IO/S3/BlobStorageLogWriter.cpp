@@ -23,6 +23,9 @@ void BlobStorageLogWriter::addEvent(
     if (!log)
         return;
 
+    if (log->shouldIgnorePath(local_path_.empty() ? local_path : local_path_))
+        return;
+
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
 
@@ -54,15 +57,22 @@ void BlobStorageLogWriter::addEvent(
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 {
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD /// Keeper standalone build doesn't have a context
-    if (auto blob_storage_log = Context::getGlobalContextInstance()->getBlobStorageLog())
+    const auto & global_context = Context::getGlobalContextInstance();
+    bool enable_blob_storage_log = global_context->getSettingsRef().enable_blob_storage_log;
+    if (auto blob_storage_log = global_context->getBlobStorageLog())
     {
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
 
         log_writer->disk_name = disk_name;
-        if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+        const auto & query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+        if (query_context)
+        {
             log_writer->query_id = CurrentThread::getQueryId();
+            enable_blob_storage_log = query_context->getSettingsRef().enable_blob_storage_log;
+        }
 
-        return log_writer;
+        if (enable_blob_storage_log)
+            return log_writer;
     }
 #endif
     return {};

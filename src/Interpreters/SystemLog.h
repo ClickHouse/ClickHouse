@@ -139,6 +139,17 @@ protected:
     using ISystemLog::thread_mutex;
     using Base::queue;
 
+    StoragePtr getStorage() const;
+
+    /** Creates new table if it does not exist.
+      * Renames old table if its structure is not suitable.
+      * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
+      */
+    void prepareTable() override;
+
+    /// Some tables can override settings for internal queries
+    virtual ContextMutablePtr getQueryContext(const ContextPtr & context_) const;
+
 private:
     /* Saving thread data */
     const StorageID table_id;
@@ -146,12 +157,6 @@ private:
     const String create_query;
     String old_create_query;
     bool is_prepared = false;
-
-    /** Creates new table if it does not exist.
-      * Renames old table if its structure is not suitable.
-      * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
-      */
-    void prepareTable() override;
 
     void savingThreadFunction() override;
 

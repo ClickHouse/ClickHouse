@@ -517,8 +517,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
+        auto insert_context = getQueryContext(getContext());
         /// We always want to deliver the data to the original table regardless of the MVs
         insert_context->setSetting("materialized_views_ignore_errors", true);
 
@@ -541,13 +540,18 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
+template <typename LogElement>
+StoragePtr SystemLog<LogElement>::getStorage() const
+{
+    return DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+}
 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto table = getStorage();
     if (table)
     {
         if (old_create_query.empty())
@@ -595,11 +599,10 @@ void SystemLog<LogElement>::prepareTable()
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
-            auto query_context = Context::createCopy(context);
+            auto query_context = getQueryContext(getContext());
             /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
             query_context->setSetting("check_table_dependencies", Field{false});
             query_context->setSetting("check_referential_table_dependencies", Field{false});
-            query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -614,8 +617,7 @@ void SystemLog<LogElement>::prepareTable()
         /// Create the table.
         LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
-        auto query_context = Context::createCopy(context);
-        query_context->makeQueryContext();
+        auto query_context = getQueryContext(getContext());
 
         auto create_query_ast = getCreateTableQuery();
         InterpreterCreateQuery interpreter(create_query_ast, query_context);
@@ -628,6 +630,15 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
+}
+
+
+template <typename LogElement>
+ContextMutablePtr SystemLog<LogElement>::getQueryContext(const ContextPtr & context_) const
+{
+    auto query_context = Context::createCopy(context_);
+    query_context->makeQueryContext();
+    return query_context;
 }
 
 template <typename LogElement>

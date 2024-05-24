@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDate.h>
 
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -67,6 +69,40 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(local_path);
     columns[i++]->insert(data_size);
     columns[i++]->insert(error_message);
+}
+
+ContextMutablePtr BlobStorageLog::getQueryContext(const ContextPtr & context_) const
+{
+    /// Override setting in INSERT query context to disable logging blobs inserted to the table itself
+    auto result_context = Context::createCopy(context_);
+    result_context->makeQueryContext();
+    result_context->setSetting("enable_blob_storage_log", false);
+    return result_context;
+}
+
+static std::string_view normalizePath(std::string_view path)
+{
+    if (path.starts_with("./"))
+        path.remove_prefix(2);
+    if (path.ends_with("/"))
+        path.remove_suffix(1);
+    return path;
+}
+
+void BlobStorageLog::prepareTable()
+{
+    SystemLog<BlobStorageLogElement>::prepareTable();
+    if (auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(getStorage()))
+    {
+        const auto & relative_data_path = merge_tree_table->getRelativeDataPath();
+        prefix_to_ignore = normalizePath(relative_data_path);
+    }
+}
+
+bool BlobStorageLog::shouldIgnorePath(const String & path) const
+{
+    /// Avoid logging info for data in `blob_storage_log` itself
+    return !prefix_to_ignore.empty() && normalizePath(path).starts_with(prefix_to_ignore);
 }
 
 }
