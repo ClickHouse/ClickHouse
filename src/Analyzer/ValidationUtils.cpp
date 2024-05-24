@@ -269,6 +269,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         if (query_node_typed.hasOrderBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
 
+        if (query_node_typed.hasInterpolate())
+            validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
+
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
 
