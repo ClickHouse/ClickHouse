@@ -254,7 +254,7 @@ class IColumn;
     M(Bool, use_skip_indexes, true, "Use data skipping indexes during query execution.", 0) \
     M(Bool, use_skip_indexes_if_final, false, "If query has FINAL, then skipping data based on indexes may produce incorrect result, hence disabled by default.", 0) \
     M(Bool, materialize_skip_indexes_on_insert, true, "If true skip indexes are calculated on inserts, otherwise skip indexes will be calculated only during merges", 0) \
-    M(Bool, materialize_statistics_on_insert, true, "If true statistics are calculated on inserts, otherwise skip indexes will be calculated only during merges", 0) \
+    M(Bool, materialize_statistics_on_insert, true, "If true statistics are calculated on inserts, otherwise statistics will be calculated only during merges", 0) \
     M(String, ignore_data_skipping_indices, "", "Comma separated list of strings or literals with the name of the data skipping indices that should be excluded during query execution.", 0) \
     \
     M(String, force_data_skipping_indices, "", "Comma separated list of strings or literals with the name of the data skipping indices that should be used during query execution, otherwise an exception will be thrown.", 0) \
