@@ -239,6 +239,16 @@ namespace
         return true;
     }
 
+    bool checkIfTypesContainVariant(const DataTypes & types)
+    {
+        for (size_t i = 0; i < types.size(); ++i)
+        {
+            if (isVariant(types[i]))
+                return true;
+        }
+        return false;
+    }
+
     void updateTypeIndexes(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         type_indexes.clear();
@@ -308,20 +318,31 @@ namespace
         type_indexes.erase(TypeIndex::UInt64);
     }
 
-    /// if setting input_format_json_infer_variant_from_multi_type_array is true
+    /// if setting try_infer_variant is true
     /// and nested types are not equal then we convert to type variant.
     void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
+        auto typesAreEqual = checkIfTypesAreEqual(data_types);
+        auto typesContainVariant = checkIfTypesContainVariant(data_types);
+        if (typesAreEqual || typesContainVariant)
+            return;
+
+        DataTypes new_data_types;
+        TypeIndexesSet new_type_indexes;
+
         auto variant_type = std::make_shared<DataTypeVariant>(data_types);
-        /// replace separate types with a single variant type
+        size_t i = 0;
+        while (i != data_types.size())
+        {
+            new_data_types.push_back(variant_type);
+            new_type_indexes.insert(TypeIndex::Variant);
+            i++;
+        }
+
         data_types.clear();
         type_indexes.clear();
-        data_types.push_back(variant_type);
-        type_indexes.insert(TypeIndex::Variant);
-
-        /// make the second type variant as well
-        data_types.push_back(variant_type);
-        type_indexes.insert(TypeIndex::Variant);
+        data_types = new_data_types;
+        type_indexes = new_type_indexes;
     }
 
     /// If we have only Date and DateTime types, convert Date to DateTime,
@@ -661,15 +682,13 @@ namespace
             if (settings.try_infer_dates || settings.try_infer_datetimes)
                 transformDatesAndDateTimes(data_types, type_indexes);
 
+            if (settings.try_infer_variant)
+                transformVariant(data_types, type_indexes);
+
             if constexpr (!is_json)
                 return;
 
             /// Check settings specific for JSON formats.
-
-            if (settings.json.infer_variant_from_multi_type_array)
-            {
-                transformVariant(data_types, type_indexes);
-            }
 
             /// Convert numbers inferred from strings back to strings if needed.
             if (settings.json.try_infer_numbers_from_strings || settings.json.read_numbers_as_strings)
@@ -685,6 +704,10 @@ namespace
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
+
+            if (settings.try_infer_variant)
+                transformVariant(data_types, type_indexes);
+
         };
 
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
@@ -696,13 +719,11 @@ namespace
             /// If there is at least one non Nothing type, change all Nothing types to it.
             transformNothingComplexTypes(data_types, type_indexes);
 
+            if (settings.try_infer_variant)
+                transformVariant(data_types, type_indexes);
+
             if constexpr (!is_json)
                 return;
-
-            if (settings.json.infer_variant_from_multi_type_array)
-            {
-                transformVariant(data_types, type_indexes);
-            }
 
             /// Convert JSON tuples with same nested types to arrays.
             transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes);
@@ -715,6 +736,9 @@ namespace
 
             if (json_info && json_info->allow_merging_named_tuples)
                 mergeNamedTuples(data_types, type_indexes, settings, json_info);
+
+            if (settings.try_infer_variant)
+                transformVariant(data_types, type_indexes);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
