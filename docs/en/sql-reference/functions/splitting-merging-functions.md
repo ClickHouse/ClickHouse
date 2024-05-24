@@ -27,13 +27,11 @@ splitByChar(separator, s[, max_substrings]))
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
-:::note
  Empty substrings may be selected when:
 
 - A separator occurs at the beginning or end of the string;
 - There are multiple consecutive separators;
 - The original string `s` is empty.
-:::
 
 :::note
 The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11. In versions older than that, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
@@ -80,13 +78,13 @@ splitByString(separator, s[, max_substrings]))
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
-:::note
 Empty substrings may be selected when:
 
 - A non-empty separator occurs at the beginning or end of the string;
 - There are multiple consecutive non-empty separators;
 - The original string `s` is empty while the separator is not empty.
 
+:::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 :::
 
@@ -137,13 +135,14 @@ splitByRegexp(regexp, s[, max_substrings]))
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
-:::note
+
 Empty substrings may be selected when:
 
 - A non-empty regular expression match occurs at the beginning or end of the string;
 - There are multiple consecutive non-empty regular expression matches;
 - The original string `s` is empty while the regular expression is not empty.
 
+:::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 :::
 
