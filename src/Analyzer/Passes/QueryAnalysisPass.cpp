@@ -4291,8 +4291,8 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
         column_qualified_identifier_parts = Identifier(column_name).getParts();
 
-        /// Iterate over additional column qualifications and apply them if needed
-        for (size_t i = 0; i < additional_column_qualification_parts_size; ++i)
+        bool not_enough_qualified_identifier_parts = false;
+        auto should_qualify = [&]()
         {
             auto identifier_to_check = Identifier(column_qualified_identifier_parts);
             IdentifierLookup identifier_lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
@@ -4303,7 +4303,15 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             if (tryBindIdentifierToAliases(identifier_lookup, scope))
                 need_to_qualify = true;
 
-            if (need_to_qualify)
+            if (!need_to_qualify && not_enough_qualified_identifier_parts && tryBindIdentifierToTableExpression(identifier_lookup, table_expression_node, scope))
+                need_to_qualify = true;
+
+            return need_to_qualify;
+        };
+
+        for (size_t i = 0; should_qualify(); ++i)
+        {
+            if (i < additional_column_qualification_parts_size)
             {
                 /** Add last qualification part that was not used into column qualified identifier.
                   * If additional column qualification parts consists from [database_name, table_name].
@@ -4316,11 +4324,15 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             }
             else
             {
-                break;
+                column_qualified_identifier_parts = {"_unqualified_" + Identifier(std::move(column_qualified_identifier_parts)).getFullName()};
+                not_enough_qualified_identifier_parts = true;
             }
         }
 
         auto qualified_node_name = Identifier(column_qualified_identifier_parts).getFullName();
+        if (not_enough_qualified_identifier_parts)
+            column_node->setAlias(qualified_node_name);
+
         node_to_projection_name.emplace(column_node, qualified_node_name);
     }
 }
