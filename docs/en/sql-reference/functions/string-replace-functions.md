@@ -139,7 +139,7 @@ Format the `pattern` string with the values (strings, integers, etc.) listed in 
 **Syntax**
 
 ```sql
-format(pattern, s0, s1, …)
+format(pattern, s0, s1, ...)
 ```
 
 **Example**

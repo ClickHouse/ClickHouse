@@ -53,6 +53,8 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+analysisOfVariance
+ANOVA
 BIGINT
 BIGSERIAL
 BORO
@@ -763,6 +765,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+proportionsZTest
 Punycode
 PyArrow
 PyCharm
@@ -2761,6 +2764,7 @@ unixODBC
 unixodbc
 unoptimized
 unparsed
+unpooled
 unrealiable
 unreplicated
 unresolvable

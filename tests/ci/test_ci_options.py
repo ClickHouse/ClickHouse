@@ -161,7 +161,7 @@ class TestCIOptions(unittest.TestCase):
             "Stateless tests (azure, asan)": {
                 "batches": list(range(3)),
                 "num_batches": 3,
-                "run_if_ci_option_include_set": True,
+                "run_by_ci_option": True,
             }
         }
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
@@ -226,10 +226,10 @@ class TestCIOptions(unittest.TestCase):
                 job_params[job] = {
                     "batches": list(range(3)),
                     "num_batches": 3,
-                    "run_if_ci_option_include_set": "azure" in job,
+                    "run_by_ci_option": "azure" in job,
                 }
             else:
-                job_params[job] = {"run_if_ci_option_include_set": False}
+                job_params[job] = {"run_by_ci_option": False}
 
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
             jobs_to_do, jobs_to_skip, job_params, PRInfo()

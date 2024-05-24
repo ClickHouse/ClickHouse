@@ -14,7 +14,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -188,6 +189,7 @@ namespace ErrorCodes
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -3873,7 +3875,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);
-        if (!storage_column.type->hasDynamicSubcolumns())
+        if (!storage_column.type->hasDynamicSubcolumnsDeprecated())
             continue;
 
         auto concrete_storage_column = object_columns.getPhysical(part_column.name);
@@ -8550,6 +8552,16 @@ void MergeTreeData::unloadPrimaryKeys()
     for (auto & part : getAllDataPartsVector())
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+    }
+}
+
+void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
+{
+    /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
+    for (const auto & data_type : sorting_key.data_types)
+    {
+        if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
 }
 
