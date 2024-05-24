@@ -6,13 +6,13 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/BestCompressionPermutation.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -501,9 +501,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     if (data.getSettings()->allow_experimental_optimized_row_order)
     {
-        LOG_DEBUG(log, "allow_experimental_optimized_row_order=true");
-
-        getBestCompressionPermutation(block, sort_description, perm);
+        RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
     }
 
@@ -729,9 +727,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     if (data.getSettings()->allow_experimental_optimized_row_order)
     {
-        LOG_DEBUG(log, "allow_experimental_optimized_row_order=true");
-
-        getBestCompressionPermutation(block, sort_description, perm);
+        RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
     }
 

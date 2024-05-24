@@ -50,17 +50,6 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-size_t IColumn::getCardinalityInPermutedRange(const IColumn::Permutation & /*perm*/, const EqualRange & range) const
-{
-    return range.size();
-}
-
-void IColumn::updatePermutationForCompression(IColumn::Permutation & perm, EqualRanges & ranges) const
-{
-    updatePermutation(PermutationSortDirection::Ascending, PermutationSortStability::Unstable, 0, 1, perm, ranges);
-}
-
-
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
@@ -91,6 +80,11 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
         res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
 
     return res;
+}
+
+size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
+{
+    return equal_range.size();
 }
 
 void IColumn::forEachSubcolumn(ColumnCallback callback) const

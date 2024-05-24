@@ -482,24 +482,25 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
-size_t ColumnString::getCardinalityInPermutedRange(const Permutation & perm, const EqualRange & range) const
+size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
 {
-    size_t range_size = range.size();
-    if (range_size <= 1ULL)
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
         return range_size;
 
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     StringHashSet elements;
-    size_t unique_elements = 0;
-    for (size_t i = range.from; i < range.to; ++i)
+    size_t estimated_unique = 0;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        size_t id = perm[i];
+        size_t id = permutation[i];
         StringRef ref = getDataAt(id);
         bool inserted = false;
         elements.emplace(ref, inserted);
         if (inserted)
-            ++unique_elements;
+            ++estimated_unique;
     }
-    return unique_elements;
+    return estimated_unique;
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
