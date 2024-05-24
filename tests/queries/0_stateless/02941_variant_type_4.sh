@@ -8,7 +8,7 @@ CLICKHOUSE_LOG_COMMENT=
 . "$CUR_DIR"/../shell_config.sh
 
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1"g
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1"
 
 function test6_insert()
 {
