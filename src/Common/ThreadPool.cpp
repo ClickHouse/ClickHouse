@@ -5,7 +5,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 
-#include <cassert>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -182,6 +181,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
     {
         std::unique_lock lock(mutex);
+
+        if (CannotAllocateThreadFaultInjector::injectFault())
+            return on_error("fault injected");
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
@@ -434,6 +436,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
             {
+                {
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    /// job can contain packaged_task which can set exception during destruction
+                    job_data.reset();
+                }
                 job_is_done = true;
                 continue;
             }
@@ -491,8 +498,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
+template class ThreadFromGlobalPoolImpl<false, false>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
@@ -545,4 +554,43 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
+}
+
+CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
+{
+    static CannotAllocateThreadFaultInjector ins;
+    return ins;
+}
+
+void CannotAllocateThreadFaultInjector::setFaultProbability(double probability)
+{
+    auto & ins = instance();
+    std::lock_guard lock(ins.mutex);
+    ins.enabled = 0 < probability && probability <= 1;
+    if (ins.enabled)
+        ins.random.emplace(probability);
+    else
+        ins.random.reset();
+}
+
+bool CannotAllocateThreadFaultInjector::injectFault()
+{
+    auto & ins = instance();
+    if (!ins.enabled.load(std::memory_order_relaxed))
+        return false;
+
+    if (ins.block_fault_injections)
+        return false;
+
+    std::lock_guard lock(ins.mutex);
+    return ins.random && (*ins.random)(ins.rndgen);
+}
+
+thread_local bool CannotAllocateThreadFaultInjector::block_fault_injections = false;
+
+scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
+{
+    auto & ins = instance();
+    ins.block_fault_injections = true;
+    return [&ins](){ ins.block_fault_injections = false; };
 }

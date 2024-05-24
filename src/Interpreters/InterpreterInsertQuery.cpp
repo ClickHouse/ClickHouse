@@ -519,7 +519,8 @@ BlockIO InterpreterInsertQuery::execute()
                 auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
                 /// It breaks some views-related tests and we have dedicated `parallel_view_processing` for views, so let's just skip them.
-                const bool resize_to_max_insert_threads = !table->isView() && views.empty();
+                /// Also it doesn't make sense to reshuffle data if storage doesn't support parallel inserts.
+                const bool resize_to_max_insert_threads = !table->isView() && views.empty() && table->supportsParallelInsert();
                 pre_streams_size = resize_to_max_insert_threads ? settings.max_insert_threads
                                                                 : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
 
@@ -551,7 +552,11 @@ BlockIO InterpreterInsertQuery::execute()
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                         /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type) && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type) && !isVariant(query_columns[col_idx].type) && output_columns.has(query_columns[col_idx].name))
+                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type)
+                            && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type)
+                            && !isVariant(query_columns[col_idx].type)
+                            && !isDynamic(query_columns[col_idx].type)
+                            && output_columns.has(query_columns[col_idx].name))
                             query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullableOrLowCardinalityNullable(query_columns[col_idx].column), makeNullableOrLowCardinalityNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
                 }

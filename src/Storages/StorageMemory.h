@@ -31,7 +31,7 @@ public:
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         const String & comment,
-        const MemorySettings & settings = MemorySettings());
+        const MemorySettings & memory_settings_ = MemorySettings());
 
     String getName() const override { return "Memory"; }
 
@@ -46,6 +46,8 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    const MemorySettings & getMemorySettingsRef() const { return memory_settings; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -58,6 +60,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
@@ -78,6 +81,7 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -134,12 +138,7 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
-    bool compress;
-    UInt64 min_rows_to_keep;
-    UInt64 max_rows_to_keep;
-    UInt64 min_bytes_to_keep;
-    UInt64 max_bytes_to_keep;
-
+    MemorySettings memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

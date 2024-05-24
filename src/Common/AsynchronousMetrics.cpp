@@ -56,7 +56,7 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 
 AsynchronousMetrics::AsynchronousMetrics(
-    int update_period_seconds,
+    unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
@@ -1159,7 +1159,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                     core_id = std::stoi(s.substr(core_id_start));
                 }
-                else if (s.rfind("cpu MHz", 0) == 0)
+                else if (s.starts_with("cpu MHz"))
                 {
                     if (auto colon = s.find_first_of(':'))
                     {

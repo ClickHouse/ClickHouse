@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758 
+personal_ws-1.1 en 2758
 AArch
 ACLs
 ALTERs
@@ -6,6 +6,7 @@ AMPLab
 AMQP
 ANNIndex
 ANNIndexes
+ANOVA
 AORM
 APIs
 ARMv
@@ -176,6 +177,7 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
 Config
 ConnectionDetails
 Const
@@ -263,8 +265,8 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
-FFFFFFFF
 FFFD
+FFFFFFFF
 FIPS
 FOSDEM
 FQDN
@@ -452,6 +454,7 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
 Korzeniewski
 Kubernetes
 LDAP
@@ -462,6 +465,7 @@ LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
+LOONGARCH
 Levenshtein
 Liao
 LibFuzzer
@@ -479,6 +483,7 @@ LocalThreadActive
 LogQL
 Logstash
 LookML
+LoongArch
 LowCardinality
 LpDistance
 LpNorm
@@ -551,8 +556,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
-mortonDecode
-mortonEncode
+Monotonicity
 MsgPack
 MultiPolygon
 Multiline
@@ -593,6 +597,7 @@ NetworkSendErrors
 NetworkSendPackets
 Noaa
 NodeJs
+NonMonotonic
 NuRaft
 NumHexagons
 NumPy
@@ -654,6 +659,7 @@ OSUserTimeNormalized
 OTLP
 OUTFILE
 ObjectId
+Oblakov
 Observability
 Octonica
 Ok
@@ -675,6 +681,7 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -860,6 +867,7 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -932,6 +940,7 @@ TemporaryFilesUnknown
 Testflows
 Tgz
 Theil's
+ThreadMonotonic
 ThreadPoolFSReaderThreads
 ThreadPoolFSReaderThreadsActive
 ThreadPoolRemoteFSReaderThreads
@@ -974,6 +983,7 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
 URLHash
 URLHierarchy
@@ -981,7 +991,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -1015,6 +1027,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1032,6 +1046,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZCurve
 ZSTDQAT
 Zabbix
 Zipkin
@@ -1052,6 +1067,7 @@ activerecord
 addDate
 addDays
 addHours
+addInterval
 addMicroseconds
 addMilliseconds
 addMinutes
@@ -1059,6 +1075,7 @@ addMonths
 addNanoseconds
 addQuarters
 addSeconds
+addTupleOfIntervals
 addWeeks
 addYears
 addr
@@ -1075,6 +1092,7 @@ aiochclient
 allocator
 alphaTokens
 amplab
+analysisOfVariance
 analytics
 anonymize
 anonymized
@@ -1102,15 +1120,19 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
+arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
+arrayEnumerateDenseRanked
 arrayEnumerateUniq
+arrayEnumerateUniqRanked
 arrayExists
 arrayFill
 arrayFilter
 arrayFirst
 arrayFirstIndex
+arrayFirstOrNull
 arrayFlatten
 arrayFold
 arrayIntersect
@@ -1118,10 +1140,12 @@ arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
+arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
 arrayPartialReverseSort
+arrayPartialShuffle
 arrayPartialSort
 arrayPopBack
 arrayPopFront
@@ -1141,6 +1165,7 @@ arrayRotateRight
 arrayShiftLeft
 arrayShiftRight
 arrayShingles
+arrayShuffle
 arraySlice
 arraySort
 arraySplit
@@ -1322,6 +1347,7 @@ collapsingmergetree
 combinator
 combinators
 comparising
+composable
 compressability
 concat
 concatAssumeInjective
@@ -1334,6 +1360,7 @@ configs
 congruential
 conjuction
 conjuctive
+connectionId
 const
 contrib
 convertCharset
@@ -1344,6 +1371,8 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1550,6 +1579,7 @@ firstSignificantSubdomainCustom
 fixedstring
 flamegraph
 flatbuffers
+flattenTuple
 flink
 fluentd
 fmtlib
@@ -1679,8 +1709,8 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
-hasToken
 hasThreadFuzzer
+hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1753,8 +1783,10 @@ isIPAddressInRange
 isIPv
 isInfinite
 isNaN
+isNotDistinctFrom
 isNotNull
 isNull
+isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
@@ -1806,6 +1838,8 @@ kolmogorovSmirnovTest
 kolmogorovsmirnovtest
 kolya
 konsole
+kostik
+kostikConsistentHash
 kurtPop
 kurtSamp
 kurtosis
@@ -1819,6 +1853,7 @@ latencies
 ldap
 leftPad
 leftPadUTF
+leftUTF
 lemmatization
 lemmatize
 lemmatized
@@ -1866,6 +1901,7 @@ logagent
 loghouse
 london
 lookups
+loongarch
 lowcardinality
 lowerUTF
 lowercased
@@ -1910,6 +1946,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
@@ -1934,9 +1972,13 @@ mispredictions
 mmap
 mmapped
 modularization
+moduli
 moduloOrZero
 mongodb
+monotonicity
 monthName
+mortonDecode
+mortonEncode
 moscow
 msgpack
 msgpk
@@ -1948,10 +1990,21 @@ multiMatchAllIndices
 multiMatchAny
 multiMatchAnyIndex
 multiSearchAllPositions
+multiSearchAllPositionsCaseInsensitive
+multiSearchAllPositionsCaseInsensitiveUTF
 multiSearchAllPositionsUTF
 multiSearchAny
+multiSearchAnyCaseInsensitive
+multiSearchAnyCaseInsensitiveUTF
+multiSearchAnyUTF
 multiSearchFirstIndex
+multiSearchFirstIndexCaseInsensitive
+multiSearchFirstIndexCaseInsensitiveUTF
+multiSearchFirstIndexUTF
 multiSearchFirstPosition
+multiSearchFirstPositionCaseInsensitive
+multiSearchFirstPositionCaseInsensitiveUTF
+multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
@@ -2037,6 +2090,7 @@ ok
 omclickhouse
 onstraints
 ontime
+onwards
 openSSL
 openSUSE
 openldap
@@ -2148,6 +2202,7 @@ procfs
 profiler
 proleptic
 prometheus
+proportionsZTest
 proto
 protobuf
 protobufsingle
@@ -2287,8 +2342,10 @@ rethrow
 retransmit
 retriable
 reverseUTF
+rewritable
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2316,10 +2373,13 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
+rustc
+rustup
 rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
@@ -2343,6 +2403,8 @@ sharding
 shortcircuit
 shortkeys
 shoutout
+showCertificate
+sigmoid
 simdjson
 simpleJSON
 simpleJSONExtractBool
@@ -2356,7 +2418,9 @@ simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
 simpod
+singleValueOrNull
 singlepart
+singlevalueornull
 sinh
 sipHash
 siphash
@@ -2400,9 +2464,13 @@ statbox
 stateful
 stddev
 stddevPop
+stddevPopStable
 stddevSamp
+stddevSampStable
 stddevpop
+stddevpopstable
 stddevsamp
+stddevsampstable
 stderr
 stdin
 stdout
@@ -2463,6 +2531,7 @@ substrings
 subtitiles
 subtractDays
 subtractHours
+subtractInterval
 subtractMicroseconds
 subtractMilliseconds
 subtractMinutes
@@ -2470,6 +2539,7 @@ subtractMonths
 subtractNanoseconds
 subtractQuarters
 subtractSeconds
+subtractTupleOfIntervals
 subtractWeeks
 subtractYears
 subtree
@@ -2480,10 +2550,13 @@ sumCount
 sumKahan
 sumMap
 sumMapFiltered
+sumMapFilteredWithOverflow
+sumMapWithOverflow
 sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
@@ -2506,6 +2579,7 @@ tabseparatedrawwithnames
 tabseparatedrawwithnamesandtypes
 tabseparatedwithnames
 tabseparatedwithnamesandtypes
+tanh
 tcp
 tcpPort
 tcpnodelay
@@ -2554,6 +2628,7 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
+toMillisecond
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -2570,7 +2645,6 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
-toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2640,7 +2714,13 @@ tupleDivide
 tupleDivideByNumber
 tupleElement
 tupleHammingDistance
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
 tupleMinus
+tupleModulo
+tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate
@@ -2684,10 +2764,12 @@ unixODBC
 unixodbc
 unoptimized
 unparsed
+unpooled
 unrealiable
 unreplicated
 unresolvable
 unrounded
+unshuffled
 untracked
 untrusted
 untuple
@@ -2699,12 +2781,14 @@ uptrace
 uring
 url
 urlCluster
+urlencoded
 urls
 usearch
 userspace
 userver
 utils
 uuid
+uuidv
 varPop
 varPopStable
 varSamp
@@ -2717,6 +2801,7 @@ varpop
 varsamp
 vectorized
 vectorscan
+vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree
@@ -2760,6 +2845,7 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
+wyHash
 xcode
 xeus
 xkcd
@@ -2770,7 +2856,6 @@ xz
 yaml
 yandex
 youtube
-ZCurve
 zLib
 zLinux
 zabbix

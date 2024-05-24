@@ -133,6 +133,12 @@ else
     ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 fi
 
+if [[ -n "$THREAD_POOL_FAULT_INJECTION" ]] && [[ "$THREAD_POOL_FAULT_INJECTION" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/cannot_allocate_thread_injection.xml $DEST_SERVER_PATH/config.d/
+else
+    rm -f $DEST_SERVER_PATH/config.d/cannot_allocate_thread_injection.xml ||:
+fi
+
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
 value=$(($RANDOM % 2))
 sed --follow-symlinks -i "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
@@ -150,7 +156,7 @@ if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; th
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
 
-if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
     object_key_type="${object_key_types_options[0]}"
 
@@ -171,13 +177,12 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
             ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
             ;;
     esac
+elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
 fi
 
-ARM="aarch64"
-OS="$(uname -m)"
 if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
-    echo "$OS"
-    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]] || [[ "$OS" == "$ARM" ]]; then
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         echo "Azure configuration will not be added"
     else
         echo "Adding azure configuration"

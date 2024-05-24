@@ -470,7 +470,7 @@ public:
         auto path = std::filesystem::path{file_path};
         auto parent_path_directory = path.parent_path();
 
-        /// If cache file is in directory that does not exists create it
+        /// If cache file is in directory that does not exist create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
                 throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
@@ -721,14 +721,13 @@ public:
                 if (!block.checkCheckSum())
                 {
                     std::string calculated_check_sum = std::to_string(block.calculateCheckSum());
-                    std::string check_sum = std::to_string(block.getCheckSum());
+                    std::string expected_check_sum = std::to_string(block.getCheckSum());
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "Cache data corrupted. Checksum validation failed. Calculated {} in block {}",
-                        calculated_check_sum,
-                        check_sum);
+                        "Cache data corrupted. Checksum validation failed. Calculated {} expected in block {}, in file {}",
+                        calculated_check_sum, expected_check_sum, file_path);
                 }
 
-                std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
+                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
 
                 processed[block_to_fetch_index] = true;
             }

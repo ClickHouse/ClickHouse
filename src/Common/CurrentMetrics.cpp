@@ -177,6 +177,9 @@
     M(MergeTreeOutdatedPartsLoaderThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreeOutdatedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreeOutdatedPartsLoaderThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(MergeTreeUnexpectedPartsLoaderThreads, "Number of threads in the threadpool for loading Unexpected data parts.") \
+    M(MergeTreeUnexpectedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Unexpected data parts.") \
+    M(MergeTreeUnexpectedPartsLoaderThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Unexpected data parts.") \
     M(MergeTreePartsCleanerThreads, "Number of threads in the MergeTree parts cleaner thread pool.") \
     M(MergeTreePartsCleanerThreadsActive, "Number of threads in the MergeTree parts cleaner thread pool running a task.") \
     M(MergeTreePartsCleanerThreadsScheduled, "Number of queued or active jobs in the MergeTree parts cleaner thread pool.") \
@@ -221,6 +224,8 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
     M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
+    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
+    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -285,7 +290,10 @@
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
     \
     M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
-
+    M(AddressesBanned, "Total count of addresses which are banned as faulty for creation connections with connection pools")   \
+    \
+    M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
+    M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

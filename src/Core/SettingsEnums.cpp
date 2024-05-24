@@ -87,6 +87,10 @@ IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::B
      {"save",   QueryCacheNondeterministicFunctionHandling::Save},
      {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
 
+IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryCacheSystemTableHandling::Throw},
+     {"save",   QueryCacheSystemTableHandling::Save},
+     {"ignore", QueryCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
