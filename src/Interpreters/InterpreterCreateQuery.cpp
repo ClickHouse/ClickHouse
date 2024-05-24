@@ -960,6 +960,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
 
+        if (as_create.is_materialized_view && as_create.to_table_id)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Cannot CREATE a table AS {}, it is a Materialized View without storage. Use \"AS `{}`\" instead",
+                qualified_name,
+                as_create.to_table_id.getQualifiedName());
+
         if (as_create.is_live_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
 
