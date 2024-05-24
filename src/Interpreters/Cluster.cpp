@@ -2,7 +2,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/randomSeed.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
