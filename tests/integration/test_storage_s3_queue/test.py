@@ -1125,7 +1125,11 @@ def test_shards(started_cluster, mode, processing_threads):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
     for _ in range(100):
-        count = get_count(f"{dst_table_name}_1") + get_count(f"{dst_table_name}_2") + get_count(f"{dst_table_name}_3")
+        count = (
+            get_count(f"{dst_table_name}_1")
+            + get_count(f"{dst_table_name}_2")
+            + get_count(f"{dst_table_name}_3")
+        )
         if count == files_to_generate:
             break
         print(f"Current {count}/{files_to_generate}")
@@ -1136,12 +1140,20 @@ def test_shards(started_cluster, mode, processing_threads):
         + get_count(f"{dst_table_name}_2")
         + get_count(f"{dst_table_name}_3")
     ) != files_to_generate:
-        processed_files = node.query(
-            f"select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' order by file"
-        ).strip().split('\n')
+        processed_files = (
+            node.query(
+                f"select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' order by file"
+            )
+            .strip()
+            .split("\n")
+        )
         logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}")
 
-        count = get_count(f"{dst_table_name}_1") + get_count(f"{dst_table_name}_2") + get_count(f"{dst_table_name}_3")
+        count = (
+            get_count(f"{dst_table_name}_1")
+            + get_count(f"{dst_table_name}_2")
+            + get_count(f"{dst_table_name}_3")
+        )
         logging.debug(f"Processed rows: {count}/{files_to_generate}")
 
         info = node.query(
@@ -1247,18 +1259,30 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     if (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) != total_rows:
-        processed_files = node.query(
-            f"""
+        processed_files = (
+            node.query(
+                f"""
 select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
-        ).strip().split('\n')
-        logging.debug(f"Processed files by node 1: {len(processed_files)}/{files_to_generate}")
-        processed_files = node_2.query(
-            f"""
+            )
+            .strip()
+            .split("\n")
+        )
+        logging.debug(
+            f"Processed files by node 1: {len(processed_files)}/{files_to_generate}"
+        )
+        processed_files = (
+            node_2.query(
+                f"""
 select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
-        ).strip().split('\n')
-        logging.debug(f"Processed files by node 2: {len(processed_files)}/{files_to_generate}")
+            )
+            .strip()
+            .split("\n")
+        )
+        logging.debug(
+            f"Processed files by node 2: {len(processed_files)}/{files_to_generate}"
+        )
 
         count = get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
         logging.debug(f"Processed rows: {count}/{files_to_generate}")
@@ -1272,20 +1296,30 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         )
         logging.debug(f"Unprocessed files: {info}")
 
-        files1 = node.query(
-            f"""
+        files1 = (
+            node.query(
+                f"""
             select splitByChar('/', file_name)[-1] from system.s3queue
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
-        ).strip().split("\n")
-        files2 = node_2.query(
-            f"""
+            )
+            .strip()
+            .split("\n")
+        )
+        files2 = (
+            node_2.query(
+                f"""
             select splitByChar('/', file_name)[-1] from system.s3queue
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
-        ).strip().split("\n")
+            )
+            .strip()
+            .split("\n")
+        )
+
         def intersection(list_a, list_b):
-            return [ e for e in list_a if e in list_b ]
+            return [e for e in list_a if e in list_b]
+
         logging.debug(f"Intersecting files: {intersection(files1, files2)}")
 
         assert False
