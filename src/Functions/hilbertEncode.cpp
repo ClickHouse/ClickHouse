@@ -9,7 +9,7 @@ REGISTER_FUNCTION(HilbertEncode)
 {
     factory.registerFunction<FunctionHilbertEncode>(FunctionDocumentation{
         .description=R"(
-Calculates code for Hilbert Curve for a list of unsigned integers
+Calculates a Hilbert curve index for a list of unsigned integers to map multidimensional data to a one-dimensional integer space.
 
 The function has two modes of operation:
 - Simple

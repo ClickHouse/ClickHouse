@@ -40,8 +40,8 @@ public:
         size_t vector_start_index = 0;
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "At least one UInt argument is required for function {}",
-                getName());
+                            "At least one UInt argument is required for function {}",
+                            getName());
         if (WhichDataType(arguments[0]).isTuple())
         {
             vector_start_index = 1;
@@ -49,14 +49,14 @@ public:
             auto tuple_size = type_tuple->getElements().size();
             if (tuple_size != (arguments.size() - 1))
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
-                    arguments[0]->getName(), getName());
+                                "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
+                                arguments[0]->getName(), getName());
             for (size_t i = 0; i < tuple_size; i++)
             {
                 if (!WhichDataType(type_tuple->getElement(i)).isNativeUInt())
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument in tuple for function {}, should be a native UInt",
-                        type_tuple->getElement(i)->getName(), getName());
+                                    "Illegal type {} of argument in tuple for function {}, should be a native UInt",
+                                    type_tuple->getElement(i)->getName(), getName());
             }
         }
 
@@ -65,8 +65,8 @@ public:
             const auto & arg = arguments[i];
             if (!WhichDataType(arg).isNativeUInt())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument for function {}, should be a native UInt",
-                    arg->getName(), getName());
+                                "Illegal type {} of argument for function {}, should be a native UInt",
+                                arg->getName(), getName());
         }
         return std::make_shared<DataTypeUInt64>();
     }
@@ -91,12 +91,12 @@ public:
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         if (!col_const)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} for function {}, should be a constant (UInt or Tuple)",
-                arguments[0].type->getName(), getName());
+                            "Illegal column type {} for function {}, should be a constant (UInt or Tuple)",
+                            arguments[0].type->getName(), getName());
         if (!WhichDataType(arguments[1].type).isNativeUInt())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} for function {}, should be a native UInt",
-                arguments[1].type->getName(), getName());
+                            "Illegal column type {} for function {}, should be a native UInt",
+                            arguments[1].type->getName(), getName());
         const auto * mask = typeid_cast<const ColumnTuple *>(col_const->getDataColumnPtr().get());
         if (mask)
         {
@@ -108,12 +108,12 @@ public:
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} for function {}, should be UInt or Tuple",
-                arguments[0].type->getName(), getName());
+                            "Illegal column type {} for function {}, should be UInt or Tuple",
+                            arguments[0].type->getName(), getName());
         if (tuple_size > max_dimensions || tuple_size < 1)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Illegal first argument for function {}, should be a number in range 1-{} or a Tuple of such size",
-                getName(), String{max_dimensions});
+                            "Illegal first argument for function {}, should be a number in range 1-{} or a Tuple of such size",
+                            getName(), max_dimensions);
         if (mask)
         {
             const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].type.get());
@@ -121,13 +121,13 @@ public:
             {
                 if (!WhichDataType(type_tuple->getElement(i)).isNativeUInt())
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument in tuple for function {}, should be a native UInt",
-                        type_tuple->getElement(i)->getName(), getName());
+                                    "Illegal type {} of argument in tuple for function {}, should be a native UInt",
+                                    type_tuple->getElement(i)->getName(), getName());
                 auto ratio = mask->getColumn(i).getUInt(0);
                 if (ratio > max_ratio || ratio < min_ratio)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Illegal argument {} in tuple for function {}, should be a number in range {}-{}",
-                        ratio, getName(), String{min_ratio}, String{max_ratio});
+                                    "Illegal argument {} in tuple for function {}, should be a number in range {}-{}",
+                                    ratio, getName(), min_ratio, max_ratio);
             }
         }
         DataTypes types(tuple_size);
