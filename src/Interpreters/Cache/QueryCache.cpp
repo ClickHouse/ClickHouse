@@ -117,6 +117,21 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database)
+{
+    ast = removeQueryCacheSettings(ast);
+
+    /// Hash the AST, it must consider aliases (issue #56258)
+    SipHash hash;
+    ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
+
+    /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
+    /// tables (issue #64136)
+    hash.update(current_database);
+
+    return getSipHash128AsPair(hash);
+}
+
 String queryStringFromAST(ASTPtr ast)
 {
     WriteBufferFromOwnString buf;
@@ -128,12 +143,13 @@ String queryStringFromAST(ASTPtr ast)
 
 QueryCache::Key::Key(
     ASTPtr ast_,
+    const String & current_database,
     Block header_,
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast(removeQueryCacheSettings(ast_))
+    : ast_hash(calculateAstHash(ast_, current_database))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -144,23 +160,19 @@ QueryCache::Key::Key(
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+QueryCache::Key::Key(ASTPtr ast_, const String & current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
 {
 }
 
-/// Hashing of ASTs must consider aliases (issue #56258)
-static constexpr bool ignore_aliases = false;
-
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
+    return ast_hash == other.ast_hash;
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
-    return hash.low64;
+    return key.ast_hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
