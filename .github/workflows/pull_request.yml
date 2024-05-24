@@ -33,6 +33,9 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Cancel Sync PR workflow
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
