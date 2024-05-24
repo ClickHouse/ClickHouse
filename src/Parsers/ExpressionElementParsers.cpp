@@ -7,7 +7,7 @@
 
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include "Parsers/CommonParsers.h"
 
