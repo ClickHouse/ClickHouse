@@ -208,6 +208,10 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
 
     auto * variant_state = checkAndGetState<SerializeBinaryBulkStateVariant>(state);
 
+    /// Don't write anything if column is empty.
+    if (limit == 0)
+        return;
+
     /// Write number of rows in this granule in compact mode.
     if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
         writeVarUInt(UInt64(limit), *discriminators_stream);
