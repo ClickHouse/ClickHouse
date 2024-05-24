@@ -225,7 +225,28 @@ namespace
 
 REGISTER_FUNCTION(FromReadableSize)
 {
-    factory.registerFunction<FunctionFromReadableSize>();
+    factory.registerFunction<FunctionFromReadableSize>(FunctionDocumentation
+        {
+            .description=R"(
+Given a string containing the readable respresentation of a byte size, this function returns the corrseponding number of bytes:
+[example:basic_binary]
+[example:basic_decimal]
+
+If the resulting number of bytes has a non-zero decimal part, the result is rounded up to indicate the number of bytes necessary to accommodate the provided size.
+[example:round]
+
+Accepts readable sizes up to the ExaByte (EB/EiB).
+
+It always returns an UInt64 value.
+)",
+            .examples{
+                {"basic_binary", "SELECT fromReadableSize('1 KiB')", "1024"},
+                {"basic_decimal", "SELECT fromReadableSize('1.523 KB')", "1523"},
+                {"round", "SELECT fromReadableSize('1.0001 KiB')", "1025"},
+            },
+            .categories{"OtherFunctions"}
+        }
+    );
 }
 
 }

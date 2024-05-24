@@ -777,6 +777,37 @@ Alias: `FORMAT_BYTES`.
 └────────────────┴────────────┘
 ```
 
+## fromReadableSize(x)
+
+Given a string containing the readable respresentation of a byte size, this function returns the corrseponding number of bytes.
+ - As the conversion might lead to decimal bytes the result will be rounded up to the next integer to represent the minimum number of bytes that can fit the passed size.
+ - Accepts up to the Exabyte/Exabibyte (EB/EiB)  
+
+**Arguments**
+
+- `val` : readable size. [String](../data-types/string)
+
+**Returned value**
+
+- Number of bytes represented by the readable size [UInt64](../data-types/int-uint.md).
+
+Example:
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KB']) AS readable_sizes,
+    fromReadableSize(readable_sizes) AS sizes
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MiB          │ 3145728 │
+│ 5.314 KB       │    5314 │
+└────────────────┴─────────┘
+```
+
 ## formatReadableQuantity(x)
 
 Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as string.
