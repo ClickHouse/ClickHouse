@@ -570,9 +570,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
     String name = cluster_name;
     bool all_groups = false;
-    if (name.starts_with("all_groups."))
+    if (name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
     {
-        name = name.substr(strlen("all_groups."));
+        name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
         all_groups = true;
     }
 

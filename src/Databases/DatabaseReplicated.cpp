@@ -122,6 +122,13 @@ DatabaseReplicated::DatabaseReplicated(
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
+
+    if (!replica_group_name.empty() && database_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+    {
+        context_->addWarningMessage(fmt::format("There's a Replicated database with a name starting from '{}', "
+                                                "and replica_group_name is configured. It may cause collisions in cluster names.",
+                                                ALL_GROUPS_CLUSTER_PREFIX));
+    }
 }
 
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
@@ -311,7 +318,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     String cluster_name = TSA_SUPPRESS_WARNING_FOR_READ(database_name);     /// FIXME
     if (all_groups)
-        cluster_name = "all_groups." + cluster_name;
+        cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
 
     ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
