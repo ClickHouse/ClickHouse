@@ -1,6 +1,14 @@
 SELECT if(number = 1, \'hello\', if(number = 2, \'world\', \'xyz\'))
 FROM numbers(10)
+SETTINGS allow_experimental_analyzer = 0
+SELECT if(__table1.number = 1, \'hello\', if(__table1.number = 2, \'world\', \'xyz\')) AS `if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))`
+FROM numbers(10) AS __table1
+SETTINGS allow_experimental_analyzer = 1
 SELECT multiIf(number = 1, \'hello\', number = 2, \'world\', \'xyz\')
 FROM numbers(10)
+SETTINGS allow_experimental_analyzer = 0
+SELECT multiIf(__table1.number = 1, \'hello\', __table1.number = 2, \'world\', \'xyz\') AS `if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))`
+FROM numbers(10) AS __table1
+SETTINGS allow_experimental_analyzer = 1
 \N
 \N
