@@ -811,7 +811,7 @@ formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 **Arguments**
 
 - `column` — A column with a numeric time delta or an interval expression.
-  - Interval units of `MONTH` and greater are not supported as they don't map to a fixed time interval.
+  - Interval units `MONTH`, `QUARTER` and `YEAR` are not supported as they don't represent a fixed-sized interval in seconds.
 - `maximum_unit` — Optional. Maximum unit to show.
   - Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
   - Default value: `years`.
@@ -819,7 +819,6 @@ formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
   - Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
   - If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
   - Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
-
 
 **Example**
 
