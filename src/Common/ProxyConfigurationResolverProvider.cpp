@@ -49,7 +49,7 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
-            std::make_unique<RemoteProxyHostFetcherImpl>(),
+            std::make_shared<RemoteProxyHostFetcherImpl>(),
             isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 

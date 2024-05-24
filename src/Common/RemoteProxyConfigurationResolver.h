@@ -15,12 +15,12 @@ struct ConnectionTimeouts;
 struct RemoteProxyHostFetcher
 {
     virtual ~RemoteProxyHostFetcher() = default;
-    virtual std::string fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const = 0;
+    virtual std::string fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) = 0;
 };
 
 struct RemoteProxyHostFetcherImpl : public RemoteProxyHostFetcher
 {
-    std::string fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const override;
+    std::string fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) override;
 };
 
 /*
@@ -41,7 +41,7 @@ public:
     RemoteProxyConfigurationResolver(
         const RemoteServerConfiguration & remote_server_configuration_,
         Protocol request_protocol_,
-        std::unique_ptr<RemoteProxyHostFetcher> fetcher_,
+        std::shared_ptr<RemoteProxyHostFetcher> fetcher_,
         bool disable_tunneling_for_https_requests_over_http_proxy_ = false);
 
     ProxyConfiguration resolve() override;
@@ -50,7 +50,7 @@ public:
 
 private:
     RemoteServerConfiguration remote_server_configuration;
-    std::unique_ptr<RemoteProxyHostFetcher> fetcher;
+    std::shared_ptr<RemoteProxyHostFetcher> fetcher;
 
     std::mutex cache_mutex;
     bool cache_valid = false;

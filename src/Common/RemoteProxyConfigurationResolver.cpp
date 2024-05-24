@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const
+std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts)
 {
     auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
@@ -39,11 +39,11 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
     const RemoteServerConfiguration & remote_server_configuration_,
     Protocol request_protocol_,
-    std::unique_ptr<RemoteProxyHostFetcher> fetcher_,
+    std::shared_ptr<RemoteProxyHostFetcher> fetcher_,
     bool disable_tunneling_for_https_requests_over_http_proxy_
 )
 : ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_),
-    remote_server_configuration(remote_server_configuration_), fetcher(std::move(fetcher_))
+    remote_server_configuration(remote_server_configuration_), fetcher(fetcher_)
 {
 }
 
