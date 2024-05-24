@@ -103,6 +103,19 @@ The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
 The `Join`-engine allows to specify [join_use_nulls](/docs/en/operations/settings/settings.md/#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/docs/en/sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
 
+#### enable_join_restore
+
+Enabled service startup loading data for the Join table engines.
+
+Improve service startup time. It is suitable for the scene with a large amount of data and a large number of files.
+
+Possible values:
+
+- true — Enabled.
+- false — Disabled.
+
+Default value: `true`.
+
 ## Usage Examples {#example}
 
 Creating the left-side table:

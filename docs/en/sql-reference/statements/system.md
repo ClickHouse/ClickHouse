@@ -28,6 +28,16 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 SELECT name, status FROM system.dictionaries;
 ```
 
+## RELOAD JOIN
+
+When loading JOIN data is not enable(see [join](/docs/en/engines/table-engines/special/join.md)) at startup, this command to manually load the data
+
+**Syntax**
+
+```sql
+SYSTEM RELOAD JOIN [ON CLUSTER cluster_name] [db.]<join_table_name>
+```
+
 ## RELOAD MODELS
 
 :::note

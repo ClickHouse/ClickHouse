@@ -78,6 +78,7 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
+    void restoreJoin(ASTSystemQuery & query);
 };
 
 
