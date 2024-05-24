@@ -40,10 +40,12 @@ addressToLine(address_of_binary_instruction)
 
 **Returned value**
 
-- Source code filename and the line number in this file delimited by colon. [String](../data-types/string.md).
-    - For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
-- Name of a binary, if the function couldn’t find the debug information. [String](../data-types/string.md).
-- Empty string, if the address is not valid. [String](../data-types/string.md).
+- Source code filename and the line number in this file delimited by colon.
+        For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+- Name of a binary, if the function couldn’t find the debug information.
+- Empty string, if the address is not valid.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
