@@ -337,6 +337,7 @@ roundAge(num)
 - Returns `55`, for $age \geq 55$.
 
 Type: [UInt8](../data-types/int-uint.md).
+
 **Example**
 
 Query:
