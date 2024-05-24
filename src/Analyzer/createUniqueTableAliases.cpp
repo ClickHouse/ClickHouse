@@ -1,8 +1,6 @@
 #include <memory>
 #include <unordered_map>
 #include <Analyzer/createUniqueTableAliases.h>
-#include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -60,7 +58,6 @@ public:
                     alias = fmt::format("__table{}", ++next_id);
                     node->setAlias(alias);
                 }
-
                 break;
             }
             default:

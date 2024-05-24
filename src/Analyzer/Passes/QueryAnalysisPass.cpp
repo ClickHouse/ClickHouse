@@ -3995,8 +3995,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const Identifie
     if (identifier_lookup.isFunctionLookup())
         return {};
 
-    // std::cerr << "tryResolveIdentifierFromJoinTree " << identifier_lookup.identifier.getFullName() << std::endl;
-
     /// Try to resolve identifier from table columns
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
         return resolved_identifier;
