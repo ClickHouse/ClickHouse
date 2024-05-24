@@ -113,7 +113,7 @@ public:
         if (tuple_size > max_dimensions || tuple_size < 1)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                             "Illegal first argument for function {}, should be a number in range 1-{} or a Tuple of such size",
-                            getName(), max_dimensions);
+                            getName(), String{max_dimensions});
         if (mask)
         {
             const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].type.get());
@@ -127,7 +127,7 @@ public:
                 if (ratio > max_ratio || ratio < min_ratio)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                     "Illegal argument {} in tuple for function {}, should be a number in range {}-{}",
-                                    ratio, getName(), min_ratio, max_ratio);
+                                    ratio, getName(), String{min_ratio}, String{max_ratio});
             }
         }
         DataTypes types(tuple_size);
