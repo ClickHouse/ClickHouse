@@ -839,7 +839,7 @@ executeQueryImpl(QueryData & query_data, ContextMutablePtr context, QueryFlags f
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
-            if (query_data.istr)
+            if (query_data.input_buf)
             {
                 ASTPtr input_function;
                 insert_query->tryFindInputFunction(input_function);
@@ -1253,9 +1253,9 @@ size_t getMaxQuerySize(ContextMutablePtr context, QueryFlags flags)
     return context->getSettingsRef().max_query_size;
 }
 
-QueryData getQueryData(ReadBuffer & istr, ContextMutablePtr context, QueryFlags flags, const QueryProcessingStage::Enum stage)
+QueryData::QueryData(ReadBuffer & istr, ContextMutablePtr context, QueryFlags flags, const QueryProcessingStage::Enum stage)
 {
-    auto parse_buf = std::make_unique<PODArray<char>>();
+    parse_buf = std::make_unique<PODArray<char>>();
     const char * begin;
     const char * end;
 
@@ -1322,10 +1322,6 @@ QueryData getQueryData(ReadBuffer & istr, ContextMutablePtr context, QueryFlags 
 
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-
-    ASTPtr ast;
-    String query;
-    String query_for_logging;
 
     try
     {
@@ -1452,18 +1448,13 @@ QueryData getQueryData(ReadBuffer & istr, ContextMutablePtr context, QueryFlags 
         throw;
     }
 
-    return QueryData{
-        .ast = ast,
-        .istr = wrapReadBufferReference(istr),
-        .parse_buf = std::move(parse_buf),
-        .query = query,
-        .query_for_logging = query_for_logging};
+    input_buf = wrapReadBufferReference(istr);
 }
 
 std::pair<ASTPtr, BlockIO> executeQuery(const String & query, ContextMutablePtr context, QueryFlags flags, QueryProcessingStage::Enum stage)
 {
     auto istr = std::make_unique<ReadBufferFromString>(query);
-    auto query_data = getQueryData(*istr, context, flags, stage);
+    auto query_data = QueryData(*istr, context, flags, stage);
 
     auto res = executeQueryImpl(query_data, context, flags, stage);
 
@@ -1476,6 +1467,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(const String & query, ContextMutablePtr 
     }
 
     return std::make_pair(query_data.ast, std::move(res));
+}
+
+QueryData::QueryData(ASTPtr ast_) : ast(ast_)
+{
 }
 
 void executeQuery(
@@ -1553,7 +1548,7 @@ void executeQuery(
     };
 
 
-    auto query_data = getQueryData(istr, context, flags, QueryProcessingStage::Complete);
+    auto query_data = QueryData(istr, context, flags, QueryProcessingStage::Complete);
 
     auto ast = query_data.ast;
     BlockIO streams;

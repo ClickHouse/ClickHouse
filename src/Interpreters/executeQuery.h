@@ -36,22 +36,28 @@ struct QueryFlags
     bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
 };
 
-struct QueryData
+class QueryData
 {
-    ASTPtr ast;
+public:
+    QueryData() = delete;
 
-    std::unique_ptr<ReadBuffer> istr;
-    std::unique_ptr<PODArray<char>> parse_buf;
+    QueryData(
+        ReadBuffer & istr,
+        ContextMutablePtr context,
+        QueryFlags flags_ = {},
+        const QueryProcessingStage::Enum stage_ = QueryProcessingStage::Enum::Complete);
+
+    QueryData(ASTPtr ast_);
+
+    ASTPtr ast;
+    std::unique_ptr<ReadBuffer> input_buf;
 
     std::string query;
     std::string query_for_logging;
-};
 
-QueryData getQueryData(
-    ReadBuffer & istr,
-    ContextMutablePtr context,
-    QueryFlags flags = {},
-    const QueryProcessingStage::Enum stage = QueryProcessingStage::Enum::Complete);
+private:
+    std::unique_ptr<PODArray<char>> parse_buf;
+};
 
 /// Parse and execute a query.
 void executeQuery(

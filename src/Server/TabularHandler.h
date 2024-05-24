@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -12,15 +13,10 @@ namespace DB
 
 class TabularHandler : public HTTPHandler
 {
-private:
-    LoggerPtr log;
-
-    std::optional<std::string> where;
-
 public:
     TabularHandler(IServer & server_, const std::optional<String> & content_type_override_ = std::nullopt);
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::shared_ptr<QueryData> getQueryAST(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
     bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
 };

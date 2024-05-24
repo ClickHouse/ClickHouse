@@ -606,9 +606,8 @@ void combineSelectQuery(ASTSelectQuery * select_query, HTTPQueryAST & http_query
         combineOrderExpressions(select_query, http_query_ast.order_expressions);
 }
 
-QueryData combineQueryWithParams(ReadBuffer & in, HTMLForm & params, ContextMutablePtr context)
+void combineQueryWithParams(QueryData& query_data, HTMLForm & params)
 {
-    auto query_data = getQueryData(in, context);
     auto http_query_ast = getHTTPQueryAST(params);
 
     if (auto * select_query = query_data.ast->as<ASTSelectQuery>())
@@ -621,8 +620,6 @@ QueryData combineQueryWithParams(ReadBuffer & in, HTMLForm & params, ContextMuta
             if (auto * child_select_query = child->as<ASTSelectQuery>())
                 combineSelectQuery(child_select_query, http_query_ast);
     }
-
-    return query_data;
 }
 
 
@@ -1024,17 +1021,26 @@ void HTTPHandler::processQuery(
 
     customizeContext(request, context, *in_post_maybe_compressed);
 
+    std::shared_ptr<QueryData> query_data;
+
     auto query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
-
     std::unique_ptr<ReadBuffer> in;
+
     in = has_external_data ? std::move(in_param)
                            : std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
 
-    auto query_data = combineQueryWithParams(*in, params, context);
+    if (!in->eof())
+        query_data = std::make_shared<QueryData>(*in, context);
+    else if (auto query_ast = getQueryAST(request, params, context))
+        query_data = query_ast;
+    else
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Empty request");
+
+    combineQueryWithParams(*query_data, params);
 
     executeQuery(
-        query_data,
+        *query_data,
         *used_output.out_maybe_delayed_and_compressed,
         /* allow_into_outfile = */ false,
         context,
