@@ -549,26 +549,6 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
     return tryDeserializeText(column, rb, settings, true);
 }
 
-void SerializationTuple::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
-{
-    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
-    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
-    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
-
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        auto next_data = SubstreamData(elems[i])
-            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
-            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
-            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr);
-
-        elems[i]->enumerateStreams(settings, callback, next_data);
-    }
-}
-
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState
 {
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
@@ -579,6 +559,27 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 };
 
+void SerializationTuple::enumerateStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
+    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
+    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
+    const auto * tuple_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateTuple>(data.deserialize_state) : nullptr;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        auto next_data = SubstreamData(elems[i])
+            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
+            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
+            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr)
+            .withDeserializeState(tuple_deserialize_state ? tuple_deserialize_state->states[i] : nullptr);
+
+        elems[i]->enumerateStreams(settings, callback, next_data);
+    }
+}
 
 void SerializationTuple::serializeBinaryBulkStatePrefix(
     const IColumn & column,
@@ -606,13 +607,14 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
 
 void SerializationTuple::deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const
 {
     auto tuple_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
     tuple_state->states.resize(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
+        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i], cache);
 
     state = std::move(tuple_state);
 }

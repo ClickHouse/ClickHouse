@@ -52,7 +52,7 @@ public:
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
-    bool hasDynamicSubcolumns() const override;
+    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
