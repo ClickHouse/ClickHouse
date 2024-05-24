@@ -17,3 +17,8 @@
 SELECT sumOrNullIf(1, number > 0)
 FROM numbers(10)
 WHERE 0
+SETTINGS allow_experimental_analyzer = 0
+SELECT sumOrNullIf(1, __table1.number > 0) AS `sumIf(1, greater(number, 0))`
+FROM numbers(10) AS __table1
+WHERE 0
+SETTINGS allow_experimental_analyzer = 1

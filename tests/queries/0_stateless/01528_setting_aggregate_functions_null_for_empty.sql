@@ -34,6 +34,7 @@ SELECT count(n) FROM defaults;
 SELECT countOrNull(n) FROM defaults;
 
 
-EXPLAIN SYNTAX SELECT sumIf(1, number > 0) FROM numbers(10) WHERE 0;
+EXPLAIN SYNTAX SELECT sumIf(1, number > 0) FROM numbers(10) WHERE 0 SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT sumIf(1, number > 0) FROM numbers(10) WHERE 0 SETTINGS allow_experimental_analyzer = 1;
 
 DROP TABLE defaults;
