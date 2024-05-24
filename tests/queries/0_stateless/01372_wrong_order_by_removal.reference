@@ -14,3 +14,20 @@ FROM
 )
 GROUP BY k
 ORDER BY k ASC
+SETTINGS allow_experimental_analyzer = 0
+SELECT
+    __table1.k AS k,
+    groupArrayMovingSum(__table1.v) AS `groupArrayMovingSum(v)`
+FROM
+(
+    SELECT
+        __table2.k AS k,
+        __table2.v AS v
+    FROM moving_sum_num AS __table2
+    ORDER BY
+        __table2.k ASC,
+        __table2.dt ASC
+) AS __table1
+GROUP BY __table1.k
+ORDER BY __table1.k ASC
+SETTINGS allow_experimental_analyzer = 1
