@@ -8,7 +8,7 @@ CLICKHOUSE_LOG_COMMENT=
 . "$CUR_DIR"/../shell_config.sh
 
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 --merge_max_block_size 8192 --merge_max_block_size_bytes=10485760"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 --merge_max_block_size_bytes=10485760"
 
 function test()
 {
@@ -41,12 +41,12 @@ function test()
 $CH_CLIENT -q "drop table if exists test;"
 
 echo "MergeTree compact"
-$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=10, index_granularity_bytes=10485760, index_granularity=8192;"
+$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=10, index_granularity_bytes=10485760, index_granularity=8192, merge_max_block_size=8192;"
 test
 $CH_CLIENT -q "drop table test;"
 
 echo "MergeTree wide"
-$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, index_granularity_bytes=10485760, index_granularity=8192;"
+$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, index_granularity_bytes=10485760, index_granularity=8192, merge_max_block_size=8192;"
 test
 $CH_CLIENT -q "drop table test;"
 
