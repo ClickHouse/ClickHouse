@@ -5,4 +5,10 @@ INSERT INTO t1 SELECT number, number * 10, number * 100, number * 1000 FROM numb
 
 EXPLAIN SYNTAX
 SELECT * FROM t1
-WHERE (a, b) = (1, 2) AND (c, d, a) = (3, 4, 5) OR (a, b, 1000) = (c, 10, d) OR ((a, b), 1000) = ((c, 10), d);
+WHERE (a, b) = (1, 2) AND (c, d, a) = (3, 4, 5) OR (a, b, 1000) = (c, 10, d) OR ((a, b), 1000) = ((c, 10), d)
+SETTINGS allow_experimental_analyzer = 0;
+
+EXPLAIN SYNTAX
+SELECT * FROM t1
+WHERE (a, b) = (1, 2) AND (c, d, a) = (3, 4, 5) OR (a, b, 1000) = (c, 10, d) OR ((a, b), 1000) = ((c, 10), d)
+SETTINGS allow_experimental_analyzer = 1;

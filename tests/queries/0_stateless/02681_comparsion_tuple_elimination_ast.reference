@@ -5,3 +5,12 @@ SELECT
     d
 FROM t1
 WHERE (((a = 1) AND (b = 2)) AND ((c = 3) AND (d = 4) AND (a = 5))) OR ((a = c) AND (b = 10) AND (1000 = d)) OR (((a = c) AND (b = 10)) AND (1000 = d))
+SETTINGS allow_experimental_analyzer = 0
+SELECT
+    __table1.a AS a,
+    __table1.b AS b,
+    __table1.c AS c,
+    __table1.d AS d
+FROM default.t1 AS __table1
+WHERE (((__table1.a = 1) AND (__table1.b = 2)) AND ((__table1.c = 3) AND (__table1.d = 4) AND (__table1.a = 5))) OR ((__table1.a = __table1.c) AND (__table1.b = 10) AND (1000 = __table1.d)) OR (((__table1.a = __table1.c) AND (__table1.b = 10)) AND (1000 = __table1.d))
+SETTINGS allow_experimental_analyzer = 1
