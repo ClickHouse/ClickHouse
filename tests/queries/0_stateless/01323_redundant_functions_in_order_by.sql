@@ -19,17 +19,17 @@ SELECT key, a FROM test ORDER BY key, a, exp(key + a);
 SELECT key, a FROM test ORDER BY key, a, exp(key + a) SETTINGS allow_experimental_analyzer=1;
 SELECT key, a FROM test ORDER BY key, exp(key + a);
 SELECT key, a FROM test ORDER BY key, exp(key + a) SETTINGS allow_experimental_analyzer=1;
-EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x));
+EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x)) SETTINGS allow_experimental_analyzer = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x)) settings allow_experimental_analyzer=1;
-EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(exp(x)));
+EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(exp(x))) SETTINGS allow_experimental_analyzer = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(exp(x))) settings allow_experimental_analyzer=1;
-EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x);
+EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x) SETTINGS allow_experimental_analyzer = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x) settings allow_experimental_analyzer=1;
-EXPLAIN SYNTAX SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key;
+EXPLAIN SYNTAX SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key SETTINGS allow_experimental_analyzer = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key settings allow_experimental_analyzer=1;
-EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, a, exp(key + a);
+EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, a, exp(key + a) SETTINGS allow_experimental_analyzer = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT key, a FROM test ORDER BY key, a, exp(key + a) settings allow_experimental_analyzer=1;
-EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a);
+EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a) SETTINGS allow_experimental_analyzer = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT key, a FROM test ORDER BY key, exp(key + a) settings allow_experimental_analyzer=1;
 EXPLAIN QUERY TREE run_passes=1 SELECT key FROM test GROUP BY key ORDER BY avg(a), key settings allow_experimental_analyzer=1;
 
@@ -48,12 +48,23 @@ SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x
 SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key;
 SELECT key, a FROM test ORDER BY key, a, exp(key + a);
 SELECT key, a FROM test ORDER BY key, exp(key + a);
-EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x));
-EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(exp(x)));
-EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x);
-EXPLAIN SYNTAX SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key;
-EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, a, exp(key + a);
-EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a);
+EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x)) SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN QUERY TREE SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(x)) SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(exp(x))) SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN QUERY TREE SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY x, exp(exp(x))) SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x) SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN QUERY TREE SELECT groupArray(x) from (SELECT number as x FROM numbers(3) ORDER BY exp(x), x) SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN QUERY TREE SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s FULL JOIN test t USING(key) ORDER BY s.key, t.key SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, a, exp(key + a) SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN QUERY TREE SELECT key, a FROM test ORDER BY key, a, exp(key + a) SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT key, a FROM test ORDER BY key, exp(key + a) SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN QUERY TREE SELECT key, a FROM test ORDER BY key, exp(key + a) SETTINGS allow_experimental_analyzer = 1;
 
 DROP TABLE t1;
 DROP TABLE t2;
