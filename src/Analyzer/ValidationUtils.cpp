@@ -412,7 +412,17 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         if (processed_children)
         {
             ++tree_size;
-            node_to_tree_size.emplace(node_to_process, tree_size);
+
+            size_t subtree_size = 1;
+            for (const auto & node_to_process_child : node_to_process->getChildren())
+            {
+                if (!node_to_process_child)
+                    continue;
+
+                subtree_size += nodes_to_process[node_to_process_child];
+            }
+
+            node_to_tree_size.emplace(node_to_process, subtree_size);
             continue;
         }
 
