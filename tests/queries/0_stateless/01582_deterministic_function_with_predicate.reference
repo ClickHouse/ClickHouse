@@ -9,3 +9,16 @@ FROM
     )
     WHERE rand64() < (0.01 * 18446744073709552000.)
 )
+SETTINGS allow_experimental_analyzer = 0
+SELECT count() AS `count()`
+FROM
+(
+    SELECT __table2.number AS number
+    FROM
+    (
+        SELECT __table3.number AS number
+        FROM numbers(1000000) AS __table3
+    ) AS __table2
+    WHERE rand64() < _CAST(184467440737095520., \'Float64\')
+) AS __table1
+SETTINGS allow_experimental_analyzer = 1
