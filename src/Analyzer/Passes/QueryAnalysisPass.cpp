@@ -4292,20 +4292,29 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         column_qualified_identifier_parts = Identifier(column_name).getParts();
 
         bool not_enough_qualified_identifier_parts = false;
+        bool qualified_once = false;
         auto should_qualify = [&]()
         {
             auto identifier_to_check = Identifier(column_qualified_identifier_parts);
             IdentifierLookup identifier_lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
-            bool need_to_qualify = table_expression_data.should_qualify_columns;
+            bool need_to_qualify = !qualified_once && table_expression_data.should_qualify_columns;
+            // std::cerr << ".. to check " << identifier_lookup.dump() << ' ' << need_to_qualify << std::endl;
             if (need_to_qualify)
+            {
                 need_to_qualify = tryBindIdentifierToTableExpressions(identifier_lookup, table_expression_node, scope);
+                // std::cerr << ".. to check " << identifier_lookup.dump() << " bind expr " << need_to_qualify << std::endl;
+            }
 
             if (tryBindIdentifierToAliases(identifier_lookup, scope))
+            {
+                // std::cerr << ".. to check " << identifier_lookup.dump() << " bind alais" << std::endl;
                 need_to_qualify = true;
+            }
 
             if (!need_to_qualify && not_enough_qualified_identifier_parts && tryBindIdentifierToTableExpression(identifier_lookup, table_expression_node, scope))
                 need_to_qualify = true;
 
+            qualified_once = qualified_once || need_to_qualify;
             return need_to_qualify;
         };
 
@@ -4330,6 +4339,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         }
 
         auto qualified_node_name = Identifier(column_qualified_identifier_parts).getFullName();
+        // std::cerr << "-> " << qualified_node_name << std::endl;
         if (not_enough_qualified_identifier_parts)
             column_node->setAlias(qualified_node_name);
 
