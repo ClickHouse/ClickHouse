@@ -8,10 +8,21 @@ CREATE VIEW test_view AS SELECT * FROM test;
 SET enable_optimize_predicate_expression = 1;
 
 -- Optimize predicate expression with view
-EXPLAIN SYNTAX SELECT * FROM test_view WHERE id = 1;
-EXPLAIN SYNTAX SELECT * FROM test_view WHERE id = 2;
-EXPLAIN SYNTAX SELECT id FROM test_view WHERE id  = 1;
-EXPLAIN SYNTAX SELECT s.id FROM test_view AS s WHERE s.id = 1;
+EXPLAIN SYNTAX SELECT * FROM test_view WHERE id = 1 SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT * FROM test_view WHERE id = 1 SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN PLAN actions = 1 SELECT * FROM test_view WHERE id = 1 SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT * FROM test_view WHERE id = 2 SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT * FROM test_view WHERE id = 2 SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN PLAN actions = 1 SELECT * FROM test_view WHERE id = 2 SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT id FROM test_view WHERE id  = 1 SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT id FROM test_view WHERE id  = 1 SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN PLAN actions = 1 SELECT id FROM test_view WHERE id  = 1 SETTINGS allow_experimental_analyzer = 1;
+
+EXPLAIN SYNTAX SELECT s.id FROM test_view AS s WHERE s.id = 1 SETTINGS allow_experimental_analyzer = 0;
+EXPLAIN SYNTAX SELECT s.id FROM test_view AS s WHERE s.id = 1 SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN PLAN actions = 1 SELECT s.id FROM test_view AS s WHERE s.id = 1 SETTINGS allow_experimental_analyzer = 1;
 
 SELECT * FROM (SELECT toUInt64(b), sum(id) AS b FROM test) WHERE `toUInt64(sum(id))` = 3; -- { serverError 47 }
 
