@@ -103,15 +103,10 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
     if (column_source && options.fully_qualified_identifiers)
     {
         auto node_type = column_source->getNodeType();
-
-        // if (node_type == QueryTreeNodeType::ARRAY_JOIN && column_source->hasAlias())
-        //      return std::make_shared<ASTIdentifier>(std::string(fmt::format("{}.{}", column_source->getAlias(), column.name)));
-
         if (node_type == QueryTreeNodeType::TABLE ||
             node_type == QueryTreeNodeType::TABLE_FUNCTION ||
             node_type == QueryTreeNodeType::QUERY ||
-            node_type == QueryTreeNodeType::UNION)// ||
-            //node_type == QueryTreeNodeType::ARRAY_JOIN)
+            node_type == QueryTreeNodeType::UNION)
         {
             if (column_source->hasAlias())
             {
