@@ -168,6 +168,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
+
     initSkipIndices();
     initStatistics();
 }
@@ -265,6 +266,9 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
+    if (skip_indices.empty())
+        return;
+
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
