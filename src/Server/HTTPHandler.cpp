@@ -39,12 +39,10 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
-#include "Parsers/ASTFunction.h"
-#include "Parsers/ASTSelectQuery.h"
-#include "Parsers/ASTSelectWithUnionQuery.h"
-#include "Parsers/formatAST.h"
-#include "Server/HTTP/HTTPQueryAST.h"
-#include "config.h"
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Server/HTTP/HTTPQueryAST.h>
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
@@ -568,10 +566,44 @@ void combineWhereExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> 
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
 }
 
+void combineSelectExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> & select_expressions)
+{
+    ASTPtr select_expression = std::make_shared<ASTExpressionList>();
+    if (auto select = select_query->select())
+        for (auto child : select->children)
+            select_expression->children.push_back(child);
+
+    for (auto expression : select_expressions)
+        for (auto child : expression->children)
+            select_expression->children.push_back(child);
+
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression));
+}
+
+void combineOrderExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> & order_expressions)
+{
+    ASTPtr order_expression = std::make_shared<ASTExpressionList>();
+    if (auto order_by = select_query->orderBy())
+        for (auto child : order_by->children)
+            order_expression->children.push_back(child);
+
+    for (auto expression : order_expressions)
+        for (auto child : expression->children)
+            order_expression->children.push_back(child);
+
+    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression));
+}
+
 void combineSelectQuery(ASTSelectQuery * select_query, HTTPQueryAST & http_query_ast)
 {
     if (!http_query_ast.where_expressions.empty())
         combineWhereExpressions(select_query, http_query_ast.where_expressions);
+
+    if (!http_query_ast.select_expressions.empty())
+        combineSelectExpressions(select_query, http_query_ast.select_expressions);
+
+    if (!http_query_ast.order_expressions.empty())
+        combineOrderExpressions(select_query, http_query_ast.order_expressions);
 }
 
 QueryData combineQueryWithParams(ReadBuffer & in, HTMLForm & params, ContextMutablePtr context)
@@ -777,7 +809,10 @@ void HTTPHandler::processQuery(
         "session_check",
         "client_protocol_version",
         "close_session",
-        "where"};
+        "where",
+        "columns",
+        "select",
+        "order"};
 
     Names reserved_param_suffixes;
 
