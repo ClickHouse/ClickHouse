@@ -70,12 +70,27 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     }
     writeCString("\n\n", out);
 
+    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : format_settings.pretty.max_rows;
+
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
+        size_t row_num_with_offset = row;
+        if (row >= num_rows_before_compression)
+        {
+            row_num_with_offset = row + last_rows_offset - num_rows_before_compression;
+            if (row == num_rows_before_compression)
+            {
+                writeChar('\n', out);
+                if (format_settings.pretty.output_format_pretty_row_numbers)
+                    writeString(String(row_number_width, ' '), out);
+                writeString("⋮\n\n", out);
+            }
+        }
+
         if (format_settings.pretty.output_format_pretty_row_numbers)
         {
             // Write row number;
-            auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
+            auto row_num_string = std::to_string(row_num_with_offset + 1 + total_rows) + ". ";
             for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
                 writeChar(' ', out);
             if (color)
@@ -93,7 +108,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
             writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+                *columns[column], *serializations[column], row_num_with_offset, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
 
         writeReadableNumberTip(chunk);

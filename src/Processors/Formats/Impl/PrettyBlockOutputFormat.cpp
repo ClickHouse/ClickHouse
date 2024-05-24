@@ -50,7 +50,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     /// Calculate widths of all values.
     String serialized_value;
     size_t prefix = 2; // Tab character adjustment
-    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : 0;
+    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : format_settings.pretty.max_rows;
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & elem = header.getByPosition(i);
@@ -292,10 +292,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     for (size_t i = 0; i < num_rows && total_rows + i < format_settings.pretty.max_rows; ++i)
     {
-        size_t row_num = i;
+        size_t row_num_with_offset = i;
         if (i >= num_rows_before_compression)
         {
-            row_num = i + last_rows_offset - num_rows_before_compression;
+            row_num_with_offset = i + last_rows_offset - num_rows_before_compression;
             if (i == num_rows_before_compression)
             {
                 writeChar('\n', out);
@@ -318,7 +318,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         if (format_settings.pretty.output_format_pretty_row_numbers)
         {
             // Write row number;
-            auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
+            auto row_num_string = std::to_string(row_num_with_offset + 1 + total_rows) + ". ";
 
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
                 writeChar(' ', out);
@@ -336,7 +336,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             if (j != 0)
                 writeCString(grid_symbols.bar, out);
             const auto & type = *header.getByPosition(j).type;
-            writeValueWithPadding(*columns[j], *serializations[j], row_num,
+            writeValueWithPadding(*columns[j], *serializations[j], row_num_with_offset,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
                 max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }

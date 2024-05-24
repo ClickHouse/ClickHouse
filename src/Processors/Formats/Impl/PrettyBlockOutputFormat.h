@@ -27,6 +27,7 @@ protected:
 
     size_t total_rows = 0;
     size_t row_number_width = 7; // "10000. "
+    size_t last_rows_offset = 0;
 
     const FormatSettings format_settings;
     Serializations serializations;
@@ -60,7 +61,6 @@ protected:
 private:
     bool readable_number_tip = false;
     bool mono_block;
-    size_t last_rows_offset = 0;
     /// For mono_block == true only
     Chunk mono_chunk;
 };

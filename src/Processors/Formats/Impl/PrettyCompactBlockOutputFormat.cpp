@@ -142,10 +142,25 @@ void PrettyCompactBlockOutputFormat::writeRow(
     const WidthsPerColumn & widths,
     const Widths & max_widths)
 {
+    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : format_settings.pretty.max_rows;
+
+    size_t row_num_with_offset = row_num;
+    if (row_num >= num_rows_before_compression)
+    {
+        row_num_with_offset = row_num + last_rows_offset - num_rows_before_compression;
+        if (row_num == num_rows_before_compression)
+        {
+            writeChar('\n', out);
+            if (format_settings.pretty.output_format_pretty_row_numbers)
+                writeString(String(row_number_width, ' '), out);
+            writeString("⋮\n\n", out);
+        }
+    }
+
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
         // Write row number;
-        auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
+        auto row_num_string = std::to_string(row_num_with_offset + 1 + total_rows) + ". ";
         for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
             writeChar(' ', out);
         if (color)
@@ -175,7 +190,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+        writeValueWithPadding(*columns[j], *serializations[j], row_num_with_offset, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
     }
 
     writeCString(grid_symbols.bar, out);
