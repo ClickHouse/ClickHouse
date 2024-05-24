@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Parsers/IAST_fwd.h"
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -35,6 +36,19 @@ struct QueryFlags
     bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
 };
 
+struct QueryData
+{
+    ASTPtr ast;
+    std::unique_ptr<ReadBuffer> istr;
+    std::string query;
+    std::string query_for_logging;
+};
+
+QueryData getQueryData(
+    ReadBuffer & istr,
+    ContextMutablePtr context,
+    QueryFlags flags = {},
+    const QueryProcessingStage::Enum stage = QueryProcessingStage::Enum::Complete);
 
 /// Parse and execute a query.
 void executeQuery(
@@ -48,6 +62,15 @@ void executeQuery(
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {} /// If a non-empty callback is passed, it will be called on exception with created output format.
 );
 
+void executeQuery(
+    QueryData & query_data,
+    WriteBuffer & ostr,
+    bool allow_into_outfile,
+    ContextMutablePtr context,
+    SetResultDetailsFunc set_result_details,
+    QueryFlags flags = {},
+    const std::optional<FormatSettings> & output_format_settings = std::nullopt,
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {});
 
 /// More low-level function for server-to-server interaction.
 /// Prepares a query for execution but doesn't execute it.
