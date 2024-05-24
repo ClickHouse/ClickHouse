@@ -4,6 +4,20 @@ SELECT
     count(),
     count(),
     count(NULL)
+SETTINGS allow_experimental_analyzer = 0
+SELECT
+    count() AS `count()`,
+    count() AS `count(1)`,
+    count() AS `count(-1)`,
+    count() AS `sum(1)`,
+    nothingUInt64(_CAST(NULL, \'Nullable(Nothing)\')) AS `count(NULL)`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 SELECT sumOrNull(1)
 FROM numbers(10)
 WHERE 0
+SETTINGS allow_experimental_analyzer = 0
+SELECT sumOrNull(1) AS `sum(1)`
+FROM numbers(10) AS __table1
+WHERE 0
+SETTINGS allow_experimental_analyzer = 1
