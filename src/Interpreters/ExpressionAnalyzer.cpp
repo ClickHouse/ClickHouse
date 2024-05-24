@@ -76,7 +76,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>

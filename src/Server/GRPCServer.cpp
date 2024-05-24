@@ -1232,6 +1232,7 @@ namespace
         if (io.pipeline.pulling())
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+            io.pipeline.setConcurrencyControl(query_context->getSettingsRef().use_concurrency_control);
             auto check_for_cancel = [&]
             {
                 if (isQueryCancelled())

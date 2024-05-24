@@ -187,6 +187,8 @@ ComplexKeyDirect
 ComplexKeyHashed
 Composable
 composable
+ConcurrencyControlAcquired
+ConcurrencyControlSoftLimit
 Config
 ConnectionDetails
 Const

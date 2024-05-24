@@ -1,6 +1,22 @@
+#include <Common/ISlotControl.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event ConcurrencyControlGrantedHard;
+    extern const Event ConcurrencyControlGrantDelayed;
+    extern const Event ConcurrencyControlAcquiredTotal;
+    extern const Event ConcurrencyControlAllocationDelayed;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric ConcurrencyControlAcquired;
+    extern const Metric ConcurrencyControlSoftLimit;
+}
 
 namespace DB
 {
@@ -16,7 +32,8 @@ ConcurrencyControl::Slot::~Slot()
 }
 
 ConcurrencyControl::Slot::Slot(SlotAllocationPtr && allocation_)
-    : allocation(std::move(allocation_))
+    : IAcquiredSlot(CurrentMetrics::ConcurrencyControlAcquired)
+    , allocation(std::move(allocation_))
 {
 }
 
@@ -34,6 +51,7 @@ ConcurrencyControl::Allocation::~Allocation()
     {
         if (granted.compare_exchange_strong(value, value - 1))
         {
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlAcquiredTotal, 1);
             std::unique_lock lock{mutex};
             return AcquiredSlotPtr(new Slot(shared_from_this())); // can't use std::make_shared due to private ctor
         }
@@ -84,6 +102,7 @@ void ConcurrencyControl::Allocation::release()
 
 ConcurrencyControl::ConcurrencyControl()
     : cur_waiter(waiters.end())
+    , max_concurrency_metric(CurrentMetrics::ConcurrencyControlSoftLimit, 0)
 {
 }
 
@@ -103,11 +122,16 @@ ConcurrencyControl::~ConcurrencyControl()
     // Acquire as many slots as we can, but not lower than `min`
     SlotCount granted = std::max(min, std::min(max, available(lock)));
     cur_concurrency += granted;
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlGrantedHard, granted);
 
     // Create allocation and start waiting if more slots are required
     if (granted < max)
+    {
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlGrantDelayed, max - granted);
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlAllocationDelayed);
         return SlotAllocationPtr(new Allocation(*this, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
+    }
     else
         return SlotAllocationPtr(new Allocation(*this, max, granted));
 }
@@ -116,6 +140,7 @@ void ConcurrencyControl::setMaxConcurrency(SlotCount value)
 {
     std::unique_lock lock{mutex};
     max_concurrency = std::max<SlotCount>(1, value); // never allow max_concurrency to be zero
+    max_concurrency_metric.changeTo(max_concurrency == UnlimitedSlots ? 0 : max_concurrency);
     schedule(lock);
 }
 

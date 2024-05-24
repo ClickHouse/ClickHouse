@@ -205,6 +205,7 @@ bool isStorageTouchedByMutations(
     }
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
+    io.pipeline.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
@@ -1262,6 +1263,10 @@ void MutationsInterpreter::Source::read(
 
 void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 {
+    // Mutations are not using concurrency control now. Queries, merges and mutations running together could lead to CPU overcommit.
+    // TODO(serxa): Enable concurrency control for mutation queries and mutations. This should be done after CPU scheduler introduction.
+    plan.setConcurrencyControl(false);
+
     source.read(first_stage, plan, metadata_snapshot, context, settings.apply_deleted_mask, settings.can_execute);
     addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }

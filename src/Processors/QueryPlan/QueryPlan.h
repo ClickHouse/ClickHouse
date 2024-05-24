@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class DataStream;
 
 class IQueryPlanStep;
@@ -99,7 +104,12 @@ public:
     size_t getMaxThreads() const { return max_threads; }
 
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
-    bool getConcurrencyControl() const { return concurrency_control; }
+    bool getConcurrencyControl() const
+    {
+        if (!concurrency_control.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "concurrency_control is not set yet");
+        return *concurrency_control;
+    }
 
     /// Tree node. Step and it's children.
     struct Node
@@ -123,7 +133,7 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-    bool concurrency_control = false;
+    std::optional<bool> concurrency_control;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

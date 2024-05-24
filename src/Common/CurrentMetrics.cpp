@@ -294,6 +294,9 @@
     \
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
+    \
+    M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
+    M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
