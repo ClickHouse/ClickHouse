@@ -67,7 +67,7 @@ def main():
         if status.state == PENDING:
             post_commit_status(
                 commit,
-                SUCCESS,
+                state, # map Mergeable Check status to CI Running
                 status.target_url,
                 "All checks finished",
                 StatusNames.CI,
