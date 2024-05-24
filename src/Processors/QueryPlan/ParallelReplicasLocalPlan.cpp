@@ -68,6 +68,7 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
     /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
     new_context->setSetting("enable_positional_arguments", Field(false));
+    new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
