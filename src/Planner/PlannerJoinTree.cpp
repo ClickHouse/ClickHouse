@@ -884,6 +884,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     // (1) find read step
                     QueryPlan::Node * node = query_plan.getRootNode();
                     ReadFromMergeTree * reading = nullptr;
+                    QueryPlan::Node * last_node = nullptr;
                     while (node)
                     {
                         reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
@@ -892,9 +893,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         if (!node->children.empty())
                             node = node->children.at(0);
+                        else
+                        {
+                            last_node = node;
+                            node = nullptr;
+                        }
                     }
 
-                    chassert(reading);
+                    // chassert(reading);
+                    if (!reading)
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading step is expected to be ReadFromMergeTree but it's {}", last_node->step->getName());
+                    }
 
                     // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                     if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
