@@ -119,14 +119,14 @@ Parses a Well-Known Text (WKT) representation of a LineString geometry and retur
         .returned_value = "The function returns a ClickHouse internal representation of the linestring geometry.",
         .examples{
             {"first call", "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
-   ┌─readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
-1. │ [(1,1),(2,2),(3,3),(1,1)]                            │
-   └──────────────────────────────────────────────────────┘
+┌─readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
+│ [(1,1),(2,2),(3,3),(1,1)]                            │
+└──────────────────────────────────────────────────────┘
             )"},
             {"second call", "SELECT toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'));", R"(
-   ┌─toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'))─┐
-1. │ LineString                                                       │
-   └──────────────────────────────────────────────────────────────────┘
+┌─toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'))─┐
+│ LineString                                                       │
+└──────────────────────────────────────────────────────────────────┘
             )"},
         },
         .categories{"Unique identifiers"}
