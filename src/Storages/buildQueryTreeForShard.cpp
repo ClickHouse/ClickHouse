@@ -23,7 +23,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
-
 namespace DB
 {
 

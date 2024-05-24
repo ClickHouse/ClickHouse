@@ -11,7 +11,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/escapeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -1603,7 +1602,6 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
-
     out->next();
 }
 

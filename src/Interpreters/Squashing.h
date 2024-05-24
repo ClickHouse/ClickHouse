@@ -61,14 +61,12 @@ public:
     Chunk add(Chunk && input_chunk);
 
 private:
-    Block accumulated_block;
+    Chunk accumulated_chunk;
     const Block header;
-
-    Chunk addImpl(Chunk && chunk);
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    void append(const std::vector<Chunk> & input_chunks);
+    void append(std::vector<Chunk> & input_chunks);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
@@ -79,7 +77,7 @@ class PlanSquashing
 public:
     PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
-    Chunk add(Chunk && input_chunk);
+    Chunk add(Chunk & input_chunk);
     Chunk flush();
     bool isDataLeft()
     {
@@ -87,15 +85,21 @@ public:
     }
 
 private:
+    struct CurrentSize
+    {
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
     std::vector<Chunk> chunks_to_merge_vec = {};
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
 
     const Block header;
+    CurrentSize accumulated_size;
 
-    Chunk addImpl(Chunk && input_chunk);
-
-    bool isEnoughSize(const std::vector<Chunk> & chunks);
+    void expandCurrentSize(size_t rows, size_t bytes);
+    void changeCurrentSize(size_t rows, size_t bytes);
     bool isEnoughSize(size_t rows, size_t bytes) const;
 
     Chunk convertToChunk(std::vector<Chunk> && chunks);

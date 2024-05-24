@@ -136,51 +136,44 @@ ApplySquashing::ApplySquashing(Block header_)
 
 Chunk ApplySquashing::add(Chunk && input_chunk)
 {
-    return addImpl(std::move(input_chunk));
-}
-
-Chunk ApplySquashing::addImpl(Chunk && input_chunk)
-{
     if (!input_chunk.hasChunkInfo())
         return Chunk();
 
     const auto *info = getInfoFromChunk(input_chunk);
     append(info->chunks);
 
-    Block to_return;
-    std::swap(to_return, accumulated_block);
-    return Chunk(to_return.getColumns(), to_return.rows());
+    return std::move(accumulated_chunk);
 }
 
-void ApplySquashing::append(const std::vector<Chunk> & input_chunks)
+void ApplySquashing::append(std::vector<Chunk> & input_chunks)
 {
-    std::vector<IColumn::MutablePtr> mutable_columns;
+    accumulated_chunk = {};
+    std::vector<IColumn::MutablePtr> mutable_columns = {};
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
         rows += chunk.getNumRows();
 
-    for (const auto & input_chunk : input_chunks)
+    for (auto & input_chunk : input_chunks)
     {
-        if (!accumulated_block)
+        Columns columns = input_chunk.detachColumns();
+        if (mutable_columns.empty())
         {
-            for (size_t i = 0; i < input_chunks[0].getNumColumns(); ++i)
-            { // We can put this part of code out of the cycle, but it will consume more memory
-                ColumnWithTypeAndName col = ColumnWithTypeAndName(input_chunks[0].getColumns()[i],header.getDataTypes()[i], header.getNames()[i]);
-                mutable_columns.push_back(IColumn::mutate(col.column));
+            for (size_t i = 0; i < columns.size(); ++i)
+            {
+                mutable_columns.push_back(IColumn::mutate(columns[i]));
                 mutable_columns[i]->reserve(rows);
-                accumulated_block.insert(col);
             }
             continue;
         }
 
-        for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
+        for (size_t i = 0, size = mutable_columns.size(); i < size; ++i)
         {
-            const auto source_column = input_chunk.getColumns()[i];
+            const auto source_column = columns[i];
 
             mutable_columns[i]->insertRangeFrom(*source_column, 0, source_column->size());
-            accumulated_block.getByPosition(i).column = mutable_columns[i]->cloneFinalized();
         }
     }
+    accumulated_chunk.setColumns(std::move(mutable_columns), rows);
 }
 
 const ChunksToSquash* ApplySquashing::getInfoFromChunk(const Chunk & chunk)
@@ -206,12 +199,7 @@ Chunk PlanSquashing::flush()
     return convertToChunk(std::move(chunks_to_merge_vec));
 }
 
-Chunk PlanSquashing::add(Chunk && input_chunk)
-{
-    return addImpl(std::move(input_chunk));
-}
-
-Chunk PlanSquashing::addImpl(Chunk && input_chunk)
+Chunk PlanSquashing::add(Chunk & input_chunk)
 {
     if (!input_chunk)
         return {};
@@ -231,27 +219,31 @@ Chunk PlanSquashing::addImpl(Chunk && input_chunk)
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
         Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
         chunks_to_merge_vec.clear();
+        changeCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
         chunks_to_merge_vec.push_back(std::move(input_chunk));
         return res_chunk;
     }
 
     /// Accumulated block is already enough.
-    if (isEnoughSize(chunks_to_merge_vec))
+    if (isEnoughSize(accumulated_size.rows, accumulated_size.bytes))
     {
         /// Return accumulated data and place new block to accumulated data.
         Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
         chunks_to_merge_vec.clear();
+        changeCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
         chunks_to_merge_vec.push_back(std::move(input_chunk));
         return res_chunk;
     }
 
     /// Pushing data into accumulating vector
+    expandCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
     chunks_to_merge_vec.push_back(std::move(input_chunk));
 
     /// If accumulated data is big enough, we send it
-    if (isEnoughSize(chunks_to_merge_vec))
+    if (isEnoughSize(accumulated_size.rows, accumulated_size.bytes))
     {
         Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+        changeCurrentSize(0, 0);
         chunks_to_merge_vec.clear();
         return res_chunk;
     }
@@ -264,26 +256,23 @@ Chunk PlanSquashing::convertToChunk(std::vector<Chunk> && chunks)
         return {};
 
     auto info = std::make_shared<ChunksToSquash>();
-    for (auto &chunk : chunks)
-        info->chunks.push_back(std::move(chunk));
+    info->chunks = std::move(chunks);
 
     chunks.clear();
 
     return Chunk(header.cloneEmptyColumns(), 0, info);
 }
 
-bool PlanSquashing::isEnoughSize(const std::vector<Chunk> & chunks)
+void PlanSquashing::expandCurrentSize(size_t rows, size_t bytes)
 {
-    size_t rows = 0;
-    size_t bytes = 0;
+    accumulated_size.rows += rows;
+    accumulated_size.bytes += bytes;
+}
 
-    for (const Chunk & chunk : chunks)
-    {
-        rows += chunk.getNumRows();
-        bytes += chunk.bytes();
-    }
-
-    return isEnoughSize(rows, bytes);
+void PlanSquashing::changeCurrentSize(size_t rows, size_t bytes)
+{
+    accumulated_size.rows = rows;
+    accumulated_size.bytes = bytes;
 }
 
 bool PlanSquashing::isEnoughSize(size_t rows, size_t bytes) const

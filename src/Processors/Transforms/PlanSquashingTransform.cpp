@@ -90,6 +90,7 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
         {
             planning_status = PlanningStatus::FLUSH;
             flushChunk();
+            return Status::Ready;
         }
         planning_status = PlanningStatus::PUSH;
         return Status::Ready;
@@ -133,7 +134,7 @@ IProcessor::Status PlanSquashingTransform::waitForDataIn()
 
 void PlanSquashingTransform::transform(Chunk & chunk_)
 {
-    Chunk res_chunk = balance.add(std::move(chunk_));
+    Chunk res_chunk = balance.add(chunk_);
     std::swap(res_chunk, chunk_);
 }
 
@@ -157,6 +158,8 @@ IProcessor::Status PlanSquashingTransform::sendOrFlush()
         {
             if (planning_status == PlanningStatus::PUSH)
                 planning_status = PlanningStatus::READ_IF_CAN;
+            else
+                planning_status = PlanningStatus::FINISH;
 
             output.push(std::move(chunk));
             return Status::Ready;
