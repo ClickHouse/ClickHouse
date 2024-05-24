@@ -99,6 +99,7 @@ void ProtocolServersManager::createServers(
                 config,
                 host,
                 port_name.c_str(),
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -110,8 +111,7 @@ void ProtocolServersManager::createServers(
                         port_name.c_str(),
                         description + ": " + address.toString(),
                         std::make_unique<TCPServer>(stack.release(), server_pool, socket, new Poco::Net::TCPServerParams));
-                },
-                start_servers);
+                });
         }
     }
 
@@ -125,6 +125,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -143,8 +144,7 @@ void ProtocolServersManager::createServers(
                             http_params,
                             ProfileEvents::InterfaceHTTPReceiveBytes,
                             ProfileEvents::InterfaceHTTPSendBytes));
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::HTTPS))
@@ -155,6 +155,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
 #if USE_SSL
@@ -180,8 +181,7 @@ void ProtocolServersManager::createServers(
                         ErrorCodes::SUPPORT_IS_DISABLED,
                         "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
 #endif
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP))
@@ -192,6 +192,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -208,8 +209,7 @@ void ProtocolServersManager::createServers(
                             server_pool,
                             socket,
                             new Poco::Net::TCPServerParams));
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP_WITH_PROXY))
@@ -220,6 +220,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -236,8 +237,7 @@ void ProtocolServersManager::createServers(
                             server_pool,
                             socket,
                             new Poco::Net::TCPServerParams));
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::TCP_SECURE))
@@ -248,6 +248,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
 #if USE_SSL
@@ -271,8 +272,7 @@ void ProtocolServersManager::createServers(
                         ErrorCodes::SUPPORT_IS_DISABLED,
                         "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::MYSQL))
@@ -282,6 +282,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -298,8 +299,7 @@ void ProtocolServersManager::createServers(
                             server_pool,
                             socket,
                             new Poco::Net::TCPServerParams));
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::POSTGRESQL))
@@ -309,6 +309,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -325,8 +326,7 @@ void ProtocolServersManager::createServers(
                             server_pool,
                             socket,
                             new Poco::Net::TCPServerParams));
-                },
-                start_servers);
+                });
         }
 
 #if USE_GRPC
@@ -337,6 +337,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::SocketAddress server_address(listen_host, port);
@@ -345,8 +346,7 @@ void ProtocolServersManager::createServers(
                         port_name,
                         "gRPC protocol: " + server_address.toString(),
                         std::make_unique<GRPCServer>(server, makeSocketAddress(listen_host, port, logger)));
-                },
-                start_servers);
+                });
         }
 #endif
         if (server_type.shouldStart(ServerType::Type::PROMETHEUS))
@@ -357,6 +357,7 @@ void ProtocolServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -375,8 +376,7 @@ void ProtocolServersManager::createServers(
                             http_params,
                             ProfileEvents::InterfacePrometheusReceiveBytes,
                             ProfileEvents::InterfacePrometheusSendBytes));
-                },
-                start_servers);
+                });
         }
     }
 }

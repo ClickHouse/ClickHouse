@@ -17,8 +17,8 @@ extern const int NETWORK_ERROR;
 extern const int INVALID_CONFIG_PARAMETER;
 }
 
-IServersManager::IServersManager(ContextMutablePtr l_global_context, Poco::Logger * l_logger)
-    : global_context(l_global_context), logger(l_logger)
+IServersManager::IServersManager(ContextMutablePtr global_context_, Poco::Logger * logger_)
+    : global_context(global_context_), logger(logger_)
 {
 }
 
@@ -107,8 +107,8 @@ void IServersManager::createServer(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & listen_host,
     const char * port_name,
-    CreateServerFunc && func,
-    bool start_server)
+    bool start_server,
+    CreateServerFunc && func)
 {
     /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
     if (config.getString(port_name, "").empty())

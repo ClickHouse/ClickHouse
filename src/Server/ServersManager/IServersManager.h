@@ -19,7 +19,7 @@ namespace DB
 class IServersManager
 {
 public:
-    IServersManager(ContextMutablePtr global_context, Poco::Logger * logger);
+    IServersManager(ContextMutablePtr global_context_, Poco::Logger * logger_);
     virtual ~IServersManager() = default;
 
     bool empty() const;
@@ -35,9 +35,9 @@ public:
         const ServerType & server_type)
         = 0;
 
-    virtual void startServers();
+    void startServers();
 
-    virtual void stopServers(const ServerType & server_type);
+    void stopServers(const ServerType & server_type);
     virtual size_t stopServers(const ServerSettings & server_settings, std::mutex & servers_lock) = 0;
 
     virtual void updateServers(
@@ -58,14 +58,14 @@ protected:
         const Poco::Util::AbstractConfiguration & config, Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port) const;
 
     using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
-    virtual void createServer(
+    void createServer(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & listen_host,
         const char * port_name,
-        CreateServerFunc && func,
-        bool start_server);
+        bool start_server,
+        CreateServerFunc && func);
 
-    virtual void stopServersForUpdate(const Poco::Util::AbstractConfiguration & config, ConfigurationPtr latest_config);
+    void stopServersForUpdate(const Poco::Util::AbstractConfiguration & config, ConfigurationPtr latest_config);
 
     Strings getListenHosts(const Poco::Util::AbstractConfiguration & config) const;
     bool getListenTry(const Poco::Util::AbstractConfiguration & config) const;

@@ -71,6 +71,7 @@ void InterServersManager::createServers(
                 config,
                 listen_host,
                 port_name,
+                /* start_server = */ false,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -92,14 +93,14 @@ void InterServersManager::createServers(
                                 false),
                             server_pool,
                             socket));
-                },
-                /* start_server = */ false);
+                });
 
             constexpr auto secure_port_name = "keeper_server.tcp_port_secure";
             createServer(
                 config,
                 listen_host,
                 secure_port_name,
+                /* start_server = */ false,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
 #    if USE_SSL
@@ -128,14 +129,14 @@ void InterServersManager::createServers(
                         ErrorCodes::SUPPORT_IS_DISABLED,
                         "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #    endif
-                },
-                /* start_server: */ false);
+                });
 
             /// HTTP control endpoints
             createServer(
                 config,
                 listen_host,
                 /* port_name = */ "keeper_server.http_control.port",
+                /* start_server = */ false,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     auto http_context = std::make_shared<HTTPContext>(global_context);
@@ -159,8 +160,7 @@ void InterServersManager::createServers(
                             server_pool,
                             socket,
                             http_params));
-                },
-                /* start_server: */ false);
+                });
         }
 #else
         throw Exception(
@@ -264,6 +264,7 @@ void InterServersManager::createInterserverServers(
                 config,
                 interserver_listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
@@ -282,8 +283,7 @@ void InterServersManager::createInterserverServers(
                             http_params,
                             ProfileEvents::InterfaceInterserverReceiveBytes,
                             ProfileEvents::InterfaceInterserverSendBytes));
-                },
-                start_servers);
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTPS))
@@ -293,6 +293,7 @@ void InterServersManager::createInterserverServers(
                 config,
                 interserver_listen_host,
                 port_name,
+                start_servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
 #if USE_SSL
@@ -318,8 +319,7 @@ void InterServersManager::createInterserverServers(
                         ErrorCodes::SUPPORT_IS_DISABLED,
                         "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
-                },
-                start_servers);
+                });
         }
     }
 }

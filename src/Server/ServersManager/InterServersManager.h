@@ -19,7 +19,6 @@ public:
         bool start_servers,
         const ServerType & server_type) override;
 
-    using IServersManager::stopServers;
     size_t stopServers(const ServerSettings & server_settings, std::mutex & servers_lock) override;
 
     void updateServers(
