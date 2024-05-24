@@ -868,6 +868,15 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
+void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
@@ -922,6 +931,25 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
         return makeNullable(column);
 
     return column;
+}
+
+ColumnPtr removeNullable(const ColumnPtr & column)
+{
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+        return column_nullable->getNestedColumnPtr();
+    return column;
+}
+
+ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
+{
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        if (!column_low_cardinality->nestedIsNullable())
+            return column;
+        return column_low_cardinality->cloneWithDefaultOnNull();
+    }
+
+    return removeNullable(column);
 }
 
 }

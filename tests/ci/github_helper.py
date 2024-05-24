@@ -22,9 +22,6 @@ from github.NamedUser import NamedUser as NamedUser
 from github.PullRequest import PullRequest as PullRequest
 from github.Repository import Repository as Repository
 
-from env_helper import GITHUB_REPOSITORY
-from get_robot_token import get_best_robot_token
-
 # pylint: enable=useless-import-alias
 
 CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
@@ -265,12 +262,11 @@ class GitHub(github.Github):
         assert isinstance(value, int)
         self._retries = value
 
-    # minimalistic static methods not using pygithub
+    # static methods not using pygithub
     @staticmethod
-    def cancel_wf(run_id, strict=False):
-        token = get_best_robot_token()
+    def cancel_wf(repo, run_id, token, strict=False):
         headers = {"Authorization": f"token {token}"}
-        url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/runs/{run_id}/cancel"
+        url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel"
         try:
             response = requests.post(url, headers=headers, timeout=10)
             response.raise_for_status()
