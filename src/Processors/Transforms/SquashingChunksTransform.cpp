@@ -92,7 +92,9 @@ Chunk SimpleSquashingChunksTransform::generate()
     if (squashed_chunk.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-    return std::move(squashed_chunk);
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
 }
 
 bool SimpleSquashingChunksTransform::canGenerate()
@@ -104,7 +106,10 @@ Chunk SimpleSquashingChunksTransform::getRemaining()
 {
     Block current_block = squashing.add({});
     completeChunk(squashed_chunk, std::move(current_block));
-    return std::move(squashed_chunk);
+
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
 }
 
 }

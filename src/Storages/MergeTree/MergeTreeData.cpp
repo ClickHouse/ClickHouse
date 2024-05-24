@@ -3896,7 +3896,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);
-        if (!storage_column.type->hasDynamicSubcolumns())
+        if (!storage_column.type->hasDynamicSubcolumnsDeprecated())
             continue;
 
         auto concrete_storage_column = object_columns.getPhysical(part_column.name);

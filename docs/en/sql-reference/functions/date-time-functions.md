@@ -1499,7 +1499,7 @@ This function returns the week number for date or datetime. The two-argument for
 
 The following table describes how the mode argument works.
 
-| Mode | First day of week | Range | Week 1 is the first week …    |
+| Mode | First day of week | Range | Week 1 is the first week ...    |
 |------|-------------------|-------|-------------------------------|
 | 0    | Sunday            | 0-53  | with a Sunday in this year    |
 | 1    | Monday            | 0-53  | with 4 or more days this year |

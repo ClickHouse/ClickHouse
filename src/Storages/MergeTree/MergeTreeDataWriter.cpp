@@ -418,7 +418,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     for (auto & column : columns)
-        if (column.type->hasDynamicSubcolumns())
+        if (column.type->hasDynamicSubcolumnsDeprecated())
             column.type = block.getByName(column.name).type;
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
