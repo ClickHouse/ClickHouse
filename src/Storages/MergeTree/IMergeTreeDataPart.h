@@ -166,6 +166,10 @@ public:
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
+    /// Get sample column from part. For ordinary columns it just creates column using it's type.
+    /// For columns with dynamic structure it reads sample column with 0 rows from the part.
+    ColumnPtr getColumnSample(const NameAndTypePair & column) const;
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
     SerializationPtr getSerialization(const String & column_name) const;
