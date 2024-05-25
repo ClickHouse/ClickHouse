@@ -42,7 +42,6 @@ namespace
         {"pb", 1000000000000000},       // 10e15
         {"eb", 1000000000000000000},    // 10e18
     };
-    
     constexpr UInt64 MAX_UINT64 = std::numeric_limits<UInt64>::max();
 
     class FunctionFromReadableSize : public IFunction
