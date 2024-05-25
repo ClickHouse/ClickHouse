@@ -51,7 +51,7 @@ Not supported.
 Not supported.
 
 ## Notes
-### Situation with booleans
+### Situation with bool
 In ClickHouse `boolean` is an alias for `UInt8`, but in MongoDB it's a type.
 So, not in all cases it's possible to determine, is UInt8 supposed to be bool, and filters may not work correctly.
 But there is a hack: use `x = toBool(true)` instead of `x = true`.
