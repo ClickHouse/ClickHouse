@@ -228,14 +228,14 @@ REGISTER_FUNCTION(FromReadableSize)
     factory.registerFunction<FunctionFromReadableSize>(FunctionDocumentation
         {
             .description=R"(
-Given a string containing the readable respresentation of a byte size, this function returns the corrseponding number of bytes:
+Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes:
 [example:basic_binary]
 [example:basic_decimal]
 
 If the resulting number of bytes has a non-zero decimal part, the result is rounded up to indicate the number of bytes necessary to accommodate the provided size.
 [example:round]
 
-Accepts readable sizes up to the ExaByte (EB/EiB).
+Accepts readable sizes up to the Exabyte (EB/EiB).
 
 It always returns an UInt64 value.
 )",
