@@ -305,7 +305,6 @@ formatRowNoNewline
 fragment
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
-fromReadableSize
 fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
