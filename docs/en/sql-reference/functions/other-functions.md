@@ -796,9 +796,9 @@ Result:
 
 ## fromReadableSize
 
-Given a string containing the readable respresentation of a byte size, this function returns the corrseponding number of bytes.
+Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes.
  - As the conversion might lead to decimal bytes the result will be rounded up to the next integer to represent the minimum number of bytes that can fit the passed size.
- - Accepts up to the Exabyte/Exabibyte (EB/EiB)  
+ - Accepts up to the Exabyte (EB/EiB)  
 
 **Arguments**
 
