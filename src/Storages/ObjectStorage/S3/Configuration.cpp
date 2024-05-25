@@ -108,9 +108,9 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     const auto & settings = context->getSettingsRef();
     const std::string config_prefix = "s3.";
 
-    auto s3_settings = getSettings(config, config_prefix, context, settings.s3_validate_request_settings);
+    auto s3_settings = getSettings(config, config_prefix, context, /* for_disk_s3 */false, settings.s3_validate_request_settings);
 
-    request_settings.updateFromSettingsIfChanged(settings);
+    request_settings.updateFromSettings(settings, /* if_changed */true);
     auth_settings.updateFrom(s3_settings->auth_settings);
 
     s3_settings->auth_settings = auth_settings;
@@ -126,7 +126,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
         s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
 
-    auto client = getClient(config, config_prefix, context, *s3_settings, false, &url);
+    auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
     auto s3_capabilities = S3Capabilities
     {
@@ -159,7 +159,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
-    request_settings = S3Settings::RequestSettings(collection);
+    request_settings = S3::RequestSettings::loadFromNamedCollection(collection, /* validate_settings */true);
 
     static_configuration = !auth_settings.access_key_id.empty() || auth_settings.no_sign_request.has_value();
 

@@ -6,7 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>

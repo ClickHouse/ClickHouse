@@ -168,7 +168,7 @@ private:
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     auto settings_ptr = s3_settings.get();
-    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {}, settings_ptr->request_settings);
+    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -258,10 +258,10 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    S3Settings::RequestSettings request_settings = s3_settings.get()->request_settings;
+    S3::RequestSettings request_settings = s3_settings.get()->request_settings;
     if (auto query_context = CurrentThread::getQueryContext())
     {
-        request_settings.updateFromSettingsIfChanged(query_context->getSettingsRef());
+        request_settings.updateFromSettings(query_context->getSettingsRef(), /* if_changed */true);
     }
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
@@ -440,8 +440,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 {
     auto settings_ptr = s3_settings.get();
     auto object_info = S3::getObjectInfo(
-        *client.get(), uri.bucket, path, {}, settings_ptr->request_settings,
-        /* with_metadata= */ true, /* throw_on_error= */ false);
+        *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, /* throw_on_error= */ false);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -460,7 +459,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     S3::ObjectInfo object_info;
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true);
+        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true);
     }
     catch (DB::Exception & e)
     {
@@ -489,7 +488,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
+        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
 
         try
@@ -532,7 +531,7 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
+    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
 
     copyS3File(current_client,
@@ -575,7 +574,7 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto new_s3_settings = getSettings(config, config_prefix, context, context->getSettingsRef().s3_validate_request_settings);
+    auto new_s3_settings = getSettings(config, config_prefix, context, for_disk_s3, context->getSettingsRef().s3_validate_request_settings);
     if (!static_headers.empty())
     {
         new_s3_settings->auth_settings.headers.insert(
@@ -589,7 +588,7 @@ void S3ObjectStorage::applyNewSettings(
     auto current_s3_settings = s3_settings.get();
     if (options.allow_client_change && (current_s3_settings->auth_settings.hasUpdates(new_s3_settings->auth_settings) || for_disk_s3))
     {
-        auto new_client = getClient(config, config_prefix, context, *new_s3_settings, for_disk_s3, &uri);
+        auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(new_s3_settings));
@@ -601,8 +600,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     const std::string & config_prefix,
     ContextPtr context)
 {
-    auto new_s3_settings = getSettings(config, config_prefix, context);
-    auto new_client = getClient(config, config_prefix, context, *new_s3_settings, true);
+    auto new_s3_settings = getSettings(config, config_prefix, context, for_disk_s3, true);
+    auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
 
     auto new_uri{uri};
     new_uri.bucket = new_namespace;

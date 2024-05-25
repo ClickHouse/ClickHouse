@@ -5,7 +5,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/callOnce.h>
 #include <Disks/IO/IOUringReader.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Disks/IO/getIOUringReader.h>
 
 #include <Core/ServerSettings.h>

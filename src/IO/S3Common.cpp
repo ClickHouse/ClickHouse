@@ -8,11 +8,13 @@
 
 #if USE_AWS_S3
 
-#    include <IO/HTTPHeaderEntries.h>
-#    include <IO/S3/Client.h>
-#    include <IO/S3/Requests.h>
-#    include <Common/quoteString.h>
-#    include <Common/logger_useful.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/Requests.h>
+#include <Common/formatReadable.h>
+#include <Common/quoteString.h>
+#include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollections.h>
 
 
 namespace ProfileEvents
@@ -48,6 +50,7 @@ bool S3Exception::isRetryableError() const
 namespace DB::ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 #endif
@@ -98,61 +101,90 @@ ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, c
     return sse_kms_config;
 }
 
-AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
+AuthSettings AuthSettings::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings,
+    const std::string & setting_name_prefix)
 {
-    auto access_key_id = config.getString(config_elem + ".access_key_id", "");
-    auto secret_access_key = config.getString(config_elem + ".secret_access_key", "");
-    auto session_token = config.getString(config_elem + ".session_token", "");
+    auto auth_settings = AuthSettings::loadFromSettings(settings);
 
-    auto region = config.getString(config_elem + ".region", "");
-    auto server_side_encryption_customer_key_base64 = config.getString(config_elem + ".server_side_encryption_customer_key_base64", "");
+    const std::string prefix = config_prefix + "." + setting_name_prefix;
+    auto has = [&](const std::string & key) -> bool { return config.has(prefix + key); };
+    auto get_uint = [&](const std::string & key) -> size_t { return config.getUInt64(prefix + key); };
+    auto get_bool = [&](const std::string & key) -> bool { return config.getBool(prefix + key); };
+    auto get_string = [&](const std::string & key) -> std::string { return config.getString(prefix + key); };
 
-    std::optional<bool> use_environment_credentials;
-    if (config.has(config_elem + ".use_environment_credentials"))
-        use_environment_credentials = config.getBool(config_elem + ".use_environment_credentials");
+    if (has("access_key_id"))
+        auth_settings.access_key_id = get_string("access_key_id");
+    if (has("secret_access_key"))
+        auth_settings.secret_access_key = get_string("secret_access_key");
+    if (has("session_token"))
+        auth_settings.secret_access_key = get_string("session_token");
 
-    std::optional<bool> use_insecure_imds_request;
-    if (config.has(config_elem + ".use_insecure_imds_request"))
-        use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
+    if (has("region"))
+        auth_settings.region = get_string("region");
+    if (has("server_side_encryption_customer_key_base64"))
+        auth_settings.region = get_string("server_side_encryption_customer_key_base64");
 
-    std::optional<uint64_t> expiration_window_seconds;
-    if (config.has(config_elem + ".expiration_window_seconds"))
-        expiration_window_seconds = config.getUInt64(config_elem + ".expiration_window_seconds");
+    if (has("connect_timeout_ms"))
+        auth_settings.connect_timeout_ms = get_uint("connect_timeout_ms");
+    if (has("request_timeout_ms"))
+        auth_settings.request_timeout_ms = get_uint("request_timeout_ms");
+    if (has("max_connections"))
+        auth_settings.max_connections = get_uint("max_connections");
 
-    std::optional<bool> no_sign_request;
-    if (config.has(config_elem + ".no_sign_request"))
-        no_sign_request = config.getBool(config_elem + ".no_sign_request");
+    if (has("http_keep_alive_timeout"))
+        auth_settings.http_keep_alive_timeout = get_uint("http_keep_alive_timeout");
+    if (has("http_keep_alive_max_requests"))
+        auth_settings.http_keep_alive_max_requests = get_uint("http_keep_alive_max_requests");
 
-    HTTPHeaderEntries headers = getHTTPHeaders(config_elem, config);
-    ServerSideEncryptionKMSConfig sse_kms_config = getSSEKMSConfig(config_elem, config);
+    if (has("use_environment_credentials"))
+        auth_settings.use_environment_credentials = get_bool("use_environment_credentials");
+    if (has("use_adaptive_timeouts"))
+        auth_settings.use_adaptive_timeouts = get_bool("use_adaptive_timeouts");
+    if (has("no_sing_request"))
+        auth_settings.no_sign_request = get_bool("no_sing_request");
+    if (has("expiration_window_seconds"))
+        auth_settings.expiration_window_seconds = get_uint("expiration_window_seconds");
+    if (has("gcs_issue_compose_request"))
+        auth_settings.gcs_issue_compose_request = get_bool("gcs_issue_compose_request");
+    if (has("use_insecure_imds_request"))
+        auth_settings.use_insecure_imds_request = get_bool("use_insecure_imds_request");
 
-    std::unordered_set<std::string> users;
+    auth_settings.headers = getHTTPHeaders(config_prefix, config);
+    auth_settings.server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
+
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_elem, keys);
+    config.keys(config_prefix, keys);
     for (const auto & key : keys)
     {
         if (startsWith(key, "user"))
-            users.insert(config.getString(config_elem + "." + key));
+            auth_settings.users.insert(config.getString(config_prefix + "." + key));
     }
 
-    return AuthSettings
-    {
-        std::move(access_key_id), std::move(secret_access_key), std::move(session_token),
-        std::move(region),
-        std::move(server_side_encryption_customer_key_base64),
-        std::move(sse_kms_config),
-        std::move(headers),
-        use_environment_credentials,
-        use_insecure_imds_request,
-        expiration_window_seconds,
-        no_sign_request,
-        std::move(users)
-    };
+    return auth_settings;
 }
 
-bool AuthSettings::canBeUsedByUser(const String & user) const
+AuthSettings AuthSettings::loadFromSettings(const DB::Settings & settings)
 {
-    return users.empty() || users.contains(user);
+    AuthSettings auth_settings{};
+    auth_settings.updateFromSettings(settings, /* if_changed */false);
+    return auth_settings;
+}
+
+void AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_changed)
+{
+    if (!if_changed || settings.s3_connect_timeout_ms.changed)
+        connect_timeout_ms = settings.s3_connect_timeout_ms;
+    if (!if_changed || settings.s3_request_timeout_ms.changed)
+        request_timeout_ms = settings.s3_request_timeout_ms;
+    if (!if_changed || settings.s3_max_connections.changed)
+        max_connections = settings.s3_max_connections;
+    if (!if_changed || settings.s3_use_adaptive_timeouts.changed)
+        use_adaptive_timeouts = settings.s3_use_adaptive_timeouts;
+    if (!if_changed || settings.s3_disable_checksum.changed)
+        disable_checksum = settings.s3_disable_checksum;
 }
 
 bool AuthSettings::hasUpdates(const AuthSettings & other) const
@@ -183,7 +215,7 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     server_side_encryption_kms_config = from.server_side_encryption_kms_config;
 
     if (from.use_environment_credentials.has_value())
-        use_environment_credentials = from.use_environment_credentials;
+       use_environment_credentials = from.use_environment_credentials;
 
     if (from.use_insecure_imds_request.has_value())
         use_insecure_imds_request = from.use_insecure_imds_request;
@@ -197,5 +229,264 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     users.insert(from.users.begin(), from.users.end());
 }
 
+RequestSettings RequestSettings::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings,
+    bool validate_settings,
+    const std::string & setting_name_prefix)
+{
+    auto request_settings = RequestSettings::loadFromSettings(settings, validate_settings);
+
+    String prefix = config_prefix + "." + setting_name_prefix;
+    auto has = [&](const std::string & key) -> bool { return config.has(prefix + key); };
+    auto get_uint = [&](const std::string & key) -> size_t { return config.getUInt64(prefix + key); };
+    auto get_string = [&](const std::string & key) -> std::string { return config.getString(prefix + key); };
+    auto get_bool = [&](const std::string & key) -> bool { return config.getBool(prefix + key); };
+
+    if (has("strict_upload_part_size"))
+        request_settings.upload_settings.strict_upload_part_size = get_uint("strict_upload_part_size");
+    if (has("min_upload_part_size"))
+        request_settings.upload_settings.min_upload_part_size = get_uint("min_upload_part_size");
+    if (has("max_upload_part_size"))
+        request_settings.upload_settings.max_upload_part_size = get_uint("max_upload_part_size");
+    if (has("upload_part_size_multiply_factor"))
+        request_settings.upload_settings.upload_part_size_multiply_factor = get_uint("upload_part_size_multiply_factor");
+    if (has("upload_part_size_multiply_parts_count_threshold"))
+        request_settings.upload_settings.upload_part_size_multiply_parts_count_threshold = get_uint("upload_part_size_multiply_parts_count_threshold");
+    if (has("max_inflight_parts_for_one_file"))
+        request_settings.upload_settings.max_inflight_parts_for_one_file = get_uint("max_inflight_parts_for_one_file");
+    if (has("max_part_number"))
+        request_settings.upload_settings.max_part_number = get_uint("max_part_number");
+    if (has("max_single_part_upload_size"))
+        request_settings.upload_settings.max_single_part_upload_size = get_uint("max_single_part_upload_size");
+    if (has("max_single_operation_copy_size"))
+        request_settings.upload_settings.max_single_operation_copy_size = get_uint("max_single_operation_copy_size");
+    if (has("s3_storage_class"))
+        request_settings.upload_settings.storage_class_name = get_string("s3_storage_class");
+
+    request_settings.upload_settings.storage_class_name = Poco::toUpperInPlace(request_settings.upload_settings.storage_class_name);
+    if (validate_settings)
+        request_settings.upload_settings.validate();
+
+    if (has("max_single_read_retries"))
+        request_settings.max_single_read_retries = get_uint("max_single_read_retries");
+    if (has("check_objects_after_upload"))
+        request_settings.check_objects_after_upload = get_bool("check_objects_after_upload");
+    if (has("list_object_keys_size"))
+        request_settings.list_object_keys_size = get_uint("list_object_keys_size");
+    if (has("allow_native_copy"))
+        request_settings.allow_native_copy = get_bool("allow_native_copy");
+    if (has("throw_on_zero_files_match"))
+        request_settings.throw_on_zero_files_match = get_bool("throw_on_zero_files_match");
+    if (has("request_timeout_ms"))
+        request_settings.request_timeout_ms = get_uint("request_timeout_ms");
+
+    /// NOTE: it would be better to reuse old throttlers
+    /// to avoid losing token bucket state on every config reload,
+    /// which could lead to exceeding limit for short time.
+    /// But it is good enough unless very high `burst` values are used.
+    if (UInt64 max_get_rps = has("max_get_rps") ? get_uint("max_get_rps") : settings.s3_max_get_rps)
+    {
+        size_t default_max_get_burst = settings.s3_max_get_burst
+            ? settings.s3_max_get_burst
+            : (Throttler::default_burst_seconds * max_get_rps);
+        size_t max_get_burst = has("max_get_burst") ? get_uint("max_get_burst") : default_max_get_burst;
+        request_settings.get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
+    }
+    if (UInt64 max_put_rps = has("max_put_rps") ? get_uint("max_put_rps") : settings.s3_max_put_rps)
+    {
+        size_t default_max_put_burst = settings.s3_max_put_burst
+            ? settings.s3_max_put_burst
+            : (Throttler::default_burst_seconds * max_put_rps);
+        size_t max_put_burst = has("max_put_burst") ? get_uint("max_put_burst") : default_max_put_burst;
+        request_settings.put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
+    }
+    return request_settings;
 }
+
+RequestSettings RequestSettings::loadFromNamedCollection(const NamedCollection & collection, bool validate_settings)
+{
+    RequestSettings settings{};
+
+    if (collection.has("strict_upload_part_size"))
+        settings.upload_settings.strict_upload_part_size = collection.get<UInt64>("strict_upload_part_size");
+    if (collection.has("min_upload_part_size"))
+        settings.upload_settings.min_upload_part_size = collection.get<UInt64>("min_upload_part_size");
+    if (collection.has("max_upload_part_size"))
+        settings.upload_settings.min_upload_part_size = collection.get<UInt64>("max_upload_part_size");
+    if (collection.has("upload_part_size_multiply_factor"))
+        settings.upload_settings.upload_part_size_multiply_factor = collection.get<UInt64>("upload_part_size_multiply_factor");
+    if (collection.has("upload_part_size_multiply_parts_count_threshold"))
+        settings.upload_settings.upload_part_size_multiply_parts_count_threshold = collection.get<UInt64>("upload_part_size_multiply_parts_count_threshold");
+    if (collection.has("max_inflight_parts_for_one_file"))
+        settings.upload_settings.max_inflight_parts_for_one_file = collection.get<UInt64>("max_inflight_parts_for_one_file");
+    if (collection.has("max_part_number"))
+        settings.upload_settings.max_single_part_upload_size = collection.get<UInt64>("max_part_number");
+    if (collection.has("max_single_part_upload_size"))
+        settings.upload_settings.max_single_part_upload_size = collection.get<UInt64>("max_single_part_upload_size");
+    if (collection.has("max_single_operation_copy_size"))
+        settings.upload_settings.max_single_part_upload_size = collection.get<UInt64>("max_single_operation_copy_size");
+    if (collection.has("s3_storage_class"))
+        settings.upload_settings.storage_class_name = collection.get<String>("s3_storage_class");
+
+    settings.upload_settings.storage_class_name = Poco::toUpperInPlace(settings.upload_settings.storage_class_name);
+    if (validate_settings)
+        settings.upload_settings.validate();
+
+    if (collection.has("max_single_read_retries"))
+        settings.max_single_read_retries = collection.get<UInt64>("max_single_read_retries");
+    if (collection.has("list_object_keys_size"))
+        settings.list_object_keys_size = collection.get<UInt64>("list_object_keys_size");
+    if (collection.has("allow_native_copy"))
+        settings.allow_native_copy = collection.get<bool>("allow_native_copy");
+    if (collection.has("throw_on_zero_files_match"))
+        settings.throw_on_zero_files_match = collection.get<bool>("throw_on_zero_files_match");
+
+    return settings;
+}
+
+RequestSettings RequestSettings::loadFromSettings(const DB::Settings & settings, bool validate_settings)
+{
+    RequestSettings request_settings{};
+    request_settings.updateFromSettings(settings, /* if_changed */false, validate_settings);
+    return request_settings;
+}
+
+void RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings)
+{
+    if (!if_changed || settings.s3_strict_upload_part_size.changed)
+        upload_settings.strict_upload_part_size = settings.s3_strict_upload_part_size;
+    if (!if_changed || settings.s3_min_upload_part_size.changed)
+        upload_settings.min_upload_part_size = settings.s3_min_upload_part_size;
+    if (!if_changed || settings.s3_max_upload_part_size.changed)
+        upload_settings.max_upload_part_size = settings.s3_max_upload_part_size;
+    if (!if_changed || settings.s3_upload_part_size_multiply_factor.changed)
+        upload_settings.upload_part_size_multiply_factor = settings.s3_upload_part_size_multiply_factor;
+    if (!if_changed || settings.s3_upload_part_size_multiply_parts_count_threshold.changed)
+        upload_settings.upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
+    if (!if_changed || settings.s3_max_inflight_parts_for_one_file.changed)
+        upload_settings.max_inflight_parts_for_one_file = settings.s3_max_inflight_parts_for_one_file;
+    if (!if_changed || settings.s3_max_part_number.changed)
+        upload_settings.max_part_number = settings.s3_max_part_number;
+    if (!if_changed || settings.s3_max_single_part_upload_size.changed)
+        upload_settings.max_single_part_upload_size = settings.s3_max_single_part_upload_size;
+    if (!if_changed || settings.s3_max_single_operation_copy_size.changed)
+        upload_settings.max_part_number = settings.s3_max_single_operation_copy_size;
+
+    if (validate_settings)
+        upload_settings.validate();
+
+    if (!if_changed || settings.s3_max_single_read_retries.changed)
+        max_single_read_retries = settings.s3_max_single_read_retries;
+    if (!if_changed || settings.s3_check_objects_after_upload.changed)
+        check_objects_after_upload = settings.s3_check_objects_after_upload;
+    if (!if_changed || settings.s3_max_unexpected_write_error_retries.changed)
+        max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
+    if (!if_changed || settings.s3_list_object_keys_size.changed)
+        list_object_keys_size = settings.s3_list_object_keys_size;
+    if (!if_changed || settings.s3_throw_on_zero_files_match.changed)
+        throw_on_zero_files_match = settings.s3_throw_on_zero_files_match;
+    if (!if_changed || settings.s3_request_timeout_ms.changed)
+        request_timeout_ms = settings.s3_request_timeout_ms;
+
+    if ((!if_changed || settings.s3_max_get_rps.changed || settings.s3_max_get_burst.changed) && settings.s3_max_get_rps)
+    {
+        size_t max_get_burst = settings.s3_max_get_burst
+            ? settings.s3_max_get_burst
+            : Throttler::default_burst_seconds * settings.s3_max_get_rps;
+        get_request_throttler = std::make_shared<Throttler>(settings.s3_max_get_rps, max_get_burst);
+    }
+    if ((!if_changed || settings.s3_max_put_rps.changed || settings.s3_max_put_burst.changed) && settings.s3_max_put_rps)
+    {
+        size_t max_put_burst = settings.s3_max_put_burst
+            ? settings.s3_max_put_burst
+            : Throttler::default_burst_seconds * settings.s3_max_put_rps;
+        put_request_throttler = std::make_shared<Throttler>(settings.s3_max_put_rps, max_put_burst);
+    }
+}
+
+void RequestSettings::PartUploadSettings::validate()
+{
+    static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
+    if (strict_upload_part_size && strict_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting strict_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(strict_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
+    if (min_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting min_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(min_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
+    static constexpr size_t max_upload_part_size_limit = 5ull * 1024 * 1024 * 1024;
+    if (max_upload_part_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size has invalid value {} which is greater than the s3 API limit {}",
+            ReadableSize(max_upload_part_size), ReadableSize(max_upload_part_size_limit));
+
+    if (max_single_part_upload_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_single_part_upload_size has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(max_single_part_upload_size), ReadableSize(max_upload_part_size_limit));
+
+    if (max_single_operation_copy_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_single_operation_copy_size has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(max_single_operation_copy_size), ReadableSize(max_upload_part_size_limit));
+
+    if (max_upload_part_size < min_upload_part_size)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size {}",
+            ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
+
+    if (!upload_part_size_multiply_factor)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_part_size_multiply_factor cannot be zero");
+
+    if (!upload_part_size_multiply_parts_count_threshold)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
+
+    if (!max_part_number)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_part_number cannot be zero");
+
+    static constexpr size_t max_part_number_limit = 10000;
+    if (max_part_number > max_part_number_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_part_number has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+
+    size_t maybe_overflow;
+    if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
+        throw Exception(
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Setting upload_part_size_multiply_factor is too big ({}). "
+                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                        ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+
+    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    if (!storage_class_name.empty() && !storage_class_names.contains(storage_class_name))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            storage_class_name);
+
+    /// TODO: it's possible to set too small limits.
+    /// We can check that max possible object size is not too small.
+}
+
+}
+
 }

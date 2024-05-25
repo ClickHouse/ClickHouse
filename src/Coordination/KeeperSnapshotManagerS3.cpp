@@ -18,6 +18,7 @@
 #include <IO/S3/Client.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -64,7 +65,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             return;
         }
 
-        auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
+        auto auth_settings = S3::AuthSettings::loadFromConfig(config, config_prefix, Context::getGlobalContextInstance()->getSettingsRef());
 
         String endpoint = macros->expand(config.getString(config_prefix + ".endpoint"));
         auto new_uri = S3::URI{endpoint};
@@ -154,7 +155,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         if (s3_client == nullptr)
             return;
 
-        S3Settings::RequestSettings request_settings_1;
+        S3::RequestSettings request_settings_1;
 
         const auto create_writer = [&](const auto & key)
         {
@@ -197,7 +198,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         lock_writer.finalize();
 
         // We read back the written UUID, if it's the same we can upload the file
-        S3Settings::RequestSettings request_settings_2;
+        S3::RequestSettings request_settings_2;
         request_settings_2.max_single_read_retries = 1;
         ReadBufferFromS3 lock_reader
         {

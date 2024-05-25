@@ -56,7 +56,7 @@ namespace
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
@@ -66,7 +66,7 @@ namespace
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
             , request_settings(request_settings_)
-            , upload_settings(request_settings.getUploadSettings())
+            , upload_settings(request_settings.upload_settings)
             , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_s3(for_disk_s3_)
@@ -81,8 +81,8 @@ namespace
         std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
-        const S3Settings::RequestSettings & request_settings;
-        const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
+        const S3::RequestSettings & request_settings;
+        const S3::RequestSettings::PartUploadSettings & upload_settings;
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         bool for_disk_s3;
@@ -239,7 +239,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, request_settings, "Immediately after upload");
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -465,7 +465,7 @@ namespace
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
@@ -647,7 +647,7 @@ namespace
             size_t src_size_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3::RequestSettings & request_settings_,
             const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
@@ -853,7 +853,7 @@ void copyDataToS3File(
     const std::shared_ptr<const S3::Client> & dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
-    const S3Settings::RequestSettings & settings,
+    const S3::RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
@@ -872,7 +872,7 @@ void copyS3File(
     size_t src_size,
     const String & dest_bucket,
     const String & dest_key,
-    const S3Settings::RequestSettings & settings,
+    const S3::RequestSettings & settings,
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,

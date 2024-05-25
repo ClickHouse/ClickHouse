@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_AWS_S3
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
@@ -58,7 +58,7 @@ private:
     std::vector<String> keys;
 
     S3::AuthSettings auth_settings;
-    S3Settings::RequestSettings request_settings;
+    S3::RequestSettings request_settings;
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.

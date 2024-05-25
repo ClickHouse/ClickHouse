@@ -7,7 +7,7 @@
 #include <Common/Logger.h>
 #include <Disks/DiskType.h>
 #include <IO/S3Common.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 

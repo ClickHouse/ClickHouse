@@ -72,7 +72,7 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::RequestSettings::PartUploadSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
@@ -91,7 +91,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & bucket_,
     const String & key_,
     size_t buf_size_,
-    const S3Settings::RequestSettings & request_settings_,
+    const S3::RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
@@ -100,7 +100,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
-    , upload_settings(request_settings.getUploadSettings())
+    , upload_settings(request_settings.upload_settings)
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
@@ -214,9 +214,9 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (request_settings.check_objects_after_upload)
     {
-        S3::checkObjectExists(*client_ptr, bucket, key, {}, request_settings, "Immediately after upload");
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, "Immediately after upload");
 
-        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, request_settings);
+        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {});
         if (actual_size != total_size)
             throw Exception(
                     ErrorCodes::S3_ERROR,
