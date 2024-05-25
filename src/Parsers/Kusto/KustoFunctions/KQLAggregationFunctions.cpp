@@ -14,7 +14,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {

@@ -60,6 +60,21 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
+static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        if (!command.column_name.empty())
+        {
+            auto column = data_part->tryGetColumn(command.column_name);
+            if (column && column->type->hasDynamicSubcolumns())
+                return true;
+        }
+    }
+
+    return false;
+}
+
 static UInt64 getExistingRowsCount(const Block & block)
 {
     auto column = block.getByName(RowExistsColumn::name).column;
@@ -95,7 +110,7 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -2249,7 +2264,9 @@ bool MutateTask::prepare()
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
+    /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
+    /// rewriting the whole part.
+    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part) || !isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         /// In case of replicated merge tree with zero copy replication

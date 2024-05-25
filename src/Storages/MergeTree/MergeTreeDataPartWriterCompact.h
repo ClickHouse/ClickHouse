@@ -42,7 +42,9 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
+    void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc);
+
+    void initDynamicStreamsIfNeeded(const Block & block);
 
     Block header;
 
@@ -96,6 +98,8 @@ private:
     /// then finally to 'marks_file'.
     std::unique_ptr<CompressedWriteBuffer> marks_compressor;
     std::unique_ptr<HashingWriteBuffer> marks_source_hashing;
+
+    bool is_dynamic_streams_initialized = false;
 };
 
 }
