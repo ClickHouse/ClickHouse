@@ -16,6 +16,10 @@ SELECT formatReadableDecimalSize(fromReadableSize('1 TB'));
 SELECT formatReadableDecimalSize(fromReadableSize('1 PB'));
 SELECT formatReadableDecimalSize(fromReadableSize('1 EB'));
 
+-- Is case-insensitive
+SELECT formatReadableSize(fromReadableSize('1 mIb'));
+SELECT formatReadableDecimalSize(fromReadableSize('1 mb'));
+
 -- Should be able to parse decimals
 SELECT fromReadableSize('1.00 KiB');    -- 1024
 SELECT fromReadableSize('3.00 KiB');    -- 3072

@@ -1,3 +1,4 @@
+#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/convert.hpp>
 #include <boost/convert/strtol.hpp>
 
@@ -5,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include "base/types.h"
 
 namespace DB
 {
@@ -23,22 +23,22 @@ namespace
 
     const std::unordered_map<std::string_view, UInt64> size_unit_to_bytes =
     {
-        {"B", 1},
+        {"b", 1},
         // ISO/IEC 80000-13 binary units
-        {"KiB", 1024},                  // 1024
-        {"MiB", 1048576},               // 1024 * 1024
-        {"GiB", 1073741824},            // 1024 * 1024 * 1024
-        {"TiB", 1099511627776},         // 1024 * 1024 * 1024 * 1024
-        {"PiB", 1125899906842624},      // 1024 * 1024 * 1024 * 1024 * 1024
-        {"EiB", 1152921504606846976},   // 1024 * 1024 * 1024 * 1024 * 1024 * 1024
+        {"kib", 1024},                  // 1024
+        {"mib", 1048576},               // 1024 * 1024
+        {"gib", 1073741824},            // 1024 * 1024 * 1024
+        {"tib", 1099511627776},         // 1024 * 1024 * 1024 * 1024
+        {"pib", 1125899906842624},      // 1024 * 1024 * 1024 * 1024 * 1024
+        {"eib", 1152921504606846976},   // 1024 * 1024 * 1024 * 1024 * 1024 * 1024
 
         // SI units
-        {"KB", 1000},                    // 10e3
-        {"MB", 1000000},                 // 10e6
-        {"GB", 1000000000},              // 10e9
-        {"TB", 1000000000000},          // 10e12
-        {"PB", 1000000000000000},       // 10e15
-        {"EB", 1000000000000000000},    // 10e18
+        {"kb", 1000},                    // 10e3
+        {"mb", 1000000},                 // 10e6
+        {"gb", 1000000000},              // 10e9
+        {"tb", 1000000000000},          // 10e12
+        {"pb", 1000000000000000},       // 10e15
+        {"eb", 1000000000000000000},    // 10e18
     };
 
     class FunctionFromReadableSize : public IFunction
@@ -166,8 +166,8 @@ namespace
                         String(str));
                 }
 
-                /// get unit number
-                std::string_view unit = str.substr(token_front, token_tail - token_front);
+                std::string unit = std::string{str.substr(token_front, token_tail - token_front)};
+                boost::algorithm::to_lower(unit);
                 auto iter = size_unit_to_bytes.find(unit);
                 if (iter == size_unit_to_bytes.end()) /// not find unit
                 {
