@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDynamic.h>
 
 
 namespace DB
@@ -254,6 +255,24 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (all_equal)
             return types[0];
+    }
+
+    /// If one of the types is Dynamic, the supertype is Dynamic
+    {
+        bool have_dynamic = false;
+        size_t max_dynamic_types = 0;
+
+        for (const auto & type : types)
+        {
+            if (const auto & dynamic_type = typeid_cast<const DataTypeDynamic *>(type.get()))
+            {
+                have_dynamic = true;
+                max_dynamic_types = std::max(max_dynamic_types, dynamic_type->getMaxDynamicTypes());
+            }
+        }
+
+        if (have_dynamic)
+            return std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
 
     /// Recursive rules

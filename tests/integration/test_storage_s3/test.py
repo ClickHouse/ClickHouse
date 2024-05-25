@@ -1816,27 +1816,13 @@ def test_schema_inference_cache(started_cluster):
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(
-            instance,
-            files,
-            storage_name,
-            started_cluster,
-            bucket,
-            4 if storage_name == "url" else 1,
-        )
+        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
         instance.query("system drop schema cache")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(
-            instance,
-            files,
-            storage_name,
-            started_cluster,
-            bucket,
-            4 if storage_name == "url" else 1,
-        )
+        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
         instance.query("system drop schema cache")
 

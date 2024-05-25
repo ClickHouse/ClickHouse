@@ -6,7 +6,7 @@
 #include <Access/User.h>
 
 #include "Common/Exception.h"
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
@@ -838,7 +838,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
     /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
     /// supports schema inference (will determine table structure in it's constructor).
-    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name))
+    else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
@@ -976,6 +976,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
+
+        if (as_create.is_materialized_view && as_create.to_table_id)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Cannot CREATE a table AS {}, it is a Materialized View without storage. Use \"AS `{}`\" instead",
+                qualified_name,
+                as_create.to_table_id.getQualifiedName());
 
         if (as_create.is_live_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
@@ -1493,7 +1500,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateVirtualColumns(*res);
 
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
+    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "

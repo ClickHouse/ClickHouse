@@ -444,7 +444,6 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getExpression());
             interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
         }
 
@@ -584,7 +583,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * otherwise coordinator does not find it in block.
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value() && !planner_query_processing_info.isSecondStage())
+        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->getOutputs())
