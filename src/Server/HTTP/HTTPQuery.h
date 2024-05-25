@@ -15,6 +15,7 @@ struct HTTPQueryAST
     std::vector<ASTPtr> order_expressions;
 };
 
-HTTPQueryAST getHTTPQueryAST(HTMLForm & params);
+template <typename T>
+HTTPQueryAST getHTTPQueryAST(const T & params);
 
 }

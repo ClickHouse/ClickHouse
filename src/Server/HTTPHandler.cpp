@@ -42,7 +42,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Server/HTTP/HTTPQueryAST.h>
+#include <Parsers/formatAST.h>
+#include <Server/HTTP/HTTPQuery.h>
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
@@ -606,7 +607,7 @@ void combineSelectQuery(ASTSelectQuery * select_query, HTTPQueryAST & http_query
         combineOrderExpressions(select_query, http_query_ast.order_expressions);
 }
 
-void combineQueryWithParams(QueryData& query_data, HTMLForm & params)
+void combineQueryWithParams(QueryData & query_data, const std::map<std::string, std::string> & params)
 {
     auto http_query_ast = getHTTPQueryAST(params);
 
@@ -669,6 +670,10 @@ void HTTPHandler::processQuery(
         UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
         context->setClientProtocolVersion(version_param);
     }
+
+    /// this parameter is used to execute the request
+    /// if the value is false, the request will not be executed and will be returned in text form
+    bool execute = params.getParsed<bool>("execute", true);
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -790,51 +795,11 @@ void HTTPHandler::processQuery(
     else
         in_post_maybe_compressed = std::move(in_post);
 
-    static const NameSet reserved_param_names{
-        "compress",
-        "decompress",
-        "user",
-        "password",
-        "quota_key",
-        "query_id",
-        "stacktrace",
-        "role",
-        "buffer_size",
-        "wait_end_of_query",
-        "session_id",
-        "session_timeout",
-        "session_check",
-        "client_protocol_version",
-        "close_session",
-        "where",
-        "columns",
-        "select",
-        "order"};
-
-    Names reserved_param_suffixes;
-
-    auto param_could_be_skipped = [&] (const String & name)
-    {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
-            return true;
-
-        if (reserved_param_names.contains(name))
-            return true;
-
-        for (const String & suffix : reserved_param_suffixes)
-        {
-            if (endsWith(name, suffix))
-                return true;
-        }
-
-        return false;
-    };
+    const auto & access_control = context->getAccessControl();
 
     auto roles = params.getAll("role");
     if (!roles.empty())
     {
-        const auto & access_control = context->getAccessControl();
         const auto & user = context->getUser();
         std::vector<UUID> roles_ids(roles.size());
         for (size_t i = 0; i < roles.size(); i++)
@@ -870,20 +835,14 @@ void HTTPHandler::processQuery(
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
-    if (has_external_data)
-    {
-        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-        reserved_param_suffixes.reserve(3);
-        /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
-        reserved_param_suffixes.emplace_back("_format");
-        reserved_param_suffixes.emplace_back("_types");
-        reserved_param_suffixes.emplace_back("_structure");
-    }
-
     std::string database = request.get("X-ClickHouse-Database", "");
     std::string default_format = request.get("X-ClickHouse-Format", "");
 
     SettingsChanges settings_changes;
+
+    /// Using std::map is used instead of std::unordered_map for consistency in the output order
+    std::map<std::string, std::string> additional_params;
+
     for (const auto & [key, value] : params)
     {
         if (key == "database")
@@ -896,14 +855,12 @@ void HTTPHandler::processQuery(
             if (default_format.empty())
                 default_format = value;
         }
-        else if (param_could_be_skipped(key))
+        else if (!customizeQueryParam(context, key, value))
         {
-        }
-        else
-        {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
+            if (access_control.isSettingNameAllowed(key))
                 settings_changes.push_back({key, value});
+            else
+                additional_params.insert({key, value});
         }
     }
 
@@ -1037,17 +994,24 @@ void HTTPHandler::processQuery(
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Empty request");
 
-    combineQueryWithParams(*query_data, params);
+    combineQueryWithParams(*query_data, additional_params);
 
-    executeQuery(
-        *query_data,
-        *used_output.out_maybe_delayed_and_compressed,
-        /* allow_into_outfile = */ false,
-        context,
-        set_query_result,
-        QueryFlags{},
-        {},
-        handle_exception_in_output_format);
+    if (execute)
+    {
+        executeQuery(
+            *query_data,
+            *used_output.out_maybe_delayed_and_compressed,
+            /* allow_into_outfile = */ false,
+            context,
+            set_query_result,
+            QueryFlags{},
+            {},
+            handle_exception_in_output_format);
+    }
+    else
+    {
+        formatAST(*query_data->ast, *used_output.out_maybe_delayed_and_compressed, /*hilite=*/false, /*one_line=*/true);
+    }
 
     session->releaseSessionID();
 

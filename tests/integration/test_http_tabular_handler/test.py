@@ -48,84 +48,112 @@ def test_happy_result():
     assert response.content == b"1,2\n1,3\n2,3\n"
 
 
+@pytest.mark.parametrize("execute", [1, 0])
 @pytest.mark.parametrize(
-    ["url", "params", "sql_query"],
+    ["url", "params", "sql_query", "formatted_query"],
     [
         pytest.param(
             "number.csv",
             {"limit": 3},
             "SELECT * FROM number LIMIT 3 FORMAT CSV",
+            "SELECT * FROM default.number",
             id="default",
         ),
         pytest.param(
             "system/numbers.tsv",
             {"limit": 10},
             "SELECT * FROM system.numbers LIMIT 10 FORMAT TSV",
+            "SELECT * FROM system.numbers",
             id="database",
         ),
         pytest.param(
             "default/number",
             {"limit": 10, "format": "tsv"},
             "SELECT * FROM number LIMIT 10 FORMAT TSV",
+            "SELECT * FROM default.number",
             id="no format",
         ),
         pytest.param(
             "number",
             {"columns": "a"},
             "SELECT a FROM number",
+            "SELECT a FROM default.number",
             id="one column",
         ),
         pytest.param(
             "number",
-            {"columns": "a", "select": "SELECT b +  11"},
+            {"columns": "a", "select": "b +  11"},
             "SELECT a, b + 11 FROM number",
+            "SELECT a, b + 11 FROM default.number",
             id="two columns",
         ),
         pytest.param(
             "number",
-            {"columns": "a", "select": "SELECT b +  11", "where": "a>1 AND b<=3"},
+            {"columns": "a", "select": "b +  11", "where": "a>1 AND b<=3"},
             "SELECT a, b + 11 FROM number WHERE a > 1 AND b <= 3",
+            "SELECT a, b + 11 FROM default.number WHERE (a > 1) AND (b <= 3)",
             id="where",
+        ),
+        pytest.param(
+            "number",
+            {"columns": "a", "select": "b +  11", "a": "1", "b<": "3"},
+            "SELECT a, b + 11 FROM number WHERE a = 1 AND b <= 3",
+            "SELECT a, b + 11 FROM default.number WHERE (a = 1) AND (b <= 3)",
+            id="where by columns",
         ),
         pytest.param(
             "number",
             {
                 "columns": "a",
-                "select": "SELECT b +  11",
+                "select": "b +  11",
                 "where": "a>1 AND b<=3",
                 "order": "a DESC, b ASC",
             },
             "SELECT a, b + 11 FROM number WHERE a > 1 AND b <= 3 ORDER BY a DESC, b",
+            "SELECT a, b + 11 FROM default.number WHERE (a > 1) AND (b <= 3) ORDER BY a DESC, b ASC",
             id="order by",
         ),
     ],
 )
-def test_scenarios(url, params, sql_query):
+def test_scenarios(execute, url, params, sql_query, formatted_query):
     response = instance.http_request(
         url=f"{URL_PREFIX}/{url}",
-        params=params,
+        params={**params, "execute": execute},
     )
     response.encoding = "UTF-8"
 
     expected_response = instance.http_query(sql_query, method="POST")
 
     assert response.status_code == 200
-    assert response.text == expected_response
+
+    if execute:
+        assert response.text == expected_response
+    else:
+        assert response.text == formatted_query
 
 
+@pytest.mark.parametrize("execute", [1, 0])
 @pytest.mark.parametrize(
-    ["query", "params", "sql_query"],
+    ["query", "params", "sql_query", "formatted_query"],
     [
-        pytest.param("SELECT * FROM number", {}, "SELECT * FROM number", id="default"),
+        pytest.param(
+            "SELECT * FROM number",
+            {},
+            "SELECT * FROM number",
+            "SELECT * FROM number",
+            id="default",
+        ),
         pytest.param(
             "SELECT a FROM number",
             {"columns": "b", "limit": 3},
             "SELECT a, b FROM number LIMIT 3",
+            "SELECT a, b FROM number",
             id="columns",
         ),
         pytest.param(
             "SELECT a FROM number",
-            {"select": "SELECT a * b, a + b, a / b, 5"},
+            {"select": "a * b, a + b, a / b, 5"},
+            "SELECT a, a * b, a + b, a / b, 5 FROM number",
             "SELECT a, a * b, a + b, a / b, 5 FROM number",
             id="select",
         ),
@@ -133,18 +161,32 @@ def test_scenarios(url, params, sql_query):
             "SELECT * FROM number WHERE a > 1",
             {"where": "b <= 3"},
             "SELECT * FROM number WHERE a > 1 AND b <= 3",
+            "SELECT * FROM number WHERE (a > 1) AND (b <= 3)",
             id="where",
+        ),
+        pytest.param(
+            "SELECT * FROM number WHERE a > 1",
+            {"b<": "3"},
+            "SELECT * FROM number WHERE a > 1 AND b <= 3",
+            "SELECT * FROM number WHERE (a > 1) AND (b <= 3)",
+            id="where by columns",
         ),
         pytest.param(
             "SELECT * FROM number WHERE a > 1 ORDER BY a ASC",
             {"where": "b <= 10", "order": "b DESC"},
-            "SELECT * FROM number WHERE a > 1 AND b <= 10 ORDER BY a ASC, b DESC",
+            "SELECT * FROM number WHERE a > 1 AND b <= 10 ORDER BY a, b DESC",
+            "SELECT * FROM number WHERE (a > 1) AND (b <= 10) ORDER BY a ASC, b DESC",
             id="order by",
         ),
     ],
 )
-def test_combining_params(query, params, sql_query):
-    response = instance.http_query(query, params=params, method="POST")
+def test_combining_params(execute, query, params, sql_query, formatted_query):
+    response = instance.http_query(
+        query, params={**params, "execute": execute}, method="POST"
+    )
     expected_response = instance.http_query(sql_query, method="POST")
 
-    assert response == expected_response
+    if execute:
+        assert response == expected_response
+    else:
+        assert response == formatted_query

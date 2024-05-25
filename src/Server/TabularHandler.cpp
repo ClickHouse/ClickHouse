@@ -14,7 +14,7 @@
 #include <Parsers/formatAST.h>
 
 #include <Interpreters/Context.h>
-#include <Server/HTTP/HTTPQueryAST.h>
+#include <Server/HTTP/HTTPQuery.h>
 #include <Poco/URI.h>
 
 namespace DB
