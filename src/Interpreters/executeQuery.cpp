@@ -103,7 +103,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -966,7 +965,7 @@ executeQueryImpl(QueryData & query_data, ContextMutablePtr context, QueryFlags f
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1088,7 +1087,7 @@ executeQueryImpl(QueryData & query_data, ContextMutablePtr context, QueryFlags f
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
@@ -1259,7 +1258,16 @@ QueryData::QueryData(ReadBuffer & istr, ContextMutablePtr context, QueryFlags fl
     const char * begin;
     const char * end;
 
-    istr.nextIfAtEnd();
+    try
+    {
+        istr.nextIfAtEnd();
+    }
+    catch (...)
+    {
+        /// If buffer contains invalid data and we failed to decompress, we still want to have some information about the query in the log.
+        logQuery("<cannot parse>", context, /* internal = */ false, QueryProcessingStage::Complete);
+        throw;
+    }
 
     const auto max_query_size = getMaxQuerySize(context, flags);
 

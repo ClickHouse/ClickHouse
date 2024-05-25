@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Parsers/IAST_fwd.h"
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>

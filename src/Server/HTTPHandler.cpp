@@ -26,7 +26,7 @@
 #include <Server/IServer.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -38,6 +38,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
+
+#include "config.h"
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -786,11 +788,11 @@ void HTTPHandler::processQuery(
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
-    bool in_post_compressed = false;
+    bool is_in_post_compressed = false;
     if (params.getParsed<bool>("decompress", false))
     {
         in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
-        in_post_compressed = true;
+        is_in_post_compressed = true;
     }
     else
         in_post_maybe_compressed = std::move(in_post);
@@ -890,7 +892,7 @@ void HTTPHandler::processQuery(
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
-    if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
+    if (is_in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
@@ -1177,7 +1179,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");

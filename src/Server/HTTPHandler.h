@@ -167,7 +167,7 @@ private:
 
 class DynamicQueryHandler : public HTTPHandler
 {
-protected:
+private:
     std::string param_name;
 public:
     explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query", const std::optional<String>& content_type_override_ = std::nullopt);
