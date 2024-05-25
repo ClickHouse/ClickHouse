@@ -1,5 +1,9 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/64211
-
+DROP TABLE IF EXISTS test_merge;
+DROP TABLE IF EXISTS test_merge_distributed;
+DROP TABLE IF EXISTS test_distributed_merge;
+DROP TABLE IF EXISTS test_distributed;
+DROP TABLE IF EXISTS test_local;
 CREATE TABLE test_local (name String) 
 ENGINE = MergeTree
 ORDER BY name as select 'x';
