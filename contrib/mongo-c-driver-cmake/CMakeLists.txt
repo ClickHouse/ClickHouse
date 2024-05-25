@@ -60,11 +60,9 @@ else ()
     set(MONGOC_HAVE_RES_NDESTROY 0)
 endif()
 
-# compression
-# TODO: enable and check
-set(MONGOC_ENABLE_COMPRESSION 0)
+set(MONGOC_ENABLE_COMPRESSION 1)
+set(MONGOC_ENABLE_COMPRESSION_ZLIB 1)
 set(MONGOC_ENABLE_COMPRESSION_SNAPPY 0)
-set(MONGOC_ENABLE_COMPRESSION_ZLIB 0)
 set(MONGOC_ENABLE_COMPRESSION_ZSTD 0)
 
 # SSL
@@ -92,7 +90,6 @@ set(MONGOC_SOCKET_ARG2 "struct sockaddr")
 set(MONGOC_HAVE_SOCKLEN 1)
 set(MONGOC_SOCKET_ARG3 "socklen_t")
 
-# TODO: filter
 set(MONGOC_ENABLE_RDTSCP 0)
 set(MONGOC_NO_AUTOMATIC_GLOBALS 1)
 set(MONGOC_ENABLE_STATIC_INSTALL 0)
@@ -148,7 +145,7 @@ add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)
 target_include_directories(_libmongoc SYSTEM PUBLIC ${LIBMONGOC_SOURCE_DIR} ${COMMON_SOURCE_DIR} ${UTF8PROC_SOURCE_DIR})
 target_compile_definitions(_libmongoc PRIVATE MONGOC_COMPILATION)
-target_link_libraries(_libmongoc ch_contrib::libbson ch_contrib::c-ares resolv)
+target_link_libraries(_libmongoc ch_contrib::libbson ch_contrib::c-ares ch_contrib::zlib resolv)
 if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
     target_link_libraries(_libmongoc OpenSSL::SSL)
 endif()

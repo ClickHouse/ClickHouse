@@ -1,17 +1,14 @@
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/SortNode.h>
-#include <Databases/DatabaseFactory.h>
-#include <Formats/BSONTypes.h>
-
-
 #include "config.h"
 
 #if USE_MONGODB
 #include <memory>
 
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/SortNode.h>
+#include <Formats/BSONTypes.h>
+#include <DataTypes/FieldToDataType.h>
 #include <IO/Operators.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -66,7 +63,7 @@ Pipe StorageMongoDB::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     size_t /*num_streams*/)
@@ -82,7 +79,7 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find();
 
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(&options, &query_info, sample_block),
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
         std::move(options), sample_block, max_block_size));
 }
 
@@ -93,7 +90,7 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     {
         if (named_collection->has("uri"))
         {
-            validateNamedCollection(*named_collection, {"collection"}, {});
+            validateNamedCollection(*named_collection, {"collection"}, {"uri"});
             configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
         }
         else
@@ -153,15 +150,15 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     return configuration;
 }
 
-String StorageMongoDB::getMongoFuncName(const String & func)
+std::string mongoFuncName(const std::string & func)
 {
     if (func == "equals" || func == "isNull")
         return "$eq";
     if (func == "notEquals" || func == "isNotNull")
         return "$ne";
-    if (func == "greaterThan")
+    if (func == "greaterThan" || func == "greater")
         return "$gt";
-    if (func == "lessThan")
+    if (func == "lessThan" || func == "less")
         return "$lt";
     if (func == "greaterOrEquals")
         return "$gte";
@@ -181,71 +178,78 @@ String StorageMongoDB::getMongoFuncName(const String & func)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function '{}' is not supported", func);
 }
 
-bsoncxx::types::bson_value::value StorageMongoDB::toBSONValue(const Field * field)
+bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type)
 {
-    switch (field->getType())
+    switch (type->getTypeId())
     {
-        case Field::Types::Null:
-            return bsoncxx::types::b_null();
-        case Field::Types::Int64:
-            return field->get<Int64 &>();
-        case Field::Types::UInt64:
-            return static_cast<Int64>(field->get<UInt64 &>());
-        case Field::Types::Int128:
-            return static_cast<Int64>(field->get<Int128 &>());
-        case Field::Types::UInt128:
-            return static_cast<Int64>(field->get<UInt128 &>());
-        case Field::Types::Int256:
-            return static_cast<Int64>(field->get<Int256 &>());
-        case Field::Types::UInt256:
-            return static_cast<Int64>(field->get<UInt256 &>());
-        case Field::Types::Float64:
-            return field->get<Float64 &>();
-        case Field::Types::String:
-            return field->get<String &>();
-        case Field::Types::Array:
+        case TypeIndex::String:
+            return field.get<String>();
+        case TypeIndex::UInt8:
+        {
+            if (isBool(type))
+                return field.get<UInt8>() != 0;
+            return static_cast<Int32>(field.get<UInt8>());
+        }
+        case TypeIndex::UInt16:
+            return static_cast<Int32>(field.get<UInt16>());
+        case TypeIndex::UInt32:
+            return static_cast<Int32>(field.get<UInt32>());
+        case TypeIndex::UInt64:
+            return static_cast<Int64>(field.get<UInt64>());
+        case TypeIndex::Int8:
+            return field.get<Int8 &>();
+        case TypeIndex::Int16:
+            return field.get<Int16>();
+        case TypeIndex::Int32:
+            return field.get<Int32>();
+        case TypeIndex::Int64:
+            return field.get<Int64>();
+        case TypeIndex::Float32:
+            return field.get<Float32>();
+        case TypeIndex::Float64:
+            return field.get<Float64>();
+        case TypeIndex::Date:
+            return std::chrono::milliseconds(field.get<UInt16>() * 1000);
+        case TypeIndex::Date32:
+            return std::chrono::milliseconds(field.get<Int32>() * 1000);
+        case TypeIndex::DateTime:
+            return std::chrono::milliseconds(field.get<UInt32>() * 1000);
+        case TypeIndex::DateTime64:
+            return std::chrono::milliseconds(field.get<Decimal64>().getValue());
+        case TypeIndex::UUID:
+            return static_cast<String>(formatUUID(field.get<UUID>()));
+        case TypeIndex::Tuple:
         {
             auto arr = array();
-            for (const auto & tuple_field : field->get<Array &>())
-                arr.append(toBSONValue(&tuple_field));
+            for (const auto & elem : field.get<Tuple &>())
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem)));
             return arr.view();
         }
-        case Field::Types::Tuple:
+        case TypeIndex::Array:
         {
             auto arr = array();
-            for (const auto & tuple_field : field->get<Tuple &>())
-                arr.append(toBSONValue(&tuple_field));
+            for (const auto & elem : field.get<Array &>())
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem)));
             return arr.view();
-        }
-        case Field::Types::Map:
-        {
-            auto doc = document();
-            for (const auto & element : field->get<Map &>())
-            {
-                const auto & tuple = element.get<Tuple &>();
-                doc.append(kvp(tuple.at(0).get<String &>(), toBSONValue(&tuple.at(1))));
-            }
-            return doc.view();
-        }
-        case Field::Types::UUID:
-            return static_cast<String>(formatUUID(field->get<UUID &>()));
-        case Field::Types::Bool:
-            return static_cast<bool>(field->get<bool &>());
-        case Field::Types::Object:
-        {
-            auto doc = document();
-            for (const auto & [key, var] : field->get<Object &>())
-                doc.append(kvp(key, toBSONValue(&var)));
-            return doc.view();
         }
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Field's type '{}' is not supported", field->getTypeName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fields with type '{}' is not supported", type->getPrettyName());
     }
 }
 
-bsoncxx::document::value StorageMongoDB::visitWhereFunction(const ASTFunction * func)
+void checkLiteral(const Field & field, std::string * func)
 {
-    const auto & func_name = getMongoFuncName(func->name);
+    if (*func == "$in" && field.getType() != Field::Types::Array && field.getType() != Field::Types::Tuple)
+        *func = "$eq";
+
+    if (*func == "$nin" && field.getType() != Field::Types::Array && field.getType() != Field::Types::Tuple)
+        *func = "$ne";
+}
+
+bsoncxx::document::value StorageMongoDB::visitWhereFunction(ContextPtr context, const ASTFunction * func)
+{
+    auto func_name = mongoFuncName(func->name);
+
     if (const auto & explist = func->children.at(0)->as<ASTExpressionList>())
     {
         if (const auto & identifier = explist->children.at(0)->as<ASTIdentifier>())
@@ -256,50 +260,67 @@ bsoncxx::document::value StorageMongoDB::visitWhereFunction(const ASTFunction * 
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "oid can't be null");
                 return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, bsoncxx::types::b_null{}))));
             }
-            const auto & expression = explist->children.at(1);
-            if (const auto & literal = expression->as<ASTLiteral>())
+
+            if (auto result = tryEvaluateConstantExpression(explist->children.at(1), context))
             {
+                checkLiteral(result->first, &func_name);
                 if (identifier->shortName() == "_id")
                 {
-                    if (literal->value.getType() != Field::Types::String)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "oid can be converted to String only, got type '{}'", literal->value.getTypeName());
-                    return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, bsoncxx::oid{literal->value.get<String &>()}))));
-                }
-                return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, toBSONValue(&literal->value)))));
-            }
-            if (const auto & child_func = expression->as<ASTFunction>())
-            {
-                if (child_func->name == "_CAST")
-                {
-                    const auto & literal = child_func->children.at(0)->as<ASTExpressionList>()->children.at(0)->as<ASTLiteral>();
-                    if (identifier->shortName() == "_id")
+                    switch (result->second->getColumnType())
                     {
-                        if (literal->value.getType() != Field::Types::String)
-                            throw Exception(ErrorCodes::TYPE_MISMATCH, "oid can be converted to String only, got type '{}'", literal->value.getTypeName());
-                        return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, bsoncxx::oid{literal->value.get<String &>()}))));
+                        case TypeIndex::String:
+                            return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, bsoncxx::oid(result->first.get<String>())))));
+                        case TypeIndex::Tuple:
+                        {
+                            auto oid_arr = array();
+                            for (const auto & elem : result->first.get<Tuple &>())
+                            {
+                                if (elem.getType() != Field::Types::String)
+                                    throw Exception(ErrorCodes::TYPE_MISMATCH, "{} can't be converted to oid", elem.getTypeName());
+                                oid_arr.append(bsoncxx::oid(elem.get<String>()));
+                            }
+                            return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, oid_arr))));
+                        }
+                        case TypeIndex::Array:
+                        {
+                            auto oid_arr = array();
+                            for (const auto & elem : result->first.get<Array &>())
+                            {
+                                if (elem.getType() != Field::Types::String)
+                                    throw Exception(ErrorCodes::TYPE_MISMATCH, "{} can't be converted to oid", elem.getTypeName());
+                                oid_arr.append(bsoncxx::oid(elem.get<String>()));
+                            }
+                            return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, oid_arr))));
+                        }
+                        default:
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "{} can't be converted to oid", result->second->getPrettyName());
                     }
-                    return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, visitWhereFunction(child_func)))));
                 }
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constant expressions are supported in WHERE section");
+
+                return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, fieldAsBSONValue(result->first, result->second)))));
             }
+
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constant expressions are supported in WHERE section");
         }
 
         auto arr = array();
         for (const auto & child : explist->children)
         {
             if (const auto & child_func = child->as<ASTFunction>())
-                arr.append(visitWhereFunction(child_func));
+                arr.append(visitWhereFunction(context, child_func));
             else
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constant expressions are supported in WHERE section");
         }
+
         return make_document(kvp(func_name, std::move(arr)));
     }
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constant expressions are supported in WHERE section");
 }
 
-bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query, const Block & sample_block)
+bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(ContextPtr context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block)
 {
-    auto & query_tree = query->query_tree->as<QueryNode &>();
+    auto & query_tree = query.query_tree->as<QueryNode &>();
 
     if (query_tree.hasHaving())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HAVING section is not supported");
@@ -317,7 +338,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(mongocxx::options::fi
     if (query_tree.hasLimit())
     {
         if (const auto & limit = query_tree.getLimit()->as<ConstantNode>())
-            options->limit(limit->getValue().safeGet<UInt64>());
+            options.limit(limit->getValue().safeGet<UInt64>());
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown LIMIT AST");
     }
@@ -340,20 +361,24 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(mongocxx::options::fi
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only simple sort is supported");
         }
         LOG_DEBUG(log, "MongoDB sort has built: '{}'", bsoncxx::to_json(sort));
-        options->sort(sort.extract());
+        options.sort(sort.extract());
     }
 
     document projection{};
     for (const auto & column : sample_block)
         projection.append(kvp(column.name, 1));
     LOG_DEBUG(log, "MongoDB projection has built: '{}'", bsoncxx::to_json(projection));
-    options->projection(projection.extract());
+    options.projection(projection.extract());
 
     if (query_tree.hasWhere())
     {
-        auto filter = visitWhereFunction(query_tree.getWhere()->toAST()->as<ASTFunction>());
-        LOG_DEBUG(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
-        return filter;
+        auto ast = query_tree.getWhere()->toAST();
+        if (const auto & func = ast->as<ASTFunction>())
+        {
+            auto filter = visitWhereFunction(context, func);
+            LOG_DEBUG(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
+            return filter;
+        }
     }
 
     return make_document();

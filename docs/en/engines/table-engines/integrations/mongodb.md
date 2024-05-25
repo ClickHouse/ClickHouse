@@ -12,19 +12,18 @@ Only MongoDB v3.6+ servers are supported.
 
 ## Types mappings
 
-| MongoDB            | ClickHouse                         |
-|--------------------|------------------------------------|
-| bool, int32, int64 | *any numeric type*, String         |
-| int32              | Int32, String                      |
-| int64              | Int64, String                      |
-| double             | Float64, String                    |
-| date               | Date, DateTime, DateTime64, String |
-| timestamp          | Date, DateTime, DateTime64, String |
-| string             | String, UUID                       |
-| document           | String(as JSON)                    |
-| array              | Array, String(as JSON)             |
-| oid                | String                             |
-| *any other*        | String                             |
+| MongoDB            | ClickHouse                                 |
+|--------------------|--------------------------------------------|
+| bool, int32, int64 | *any numeric type*, String                 |
+| int32              | Int32, String                              |
+| int64              | Int64, String                              |
+| double             | Float64, String                            |
+| date               | Date, Date32, DateTime, DateTime64, String |
+| string             | String, UUID                               |
+| document           | String(as JSON)                            |
+| array              | Array, String(as JSON)                     |
+| oid                | String                                     |
+| *any other*        | String                                     |
 
 If key not found in MongoDB document, default value or null(if the column is nullable) will be inserted.
 
@@ -51,6 +50,11 @@ Not supported.
 ### Aggregation functions
 Not supported.
 
+## Notes
+### Situation with booleans
+In ClickHouse `boolean` is an alias for `UInt8`, but in MongoDB it's a type.
+So, not in all cases it's possible to determine, is UInt8 supposed to be bool, and filters may not work correctly.
+But there is a hack: use `x = toBool(true)` instead of `x = true`.
 
 ## Creating a Table {#creating-a-table}
 

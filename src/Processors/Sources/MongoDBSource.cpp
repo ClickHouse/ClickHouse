@@ -16,11 +16,11 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Common/Base64.h>
 #include <base/range.h>
 
 #include <bsoncxx/document/element.hpp>
 #include <bsoncxx/json.hpp>
-#include <bsoncxx/exception/exception.hpp>
 
 namespace DB
 {
@@ -31,9 +31,50 @@ extern const int TYPE_MISMATCH;
 extern const int NOT_IMPLEMENTED;
 }
 
+std::string escapeJSONString(const std::string & input)
+{
+    std::string escaped;
+    escaped.reserve(input.length());
+
+    for (size_t i = 0; i < input.length(); ++i)
+    {
+        switch (input[i])
+        {
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '/':
+                escaped += "\\/";
+                break;
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '\f':
+                escaped += "\\f";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            case '\b':
+                escaped += "\\b";
+                break;
+            default:
+                escaped += input[i];
+                break;
+        }
+    }
+
+    return escaped;
+}
 
 template <typename T>
-std::string MongoDBSource::bsonElementAsString(const T & value)
+std::string BSONElementAsString(const T & value)
 {
     switch (value.type())
     {
@@ -42,12 +83,84 @@ std::string MongoDBSource::bsonElementAsString(const T & value)
         case bsoncxx::type::k_string:
             return static_cast<std::string>(value.get_string().value);
         // MongoDB's documents and arrays may not have strict types or be nested, so the most optimal solution is store their JSON representations.
+        // bsoncxx::to_json function will return something like "'number': {'$numberInt': '321'}", this why we need own realization.
         case bsoncxx::type::k_document:
-            return bsoncxx::to_json(value.get_document(), bsoncxx::ExtendedJsonMode::k_canonical);
+        {
+            String json = "{";
+            auto first = true;
+
+            for (const auto & elem : value.get_document().view())
+            {
+                if (!first)
+                    json += ',';
+                json += '"' + escapeJSONString(std::string(elem.key())) + "\":";
+                switch (elem.type())
+                {
+                    // types which need to be quoted
+                    case bsoncxx::type::k_binary:
+                    case bsoncxx::type::k_date:
+                    case bsoncxx::type::k_timestamp:
+                    case bsoncxx::type::k_oid:
+                    case bsoncxx::type::k_symbol:
+                    case bsoncxx::type::k_maxkey:
+                    case bsoncxx::type::k_minkey:
+                    case bsoncxx::type::k_undefined:
+                        json += "\"" + BSONElementAsString<bsoncxx::document::element>(elem) + "\"";
+                        break;
+                    // types which need to be escaped
+                    case bsoncxx::type::k_string:
+                    case bsoncxx::type::k_code:
+                        json += "\"" + escapeJSONString(BSONElementAsString<bsoncxx::document::element>(elem)) + "\"";
+                        break;
+                    default:
+                            json += BSONElementAsString<bsoncxx::document::element>(elem);
+                }
+                first = false;
+            }
+
+            json += '}';
+            std::cout << json << std::endl;
+            return json;
+        }
         case bsoncxx::type::k_array:
-            return bsoncxx::to_json(value.get_array(), bsoncxx::ExtendedJsonMode::k_canonical);
+        {
+            String json = "[";
+            auto first = true;
+
+            for (const auto & elem : value.get_array().value)
+            {
+                if (!first)
+                    json += ',';
+                switch (elem.type())
+                {
+                    // types which need to be quoted
+                    case bsoncxx::type::k_binary:
+                    case bsoncxx::type::k_date:
+                    case bsoncxx::type::k_timestamp:
+                    case bsoncxx::type::k_oid:
+                    case bsoncxx::type::k_symbol:
+                    case bsoncxx::type::k_maxkey:
+                    case bsoncxx::type::k_minkey:
+                    case bsoncxx::type::k_undefined:
+                        json += "\"" + BSONElementAsString<bsoncxx::array::element>(elem) + "\"";
+                        break;
+                    // types which need to be escaped
+                    case bsoncxx::type::k_string:
+                    case bsoncxx::type::k_code:
+                        json += "\"" + escapeJSONString(BSONElementAsString<bsoncxx::array::element>(elem)) + "\"";
+                        break;
+                    default:
+                        json += BSONElementAsString<bsoncxx::array::element>(elem);
+                }
+                first = false;
+            }
+
+            json += ']';
+            std::cout << json << std::endl;
+            return json;
+        }
         case bsoncxx::type::k_binary:
-            return std::string(reinterpret_cast<const char*>(value.get_binary().bytes), value.get_binary().size);
+            return base64Encode(std::string(reinterpret_cast<const char*>(value.get_binary().bytes), value.get_binary().size));
         case bsoncxx::type::k_undefined:
             return "undefined";
         case bsoncxx::type::k_oid:
@@ -55,19 +168,15 @@ std::string MongoDBSource::bsonElementAsString(const T & value)
         case bsoncxx::type::k_bool:
             return value.get_bool().value ? "true" : "false";
         case bsoncxx::type::k_date:
-            return DateLUT::instance().dateToString(value.get_date().to_int64());
+            return DateLUT::instance().timeToString(value.get_date().to_int64() / 1000);
         case bsoncxx::type::k_null:
             return "null";
         case bsoncxx::type::k_regex:
-            return bsoncxx::to_json(bsoncxx::builder::basic::make_document(bsoncxx::builder::basic::kvp("regex", value.get_regex().regex), bsoncxx::builder::basic::kvp("options", value.get_regex().options)));
+            return R"({"regex": ")" + escapeJSONString(std::string(value.get_regex().regex)) + R"(","options":")" + escapeJSONString(std::string(value.get_regex().regex)) + "\"}";
         case bsoncxx::type::k_dbpointer:
-            return bsoncxx::to_json(bsoncxx::builder::basic::make_document(bsoncxx::builder::basic::kvp(value.get_dbpointer().value.to_string(), value.get_dbpointer().collection)));
-        case bsoncxx::type::k_code:
-            return static_cast<std::string>(value.get_code().code);
+            return "{\"" + escapeJSONString(value.get_dbpointer().value.to_string()) + "\":\"" + escapeJSONString(std::string(value.get_dbpointer().collection)) + "\"}";
         case bsoncxx::type::k_symbol:
             return {1, value.get_symbol().symbol.at(0)};
-        case bsoncxx::type::k_codewscope:
-            return bsoncxx::to_json(bsoncxx::builder::basic::make_document(bsoncxx::builder::basic::kvp(value.get_codewscope().code, value.get_codewscope().scope)));
         case bsoncxx::type::k_int32:
             return std::to_string(static_cast<Int64>(value.get_int32().value));
         case bsoncxx::type::k_timestamp:
@@ -76,15 +185,13 @@ std::string MongoDBSource::bsonElementAsString(const T & value)
             return std::to_string(value.get_int64().value);
         case bsoncxx::type::k_decimal128:
             return value.get_decimal128().value.to_string();
-        case bsoncxx::type::k_maxkey:
-            return "maxkey";
-        case bsoncxx::type::k_minkey:
-            return "minkey";
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BSON type {} is unserializable", to_string(value.type()));
     }
 }
 
 template <typename T, typename T2>
-T MongoDBSource::getNumber(const T2 & value, const std::string & name)
+T BSONElementAsNumber(const T2 & value, const std::string & name)
 {
     switch (value.type())
     {
@@ -102,7 +209,7 @@ T MongoDBSource::getNumber(const T2 & value, const std::string & name)
     }
 }
 
-Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types::b_array & array, const DataTypePtr & type, const std::string & name)
+Array BSONArrayAsArray(size_t dimensions, const bsoncxx::types::b_array & array, const DataTypePtr & type, const Field & default_value, const std::string & name)
 {
     auto arr = Array();
     if (dimensions > 0)
@@ -113,104 +220,112 @@ Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types
             if (elem.type() != bsoncxx::type::k_array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Array {} have less dimensions then defined in the schema", name);
 
-            arr.emplace_back(convertMongoDBArray(dimensions, elem.get_array(), type, name));
+            arr.emplace_back(BSONArrayAsArray(dimensions, elem.get_array(), type, default_value, name));
         }
     }
     else
     {
         for (auto const & value : array.value)
         {
-            switch (type->getTypeId())
+            if (value.type() == bsoncxx::type::k_null)
+                arr.emplace_back(default_value);
+            else
             {
-                case TypeIndex::Int8:
-                    arr.emplace_back(getNumber<Int8, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::UInt8:
-                    arr.emplace_back(getNumber<UInt8, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Int16:
-                    arr.emplace_back(getNumber<Int16, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::UInt16:
-                    arr.emplace_back(getNumber<UInt16, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Int32:
-                    arr.emplace_back(getNumber<Int32, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::UInt32:
-                    arr.emplace_back(getNumber<UInt32, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Int64:
-                    arr.emplace_back(getNumber<Int64, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::UInt64:
-                    arr.emplace_back(getNumber<UInt64, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Int128:
-                    arr.emplace_back(getNumber<Int128, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::UInt128:
-                    arr.emplace_back(getNumber<UInt128, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Int256:
-                    arr.emplace_back(getNumber<Int256, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::UInt256:
-                    arr.emplace_back(getNumber<UInt256, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Float32:
-                    arr.emplace_back(getNumber<Float32, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Float64:
-                    arr.emplace_back(getNumber<Float64, bsoncxx::array::element>(value, name));
-                    break;
-                case TypeIndex::Date:
+                switch (type->getTypeId())
                 {
-                    if (value.type() == bsoncxx::type::k_date)
-                        arr.emplace_back(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000));
-                    else if (value.type() == bsoncxx::type::k_timestamp)
-                        arr.emplace_back(DateLUT::instance().toDayNum(value.get_timestamp().timestamp));
-                    else
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
-                                        bsoncxx::to_string(value.type()), name);
-                    break;
-                }
-                case TypeIndex::DateTime:
-                {
-                    if (value.type() == bsoncxx::type::k_date)
-                        arr.emplace_back(static_cast<UInt32>(value.get_date().to_int64() / 1000));
-                    else if (value.type() == bsoncxx::type::k_timestamp)
-                        arr.emplace_back(value.get_timestamp().timestamp);
-                    else
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
-                                        bsoncxx::to_string(value.type()), name);
-                    break;
-                }
-                case TypeIndex::DateTime64:
-                {
-                    if (value.type() == bsoncxx::type::k_date)
-                        arr.emplace_back(value.get_date().to_int64());
-                    else if (value.type() == bsoncxx::type::k_timestamp)
-                        arr.emplace_back(static_cast<Int64>(value.get_timestamp().timestamp * 1000));
-                    else
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
-                                        bsoncxx::to_string(value.type()), name);
-                    break;
-                }
-                case TypeIndex::UUID:
-                {
-                    if (value.type() != bsoncxx::type::k_string)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
-                                        bsoncxx::to_string(value.type()), name);
+                    case TypeIndex::Int8:
+                        arr.emplace_back(BSONElementAsNumber<Int8, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt8:
+                        arr.emplace_back(BSONElementAsNumber<UInt8, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int16:
+                        arr.emplace_back(BSONElementAsNumber<Int16, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt16:
+                        arr.emplace_back(BSONElementAsNumber<UInt16, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int32:
+                        arr.emplace_back(BSONElementAsNumber<Int32, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt32:
+                        arr.emplace_back(BSONElementAsNumber<UInt32, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int64:
+                        arr.emplace_back(BSONElementAsNumber<Int64, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt64:
+                        arr.emplace_back(BSONElementAsNumber<UInt64, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int128:
+                        arr.emplace_back(BSONElementAsNumber<Int128, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt128:
+                        arr.emplace_back(BSONElementAsNumber<UInt128, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int256:
+                        arr.emplace_back(BSONElementAsNumber<Int256, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt256:
+                        arr.emplace_back(BSONElementAsNumber<UInt256, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Float32:
+                        arr.emplace_back(BSONElementAsNumber<Float32, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Float64:
+                        arr.emplace_back(BSONElementAsNumber<Float64, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Date:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
 
-                    arr.emplace_back(parse<UUID>(value.get_string().value.data()));
-                    break;
+                        arr.emplace_back(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+                        break;
+                    }
+                    case TypeIndex::Date32:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(static_cast<Int32>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType()));
+                        break;
+                    }
+                    case TypeIndex::DateTime:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(static_cast<UInt32>(value.get_date().to_int64() / 1000));
+                        break;
+                    }
+                    case TypeIndex::DateTime64:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(static_cast<Decimal64>(value.get_date().to_int64()));
+                        break;
+                    }
+                    case TypeIndex::UUID:
+                    {
+                        if (value.type() != bsoncxx::type::k_string)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(parse<UUID>(value.get_string().value.data()));
+                        break;
+                    }
+                    case TypeIndex::String:
+                        arr.emplace_back(BSONElementAsString(value));
+                        break;
+                    default:
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Array {} has unsupported nested type {}", name, type->getName());
                 }
-                case TypeIndex::String:
-                    arr.emplace_back(bsonElementAsString(value));
-                    break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Array {} has unsupported nested type {}", name, type->getName());
             }
         }
     }
@@ -224,80 +339,81 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
     switch (type->getTypeId())
     {
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(getNumber<Int8, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt8 &>(column).insertValue(BSONElementAsNumber<Int8, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(getNumber<UInt8, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt8 &>(column).insertValue(BSONElementAsNumber<UInt8, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(getNumber<Int16, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt16 &>(column).insertValue(BSONElementAsNumber<Int16, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(getNumber<UInt16, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt16 &>(column).insertValue(BSONElementAsNumber<UInt16, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(getNumber<Int32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt32 &>(column).insertValue(BSONElementAsNumber<Int32, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(getNumber<UInt32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt32 &>(column).insertValue(BSONElementAsNumber<UInt32, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(getNumber<Int64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt64 &>(column).insertValue(BSONElementAsNumber<Int64, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(getNumber<UInt64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt64 &>(column).insertValue(BSONElementAsNumber<UInt64, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Int128:
-            assert_cast<ColumnInt128 &>(column).insertValue(getNumber<Int128, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt128 &>(column).insertValue(BSONElementAsNumber<Int128, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::UInt128:
-            assert_cast<ColumnUInt128 &>(column).insertValue(getNumber<UInt128, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt128 &>(column).insertValue(BSONElementAsNumber<UInt128, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Int256:
-            assert_cast<ColumnInt256 &>(column).insertValue(getNumber<Int256, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt256 &>(column).insertValue(BSONElementAsNumber<Int256, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::UInt256:
-            assert_cast<ColumnUInt256 &>(column).insertValue(getNumber<UInt256, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt256 &>(column).insertValue(BSONElementAsNumber<UInt256, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(getNumber<Float32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnFloat32 &>(column).insertValue(BSONElementAsNumber<Float32, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(getNumber<Float64, bsoncxx::document::element>(value, name));
-            break;
-        case TypeIndex::Decimal32:
+            assert_cast<ColumnFloat64 &>(column).insertValue(BSONElementAsNumber<Float64, bsoncxx::document::element>(value, name));
             break;
         case TypeIndex::Date:
         {
-            if (value.type() == bsoncxx::type::k_date)
-                assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000));
-            else if (value.type() == bsoncxx::type::k_timestamp)
-                assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_timestamp().timestamp));
-            else
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+            break;
+        }
+        case TypeIndex::Date32:
+        {
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType()));
             break;
         }
         case TypeIndex::DateTime:
         {
-            if (value.type() == bsoncxx::type::k_date)
-                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.get_date().to_int64() / 1000));
-            else if (value.type() == bsoncxx::type::k_timestamp)
-                assert_cast<ColumnUInt32 &>(column).insertValue(value.get_timestamp().timestamp);
-            else
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.get_date().to_int64() / 1000));
             break;
         }
         case TypeIndex::DateTime64:
         {
-            if (value.type() == bsoncxx::type::k_date)
-                assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(value.get_date().to_int64());
-            else if (value.type() == bsoncxx::type::k_timestamp)
-                assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(value.get_timestamp().timestamp * 1000);
-            else
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
+
+            assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(static_cast<Decimal64>(value.get_date().to_int64()));
             break;
         }
         case TypeIndex::UUID:
@@ -311,8 +427,7 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
         }
         case TypeIndex::String:
         {
-            auto value_string = bsonElementAsString(value);
-            assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
+            assert_cast<ColumnString &>(column).insert(BSONElementAsString(value));
             break;
         }
         case TypeIndex::Array:
@@ -321,7 +436,7 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected array, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
 
-            assert_cast<ColumnArray &>(column).insert(convertMongoDBArray(arrays_info[idx].first, value.get_array(), arrays_info[idx].second, name));
+            assert_cast<ColumnArray &>(column).insert(BSONArrayAsArray(arrays_info[idx].first, value.get_array(), arrays_info[idx].second.first, arrays_info[idx].second.second, name));
             break;
         }
         default:
@@ -335,7 +450,7 @@ MongoDBSource::MongoDBSource(
     const std::string & collection_name,
     const bsoncxx::document::view_or_value & query,
     const mongocxx::options::find & options,
-    Block & sample_block_,
+    const Block & sample_block_,
     const UInt64 & max_block_size_)
     : ISource{sample_block_}
     , client{uri}
@@ -347,16 +462,28 @@ MongoDBSource::MongoDBSource(
 {
     for (const auto & idx : collections::range(0, sample_block.columns()))
     {
-        if (sample_block.getByPosition(idx).type->getTypeId() == TypeIndex::Array)
+        auto & sample_column = sample_block.getByPosition(idx);
+
+        /// If default value for column was not provided, use default from data type.
+        if (sample_column.column->empty())
+            sample_column.column = sample_column.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+
+        if (sample_column.type->getTypeId() == TypeIndex::Array)
         {
-            auto type = typeid_cast<const DataTypeArray *>(sample_block.getByPosition(idx).type.get())->getNestedType();
+            auto type = assert_cast<const DataTypeArray &>(*sample_column.type).getNestedType();
             size_t dimensions = 0;
             while (type->getTypeId() == TypeIndex::Array)
             {
-                type = typeid_cast<const DataTypeArray *>(type.get())->getNestedType();
+                type = assert_cast<const DataTypeArray &>(*type).getNestedType();
                 ++dimensions;
             }
-            arrays_info[idx] = {std::move(dimensions), std::move(type)};
+            if (type->isNullable())
+            {
+                type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+                arrays_info[idx] = {std::move(dimensions), {std::move(type), Null()}};
+            }
+            else
+                arrays_info[idx] = {std::move(dimensions), {std::move(type), type->getDefault()}};
         }
     }
 }
@@ -375,35 +502,34 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
-        ++num_rows;
-
         for (auto idx : collections::range(0, size))
         {
-            auto & column = sample_block.getByPosition(idx);
-            bsoncxx::document::element value;
-            try
-            {
-                value = doc[column.name];
-            } catch (bsoncxx::exception /*&e*/) // required key is not exists in the document
-            {
-            }
+            auto & sample_column = sample_block.getByPosition(idx);
+            auto value = doc[sample_column.name];
 
-            if (column.type->isNullable()) // column is nullable
+            if (!value || value.type() == bsoncxx::type::k_null)
             {
-                ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                if (!value || value.type() == bsoncxx::type::k_null)
-                    column_nullable.insertData(nullptr, 0);
-                else
-                    insertValue(column_nullable.getNestedColumn(), idx, column.type, column.name, value);
-                column_nullable.getNullMapData().emplace_back(0);
+                insertDefaultValue(*columns[idx], *sample_column.column);
+
+                if (sample_column.type->isNullable())
+                    assert_cast<ColumnNullable &>(*columns[idx]).getNullMapData().back() = true;
             }
-            else if (!value || value.type() == bsoncxx::type::k_null)
-                insertDefaultValue(*columns[idx], *column.column);
             else
-                insertValue(*columns[idx], idx, column.type, column.name, value);
+            {
+                if (sample_column.type->isNullable())
+                {
+                    auto & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                    const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
+
+                    insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
+                    column_nullable.getNullMapData().emplace_back(false);
+                }
+                else
+                    insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);
+            }
         }
 
-        if (num_rows == max_block_size)
+        if (++num_rows == max_block_size)
             break;
     }
     if (num_rows < max_block_size)
