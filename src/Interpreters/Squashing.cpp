@@ -160,7 +160,10 @@ void ApplySquashing::append(std::vector<Chunk> & input_chunks)
         {
             for (size_t i = 0; i < columns.size(); ++i)
             {
-                mutable_columns.push_back(IColumn::mutate(columns[i]));
+                if (columns[i]->isNullable())
+                    mutable_columns.push_back(IColumn::mutate(columns[i]));
+                else
+                    mutable_columns.push_back(columns[i]->assumeMutable());
                 mutable_columns[i]->reserve(rows);
             }
             continue;
