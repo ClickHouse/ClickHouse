@@ -161,7 +161,7 @@ SELECT range(5), range(1, 5), range(1, 5, 2);
 ```
 
 
-## array(x1, …), оператор \[x1, …\] {#arrayx1-operator-x1}
+## array(x1, ...), оператор \[x1, ...\] {#arrayx1-operator-x1}
 
 Создаёт массив из аргументов функции.
 Аргументы должны быть константами и иметь типы, для которых есть наименьший общий тип. Должен быть передан хотя бы один аргумент, так как иначе непонятно, какого типа создавать массив. То есть, с помощью этой функции невозможно создать пустой массив (для этого используйте функции emptyArray\*, описанные выше).
@@ -308,7 +308,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 Элементы, равные `NULL`, обрабатываются как обычные значения.
 
-## arrayCount(\[func,\] arr1, …) {#array-count}
+## arrayCount(\[func,\] arr1, ...) {#array-count}
 
 Возвращает количество элементов массива `arr`, для которых функция `func` возвращает не 0. Если `func` не указана - возвращает количество ненулевых элементов массива.
 
@@ -335,7 +335,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 ## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
-Возвращает массив \[1, 2, 3, …, length(arr)\]
+Возвращает массив \[1, 2, 3, ..., length(arr)\]
 
 Эта функция обычно используется совместно с ARRAY JOIN. Она позволяет, после применения ARRAY JOIN, посчитать что-либо только один раз для каждого массива. Пример:
 
@@ -375,7 +375,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 
 Также эта функция может быть использована в функциях высшего порядка. Например, с её помощью можно достать индексы массива для элементов, удовлетворяющих некоторому условию.
 
-## arrayEnumerateUniq(arr, …) {#arrayenumerateuniqarr}
+## arrayEnumerateUniq(arr, ...) {#arrayenumerateuniqarr}
 
 Возвращает массив, такого же размера, как исходный, где для каждого элемента указано, какой он по счету среди элементов с таким же значением.
 Например: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1, 1, 2, 1\].
@@ -597,7 +597,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Элементы массива равные `NULL` обрабатываются как обычные значения.
 
-## arraySort(\[func,\] arr, …) {#array_functions-sort}
+## arraySort(\[func,\] arr, ...) {#array_functions-sort}
 
 Возвращает массив `arr`, отсортированный в восходящем порядке. Если задана функция `func`, то порядок сортировки определяется результатом применения этой функции на элементы массива `arr`. Если `func` принимает несколько аргументов, то в функцию `arraySort` нужно передавать несколько массивов, которые будут соответствовать аргументам функции `func`. Подробные примеры рассмотрены в конце описания `arraySort`.
 
@@ -698,11 +698,11 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 Для улучшения эффективности сортировки применяется [преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
 :::
 
-## arrayPartialSort(\[func,\] limit, arr, …) {#array_functions-sort}
+## arrayPartialSort(\[func,\] limit, arr, ...) {#array_functions-sort}
 
 То же, что и `arraySort` с дополнительным аргументом `limit`, позволяющим частичную сортировку. Возвращает массив того же размера, как и исходный, в котором элементы `[1..limit]` отсортированы в возрастающем порядке. Остальные элементы `(limit..N]` остаются в неспецифицированном порядке.
 
-## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, ...) {#array_functions-reverse-sort}
 
 Возвращает массив `arr`, отсортированный в нисходящем порядке. Если указана функция `func`, то массив `arr` сначала сортируется в порядке, который определяется функцией `func`, а затем отсортированный массив переворачивается. Если функция `func` принимает несколько аргументов, то в функцию `arrayReverseSort` необходимо передавать несколько массивов, которые будут соответствовать аргументам функции `func`. Подробные примеры рассмотрены в конце описания функции `arrayReverseSort`.
 
@@ -803,11 +803,11 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 └─────────┘
 ```
 
-## arrayPartialReverseSort(\[func,\] limit, arr, …) {#array_functions-sort}
+## arrayPartialReverseSort(\[func,\] limit, arr, ...) {#array_functions-sort}
 
 То же, что и `arrayReverseSort` с дополнительным аргументом `limit`, позволяющим частичную сортировку. Возвращает массив того же размера, как и исходный, в котором элементы `[1..limit]` отсортированы в убывающем порядке. Остальные элементы `(limit..N]` остаются в неспецифицированном порядке.
 
-## arrayUniq(arr, …) {#array-functions-arrayuniq}
+## arrayUniq(arr, ...) {#array-functions-arrayuniq}
 
 Если передан один аргумент, считает количество разных элементов в массиве.
 Если передано несколько аргументов, считает количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
@@ -1174,7 +1174,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 └──────────────────────────────────────┘
 ```
 
-## arrayMap(func, arr1, …) {#array-map}
+## arrayMap(func, arr1, ...) {#array-map}
 
 Возвращает массив, полученный на основе результатов применения функции `func` к каждому элементу массива `arr`.
 
@@ -1204,7 +1204,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res;
 
 Функция `arrayMap` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayFilter(func, arr1, …) {#array-filter}
+## arrayFilter(func, arr1, ...) {#array-filter}
 
 Возвращает массив, содержащий только те элементы массива `arr1`, для которых функция `func` возвращает не 0.
 
@@ -1237,7 +1237,7 @@ SELECT
 
 Функция `arrayFilter` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayFill(func, arr1, …) {#array-fill}
+## arrayFill(func, arr1, ...) {#array-fill}
 
 Перебирает `arr1` от первого элемента к последнему и заменяет `arr1[i]` на `arr1[i - 1]`, если `func` вернула 0. Первый элемент `arr1` остаётся неизменным.
 
@@ -1255,7 +1255,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 Функция `arrayFill` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
+## arrayReverseFill(func, arr1, ...) {#array-reverse-fill}
 
 Перебирает `arr1` от последнего элемента к первому и заменяет `arr1[i]` на `arr1[i + 1]`, если `func` вернула 0. Последний элемент `arr1` остаётся неизменным.
 
@@ -1273,7 +1273,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 
 Функция `arrayReverseFill` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arraySplit(func, arr1, …) {#array-split}
+## arraySplit(func, arr1, ...) {#array-split}
 
 Разделяет массив `arr1` на несколько. Если `func` возвращает не 0, то массив разделяется, а элемент помещается в левую часть. Массив не разбивается по первому элементу.
 
@@ -1291,7 +1291,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Функция `arraySplit` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayReverseSplit(func, arr1, …) {#array-reverse-split}
+## arrayReverseSplit(func, arr1, ...) {#array-reverse-split}
 
 Разделяет массив `arr1` на несколько. Если `func` возвращает не 0, то массив разделяется, а элемент помещается в правую часть. Массив не разбивается по последнему элементу.
 
@@ -1309,25 +1309,25 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Функция `arrayReverseSplit` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
+## arrayExists(\[func,\] arr1, ...) {#arrayexistsfunc-arr1}
 
 Возвращает 1, если существует хотя бы один элемент массива `arr`, для которого функция func возвращает не 0. Иначе возвращает 0.
 
 Функция `arrayExists` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) - в качестве первого аргумента ей можно передать лямбда-функцию.
 
-## arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
+## arrayAll(\[func,\] arr1, ...) {#arrayallfunc-arr1}
 
 Возвращает 1, если для всех элементов массива `arr`, функция `func` возвращает не 0. Иначе возвращает 0.
 
 Функция `arrayAll` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) - в качестве первого аргумента ей можно передать лямбда-функцию.
 
-## arrayFirst(func, arr1, …) {#array-first}
+## arrayFirst(func, arr1, ...) {#array-first}
 
 Возвращает первый элемент массива `arr1`, для которого функция func возвращает не 0.
 
 Функция `arrayFirst` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
-## arrayFirstIndex(func, arr1, …) {#array-first-index}
+## arrayFirstIndex(func, arr1, ...) {#array-first-index}
 
 Возвращает индекс первого элемента массива `arr1`, для которого функция func возвращает не 0.
 
@@ -1599,7 +1599,7 @@ SELECT arraySum(x -> x*x, [2, 3]) AS res;
 └─────┘
 ```
 
-## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
+## arrayCumSum(\[func,\] arr1, ...) {#arraycumsumfunc-arr1}
 
 Возвращает массив из частичных сумм элементов исходного массива (сумма с накоплением). Если указана функция `func`, то значения элементов массива преобразуются этой функцией перед суммированием.
 
