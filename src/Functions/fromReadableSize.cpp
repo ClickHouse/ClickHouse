@@ -1,3 +1,4 @@
+#include <limits>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/convert.hpp>
 #include <boost/convert/strtol.hpp>
@@ -6,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -40,6 +42,8 @@ namespace
         {"pb", 1000000000000000},       // 10e15
         {"eb", 1000000000000000000},    // 10e18
     };
+    
+    constexpr UInt64 MAX_UINT64 = std::numeric_limits<UInt64>::max();
 
     class FunctionFromReadableSize : public IFunction
     {
@@ -174,9 +178,19 @@ namespace
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
                 }
-                // Due to a pontentially limited precision on the input value we might end up with a non-integer amount of bytes when parsing binary units.
+                Float64 raw_num_bytes = base * iter->second;
+                if (raw_num_bytes > MAX_UINT64)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid expression for function {}, result is too big for output data type (UInt64): \"{}\".",
+                        getName(),
+                        raw_num_bytes
+                    );
+                }
+                // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
                 // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
-                result = static_cast<UInt64>(std::ceil(base * iter->second));
+                result = static_cast<UInt64>(std::ceil(raw_num_bytes));
 
                 res_data.emplace_back(result);
             }
