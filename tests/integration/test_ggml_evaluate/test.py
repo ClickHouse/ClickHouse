@@ -35,7 +35,7 @@ def ch_cluster():
             print(
                 "Path ",
                 str(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")),
-                " does not exist"
+                " does not exist",
             )
             raise RuntimeError
         os.system(
