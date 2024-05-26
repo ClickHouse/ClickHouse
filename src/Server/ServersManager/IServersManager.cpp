@@ -33,7 +33,7 @@ std::vector<ProtocolServerMetrics> IServersManager::getMetrics() const
     std::vector<ProtocolServerMetrics> metrics;
     metrics.reserve(servers.size());
     for (const auto & server : servers)
-        metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+        metrics.emplace_back(ProtocolServerMetrics{server->getPortName(), server->currentThreads()});
     return metrics;
 }
 
@@ -41,8 +41,8 @@ void IServersManager::startServers()
 {
     for (auto & server : servers)
     {
-        server.start();
-        LOG_INFO(logger, "Listening for {}", server.getDescription());
+        server->start();
+        LOG_INFO(logger, "Listening for {}", server->getDescription());
     }
 }
 
@@ -51,13 +51,13 @@ void IServersManager::stopServers(const ServerType & server_type)
     /// Remove servers once all their connections are closed
     auto check_server = [&](const char prefix[], auto & server)
     {
-        if (!server.isStopping())
+        if (!server->isStopping())
             return false;
-        size_t current_connections = server.currentConnections();
+        size_t current_connections = server->currentConnections();
         LOG_DEBUG(
             logger,
             "Server {}{}: {} ({} connections)",
-            server.getDescription(),
+            server->getDescription(),
             prefix,
             !current_connections ? "finished" : "waiting",
             current_connections);
@@ -68,8 +68,8 @@ void IServersManager::stopServers(const ServerType & server_type)
 
     for (auto & server : servers)
     {
-        if (!server.isStopping() && server_type.shouldStop(server.getPortName()))
-            server.stop();
+        if (!server->isStopping() && server_type.shouldStop(server->getPortName()))
+            server->stop();
     }
 
     std::erase_if(servers, std::bind_front(check_server, ""));
@@ -117,7 +117,7 @@ void IServersManager::createServer(
     /// If we already have an active server for this listen_host/port_name, don't create it again
     for (const auto & server : servers)
     {
-        if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
+        if (!server->isStopping() && server->getListenHost() == listen_host && server->getPortName() == port_name)
             return;
     }
 
@@ -127,8 +127,8 @@ void IServersManager::createServer(
         servers.push_back(func(port));
         if (start_server)
         {
-            servers.back().start();
-            LOG_INFO(logger, "Listening for {}", servers.back().getDescription());
+            servers.back()->start();
+            LOG_INFO(logger, "Listening for {}", servers.back()->getDescription());
         }
         global_context->registerServerPort(port_name, port);
     }
@@ -156,13 +156,13 @@ void IServersManager::stopServersForUpdate(const Poco::Util::AbstractConfigurati
     /// Remove servers once all their connections are closed
     auto check_server = [&](const char prefix[], auto & server)
     {
-        if (!server.isStopping())
+        if (!server->isStopping())
             return false;
-        size_t current_connections = server.currentConnections();
+        size_t current_connections = server->currentConnections();
         LOG_DEBUG(
             logger,
             "Server {}{}: {} ({} connections)",
-            server.getDescription(),
+            server->getDescription(),
             prefix,
             !current_connections ? "finished" : "waiting",
             current_connections);
@@ -176,9 +176,9 @@ void IServersManager::stopServersForUpdate(const Poco::Util::AbstractConfigurati
 
     for (auto & server : servers)
     {
-        if (server.isStopping())
+        if (server->isStopping())
             return;
-        std::string port_name = server.getPortName();
+        std::string port_name = server->getPortName();
         bool has_host = false;
         bool is_http = false;
         if (port_name.starts_with("protocols."))
@@ -217,20 +217,20 @@ void IServersManager::stopServersForUpdate(const Poco::Util::AbstractConfigurati
             /// NOTE: better to compare using getPortName() over using
             /// dynamic_cast<> since HTTPServer is also used for prometheus and
             /// internal replication communications.
-            is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+            is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
         }
 
         if (!has_host)
-            has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
+            has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
         bool has_port = !config.getString(port_name, "").empty();
         bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
         if (force_restart)
-            LOG_TRACE(logger, "<http_handlers> had been changed, will reload {}", server.getDescription());
+            LOG_TRACE(logger, "<http_handlers> had been changed, will reload {}", server->getDescription());
 
-        if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber() || force_restart)
+        if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
         {
-            server.stop();
-            LOG_INFO(logger, "Stopped listening for {}", server.getDescription());
+            server->stop();
+            LOG_INFO(logger, "Stopped listening for {}", server->getDescription());
         }
     }
 

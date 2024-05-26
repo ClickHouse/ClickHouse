@@ -72,7 +72,7 @@ void InterServersManager::createServers(
                 listen_host,
                 port_name,
                 /* start_server = */ false,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
@@ -80,19 +80,18 @@ void InterServersManager::createServers(
                         Poco::Timespan(config.getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
                     socket.setSendTimeout(
                         Poco::Timespan(config.getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         port_name,
                         "Keeper (tcp): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(
-                                config_getter,
-                                global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
-                                global_context->getSettingsRef().send_timeout.totalSeconds(),
-                                false),
-                            server_pool,
-                            socket));
+                        new KeeperTCPHandlerFactory(
+                            config_getter,
+                            global_context->getKeeperDispatcher(),
+                            global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                            global_context->getSettingsRef().send_timeout.totalSeconds(),
+                            false),
+                        server_pool,
+                        socket);
                 });
 
             constexpr auto secure_port_name = "keeper_server.tcp_port_secure";
@@ -101,7 +100,7 @@ void InterServersManager::createServers(
                 listen_host,
                 secure_port_name,
                 /* start_server = */ false,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
 #    if USE_SSL
                     Poco::Net::SecureServerSocket socket;
@@ -110,19 +109,18 @@ void InterServersManager::createServers(
                         Poco::Timespan(config.getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
                     socket.setSendTimeout(
                         Poco::Timespan(config.getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         secure_port_name,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(
-                                config_getter,
-                                global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
-                                global_context->getSettingsRef().send_timeout.totalSeconds(),
-                                true),
-                            server_pool,
-                            socket));
+                        new KeeperTCPHandlerFactory(
+                            config_getter,
+                            global_context->getKeeperDispatcher(),
+                            global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                            global_context->getSettingsRef().send_timeout.totalSeconds(),
+                            true),
+                        server_pool,
+                        socket);
 #    else
                     UNUSED(port);
                     throw Exception(
@@ -137,7 +135,7 @@ void InterServersManager::createServers(
                 listen_host,
                 /* port_name = */ "keeper_server.http_control.port",
                 /* start_server = */ false,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     auto http_context = std::make_shared<HTTPContext>(global_context);
                     Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
@@ -149,17 +147,16 @@ void InterServersManager::createServers(
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(http_context->getReceiveTimeout());
                     socket.setSendTimeout(http_context->getSendTimeout());
-                    return ProtocolServerAdapter(
+                    return std::make_unique<HTTPServer>(
                         listen_host,
                         port_name,
                         "HTTP Control: http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::move(http_context),
-                            createKeeperHTTPControlMainHandlerFactory(
-                                config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"),
-                            server_pool,
-                            socket,
-                            http_params));
+                        std::move(http_context),
+                        createKeeperHTTPControlMainHandlerFactory(
+                            config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params);
                 });
         }
 #else
@@ -193,8 +190,8 @@ size_t InterServersManager::stopServers(const ServerSettings & server_settings, 
         std::lock_guard lock(servers_lock);
         for (auto & server : servers)
         {
-            server.stop();
-            current_connections += server.currentConnections();
+            server->stop();
+            current_connections += server->currentConnections();
         }
     }
 
@@ -265,24 +262,23 @@ void InterServersManager::createInterserverServers(
                 interserver_listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, interserver_listen_host, port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<HTTPServer>(
                         interserver_listen_host,
                         port_name,
                         "replica communication (interserver): http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(server, config, async_metrics, "InterserverIOHTTPHandler-factory"),
-                            server_pool,
-                            socket,
-                            http_params,
-                            ProfileEvents::InterfaceInterserverReceiveBytes,
-                            ProfileEvents::InterfaceInterserverSendBytes));
+                        std::make_shared<HTTPContext>(global_context),
+                        createHandlerFactory(server, config, async_metrics, "InterserverIOHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params,
+                        ProfileEvents::InterfaceInterserverReceiveBytes,
+                        ProfileEvents::InterfaceInterserverSendBytes);
                 });
         }
 
@@ -294,25 +290,24 @@ void InterServersManager::createInterserverServers(
                 interserver_listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socketBindListen(config, socket, interserver_listen_host, port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<HTTPServer>(
                         interserver_listen_host,
                         port_name,
                         "secure replica communication (interserver): https://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(server, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
-                            server_pool,
-                            socket,
-                            http_params,
-                            ProfileEvents::InterfaceInterserverReceiveBytes,
-                            ProfileEvents::InterfaceInterserverSendBytes));
+                        std::make_shared<HTTPContext>(global_context),
+                        createHandlerFactory(server, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params,
+                        ProfileEvents::InterfaceInterserverReceiveBytes,
+                        ProfileEvents::InterfaceInterserverSendBytes);
 #else
                     UNUSED(port);
                     throw Exception(

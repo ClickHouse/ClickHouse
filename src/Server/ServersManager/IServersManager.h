@@ -3,8 +3,8 @@
 #include <mutex>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Server/IProtocolServer.h>
 #include <Server/IServer.h>
-#include <Server/ProtocolServerAdapter.h>
 #include <Server/ServerType.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/ServerSocket.h>
@@ -52,12 +52,12 @@ protected:
     ContextMutablePtr global_context;
     Poco::Logger * logger;
 
-    std::vector<ProtocolServerAdapter> servers;
+    std::vector<IProtocolServerPtr> servers;
 
     Poco::Net::SocketAddress socketBindListen(
         const Poco::Util::AbstractConfiguration & config, Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port) const;
 
-    using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
+    using CreateServerFunc = std::function<IProtocolServerPtr(UInt16)>;
     void createServer(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & listen_host,

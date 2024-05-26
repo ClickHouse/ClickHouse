@@ -239,6 +239,9 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
 
     auto server = HTTPServer(
+        hostname,
+        "http-port",
+        "HTTP Control: http://" + address.toString(),
         std::make_shared<HTTPContext>(context),
         getHandlerFactoryPtr(context),
         server_pool,
