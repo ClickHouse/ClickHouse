@@ -119,7 +119,6 @@ std::string BSONElementAsString(const T & value)
             }
 
             json += '}';
-            std::cout << json << std::endl;
             return json;
         }
         case bsoncxx::type::k_array:
@@ -156,7 +155,6 @@ std::string BSONElementAsString(const T & value)
             }
 
             json += ']';
-            std::cout << json << std::endl;
             return json;
         }
         case bsoncxx::type::k_binary:

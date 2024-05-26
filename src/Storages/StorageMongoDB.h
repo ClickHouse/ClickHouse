@@ -3,7 +3,6 @@
 #include "config.h"
 
 #if USE_MONGODB
-
 #include <Interpreters/Context.h>
 
 #include <Storages/IStorage.h>

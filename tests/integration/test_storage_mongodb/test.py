@@ -1,14 +1,12 @@
+import datetime
 import json
 
 import bson
 import pymongo
-
 import pytest
 
 from helpers.client import QueryRuntimeException
-
 from helpers.cluster import ClickHouseCluster
-import datetime
 
 
 @pytest.fixture(scope="module")
@@ -18,12 +16,10 @@ def started_cluster(request):
         node = cluster.add_instance(
             "node",
             main_configs=[
-                "configs_secure/config.d/ssl_conf.xml",
                 "configs/named_collections.xml",
             ],
             user_configs=["configs/users.xml"],
             with_mongo=True,
-            with_mongo_secure=request.param,
         )
         cluster.start()
         yield cluster
@@ -32,21 +28,21 @@ def started_cluster(request):
 
 
 def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
-    connection_str = ""
-    if with_credentials:
-        connection_str = "mongodb://root:clickhouse@localhost:{}".format(
-            started_cluster.mongo_port
-        )
-    else:
-        connection_str = "mongodb://localhost:{}".format(
-            started_cluster.mongo_no_cred_port
-        )
     if secure:
-        connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
-    return pymongo.MongoClient(connection_str)
+        return pymongo.MongoClient(
+            "mongodb://root:clickhouse@localhost:{}/?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true".format(
+                started_cluster.mongo_secure_port
+            )
+        )
+    if with_credentials:
+        return pymongo.MongoClient(
+            "mongodb://root:clickhouse@localhost:{}".format(started_cluster.mongo_port)
+        )
+    return pymongo.MongoClient(
+        "mongodb://localhost:{}".format(started_cluster.mongo_no_cred_port)
+    )
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -76,7 +72,6 @@ def test_simple_select(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_simple_select_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -106,7 +101,6 @@ def test_simple_select_uri(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_simple_select_from_view(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -140,7 +134,6 @@ def test_simple_select_from_view(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_arrays(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -315,7 +308,6 @@ def test_arrays(started_cluster):
     arrays_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -345,7 +337,6 @@ def test_complex_data_type(started_cluster):
     incomplete_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [True], indirect=["started_cluster"])
 def test_secure_connection(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
@@ -357,7 +348,7 @@ def test_secure_connection(started_cluster):
     simple_mongo_table.insert_many(data)
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'ssl=true')"
+        "CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo_secure:27017', 'test', 'simple_table', 'root', 'clickhouse', 'tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true')"
     )
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
@@ -372,7 +363,27 @@ def test_secure_connection(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [True], indirect=["started_cluster"])
+def test_secure_connection_with_validation(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, secure=True)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    simple_mongo_table = db["simple_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    simple_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        "CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo_secure:27017', 'test', 'simple_table', 'root', 'clickhouse', 'tls=true')"
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query("SELECT COUNT() FROM simple_mongo_table")
+
+    node.query("DROP TABLE simple_mongo_table")
+    simple_mongo_table.drop()
+
+
 def test_secure_connection_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
@@ -383,7 +394,7 @@ def test_secure_connection_uri(started_cluster):
     simple_mongo_table.insert_many(data)
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:clickhouse@mongo1:27017/test?ssl=true', 'test_secure_connection_uri')"
+        "CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:clickhouse@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true', 'test_secure_connection_uri')"
     )
     assert node.query("SELECT COUNT() FROM test_secure_connection_uri") == "100\n"
     assert (
@@ -398,7 +409,26 @@ def test_secure_connection_uri(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_secure_connection_uri_with_validation(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, secure=True)
+    db = mongo_connection["test"]
+    simple_mongo_table = db["test_secure_connection_uri"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    simple_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        "CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:clickhouse@mongo_secure:27017/test?tls=true', 'test_secure_connection_uri')"
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query("SELECT COUNT() FROM test_secure_connection_uri")
+
+    node.query("DROP TABLE test_secure_connection_uri")
+    simple_mongo_table.drop()
+
+
 def test_predefined_connection_configuration(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -418,7 +448,6 @@ def test_predefined_connection_configuration(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_predefined_connection_configuration_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -438,7 +467,6 @@ def test_predefined_connection_configuration_uri(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_no_credentials(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     db = mongo_connection["test"]
@@ -450,14 +478,13 @@ def test_no_credentials(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE simple_table(key UInt64, data String) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', '', '')"
+        "CREATE OR REPLACE TABLE simple_table(key UInt64, data String) ENGINE = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', '', '')"
     )
     assert node.query("SELECT count() FROM simple_table") == "100\n"
     node.query("DROP TABLE simple_table")
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_no_credentials_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     db = mongo_connection["test"]
@@ -469,14 +496,13 @@ def test_no_credentials_uri(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE simple_table_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://mongo2:27017/test', 'simple_table_uri')"
+        "CREATE OR REPLACE TABLE simple_table_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://mongo_no_cred:27017/test', 'simple_table_uri')"
     )
     assert node.query("SELECT count() FROM simple_table_uri") == "100\n"
     node.query("DROP TABLE simple_table_uri")
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_auth_source(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     admin_db = mongo_connection["admin"]
@@ -499,19 +525,21 @@ def test_auth_source(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE simple_mongo_table_fail(key UInt64, data String) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse')"
+        "CREATE OR REPLACE TABLE simple_mongo_table_fail(key UInt64, data String) ENGINE = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', 'root', 'clickhouse')"
     )
-    node.query_and_get_error("SELECT count() FROM simple_mongo_table_fail")
+    with pytest.raises(QueryRuntimeException):
+        node.query("SELECT count() FROM simple_mongo_table_fail")
+
     node.query(
-        "CREATE OR REPLACE TABLE simple_mongo_table_ok(key UInt64, data String) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')"
+        "CREATE OR REPLACE TABLE simple_mongo_table_ok(key UInt64, data String) ENGINE = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')"
     )
     assert node.query("SELECT count() FROM simple_mongo_table_ok") == "100\n"
+
     node.query("DROP TABLE simple_mongo_table_fail")
     node.query("DROP TABLE simple_mongo_table_ok")
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_missing_columns(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -546,7 +574,6 @@ def test_missing_columns(started_cluster):
     simple_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_string_casting(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -627,7 +654,6 @@ def test_string_casting(started_cluster):
     string_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_dates_casting(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -661,7 +687,6 @@ def test_dates_casting(started_cluster):
     dates_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_order_by(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -726,7 +751,6 @@ def test_order_by(started_cluster):
     sort_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_where(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -884,7 +908,6 @@ def test_where(started_cluster):
     where_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_defaults(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -936,7 +959,6 @@ def test_defaults(started_cluster):
     defaults_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_nulls(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -987,7 +1009,6 @@ def test_nulls(started_cluster):
     nulls_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_oid(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
@@ -1055,7 +1076,6 @@ def test_oid(started_cluster):
     oid_mongo_table.drop()
 
 
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_uuid(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
