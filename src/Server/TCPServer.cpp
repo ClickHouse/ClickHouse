@@ -25,6 +25,25 @@ TCPServer::TCPServer(
     TCPServerConnectionFactory::Ptr factory_,
     Poco::ThreadPool & thread_pool,
     Poco::Net::ServerSocket & socket_,
+    const std::string & listen_host_,
+    const char * port_name_,
+    const std::string & description_,
+    Poco::Net::TCPServerParams::Ptr params)
+    : Poco::Net::TCPServer(new TCPServerConnectionFactoryImpl(*this, factory_), thread_pool, socket_, params)
+    , factory(factory_)
+    , socket(socket_)
+    , is_open(true)
+    , port_number(socket.address().port())
+    , listen_host(listen_host_)
+    , port_name(port_name_)
+    , description(description_)
+
+{}
+
+TCPServer::TCPServer(
+    TCPServerConnectionFactory::Ptr factory_,
+    Poco::ThreadPool & thread_pool,
+    Poco::Net::ServerSocket & socket_,
     Poco::Net::TCPServerParams::Ptr params)
     : Poco::Net::TCPServer(new TCPServerConnectionFactoryImpl(*this, factory_), thread_pool, socket_, params)
     , factory(factory_)

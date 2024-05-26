@@ -1,11 +1,11 @@
 #include <Server/waitServersToFinish.h>
-#include <Server/ProtocolServerAdapter.h>
+#include <Server/IProtocolServer.h>
 #include <base/sleep.h>
 
 namespace DB
 {
 
-size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, std::mutex & mutex, size_t seconds_to_wait)
+size_t waitServersToFinish(std::vector<DB::IProtocolServer> & servers, std::mutex & mutex, size_t seconds_to_wait)
 {
     const size_t sleep_max_ms = 1000 * seconds_to_wait;
     const size_t sleep_one_ms = 100;
