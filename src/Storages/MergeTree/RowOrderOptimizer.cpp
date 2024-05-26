@@ -50,15 +50,17 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
             sorted_column_indexes.emplace_back(id);
         }
         ::sort(sorted_column_indexes.begin(), sorted_column_indexes.end());
+        std::vector<size_t> all_column_indexes(all_columns_count);
+        std::iota(all_column_indexes.begin(), all_column_indexes.end(), 0);
 
-        for (size_t i = 0; i < sorted_column_indexes.front(); ++i)
-            other_column_indexes.push_back(i);
-        for (size_t i = 0; i + 1 < sorted_column_indexes.size(); ++i)
-            for (size_t id = sorted_column_indexes[i] + 1; id < sorted_column_indexes[i + 1]; ++id)
-                other_column_indexes.push_back(id);
-        for (size_t i = sorted_column_indexes.back() + 1; i < block.columns(); ++i)
-            other_column_indexes.push_back(i);
+        std::set_difference(
+            all_column_indexes.begin(),
+            all_column_indexes.end(),
+            sorted_column_indexes.begin(),
+            sorted_column_indexes.end(),
+            std::back_inserter(other_column_indexes));
     }
+    chassert(other_column_indexes.size() == all_columns_count - sorting_key_columns_count);
     return other_column_indexes;
 }
 
@@ -129,7 +131,8 @@ void updatePermutationInEqualRange(
     {
         const size_t column_id = other_column_indexes[i];
         const ColumnPtr & column = block.getByPosition(column_id).column;
-        column->updatePermutation(IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable, 0, 1, permutation, ranges);
+        column->updatePermutation(
+            IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable, 0, 1, permutation, ranges);
     }
 }
 
