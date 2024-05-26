@@ -100,17 +100,14 @@ void ProtocolServersManager::createServers(
                 host,
                 port_name.c_str(),
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, host, port);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
-                        host,
-                        port_name.c_str(),
-                        description + ": " + address.toString(),
-                        std::make_unique<TCPServer>(stack.release(), server_pool, socket, new Poco::Net::TCPServerParams));
+                    return std::make_unique<TCPServer>(
+                        host, port_name.c_str(), description + ": " + address.toString(), stack.release(), server_pool, socket);
                 });
         }
     }
@@ -126,24 +123,23 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<HTTPServer>(
                         listen_host,
                         port_name,
                         "http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(server, config, async_metrics, "HTTPHandler-factory"),
-                            server_pool,
-                            socket,
-                            http_params,
-                            ProfileEvents::InterfaceHTTPReceiveBytes,
-                            ProfileEvents::InterfaceHTTPSendBytes));
+                        std::make_shared<HTTPContext>(global_context),
+                        createHandlerFactory(server, config, async_metrics, "HTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params,
+                        ProfileEvents::InterfaceHTTPReceiveBytes,
+                        ProfileEvents::InterfaceHTTPSendBytes);
                 });
         }
 
@@ -156,25 +152,24 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<HTTPServer>(
                         listen_host,
                         port_name,
                         "https://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(server, config, async_metrics, "HTTPSHandler-factory"),
-                            server_pool,
-                            socket,
-                            http_params,
-                            ProfileEvents::InterfaceHTTPReceiveBytes,
-                            ProfileEvents::InterfaceHTTPSendBytes));
+                        std::make_shared<HTTPContext>(global_context),
+                        createHandlerFactory(server, config, async_metrics, "HTTPSHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params,
+                        ProfileEvents::InterfaceHTTPReceiveBytes,
+                        ProfileEvents::InterfaceHTTPSendBytes);
 #else
                     UNUSED(port);
                     throw Exception(
@@ -193,22 +188,20 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         port_name,
                         "native protocol (tcp): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new TCPHandlerFactory(
-                                server, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
+                        new TCPHandlerFactory(
+                            server, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        server_pool,
+                        socket);
                 });
         }
 
@@ -221,22 +214,20 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         port_name,
                         "native protocol (tcp) with PROXY: " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new TCPHandlerFactory(
-                                server, false, true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
+                        new TCPHandlerFactory(
+                            server, false, true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        server_pool,
+                        socket);
                 });
         }
 
@@ -249,23 +240,21 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         port_name,
                         "secure native protocol (tcp_secure): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new TCPHandlerFactory(
-                                server, true, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
+                        new TCPHandlerFactory(
+                            server, true, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        server_pool,
+                        socket);
 #else
                     UNUSED(port);
                     throw Exception(
@@ -283,22 +272,19 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(Poco::Timespan());
                     socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         port_name,
                         "MySQL compatibility protocol: " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new MySQLHandlerFactory(
-                                server, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
+                        new MySQLHandlerFactory(server, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes),
+                        server_pool,
+                        socket);
                 });
         }
 
@@ -310,22 +296,20 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(Poco::Timespan());
                     socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<TCPServer>(
                         listen_host,
                         port_name,
                         "PostgreSQL compatibility protocol: " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new PostgreSQLHandlerFactory(
-                                server, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
+                        new PostgreSQLHandlerFactory(
+                            server, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
+                        server_pool,
+                        socket);
                 });
         }
 
@@ -338,14 +322,15 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::SocketAddress server_address(listen_host, port);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<GRPCServer>(
                         listen_host,
                         port_name,
                         "gRPC protocol: " + server_address.toString(),
-                        std::make_unique<GRPCServer>(server, makeSocketAddress(listen_host, port, logger)));
+                        server,
+                        makeSocketAddress(listen_host, port, logger));
                 });
         }
 #endif
@@ -358,24 +343,23 @@ void ProtocolServersManager::createServers(
                 listen_host,
                 port_name,
                 start_servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
+                [&](UInt16 port) -> IProtocolServerPtr
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    return ProtocolServerAdapter(
+                    return std::make_unique<HTTPServer>(
                         listen_host,
                         port_name,
                         "Prometheus: http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(server, config, async_metrics, "PrometheusHandler-factory"),
-                            server_pool,
-                            socket,
-                            http_params,
-                            ProfileEvents::InterfacePrometheusReceiveBytes,
-                            ProfileEvents::InterfacePrometheusSendBytes));
+                        std::make_shared<HTTPContext>(global_context),
+                        createHandlerFactory(server, config, async_metrics, "PrometheusHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params,
+                        ProfileEvents::InterfacePrometheusReceiveBytes,
+                        ProfileEvents::InterfacePrometheusSendBytes);
                 });
         }
     }
@@ -395,8 +379,8 @@ size_t ProtocolServersManager::stopServers(const ServerSettings & server_setting
         std::lock_guard lock(servers_lock);
         for (auto & server : servers)
         {
-            server.stop();
-            current_connections += server.currentConnections();
+            server->stop();
+            current_connections += server->currentConnections();
         }
     }
 
