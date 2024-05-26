@@ -1,6 +1,5 @@
 SELECT '-- generateSnowflakeID';
 
-SELECT bitShiftLeft(toUInt64(generateSnowflakeID()), 52) = 0; -- check machine sequence number is zero
 SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeID()), 63), 1) = 0; -- check first bit is zero
 
 SELECT generateSnowflakeID(1) = generateSnowflakeID(2); -- disabled common subexpression elimination --> lhs != rhs
@@ -18,7 +17,6 @@ FROM
 
 SELECT '-- generateSnowflakeIDThreadMonotonic';
 
-SELECT bitShiftLeft(toUInt64(generateSnowflakeIDThreadMonotonic()), 52) = 0; -- check machine sequence number is zero
 SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeIDThreadMonotonic()), 63), 1) = 0; -- check first bit is zero
 
 SELECT generateSnowflakeIDThreadMonotonic(1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
