@@ -2,7 +2,6 @@
 
 #include <Interpreters/sortBlock.h>
 #include <base/sort.h>
-#include "Common/Logger.h"
 #include <Common/PODArray.h>
 #include <Common/iota.h>
 #include <Common/logger_useful.h>
