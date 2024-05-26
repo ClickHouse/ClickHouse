@@ -1,5 +1,6 @@
 import os
 import sys
+import pathlib
 
 import pytest
 
@@ -25,11 +26,14 @@ def ch_cluster():
         cluster.start()
 
         os.system(
-            "wget --quiet -O {gpt2_path} {gpt2_download_link}".format(
+            "wget -O {gpt2_path} {gpt2_download_link}".format(
                 gpt2_path=os.path.join(SCRIPT_DIR, "model/gpt2.ggml"),
                 gpt2_download_link="https://huggingface.co/ggerganov/ggml/resolve/main/ggml-model-gpt-2-117M.bin?download=true",
             )
         )
+        if not pathlib.Path(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")).exists():
+            print("Path ", str(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")), " does not exist")
+            raise RuntimeError
         os.system(
             "docker cp {local} {cont_id}:{dist}".format(
                 local=os.path.join(SCRIPT_DIR, "model/."),
