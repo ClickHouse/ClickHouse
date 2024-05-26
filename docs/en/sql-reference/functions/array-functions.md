@@ -19,7 +19,7 @@ empty([x])
 An array is considered empty if it does not contain any elements.
 
 :::note
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
@@ -30,9 +30,7 @@ The function also works for [strings](string-functions.md#empty) or [UUID](uuid-
 
 **Returned value**
 
-- Returns `1` for an empty array or `0` for a non-empty array.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty array or `0` for a non-empty array. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -63,7 +61,7 @@ notEmpty([x])
 An array is considered non-empty if it contains at least one element.
 
 :::note
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
 The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
@@ -74,9 +72,7 @@ The function also works for [strings](string-functions.md#notempty) or [UUID](uu
 
 **Returned value**
 
-- Returns `1` for a non-empty array or `0` for an empty array.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty array or `0` for an empty array. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -100,7 +96,7 @@ Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
 Alias: `OCTET_LENGTH`
 
@@ -581,7 +577,7 @@ arrayConcat(arrays)
 
 **Arguments**
 
-- `arrays` – Arbitrary number of arguments of [Array](../../sql-reference/data-types/array.md) type.
+- `arrays` – Arbitrary number of arguments of [Array](../data-types/array.md) type.
 
 **Example**
 
@@ -797,9 +793,11 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 
 **Returned value**
 
-- The dot product of the two vectors.
+- The dot product of the two vectors. [Numeric](https://clickhouse.com/docs/en/native-protocol/columns#numeric-types).
 
-Type: numeric - determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+:::note
+The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+:::
 
 **Examples**
 
@@ -1060,7 +1058,7 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -1085,7 +1083,7 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../sql-reference/data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -1181,14 +1179,12 @@ arrayShingles(array, length)
 
 **Arguments**
 
-- `array` — Input array [Array](../../sql-reference/data-types/array.md).
+- `array` — Input array [Array](../data-types/array.md).
 - `length` — The length of each shingle.
 
 **Returned value**
 
-- An array of generated shingles.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array of generated shingles. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -1562,9 +1558,7 @@ arrayDifference(array)
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements.
-
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+Returns an array of differences between adjacent array elements. [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 **Example**
 
@@ -1766,8 +1760,8 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 
 **Arguments**
 
-- `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
-- `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+- `agg_func` — The name of an aggregate function which should be a constant [string](../data-types/string.md).
+- `arr` — Any number of [array](../data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
 
@@ -1835,15 +1829,13 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 **Arguments**
 
-- `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
-- `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
-- `arr` — Any number of [Array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+- `agg_func` — The name of an aggregate function which should be a constant [string](../data-types/string.md).
+- `ranges` — The ranges to aggretate which should be an [array](../data-types/array.md) of [tuples](../data-types/tuple.md) which containing the index and the length of each range.
+- `arr` — Any number of [Array](../data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
 
-- Array containing results of the aggregate function over specified ranges.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Array containing results of the aggregate function over specified ranges. [Array](../data-types/array.md).
 
 **Example**
 
@@ -1956,7 +1948,7 @@ Alias: `flatten`.
 
 **Parameters**
 
-- `array_of_arrays` — [Array](../../sql-reference/data-types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
+- `array_of_arrays` — [Array](../data-types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
 
 **Examples**
 
@@ -1982,13 +1974,11 @@ arrayCompact(arr)
 
 **Arguments**
 
-`arr` — The [array](../../sql-reference/data-types/array.md) to inspect.
+`arr` — The [array](../data-types/array.md) to inspect.
 
 **Returned value**
 
-The array without duplicate.
-
-Type: `Array`.
+The array without duplicate. [Array](../data-types/array.md).
 
 **Example**
 
@@ -2018,15 +2008,13 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **Arguments**
 
-- `arrN` — [Array](../../sql-reference/data-types/array.md).
+- `arrN` — [Array](../data-types/array.md).
 
 The function can take any number of arrays of different types. All the input arrays must be of equal size.
 
 **Returned value**
 
-- Array with elements from the source arrays grouped into [tuples](../../sql-reference/data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Array with elements from the source arrays grouped into [tuples](../data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [Array](../data-types/array.md).
 
 **Example**
 
@@ -2376,14 +2364,16 @@ arrayMin([func,] arr)
 
 **Arguments**
 
-- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
-- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../data-types/array.md).
 
 **Returned value**
 
 - The minimum of function values (or the array minimum).
 
-Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
+:::note
+If `func` is specified, then the return type matches the return value type of `func`, otherwise it matches the type of the array elements.
+:::
 
 **Examples**
 
@@ -2431,14 +2421,16 @@ arrayMax([func,] arr)
 
 **Arguments**
 
-- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
-- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../data-types/array.md).
 
 **Returned value**
 
 - The maximum of function values (or the array maximum).
 
-Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
+:::note
+if `func` is specified then the return type matches the return value type of `func`, otherwise it matches the type of the array elements.
+:::
 
 **Examples**
 
@@ -2486,14 +2478,21 @@ arraySum([func,] arr)
 
 **Arguments**
 
-- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
-- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../data-types/array.md).
 
 **Returned value**
 
 - The sum of the function values (or the array sum).
 
-Type: for decimal numbers in source array (or for converted values, if `func` is specified) — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [UInt64](../../sql-reference/data-types/int-uint.md), and for numeric signed — [Int64](../../sql-reference/data-types/int-uint.md).
+:::note
+Return type:
+
+- For decimal numbers in the source array (or for converted values, if `func` is specified) — [Decimal128](../data-types/decimal.md).
+- For floating point numbers — [Float64](../data-types/float.md).
+- For numeric unsigned — [UInt64](../data-types/int-uint.md). 
+- For numeric signed — [Int64](../data-types/int-uint.md).
+:::
 
 **Examples**
 
@@ -2541,14 +2540,12 @@ arrayAvg([func,] arr)
 
 **Arguments**
 
-- `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
-- `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+- `func` — Function. [Expression](../data-types/special-data-types/expression.md).
+- `arr` — Array. [Array](../data-types/array.md).
 
 **Returned value**
 
-- The average of function values (or the array average).
-
-Type: [Float64](../../sql-reference/data-types/float.md).
+- The average of function values (or the array average). [Float64](../data-types/float.md).
 
 **Examples**
 
@@ -2592,13 +2589,11 @@ arrayCumSum(arr)
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+- `arr` — [Array](../data-types/array.md) of numeric values.
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array.
-
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 Example:
 
@@ -2626,13 +2621,11 @@ arrayCumSumNonNegative(arr)
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+- `arr` — [Array](../data-types/array.md) of numeric values.
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array.
-
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
@@ -2648,7 +2641,7 @@ Note that the `arraySumNonNegative` is a [higher-order function](../../sql-refer
 
 ## arrayProduct
 
-Multiplies elements of an [array](../../sql-reference/data-types/array.md).
+Multiplies elements of an [array](../data-types/array.md).
 
 **Syntax**
 
@@ -2658,13 +2651,11 @@ arrayProduct(arr)
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+- `arr` — [Array](../data-types/array.md) of numeric values.
 
 **Returned value**
 
-- A product of array's elements.
-
-Type: [Float64](../../sql-reference/data-types/float.md).
+- A product of array's elements. [Float64](../data-types/float.md).
 
 **Examples**
 
@@ -2688,7 +2679,7 @@ Query:
 SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
 ```
 
-Return value type is always [Float64](../../sql-reference/data-types/float.md). Result:
+Return value type is always [Float64](../data-types/float.md). Result:
 
 ``` text
 ┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
@@ -2698,7 +2689,7 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 
 ## arrayRotateLeft
 
-Rotates an [array](../../sql-reference/data-types/array.md) to the left by the specified number of elements.
+Rotates an [array](../data-types/array.md) to the left by the specified number of elements.
 If the number of elements is negative, the array is rotated to the right.
 
 **Syntax**
@@ -2709,14 +2700,12 @@ arrayRotateLeft(arr, n)
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `arr` — [Array](../data-types/array.md).
 - `n` — Number of elements to rotate.
 
 **Returned value**
 
-- An array rotated to the left by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array rotated to the left by the specified number of elements. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -2764,7 +2753,7 @@ Result:
 
 ## arrayRotateRight
 
-Rotates an [array](../../sql-reference/data-types/array.md) to the right by the specified number of elements.
+Rotates an [array](../data-types/array.md) to the right by the specified number of elements.
 If the number of elements is negative, the array is rotated to the left.
 
 **Syntax**
@@ -2775,14 +2764,12 @@ arrayRotateRight(arr, n)
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `arr` — [Array](../data-types/array.md).
 - `n` — Number of elements to rotate.
 
 **Returned value**
 
-- An array rotated to the right by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array rotated to the right by the specified number of elements. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -2830,7 +2817,7 @@ Result:
 
 ## arrayShiftLeft
 
-Shifts an [array](../../sql-reference/data-types/array.md) to the left by the specified number of elements.
+Shifts an [array](../data-types/array.md) to the left by the specified number of elements.
 New elements are filled with the provided argument or the default value of the array element type.
 If the number of elements is negative, the array is shifted to the right.
 
@@ -2842,15 +2829,13 @@ arrayShiftLeft(arr, n[, default])
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `arr` — [Array](../data-types/array.md).
 - `n` — Number of elements to shift.
 - `default` — Optional. Default value for new elements.
 
 **Returned value**
 
-- An array shifted to the left by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array shifted to the left by the specified number of elements. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -2926,7 +2911,7 @@ Result:
 
 ## arrayShiftRight
 
-Shifts an [array](../../sql-reference/data-types/array.md) to the right by the specified number of elements.
+Shifts an [array](../data-types/array.md) to the right by the specified number of elements.
 New elements are filled with the provided argument or the default value of the array element type.
 If the number of elements is negative, the array is shifted to the left.
 
@@ -2938,15 +2923,13 @@ arrayShiftRight(arr, n[, default])
 
 **Arguments**
 
-- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `arr` — [Array](../data-types/array.md).
 - `n` — Number of elements to shift.
 - `default` — Optional. Default value for new elements.
 
 **Returned value**
 
-- An array shifted to the right by the specified number of elements.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- An array shifted to the right by the specified number of elements. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -3038,9 +3021,7 @@ arrayRandomSample(arr, samples)
 
 **Returned Value**
 
-- An array containing a random sample of elements from the input array.
-
-Type: [Array](../data-types/array.md).
+- An array containing a random sample of elements from the input array. [Array](../data-types/array.md).
 
 **Examples**
 
