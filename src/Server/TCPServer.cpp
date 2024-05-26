@@ -42,7 +42,7 @@ void TCPServer::stop()
     // This notifies already established connections that they should stop serving
     // queries and close their socket as soon as they can.
     IProtocolServer::stop();
-    
+
     // Poco's stop() stops listening on the socket but leaves it open.
     // To be able to hand over control of the listening port to a new server, and
     // to get fast connection refusal instead of timeouts, we also need to close

@@ -1921,7 +1921,7 @@ void GRPCServer::start()
 void GRPCServer::stop()
 {
     IProtocolServer::stop();
-    
+
     /// Stop receiving new calls.
     runner->stop();
 }
