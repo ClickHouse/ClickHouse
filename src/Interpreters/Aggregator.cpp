@@ -104,42 +104,22 @@ void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
-    if (stats_collecting_params.isCollectionAndUseEnabled())
+    const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
+    if (auto hint = findSizeHint(stats_collecting_params, max_threads))
     {
-        if (auto hint = DB::getHashTablesStatistics().getSizeHint(stats_collecting_params))
-        {
-            const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
-            const auto lower_limit = hint->sum_of_sizes / max_threads;
-            const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
-            if (hint->median_size > upper_limit)
-            {
-                /// Since we cannot afford to preallocate as much as we want, we will likely need to do resize anyway.
-                /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
-                /// So let's just do nothing.
-                LOG_TRACE(
-                    getLogger("Aggregator"),
-                    "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
-                    "should be at least {}",
-                    stats_collecting_params.max_size_to_preallocate_for_aggregation,
-                    hint->median_size * max_threads);
-            }
-            /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
-            else if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
-            {
-                const auto adjusted = std::max(lower_limit, hint->median_size);
-                if (worthConvertToTwoLevel(
-                        params.group_by_two_level_threshold,
-                        hint->sum_of_sizes,
-                        /*group_by_two_level_threshold_bytes*/ 0,
-                        /*result_size_bytes*/ 0))
-                    method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-                result.init(method_chosen, adjusted);
-                ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
-                return;
-            }
-        }
+        if (worthConvertToTwoLevel(
+                params.group_by_two_level_threshold,
+                hint->sum_of_sizes,
+                /*group_by_two_level_threshold_bytes*/ 0,
+                /*result_size_bytes*/ 0))
+            method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+        result.init(method_chosen, hint->median_size);
+        ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
     }
-    result.init(method_chosen);
+    else
+    {
+        result.init(method_chosen);
+    }
 }
 
 /// Collection and use of the statistics should be enabled.
@@ -3357,4 +3337,23 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
+UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
+{
+    if (!select_query)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
+
+    const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+    // It may happen in some corner cases like `select 1 as num group by num`.
+    if (!select.tables())
+        return 0;
+
+    SipHash hash;
+    hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto where = select.where())
+        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto group_by = select.groupBy())
+        hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
+    return hash.get64();
+}
 }

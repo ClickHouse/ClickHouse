@@ -768,9 +768,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     return std::make_shared<DirectKeyValueJoin>(table_join, right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
 }
-
 }
-
 
 static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
@@ -805,7 +803,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
         if (table_join->allowParallelHashJoin())
         {
             auto query_context = planner_context->getQueryContext();
-            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
+            const auto & settings = query_context->getSettingsRef();
+            StatsCollectingParams params{
+                calculateCacheKey(table_join, right_table_expression),
+                settings.collect_hash_table_stats_during_aggregation,
+                settings.max_entries_for_hash_table_stats,
+                settings.max_size_to_preallocate_for_aggregation};
+            return std::make_shared<ConcurrentHashJoin>(
+                query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header, params);
         }
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);

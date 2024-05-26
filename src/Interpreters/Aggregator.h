@@ -657,6 +657,7 @@ private:
         Arena * arena);
 };
 
+UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

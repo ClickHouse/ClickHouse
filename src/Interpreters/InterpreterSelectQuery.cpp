@@ -85,16 +85,17 @@
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/NaNUtils.h>
+#include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
-#include <Common/ProfileEvents.h>
-#include <Common/NaNUtils.h>
 
 
 namespace ProfileEvents
@@ -2665,7 +2666,7 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold_bytes)
 {
     const auto stats_collecting_params = StatsCollectingParams(
-        query_ptr,
+        calculateCacheKey(query_ptr),
         settings.collect_hash_table_stats_during_aggregation,
         settings.max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);

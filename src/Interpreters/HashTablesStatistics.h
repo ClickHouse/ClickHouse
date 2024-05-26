@@ -17,38 +17,14 @@ struct HashTablesCacheStatistics
     size_t misses = 0;
 };
 
-inline size_t calculateCacheKey(const DB::ASTPtr & select_query)
-{
-    if (!select_query)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
-
-    const auto & select = select_query->as<DB::ASTSelectQuery &>();
-
-    // It may happen in some corner cases like `select 1 as num group by num`.
-    if (!select.tables())
-        return 0;
-
-    SipHash hash;
-    hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto where = select.where())
-        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto group_by = select.groupBy())
-        hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
-    return hash.get64();
-}
-
 struct StatsCollectingParams
 {
     StatsCollectingParams() = default;
 
-    StatsCollectingParams(
-        const ASTPtr & select_query_,
-        bool collect_hash_table_stats_during_aggregation_,
-        size_t max_entries_for_hash_table_stats_,
-        size_t max_size_to_preallocate_for_aggregation_)
-        : key(collect_hash_table_stats_during_aggregation_ ? calculateCacheKey(select_query_) : 0)
+    StatsCollectingParams(UInt64 key_, bool enable_, size_t max_entries_for_hash_table_stats_, size_t max_size_to_preallocate_)
+        : key(enable_ ? key_ : 0)
         , max_entries_for_hash_table_stats(max_entries_for_hash_table_stats_)
-        , max_size_to_preallocate_for_aggregation(max_size_to_preallocate_for_aggregation_)
+        , max_size_to_preallocate(max_size_to_preallocate_)
     {
     }
 
@@ -56,8 +32,8 @@ struct StatsCollectingParams
     void disable() { key = 0; }
 
     UInt64 key = 0;
-    const size_t max_entries_for_hash_table_stats = 0;
-    const size_t max_size_to_preallocate_for_aggregation = 0;
+    const size_t max_entries_for_hash_table_stats = 0; /// TODO: move to server settings
+    const size_t max_size_to_preallocate = 0;
 };
 
 /** Collects observed HashMap-s sizes to avoid redundant intermediate resizes.
@@ -154,4 +130,35 @@ inline std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
     return getHashTablesStatistics().getCacheStats();
 }
 
+inline std::optional<HashTablesStatistics::Entry>
+findSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t max_threads)
+{
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        if (auto hint = DB::getHashTablesStatistics().getSizeHint(stats_collecting_params))
+        {
+            const auto lower_limit = hint->sum_of_sizes / max_threads;
+            const auto upper_limit = stats_collecting_params.max_size_to_preallocate / max_threads;
+            if (hint->median_size > upper_limit)
+            {
+                /// Since we cannot afford to preallocate as much as we want, we will likely need to do resize anyway.
+                /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
+                /// So let's just do nothing.
+                LOG_TRACE(
+                    getLogger("HashTablesStatistics"),
+                    "No space were preallocated in hash tables because 'max_size_to_preallocate' has too small value: {}, "
+                    "should be at least {}",
+                    stats_collecting_params.max_size_to_preallocate,
+                    hint->median_size * max_threads);
+            }
+            /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
+            else if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
+            {
+                const auto adjusted = std::max(lower_limit, hint->median_size);
+                return HashTablesStatistics::Entry{hint->sum_of_sizes, adjusted};
+            }
+        }
+    }
+    return std::nullopt;
+}
 }
