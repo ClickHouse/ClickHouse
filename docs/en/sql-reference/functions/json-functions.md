@@ -31,7 +31,7 @@ simpleJSONHas(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -71,7 +71,7 @@ simpleJSONExtractUInt(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -118,7 +118,7 @@ simpleJSONExtractInt(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -165,7 +165,7 @@ simpleJSONExtractFloat(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -212,7 +212,7 @@ simpleJSONExtractBool(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -259,12 +259,12 @@ simpleJSONExtractRaw(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
-It returns the value of the field as a [`String`](../../sql-reference/data-types/string.md#string), including separators if the field exists, or an empty `String` otherwise.
+It returns the value of the field as a [`String`](../data-types/string.md#string), including separators if the field exists, or an empty `String` otherwise.
 
 **Example**
 
@@ -306,12 +306,12 @@ simpleJSONExtractString(json, field_name)
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
+- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
 - `field_name`: The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
-It returns the value of a field as a [`String`](../../sql-reference/data-types/string.md#string), including separators. The value is unescaped. It returns an empty `String`: if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist.
+It returns the value of a field as a [`String`](../data-types/string.md#string), including separators. The value is unescaped. It returns an empty `String`: if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist.
 
 **Implementation details**
 
@@ -386,7 +386,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices_or_keys\]…)
+## JSONHas(json\[, indices_or_keys\]...)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -419,7 +419,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices_or_keys\]…)
+## JSONLength(json\[, indices_or_keys\]...)
 
 Return the length of a JSON array or a JSON object.
 
@@ -432,7 +432,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices_or_keys\]…)
+## JSONType(json\[, indices_or_keys\]...)
 
 Return the type of a JSON value.
 
@@ -446,13 +446,13 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices_or_keys\]…)
+## JSONExtractUInt(json\[, indices_or_keys\]...)
 
-## JSONExtractInt(json\[, indices_or_keys\]…)
+## JSONExtractInt(json\[, indices_or_keys\]...)
 
-## JSONExtractFloat(json\[, indices_or_keys\]…)
+## JSONExtractFloat(json\[, indices_or_keys\]...)
 
-## JSONExtractBool(json\[, indices_or_keys\]…)
+## JSONExtractBool(json\[, indices_or_keys\]...)
 
 Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
 
@@ -466,7 +466,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
-## JSONExtractString(json\[, indices_or_keys\]…)
+## JSONExtractString(json\[, indices_or_keys\]...)
 
 Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
 
@@ -484,7 +484,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices_or_keys…\], Return_type)
+## JSONExtract(json\[, indices_or_keys...\], Return_type)
 
 Parses a JSON and extract a value of the given ClickHouse data type.
 
@@ -506,7 +506,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type)
+## JSONExtractKeysAndValues(json\[, indices_or_keys...\], Value_type)
 
 Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
 
@@ -528,14 +528,12 @@ JSONExtractKeys(json[, a, b, c...])
 
 **Arguments**
 
-- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
-- `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+- `json` — [String](../data-types/string.md) with valid JSON.
+- `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../data-types/string.md) to get the field by the key or an [Integer](../data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned value**
 
-Array with the keys of the JSON.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+Array with the keys of the JSON. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Example**
 
@@ -554,7 +552,7 @@ text
 └────────────────────────────────────────────────────────────┘
 ```
 
-## JSONExtractRaw(json\[, indices_or_keys\]…)
+## JSONExtractRaw(json\[, indices_or_keys\]...)
 
 Returns a part of JSON as unparsed string.
 
@@ -566,7 +564,7 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw(json\[, indices_or_keys…\])
+## JSONExtractArrayRaw(json\[, indices_or_keys...\])
 
 Returns an array with elements of JSON array, each represented as unparsed string.
 
@@ -590,15 +588,13 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Arguments**
 
-- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
-- `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+- `json` — [String](../data-types/string.md) with valid JSON.
+- `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../data-types/string.md) to get the field by the key or an [integer](../data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned values**
 
-- Array with `('key', 'value')` tuples. Both tuple members are strings.
-- Empty array if the requested object does not exist, or input JSON is invalid.
-
-Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
+- Array with `('key', 'value')` tuples. Both tuple members are strings. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), [String](../data-types/string.md)).
+- Empty array if the requested object does not exist, or input JSON is invalid. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), [String](../data-types/string.md)).
 
 **Examples**
 
@@ -723,9 +719,9 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, jso
 ## toJSONString
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
+64-bit [integers](../data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
 Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals) setting to show them.
-When serializing an [Enum](../../sql-reference/data-types/enum.md) value, the function outputs its name.
+When serializing an [Enum](../data-types/enum.md) value, the function outputs its name.
 
 **Syntax**
 
@@ -739,14 +735,12 @@ toJSONString(value)
 
 **Returned value**
 
-- JSON representation of the value.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- JSON representation of the value. [String](../data-types/string.md).
 
 **Example**
 
-The first example shows serialization of a [Map](../../sql-reference/data-types/map.md).
-The second example shows some special values wrapped into a [Tuple](../../sql-reference/data-types/tuple.md).
+The first example shows serialization of a [Map](../data-types/map.md).
+The second example shows some special values wrapped into a [Tuple](../data-types/tuple.md).
 
 Query:
 
@@ -782,13 +776,11 @@ Alias: `JSON_ARRAY_LENGTH(json)`.
 
 **Arguments**
 
-- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+- `json` — [String](../data-types/string.md) with valid JSON.
 
 **Returned value**
 
-- If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
-
-Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+- If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL. [Nullable(UInt64)](../data-types/int-uint.md).
 
 **Example**
 
@@ -815,13 +807,11 @@ jsonMergePatch(json1, json2, ...)
 
 **Arguments**
 
-- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+- `json` — [String](../data-types/string.md) with valid JSON.
 
 **Returned value**
 
-- If JSON object strings are valid, return the merged JSON object string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- If JSON object strings are valid, return the merged JSON object string. [String](../data-types/string.md).
 
 **Example**
 
