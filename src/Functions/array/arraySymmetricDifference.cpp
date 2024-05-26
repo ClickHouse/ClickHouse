@@ -12,7 +12,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArraySymmetricDifference>(context); }
 
-    FunctionArraySymmetricDifference(ContextPtr context_) : FunctionArrayLogicalBase<false>(context_) { }
+    explicit FunctionArraySymmetricDifference(ContextPtr context_) : FunctionArrayLogicalBase<false>(context_) { }
 
 protected:
     ContextPtr context;

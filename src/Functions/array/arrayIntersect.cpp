@@ -12,7 +12,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
 
-    FunctionArrayIntersect(ContextPtr context_) : FunctionArrayLogicalBase<true>(context_) { }
+    explicit FunctionArrayIntersect(ContextPtr context_) : FunctionArrayLogicalBase<true>(context_) { }
 
 protected:
     ContextPtr context;
