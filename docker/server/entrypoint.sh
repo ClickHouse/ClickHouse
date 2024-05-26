@@ -116,7 +116,7 @@ if [[ -n "${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS}" || -z "${DATABASE_ALREADY_EXI
   RUN_INITDB_SCRIPTS='true'
 fi
 
-if [ -z "${RUN_INITDB_SCRIPTS}" ]; then
+if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
     if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         # port is needed to check if clickhouse-server is ready for connections
         HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
