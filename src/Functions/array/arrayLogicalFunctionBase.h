@@ -475,6 +475,8 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
         }
 
         // After we counted the number of occurrences we should get the elements directly from source arrays to keep the order
+        // Intersection means amount of appearances is the number of arrays
+        // Symmetric difference means amount of appearances is 1
         set.clear();
         prev_off.assign(args, 0);
         bool null_added = false;
@@ -568,7 +570,6 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
 
     bool has_nothing = false;
     bool has_nullable = false;
-
     if (arguments.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
@@ -598,51 +599,17 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
         if (has_nothing)
             result_type = std::make_shared<DataTypeNothing>();
     } else {
-        if (!nested_types.empty())
+        if (!nested_types.empty()){
             result_type = getLeastSupertype(nested_types);
-        if (has_nullable)
-            result_type = makeNullable(result_type);
+            if (has_nullable)
+                result_type = makeNullable(result_type);
+        }
+        else if (has_nothing)
+            result_type = std::make_shared<DataTypeNothing>();
     }
 
     return std::make_shared<DataTypeArray>(result_type);
 }
-//{
-//    DataTypes nested_types;
-//    nested_types.reserve(arguments.size());
-//
-//    bool has_nullable = false;
-//
-//    if (arguments.empty())
-//        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-//
-//    for (size_t i = 0; i < arguments.size(); i++)
-//    {
-//        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
-//        if (!array_type)
-//            throw Exception(
-//                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-//                "Argument {} for function {} must be an array but it has type {}.",
-//                i,
-//                getName(),
-//                arguments[i]->getName());
-//
-//        const auto & nested_type = array_type->getNestedType();
-//
-//        nested_types.push_back(nested_type);
-//        if (nested_type->isNullable())
-//            has_nullable = true;
-//    }
-//
-//    DataTypePtr result_type;
-//
-//    if (!nested_types.empty())
-//        result_type = getLeastSupertype(nested_types);
-//
-//    if (!intersect && has_nullable)
-//        result_type = makeNullable(result_type);
-//
-//    return std::make_shared<DataTypeArray>(result_type);
-//}
 
 template <bool intersect>
 ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(
