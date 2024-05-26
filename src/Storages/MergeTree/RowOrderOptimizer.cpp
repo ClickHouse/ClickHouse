@@ -2,8 +2,10 @@
 
 #include <Interpreters/sortBlock.h>
 #include <base/sort.h>
+#include "Common/Logger.h"
 #include <Common/PODArray.h>
 #include <Common/iota.h>
+#include <Common/logger_useful.h>
 
 #include <numeric>
 
@@ -151,6 +153,15 @@ void RowOrderOptimizer::optimize(const Block & block, const SortDescription & de
     }
 
     const EqualRanges equal_ranges = getEqualRanges(block, description, permutation);
+    LoggerPtr log = getLogger("RowOrderOptimizer");
+    LOG_TRACE(
+        log,
+        "block.columns(): {}, block.rows(): {}, description.size(): {}, equal_ranges.size(): {}",
+        block.columns(),
+        block.rows(),
+        description.size(),
+        equal_ranges.size());
+
     const std::vector<size_t> other_columns_indexes = getOtherColumnIndexes(block, description);
 
     for (const auto & equal_range : equal_ranges)
