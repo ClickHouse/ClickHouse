@@ -46,8 +46,8 @@ void UniqStatistics::update(const ColumnPtr & column)
 {
     /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
     /// Here we intend to avoid crash in CI.
-    const IColumn * col_ptr = column->convertToFullColumnIfLowCardinality().get();
-    collector->addBatchSinglePlace(0, column->size(), data, &col_ptr, nullptr);
+    auto col_ptr = column->convertToFullColumnIfLowCardinality();
+    collector->addBatchSinglePlace(0, column->size(), data, &(col_ptr.get()), nullptr);
 }
 
 void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
