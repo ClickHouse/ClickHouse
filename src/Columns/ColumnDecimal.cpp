@@ -266,14 +266,16 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 }
 
 template <is_decimal T>
-size_t ColumnDecimal<T>::getCardinalityInPermutedRange(const IColumn::Permutation & perm, const EqualRange & range) const
+size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
 {
-    size_t range_size = range.size();
+    const size_t range_size = equal_range.size();
     if (range_size <= 1ULL)
         return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     HashSet<T> elements;
-    for (size_t i = range.from; i < range.to; ++i)
-        elements.insert(data[perm[i]]);
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        elements.insert(data[permutation[i]]);
     return elements.size();
 }
 
