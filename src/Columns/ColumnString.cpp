@@ -490,17 +490,14 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
 
     /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     StringHashSet elements;
-    size_t estimated_unique = 0;
+    bool inserted = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t id = permutation[i];
         StringRef ref = getDataAt(id);
-        bool inserted = false;
         elements.emplace(ref, inserted);
-        if (inserted)
-            ++estimated_unique;
     }
-    return estimated_unique;
+    return elements.size();
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
