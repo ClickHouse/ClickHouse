@@ -600,7 +600,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
         compression_codec,
-        context->getCurrentTransaction(),
+        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         false,
         false,
         context->getWriteSettings());
@@ -739,7 +739,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
         ColumnsStatistics{},
         compression_codec,
-        NO_TRANSACTION_PTR,
+        Tx::PrehistoricTID,
         false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);

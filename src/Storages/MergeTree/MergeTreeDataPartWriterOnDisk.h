@@ -5,9 +5,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Disks/IDisk.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
@@ -97,16 +94,22 @@ public:
 
         void sync() const;
 
-        void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
+        void addToChecksums(MergeTreeDataPartChecksums & checksums);
     };
 
     using StreamPtr = std::unique_ptr<Stream<false>>;
     using StatisticStreamPtr = std::unique_ptr<Stream<true>>;
 
     MergeTreeDataPartWriterOnDisk(
-        const MergeTreeMutableDataPartPtr & data_part_,
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
@@ -133,13 +136,13 @@ protected:
     void calculateAndSerializeStatistics(const Block & stats_block);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
-    void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
     void finishPrimaryIndexSerialization(bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
-    void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void fillSkipIndicesChecksums(MergeTreeDataPartChecksums & checksums);
     void finishSkipIndicesSerialization(bool sync);
 
-    void fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void fillStatisticsChecksums(MergeTreeDataPartChecksums & checksums);
     void finishStatisticsSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)

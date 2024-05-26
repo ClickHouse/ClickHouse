@@ -9,7 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-
+#include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/IReadableWriteBuffer.h>
@@ -34,6 +34,7 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -378,7 +379,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         MergeTreeStatisticsFactory::instance().getMany(global_ctx->metadata_snapshot->getColumns()),
         ctx->compression_codec,
-        global_ctx->txn,
+        global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
         /*reset_columns=*/ true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings());
