@@ -1082,158 +1082,88 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
-        QueryCachePtr query_cache = context->getQueryCache();
-        const bool can_use_query_cache = query_cache != nullptr
-            && settings.use_query_cache
-            && !internal
-            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-            && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
-
-        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
-        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
-        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
-        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
-        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
-        std::optional<Settings> settings_copy;
-        if (can_use_query_cache)
-            settings_copy = settings;
-
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
-            /// a pipeline with a source populated by the query cache.
-            auto get_result_from_query_cache = [&]()
+            /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
+            if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
             {
-                if (can_use_query_cache && settings.enable_reads_from_query_cache)
+                try
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
-                    QueryCache::Reader reader = query_cache->createReader(key);
-                    if (reader.hasCacheEntryForKey())
-                    {
-                        QueryPipeline pipeline;
-                        pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
-                        res.pipeline = std::move(pipeline);
-                        return true;
-                    }
-                }
-                return false;
-            };
+                    if (context->isGlobalContext())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
 
-            if (!get_result_from_query_cache())
+                    execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("while starting a transaction with 'implicit_transaction'");
+                    throw;
+                }
+            }
+
+            interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+
+            const auto & query_settings = context->getSettingsRef();
+            if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
             {
-                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
+                if (!interpreter->supportsTransactions())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+            }
+
+            // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
+            // We need to force to build it here to check if we need to ignore quota.
+            if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                interpreter_with_analyzer->getQueryPlan();
+
+            if (!interpreter->ignoreQuota() && !quota_checked)
+            {
+                quota = context->getQuota();
+                if (quota)
                 {
-                    try
+                    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
                     {
-                        if (context->isGlobalContext())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
-
-                        execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
+                        quota->used(QuotaType::QUERY_SELECTS, 1);
                     }
-                    catch (Exception & e)
+                    else if (ast->as<ASTInsertQuery>())
                     {
-                        e.addMessage("while starting a transaction with 'implicit_transaction'");
-                        throw;
+                        quota->used(QuotaType::QUERY_INSERTS, 1);
                     }
+                    quota->used(QuotaType::QUERIES, 1);
+                    quota->checkExceeded(QuotaType::ERRORS);
                 }
+            }
 
-                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+            if (!interpreter->ignoreLimits())
+            {
+                limits.mode = LimitsMode::LIMITS_CURRENT;
+                limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+            }
 
-                const auto & query_settings = context->getSettingsRef();
-                if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+            if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
+            {
+                /// Save insertion table (not table function). TODO: support remote() table function.
+                auto table_id = insert_interpreter->getDatabaseTable();
+                if (!table_id.empty())
+                    context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+
+                if (insert_data_buffer_holder)
+                    insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
+            }
+
+            if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+
+            {
+                std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
-                    if (!interpreter->supportsTransactions())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
-
+                    auto * raw_interpreter_ptr = interpreter.get();
+                    String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                    span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
 
-                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
-                // We need to force to build it here to check if we need to ignore quota.
-                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
-                    interpreter_with_analyzer->getQueryPlan();
-
-                if (!interpreter->ignoreQuota() && !quota_checked)
-                {
-                    quota = context->getQuota();
-                    if (quota)
-                    {
-                        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-                        {
-                            quota->used(QuotaType::QUERY_SELECTS, 1);
-                        }
-                        else if (ast->as<ASTInsertQuery>())
-                        {
-                            quota->used(QuotaType::QUERY_INSERTS, 1);
-                        }
-                        quota->used(QuotaType::QUERIES, 1);
-                        quota->checkExceeded(QuotaType::ERRORS);
-                    }
-                }
-
-                if (!interpreter->ignoreLimits())
-                {
-                    limits.mode = LimitsMode::LIMITS_CURRENT;
-                    limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-                }
-
-                if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
-                {
-                    /// Save insertion table (not table function). TODO: support remote() table function.
-                    auto table_id = insert_interpreter->getDatabaseTable();
-                    if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
-
-                    if (insert_data_buffer_holder)
-                        insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
-                }
-
-                if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
-                    create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-
-                {
-                    std::unique_ptr<OpenTelemetry::SpanHolder> span;
-                    if (OpenTelemetry::CurrentContext().isTraceEnabled())
-                    {
-                        auto * raw_interpreter_ptr = interpreter.get();
-                        String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                        span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
-                    }
-
-                    res = interpreter->execute();
-
-                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
-                    /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings.enable_writes_to_query_cache && QueryCache::astIsEligibleForCaching(ast, context, settings))
-                    {
-                        QueryCache::Key key(
-                            ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
-                            context->getUserID(), context->getCurrentRoles(),
-                            settings.query_cache_share_between_users,
-                            std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
-                            settings.query_cache_compress_entries);
-
-                        const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
-                        if (num_query_runs <= settings.query_cache_min_query_runs)
-                        {
-                            LOG_TRACE(getLogger("QueryCache"),
-                                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                    num_query_runs, settings.query_cache_min_query_runs);
-                        }
-                        else
-                        {
-                            auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
-                                             key,
-                                             std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
-                                             settings.query_cache_squash_partial_results,
-                                             settings.max_block_size,
-                                             settings.query_cache_max_size_in_bytes,
-                                             settings.query_cache_max_entries));
-                            res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                        }
-                    }
-
-                }
+                res = interpreter->execute();
             }
         }
 
@@ -1288,8 +1218,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
                 if (query_pipeline.getQueryCacheUsage() == QueryCache::Usage::Write)
-                    /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
-                    /// partial/garbage results in case of exceptions during query execution.
+                    /// Trigger the actual write of the buffered query result into the query cache. This must be done explicitly to prevent
+                    /// that the query cache ends up having partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
 
                 logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, internal);

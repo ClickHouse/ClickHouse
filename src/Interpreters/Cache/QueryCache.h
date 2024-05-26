@@ -93,10 +93,15 @@ public:
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            const String & query_string_);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_,
+            const String & current_database,
+            const Settings & settings,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const String & query_string_);
 
         bool operator==(const Key & other) const;
     };

@@ -248,13 +248,6 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     return getSipHash128AsPair(hash);
 }
 
-String queryStringFromAST(ASTPtr ast)
-{
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
-    return buf.str();
-}
-
 }
 
 QueryCache::Key::Key(
@@ -265,7 +258,8 @@ QueryCache::Key::Key(
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
+    bool is_compressed_,
+    const String & query_string_)
     : ast_hash(calculateAstHash(ast_, current_database, settings))
     , header(header_)
     , user_id(user_id_)
@@ -273,12 +267,17 @@ QueryCache::Key::Key(
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
-    , query_string(queryStringFromAST(ast_))
+    , query_string(query_string_)
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
+QueryCache::Key::Key(
+    ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
+    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    const String & query_string_)
+    : QueryCache::Key(ast_, current_database, settings, /*dummy*/ {}, user_id_, current_user_roles_, /*dummy*/ false, /*dummy*/ std::chrono::system_clock::from_time_t(1), /*dummy*/ false, query_string_)
 {
 }
 
