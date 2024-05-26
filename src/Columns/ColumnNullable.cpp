@@ -1,4 +1,5 @@
 #include <Common/Arena.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -658,6 +659,33 @@ void ColumnNullable::updatePermutationWithCollation(const Collator & collator, I
                                             size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
     updatePermutationImpl(direction, stability, limit, null_direction_hint, res, equal_ranges, &collator);
+}
+
+
+size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool has_null = false;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t id = permutation[i];
+        if (isNullAt(id))
+        {
+            has_null = true;
+        }
+        else
+        {
+            StringRef ref = getDataAt(id);
+            elements.emplace(ref, inserted);
+        }
+    }
+    return elements.size() + (has_null ? 1 : 0);
 }
 
 void ColumnNullable::reserve(size_t n)
