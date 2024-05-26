@@ -31,6 +31,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+}
+
 namespace
 {
 
@@ -62,7 +68,6 @@ struct HasSystemTablesMatcher
 {
     struct Data
     {
-        const ContextPtr context;
         bool has_system_tables = false;
     };
 
@@ -111,16 +116,16 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
-    HasNonDeterministicFunctionsMatcher::Data finder_data{context};
-    HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
-    return finder_data.has_non_deterministic_functions;
+    HasNonDeterministicFunctionsMatcher::Data data{context};
+    HasNonDeterministicFunctionsVisitor(data).visit(ast);
+    return data.has_non_deterministic_functions;
 }
 
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+bool astContainsSystemTables(ASTPtr ast)
 {
-    HasSystemTablesMatcher::Data finder_data{context};
-    HasSystemTablesVisitor(finder_data).visit(ast);
-    return finder_data.has_system_tables;
+    HasSystemTablesMatcher::Data data;
+    HasSystemTablesVisitor(data).visit(ast);
+    return data.has_system_tables;
 }
 
 namespace
@@ -159,7 +164,34 @@ public:
     /// currently don't match.
 };
 
+}
+
 using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSettingsMatcher, true>;
+
+bool QueryCache::astIsEligibleForCaching(ASTPtr ast, ContextPtr context, const Settings & settings)
+{
+    const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context); /// e.g. rand(), now()
+    const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
+
+    if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
+        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                "The query result was not cached because the query contains a non-deterministic function."
+                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+    const bool ast_contains_system_tables = astContainsSystemTables(ast); /// e.g. `system.processes'
+    const QueryCacheSystemTableHandling system_table_handling = settings.query_cache_system_table_handling;
+
+    if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
+        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                 "The query result was not cached because the query contains a system table."
+                 " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+    return ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
+            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save));
+}
+
+namespace
+{
 
 /// Consider
 ///   (1) SET use_query_cache = true;

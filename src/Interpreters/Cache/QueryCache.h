@@ -16,12 +16,6 @@ namespace DB
 
 struct Settings;
 
-/// Does AST contain non-deterministic functions like rand() and now()?
-bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
-
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -39,6 +33,9 @@ public:
         Write,    /// query result written into query cache
         Read,     /// query result read from query cache
     };
+
+    /// Returns true if the query will have a deterministic result.
+    static bool astIsEligibleForCaching(ASTPtr ast, ContextPtr context, const Settings & settings);
 
     /// Represents a query result in the cache.
     struct Key
