@@ -1873,7 +1873,7 @@ GRPCServer::GRPCServer(
     const std::string & description_,
     IServer & iserver_,
     const Poco::Net::SocketAddress & address_to_listen_)
-    : IProtocolServer(listen_host_, port_name_, description_)
+    : IProtocolServer(address_to_listen_.port(), listen_host_, port_name_, description_)
     , iserver(iserver_)
     , address_to_listen(address_to_listen_)
     , log(getRawLogger("GRPCServer"))
@@ -1920,7 +1920,8 @@ void GRPCServer::start()
 
 void GRPCServer::stop()
 {
-    is_stopping = true;
+    IProtocolServer::stop();
+    
     /// Stop receiving new calls.
     runner->stop();
 }
@@ -1928,6 +1929,11 @@ void GRPCServer::stop()
 size_t GRPCServer::currentConnections() const
 {
     return runner->getNumCurrentCalls();
+}
+
+size_t GRPCServer::currentThreads() const
+{
+    return currentConnections();
 }
 
 }

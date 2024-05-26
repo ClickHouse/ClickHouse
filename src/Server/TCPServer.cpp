@@ -29,11 +29,25 @@ TCPServer::TCPServer(
     Poco::ThreadPool & thread_pool,
     Poco::Net::ServerSocket & socket_,
     Poco::Net::TCPServerParams::Ptr params)
-    : IProtocolServer(listen_host_, port_name_, description_)
+    : IProtocolServer(socket_.address().port(), port_name_, listen_host_, description_)
     , Poco::Net::TCPServer(new TCPServerConnectionFactoryImpl(*this, factory_), thread_pool, socket_, params)
     , factory(factory_)
     , socket(socket_)
-    , is_open(true)
-    , port_number(socket.address().port()) {}
+{}
+
+void TCPServer::stop()
+{
+    Poco::Net::TCPServer::stop();
+
+    // This notifies already established connections that they should stop serving
+    // queries and close their socket as soon as they can.
+    IProtocolServer::stop();
+    
+    // Poco's stop() stops listening on the socket but leaves it open.
+    // To be able to hand over control of the listening port to a new server, and
+    // to get fast connection refusal instead of timeouts, we also need to close
+    // the listening socket.
+    socket.close();
+}
 
 }

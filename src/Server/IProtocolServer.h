@@ -8,10 +8,16 @@ namespace DB
 class IProtocolServer
 {
 public:
-    IProtocolServer(const std::string & listen_host_, const std::string & port_name_, const std::string & description_)
-        : listen_host(listen_host_), port_name(port_name_), description(description_)
-    {
-    }
+    IProtocolServer(
+        UInt16 port_number_,
+        const std::string & port_name_,
+        const std::string & listen_host_,
+        const std::string & description_)
+        : port_number(port_number_)
+        , port_name(port_name_)
+        , listen_host(listen_host_)
+        , description(description_)
+    {}
 
     virtual ~IProtocolServer() = default;
 
@@ -19,12 +25,15 @@ public:
     virtual void start() = 0;
 
     /// Stops the server. No new connections will be accepted.
-    virtual void stop() = 0;
+    virtual void stop() { is_open = false; }
 
-    virtual bool isStopping() const = 0;
+    // Returns the state of the server
+    bool isOpen() const { return is_open; }
+    bool isStopping() const { return !is_open; }
 
     /// Returns the port this server is listening to.
-    virtual UInt16 portNumber() const = 0;
+    UInt16 portNumber() const { return port_number; }
+    const std::string & getPortName() const { return port_name; }
 
     /// Returns the number of current threads.
     virtual size_t currentThreads() const = 0;
@@ -32,14 +41,19 @@ public:
     /// Returns the number of currently handled connections.
     virtual size_t currentConnections() const = 0;
 
-    const std::string & getPortName() const { return port_name; }
+    // Returns server's listen host
     const std::string & getListenHost() const { return listen_host; }
+
+    // Returns server's description
     const std::string & getDescription() const { return description; }
 
 private:
-    std::string listen_host;
+    UInt16 port_number;
     std::string port_name;
+    std::string listen_host;
     std::string description;
+
+    std::atomic<bool> is_open = true;
 };
 
 using IProtocolServerPtr = std::unique_ptr<IProtocolServer>;

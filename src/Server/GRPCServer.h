@@ -36,13 +36,9 @@ public:
 
     void stop() override;
 
-    bool isStopping() const override { return is_stopping; }
-
-    UInt16 portNumber() const override { return address_to_listen.port(); }
+    size_t currentThreads() const override;
 
     size_t currentConnections() const override;
-
-    size_t currentThreads() const override { return currentConnections(); }
 
 private:
     using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
@@ -55,7 +51,6 @@ private:
     std::unique_ptr<grpc::Server> grpc_server;
     std::unique_ptr<grpc::ServerCompletionQueue> queue;
     std::unique_ptr<Runner> runner;
-    bool is_stopping = false;
 };
 }
 #endif
