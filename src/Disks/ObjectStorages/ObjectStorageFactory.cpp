@@ -9,7 +9,7 @@
 #endif
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
 #if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -139,7 +139,11 @@ namespace
 S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-    S3::URI uri(endpoint);
+    String endpoint_subpath;
+    if (config.has(config_prefix + ".endpoint_subpath"))
+        endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
+
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -179,7 +183,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings);
+        auto client = getClient(config, config_prefix, context, *settings, true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
@@ -215,7 +219,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings);
+        auto client = getClient(config, config_prefix, context, *settings, true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
@@ -249,7 +253,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto settings = getSettings(config, config_prefix, context);
-            auto client = getClient(config, config_prefix, context, *settings);
+            auto client = getClient(config, config_prefix, context, *settings, true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
             auto object_storage = std::make_shared<PlainRewritableObjectStorage<S3ObjectStorage>>(
@@ -283,10 +287,9 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-                config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
                 context->getSettingsRef().hdfs_replication);
 
-            return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config);
+            return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
         });
 }
 #endif
@@ -302,11 +305,13 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
         AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
+
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
+            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix,
+            endpoint.getEndpointWithoutContainer());
     };
     factory.registerObjectStorageType("azure_blob_storage", creator);
     factory.registerObjectStorageType("azure", creator);

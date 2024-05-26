@@ -5,6 +5,7 @@
 
 #include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -53,8 +54,13 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int FAULT_INJECTED;
 }
 
+namespace FailPoints
+{
+    extern const char stripe_log_sink_write_fallpoint[];
+}
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
@@ -234,6 +240,11 @@ public:
         /// Save the new indices.
         storage.saveIndices(lock);
 
+        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
+        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
+        });
         /// Save the new file sizes.
         storage.saveFileSizes(lock);
 

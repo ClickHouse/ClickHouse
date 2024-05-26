@@ -21,6 +21,8 @@ namespace ErrorCodes
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
 {
+    if (!column)
+        return {};
     if (!isColumnConst(*column))
         return {};
 
@@ -80,7 +82,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for DataTypeNullable");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
     }
     return col;
 }

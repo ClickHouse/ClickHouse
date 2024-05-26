@@ -267,7 +267,8 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
 
 void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * /*cache*/) const
 {
     settings.path.push_back(Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);

@@ -1296,7 +1296,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
             /// So we don't allow to do it for now.
-            if (command.data_type->hasDynamicSubcolumns())
+            if (command.data_type->hasDynamicSubcolumnsDeprecated())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
             if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
@@ -1374,8 +1374,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
-                bool old_type_has_object = old_data_type->hasDynamicSubcolumns();
+                bool new_type_has_object = command.data_type->hasDynamicSubcolumnsDeprecated();
+                bool old_type_has_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
                 if (new_type_has_object || old_type_has_object)
                     throw Exception(
