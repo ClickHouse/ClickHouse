@@ -8,7 +8,7 @@ Shows the content of the [query cache](../query-cache.md).
 Columns:
 
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
-- `result_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Size of the query cache entry.
+- `result_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Size of the query cache entry in bytes.
 - `stale` ([UInt8](../../sql-reference/data-types/int-uint.md)) — If the query cache entry is stale.
 - `shared` ([UInt8](../../sql-reference/data-types/int-uint.md)) — If the query cache entry is shared between multiple users.
 - `compressed` ([UInt8](../../sql-reference/data-types/int-uint.md)) — If the query cache entry is compressed.
