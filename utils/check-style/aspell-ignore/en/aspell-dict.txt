@@ -1172,6 +1172,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arraySymmetricDifference
 arrayUniq
 arrayWithConstant
 arrayZip
