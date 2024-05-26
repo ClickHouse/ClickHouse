@@ -20,7 +20,7 @@ select 1;
 insert into values_01564 values (11); -- { serverError 469 }
 select nonexistent column; -- { serverError 47 }
 -- query after values on the same line
-insert into values_01564 values (1); select 1;
+insert into values_01564 values (1);
 select 1;
 1
 -- a failing insert and then a normal insert (#https://github.com/ClickHouse/ClickHouse/issues/19353)
