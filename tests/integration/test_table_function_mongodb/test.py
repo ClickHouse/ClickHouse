@@ -277,14 +277,14 @@ def test_secure_connection_with_validation(started_cluster):
     node = started_cluster.instances["node"]
     with pytest.raises(QueryRuntimeException):
         node.query(
-        """SELECT COUNT() FROM mongodb('mongo_secure:27017',
+            """SELECT COUNT() FROM mongodb('mongo_secure:27017',
                    'test',
                    'simple_table',
                    'root',
                    'clickhouse',
                    structure='key UInt64, data String',
                    options='tls=true')"""
-    )
+        )
 
     simple_mongo_table.drop()
 
