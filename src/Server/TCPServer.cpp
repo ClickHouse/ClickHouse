@@ -1,4 +1,5 @@
 #include <Server/TCPServer.h>
+
 #include <Poco/Net/TCPServerConnectionFactory.h>
 
 namespace DB
@@ -8,9 +9,7 @@ class TCPServerConnectionFactoryImpl : public Poco::Net::TCPServerConnectionFact
 {
 public:
     TCPServerConnectionFactoryImpl(TCPServer & tcp_server_, DB::TCPServerConnectionFactory::Ptr factory_)
-        : tcp_server(tcp_server_), factory(factory_)
-    {
-    }
+        : tcp_server(tcp_server_), factory(factory_) {}
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
     {
@@ -35,8 +34,6 @@ TCPServer::TCPServer(
     , factory(factory_)
     , socket(socket_)
     , is_open(true)
-    , port_number(socket.address().port())
-{
-}
+    , port_number(socket.address().port()) {}
 
 }

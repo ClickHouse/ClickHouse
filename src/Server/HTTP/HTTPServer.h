@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Server/HTTP/HTTPContext.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
+#include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/HTTPServerParams.h>

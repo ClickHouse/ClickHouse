@@ -1,5 +1,5 @@
-#include <Server/IProtocolServer.h>
 #include <Server/waitServersToFinish.h>
+
 #include <base/sleep.h>
 
 namespace DB

@@ -2,6 +2,7 @@
 
 #include <Poco/Net/TCPServer.h>
 
+#include <base/types.h>
 #include <Server/IProtocolServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 

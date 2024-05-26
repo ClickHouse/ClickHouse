@@ -93,7 +93,6 @@
 #include <Core/ServerSettings.h>
 #include <filesystem>
 
-#include "Server/IProtocolServer.h"
 #include "config.h"
 #include <Common/config_version.h>
 
