@@ -50,7 +50,7 @@
 #    include <Server/CertificateReloader.h>
 #endif
 
-#include <Server/ProtocolServerAdapter.h>
+#include <Server/IProtocolServer.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
 #include <Disks/registerDisks.h>
@@ -386,7 +386,7 @@ try
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
-    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
+    auto servers = std::vector<IProtocolServerPtr>();
 
     auto shared_context = Context::createShared();
     auto global_context = Context::createGlobal(shared_context.get());
@@ -410,9 +410,9 @@ try
             std::vector<ProtocolServerMetrics> metrics;
 
             std::lock_guard lock(servers_lock);
-            metrics.reserve(servers->size());
-            for (const auto & server : *servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            metrics.reserve(servers.size());
+            for (const auto & server : servers)
+                metrics.emplace_back(ProtocolServerMetrics{server->getPortName(), server->currentThreads()});
             return metrics;
         }
     );
@@ -449,14 +449,16 @@ try
             auto address = socketBindListen(socket, listen_host, port);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "Keeper (tcp): " + address.toString(),
+            servers.emplace_back(
                 std::make_unique<TCPServer>(
+                    listen_host,
+                    port_name,
+                    "Keeper (tcp): " + address.toString(),
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, false),
+                    server_pool,
+                    socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -467,14 +469,16 @@ try
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-            servers->emplace_back(
-                listen_host,
-                secure_port_name,
-                "Keeper with secure protocol (tcp_secure): " + address.toString(),
+            servers.emplace_back(
                 std::make_unique<TCPServer>(
+                    listen_host,
+                    secure_port_name,
+                    "Keeper with secure protocol (tcp_secure): " + address.toString(),
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, true),
+                    server_pool,
+                    socket));
 #else
             UNUSED(port);
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -501,11 +505,11 @@ try
                 socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
                 socket.setSendTimeout(my_http_context->getSendTimeout());
                 auto metrics_writer = std::make_shared<KeeperPrometheusMetricsWriter>(config, "prometheus", async_metrics);
-                servers->emplace_back(
-                    listen_host,
-                    port_name,
-                    "Prometheus: http://" + address.toString(),
+                servers.emplace_back(
                     std::make_unique<HTTPServer>(
+                        listen_host,
+                        port_name,
+                        "Prometheus: http://" + address.toString(),
                         std::move(my_http_context),
                         createPrometheusMainHandlerFactory(*this, config_getter(), metrics_writer, "PrometheusHandler-factory"),
                         server_pool,
@@ -527,20 +531,23 @@ try
             auto address = socketBindListen(socket, listen_host, port);
             socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
             socket.setSendTimeout(my_http_context->getSendTimeout());
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "HTTP Control: http://" + address.toString(),
+            servers.emplace_back(
                 std::make_unique<HTTPServer>(
-                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
-                    );
+                    listen_host,
+                    port_name,
+                    "HTTP Control: http://" + address.toString(),
+                    std::move(my_http_context),
+                    createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
         });
     }
 
-    for (auto & server : *servers)
+    for (auto & server : servers)
     {
-        server.start();
-        LOG_INFO(log, "Listening for {}", server.getDescription());
+        server->start();
+        LOG_INFO(log, "Listening for {}", server->getDescription());
     }
 
     async_metrics.start();
@@ -587,10 +594,10 @@ try
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;
-        for (auto & server : *servers)
+        for (auto & server : servers)
         {
-            server.stop();
-            current_connections += server.currentConnections();
+            server->stop();
+            current_connections += server->currentConnections();
         }
 
         if (current_connections)
@@ -599,7 +606,7 @@ try
             LOG_INFO(log, "Closed all listening sockets.");
 
         if (current_connections > 0)
-            current_connections = waitServersToFinish(*servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+            current_connections = waitServersToFinish(servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
 
         if (current_connections)
             LOG_INFO(log, "Closed connections to Keeper. But {} remain. Probably some users cannot finish their connections after context shutdown.", current_connections);

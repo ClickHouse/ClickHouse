@@ -1,19 +1,14 @@
 #pragma once
 
-#include "Server/TCPServer.h"
 #include "config.h"
 
 #if USE_GRPC
 
+#include <Server/IProtocolServer.h>
 #include <base/types.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Common/Logger.h>
 #include "clickhouse_grpc.grpc.pb.h"
-
-namespace Poco
-{
-class Logger;
-}
 
 namespace grpc
 {
@@ -29,28 +24,24 @@ class GRPCServer : public IProtocolServer
 {
 public:
     GRPCServer(
-        IServer & iserver_,
         const std::string & listen_host_,
-        const char * port_name_,
+        const std::string & port_name_,
         const std::string & description_,
+        IServer & iserver_,
         const Poco::Net::SocketAddress & address_to_listen_);
+
     ~GRPCServer() override;
 
-    /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
     void start() override;
 
-    /// Stops the server. No new connections will be accepted.
     void stop() override;
-
-    /// Returns the port this server is listening to.
-    UInt16 portNumber() const override { return address_to_listen.port(); }
-
-    /// Returns the number of currently handled connections.
-    size_t currentConnections() const override;
 
     bool isStopping() const override { return is_stopping; }
 
-    /// Returns the number of current threads.
+    UInt16 portNumber() const override { return address_to_listen.port(); }
+
+    size_t currentConnections() const override;
+
     size_t currentThreads() const override { return currentConnections(); }
 
 private:

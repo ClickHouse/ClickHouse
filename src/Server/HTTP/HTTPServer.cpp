@@ -5,7 +5,11 @@
 
 namespace DB
 {
+
 HTTPServer::HTTPServer(
+    const std::string & listen_host_,
+    const std::string & port_name_,
+    const std::string & description_,
     HTTPContextPtr context,
     HTTPRequestHandlerFactoryPtr factory_,
     Poco::ThreadPool & thread_pool,
@@ -13,7 +17,15 @@ HTTPServer::HTTPServer(
     Poco::Net::HTTPServerParams::Ptr params,
     const ProfileEvents::Event & read_event,
     const ProfileEvents::Event & write_event)
-    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_, read_event, write_event), thread_pool, socket_, params), factory(factory_)
+    : TCPServer(
+          listen_host_,
+          port_name_,
+          description_,
+          new HTTPServerConnectionFactory(context, params, factory_, read_event, write_event),
+          thread_pool,
+          socket_,
+          params)
+    , factory(factory_)
 {
 }
 

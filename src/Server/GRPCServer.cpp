@@ -1867,17 +1867,17 @@ private:
 };
 
 
-GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_,
+GRPCServer::GRPCServer(
     const std::string & listen_host_,
-    const char * port_name_,
-    const std::string & description_,)
-    : iserver(iserver_)
+    const std::string & port_name_,
+    const std::string & description_,
+    IServer & iserver_,
+    const Poco::Net::SocketAddress & address_to_listen_)
+    : IProtocolServer(listen_host_, port_name_, description_)
+    , iserver(iserver_)
     , address_to_listen(address_to_listen_)
     , log(getRawLogger("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
-    , listen_host(listen_host_)
-    , port_name(port_name_)
-    , description(description_)
 {}
 
 GRPCServer::~GRPCServer()
