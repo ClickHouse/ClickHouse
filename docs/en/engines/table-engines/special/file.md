@@ -14,6 +14,10 @@ Usage scenarios:
 - Convert data from one format to another.
 - Updating data in ClickHouse via editing a file on a disk.
 
+:::note
+This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/docs/en/sql-reference/table-functions/s3.md).
+:::
+
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
 ``` sql

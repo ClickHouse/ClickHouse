@@ -73,7 +73,7 @@ Data can be passed to the INSERT in any [format](../../interfaces/formats.md#for
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
-For example, the following query format is identical to the basic version of INSERT … VALUES:
+For example, the following query format is identical to the basic version of INSERT ... VALUES:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...

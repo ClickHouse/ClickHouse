@@ -292,6 +292,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
     registerDataTypeVariant(*this);
+    registerDataTypeDynamic(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()
