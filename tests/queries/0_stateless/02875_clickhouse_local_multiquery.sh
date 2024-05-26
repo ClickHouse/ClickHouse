@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # throw exception
-$CLICKHOUSE_CLIENT -q "select 1; select 2;" 2>&1 | grep -o 'Multi-statements are not allowed'
-$CLICKHOUSE_LOCAL -q "select 1; select 2;" 2>&1 | grep -o 'Multi-statements are not allowed'
+$CLICKHOUSE_CLIENT -q "select 1; select 2;" 2>&1
+$CLICKHOUSE_LOCAL -q "select 1; select 2;" 2>&1
 # execute correctly
 $CLICKHOUSE_CLIENT -n -q "select 1; select 2;"
 $CLICKHOUSE_LOCAL -n -q "select 1; select 2;"
