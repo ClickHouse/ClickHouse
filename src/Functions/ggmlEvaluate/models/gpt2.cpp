@@ -1,8 +1,6 @@
 #include "gpt2.h"
 
 #include "Functions/ggmlEvaluate/IGgmlModel.h"
-#include "ggml/ggml-alloc.h"
-#include "ggml/ggml-backend.h"
 #include "ggml/ggml.h"
 
 #include <Common/Exception.h>
