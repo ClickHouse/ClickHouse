@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <stdexcept>
+#include <string>
 #include <sys/syscall.h>
 #include <base/types.h>
 #include <Columns/ColumnNullable.h>
@@ -415,14 +417,23 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be Array", getName());
         const auto & nested_vectors_data = typeid_cast<const ColumnFloat32 &>(vectors->getData());
 
+        const size_t dimension = vectors->getOffsets().front();
+        const size_t vector_count = vectors->getOffsets().size();
+
         const ColumnArray * normals = typeid_cast<const ColumnArray *>(arguments[1].column.get());
         if (!normals)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be Array", getName());
-        const auto & nested_normals_data = typeid_cast<const ColumnFloat32 &>(normals->getData());
-
-        const size_t dimension = vectors->getOffsets().front();
-        const size_t vector_count = vectors->getOffsets().size();
-        const size_t normal_count = normals->getOffsets().size();
+        size_t normal_count = normals->getOffsets().size();
+        const auto & nested_normals_data = [&] -> const DB::ColumnVector<Float32> &
+        {
+            if (normals->getData().getDataType() == TypeIndex::Array)
+            {
+                const auto & normals_data = typeid_cast<const ColumnArray &>(normals->getData());
+                normal_count = normals_data.getOffsets().size();
+                return typeid_cast<const ColumnFloat32 &>(normals_data.getData());
+            }
+            return typeid_cast<const ColumnFloat32 &>(normals->getData());
+        }();
 
         auto offsets = ColumnConst::create(ColumnFloat32::create(1, 0), normal_count);
         const IColumn * nested_offsets_data = offsets.get();
