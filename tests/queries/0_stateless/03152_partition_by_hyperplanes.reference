@@ -1,3 +1,4 @@
 01
 00
 03
+Code: 190. DB::Exception: Received from 127.0.0.1:9000. DB::Exception: All vectors must have equal size: In scope (SELECT partitionByHyperplanes([toFloat32(2.), toFloat32(3.)], [[toFloat32(1.), toFloat32(1.)], [toFloat32(1.)]])). (SIZES_OF_ARRAYS_DONT_MATCH)
