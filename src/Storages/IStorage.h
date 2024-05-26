@@ -99,7 +99,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 public:
     IStorage() = delete;
     /// Storage metadata can be set separately in setInMemoryMetadata method
-    explicit IStorage(StorageID storage_id_);
+    explicit IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_ = nullptr);
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
@@ -263,6 +263,9 @@ public:
 
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
+
+    /// Return true if storage has any projection.
+    virtual bool hasProjection() const { return false; }
 
     /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
     /// because those are internally translated into 'ALTER UDPATE' mutations.
