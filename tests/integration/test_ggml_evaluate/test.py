@@ -26,19 +26,6 @@ def ch_cluster():
         cluster.start()
 
         os.system(
-            "wget -O {gpt2_path} {gpt2_download_link}".format(
-                gpt2_path=os.path.join(SCRIPT_DIR, "model/gpt2.ggml"),
-                gpt2_download_link="https://huggingface.co/ggerganov/ggml/resolve/main/ggml-model-gpt-2-117M.bin?download=true",
-            )
-        )
-        if not pathlib.Path(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")).exists():
-            print(
-                "Path ",
-                str(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")),
-                " does not exist",
-            )
-            raise RuntimeError
-        os.system(
             "docker cp {local} {cont_id}:{dist}".format(
                 local=os.path.join(SCRIPT_DIR, "model/."),
                 cont_id=instance.docker_id,
@@ -55,18 +42,18 @@ def ch_cluster():
 # ---------------------------------------------------------------------------
 
 
-def testWalruses(ch_cluster):
+def testSuspicion(ch_cluster):
     result = instance.query(
-        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses');"
+        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'No one suspected him');"
     )
-    expected = "Did you know that walruses are actually mammals?\n"
+    expected = "No one suspected him until shortly after he\n"
 
     assert result == expected
 
 
 def testBasicArgumentTypes(ch_cluster):
     err = instance.query_and_get_error(
-        "SELECT ggmlEvaluate(123, map('n_predict', 4), 'Did you know that walruses');"
+        "SELECT ggmlEvaluate(123, map('n_predict', 4), 'No one suspected him');"
     )
 
     assert (
@@ -75,7 +62,7 @@ def testBasicArgumentTypes(ch_cluster):
     )
 
     err = instance.query_and_get_error(
-        "SELECT ggmlEvaluate('gpt2', 123, 'Did you know that walruses');"
+        "SELECT ggmlEvaluate('gpt2', 123, 'No one suspected him');"
     )
 
     assert (
@@ -98,7 +85,7 @@ def testFirstArgumentIsConstString(ch_cluster):
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
 
     err = instance.query_and_get_error(
-        "SELECT ggmlEvaluate(a, map('n_predict', 4), 'Did you know that walruses') FROM T;"
+        "SELECT ggmlEvaluate(a, map('n_predict', 4), 'No one suspected him') FROM T;"
     )
 
     assert "First argument of function ggmlEvaluate must be a constant string" in err
@@ -116,7 +103,7 @@ def testArgumentCount(ch_cluster):
     assert "Function ggmlEvaluate expects exactly 3 arguments. Got 2" in err
 
     err = instance.query_and_get_error(
-        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'Did you know that walruses', ' are actually mammals');"
+        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'No one suspected him', ' of anything');"
     )
 
     assert "Function ggmlEvaluate expects exactly 3 arguments. Got 4" in err
@@ -126,13 +113,13 @@ def testMultipleRows(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
     _ = instance.query(
-        "INSERT INTO T (a) VALUES ('Did you know that walruses'), ('No one suspected him')"
+        "INSERT INTO T (a) VALUES ('Actually, proactive'), ('No one suspected him')"
     )
 
     result = instance.query(
-        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), a) from T;"
+        "SELECT ggmlEvaluate('gpt2', map('n_predict', 3), a) from T;"
     )
-    expected = "Did you know that walruses are actually mammals?\nNo one suspected him of anything except that\n"
+    expected = "Actually, proactive data editing choice\nNo one suspected him until shortly after\n"
     assert result == expected
 
 
@@ -140,11 +127,11 @@ def testTwoConsecutiveEvals(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
     _ = instance.query(
-        "INSERT INTO T (a) VALUES ('Did you know that walruses'), ('No one suspected him')"
+        "INSERT INTO T (a) VALUES ('From the deepest'), ('No one suspected him')"
     )
 
     result = instance.query(
-        "SELECT ggmlEvaluate('gpt2', map('n_predict', 8), ggmlEvaluate('gpt2', map('n_predict', 4), a)) from T;"
+        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), ggmlEvaluate('gpt2', map('n_predict', 4), a)) from T;"
     )
-    expected = "Did you know that walruses are actually mammals? I don\\'t know that they\\'re living\nNo one suspected him of anything except that he was one of the most talented athletes\n"
+    expected = "From the deepest data base architecture thinges until Barclay\nNo one suspected him until shortly after he descended Everest base station\n"
     assert result == expected
