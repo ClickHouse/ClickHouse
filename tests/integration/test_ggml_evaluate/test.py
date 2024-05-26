@@ -32,7 +32,11 @@ def ch_cluster():
             )
         )
         if not pathlib.Path(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")).exists():
-            print("Path ", str(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")), " does not exist")
+            print(
+                "Path ",
+                str(os.path.join(SCRIPT_DIR, "model/gpt2.ggml")),
+                " does not exist"
+            )
             raise RuntimeError
         os.system(
             "docker cp {local} {cont_id}:{dist}".format(
