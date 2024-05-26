@@ -21,8 +21,6 @@ namespace ErrorCodes
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
 {
-    if (!column)
-        return {};
     if (!isColumnConst(*column))
         return {};
 
