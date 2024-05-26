@@ -136,7 +136,7 @@ jobs:
 
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Builds_1, Builds_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Debug
