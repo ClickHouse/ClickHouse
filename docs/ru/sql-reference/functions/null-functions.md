@@ -1,5 +1,5 @@
 ---
-slug: /ru/sql-reference/functions/functions-for-nulls
+slug: /ru/sql-reference/functions/null-functions
 sidebar_position: 63
 sidebar_label: "Функции для работы с Nullable-аргументами"
 ---

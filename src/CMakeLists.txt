@@ -115,8 +115,11 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
-add_headers_and_sources(dbms Storages/DataLakes)
-add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage)
+add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
+add_headers_and_sources(dbms Storages/ObjectStorage/S3)
+add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -144,7 +147,6 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 if (TARGET ch_contrib::hdfs)
-    add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
@@ -307,7 +309,6 @@ endif()
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
-            string_utils
             widechar_width
             ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
@@ -320,7 +321,6 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (clickhouse_compression
         PUBLIC
-            string_utils
             pcg_random
             clickhouse_parsers
         PRIVATE
@@ -410,7 +410,6 @@ dbms_target_link_libraries (
         clickhouse_parsers
         ch_contrib::lz4
         Poco::JSON
-        string_utils
     PUBLIC
         boost::system
         clickhouse_common_io
@@ -645,7 +644,6 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        string_utils
         hilite_comparator)
 
     if (TARGET ch_contrib::simdjson)

@@ -1,5 +1,5 @@
 ---
-slug: /zh/sql-reference/functions/functions-for-nulls
+slug: /zh/sql-reference/functions/null-functions
 ---
 # Nullable处理函数 {#nullablechu-li-han-shu}
 

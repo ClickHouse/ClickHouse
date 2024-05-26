@@ -176,7 +176,7 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
 }
@@ -192,9 +192,10 @@ void CachedObjectStorage::shutdown()
 }
 
 void CachedObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    ContextPtr context, const ApplyNewSettingsOptions & options)
 {
-    object_storage->applyNewSettings(config, config_prefix, context);
+    object_storage->applyNewSettings(config, config_prefix, context, options);
 }
 
 String CachedObjectStorage::getObjectsNamespace() const

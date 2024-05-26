@@ -263,7 +263,7 @@ void Client::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration);
     }
     else if (config().has("connection"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exists");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -1178,7 +1178,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    setDefaultFormatsFromConfiguration();
+    setDefaultFormatsAndCompressionFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();
