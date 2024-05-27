@@ -153,27 +153,24 @@ void ApplySquashing::append(std::vector<Chunk> & input_chunks)
     for (const Chunk & chunk : input_chunks)
         rows += chunk.getNumRows();
 
-    for (auto & input_chunk : input_chunks)
     {
-        Columns columns = input_chunk.detachColumns();
-        if (mutable_columns.empty())
+        auto & first_chunk = input_chunks[0];
+        Columns columns = first_chunk.detachColumns();
+        for (size_t i = 0; i < columns.size(); ++i)
         {
-            for (size_t i = 0; i < columns.size(); ++i)
-            {
-                if (columns[i]->isNullable())
-                    mutable_columns.push_back(IColumn::mutate(columns[i]));
-                else
-                    mutable_columns.push_back(columns[i]->assumeMutable());
-                mutable_columns[i]->reserve(rows);
-            }
-            continue;
+            mutable_columns.push_back(IColumn::mutate(std::move(columns[i])));
+            mutable_columns[i]->reserve(rows);
         }
+    }
 
-        for (size_t i = 0, size = mutable_columns.size(); i < size; ++i)
+    for (size_t i = 1; i < input_chunks.size(); ++i) // We've already processed the first chunk above
+    {
+        Columns columns = input_chunks[i].detachColumns();
+        for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
         {
-            const auto source_column = columns[i];
+            const auto source_column = columns[j];
 
-            mutable_columns[i]->insertRangeFrom(*source_column, 0, source_column->size());
+            mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
         }
     }
     accumulated_chunk.setColumns(std::move(mutable_columns), rows);
