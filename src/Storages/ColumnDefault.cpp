@@ -63,7 +63,6 @@ ColumnDefault & ColumnDefault::operator=(const ColumnDefault & other)
 
     kind = other.kind;
     expression = other.expression ? other.expression->clone() : nullptr;
-    ephemeral_default = other.ephemeral_default;
 
     return *this;
 }
@@ -76,7 +75,6 @@ ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept
     kind = std::exchange(other.kind, ColumnDefaultKind{});
     expression = other.expression ? other.expression->clone() : nullptr;
     other.expression.reset();
-    ephemeral_default = std::exchange(other.ephemeral_default, false);
 
     return *this;
 }
