@@ -267,7 +267,8 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
 
 void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * /*cache*/) const
 {
     settings.path.push_back(Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
@@ -477,7 +478,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             settings.low_cardinality_max_dictionary_size);
     }
 
-    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
+    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(&*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();

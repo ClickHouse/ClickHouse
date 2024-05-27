@@ -112,23 +112,32 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
     return metadata_storage->getFileSize(path);
 }
 
+void DiskObjectStorage::moveDirectory(const String & from_path, const String & to_path)
+{
+    if (send_metadata)
+        sendMoveMetadata(from_path, to_path);
+
+    auto transaction = createObjectStorageTransaction();
+    transaction->moveDirectory(from_path, to_path);
+    transaction->commit();
+}
+
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
 
     if (should_send_metadata)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter += 1;
-
-        const ObjectAttributes object_metadata {
-            {"from_path", from_path},
-            {"to_path", to_path}
-        };
-        metadata_helper->createFileOperationObject("rename", revision, object_metadata);
-    }
+        sendMoveMetadata(from_path, to_path);
 
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
+    transaction->commit();
+}
+
+void DiskObjectStorage::truncateFile(const String & path, size_t size)
+{
+    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    auto transaction = createObjectStorageTransaction();
+    transaction->truncateFile(path, size);
     transaction->commit();
 }
 
@@ -409,6 +418,15 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
 
     return false;
 }
+void DiskObjectStorage::sendMoveMetadata(const String & from_path, const String & to_path)
+{
+    chassert(send_metadata);
+    auto revision = metadata_helper->revision_counter + 1;
+    metadata_helper->revision_counter += 1;
+
+    const ObjectAttributes object_metadata{{"from_path", from_path}, {"to_path", to_path}};
+    metadata_helper->createFileOperationObject("rename", revision, object_metadata);
+}
 
 bool DiskObjectStorage::supportsCache() const
 {
@@ -423,6 +441,11 @@ bool DiskObjectStorage::isReadOnly() const
 bool DiskObjectStorage::isWriteOnce() const
 {
     return object_storage->isWriteOnce();
+}
+
+bool DiskObjectStorage::supportsHardLinks() const
+{
+    return !isWriteOnce() && !object_storage->isPlain();
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
@@ -521,7 +544,7 @@ void DiskObjectStorage::applyNewSettings(
 {
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
     const auto config_prefix = "storage_configuration.disks." + name;
-    object_storage->applyNewSettings(config, config_prefix, context_);
+    object_storage->applyNewSettings(config, config_prefix, context_, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
 
     {
         std::unique_lock lock(resource_mutex);

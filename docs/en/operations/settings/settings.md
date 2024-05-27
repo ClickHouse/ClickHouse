@@ -7,6 +7,8 @@ toc_max_heading_level: 2
 
 # Core Settings
 
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
 ## additional_table_filters
 
 An additional filter expression that is applied after reading
@@ -1923,7 +1925,9 @@ Default value: `16`.
 
 ### wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` as soon it has received the data, but it might still fail to parse or insert it later (You can check in system.asynchronous_insert_log)
+
+If you want to use asynchronous inserts, we need to also enable [`async_insert`](#async-insert).
 
 Possible values:
 
@@ -2244,7 +2248,7 @@ Default value: 0.
 
 ## count_distinct_implementation {#count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
 Possible values:
 
@@ -3661,6 +3665,26 @@ Possible values:
 
 Default value: `0`.
 
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## s3_validate_request_settings {#s3_validate_request_settings}
+
+Enables s3 request settings validation.
+
+Possible values:
+- 1 — validate settings.
+- 0 — do not validate settings.
+
+Default value: `1`.
+
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3686,6 +3710,56 @@ Default value: `0`.
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_skip_empty_files {#azure_skip_empty_files}
+
+Enables or disables skipping empty files in S3 engine.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
@@ -3930,19 +4004,6 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 :::note
 Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-Cloud default value: `1`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
@@ -4383,17 +4444,6 @@ Possible values:
 - `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
-
-## first_day_of_week
-
-The first day of the week assumed by [`toStartOfInterval`](../../sql-reference/functions/date-time-functions.md#toStartOfInterval) function when using weeks as unit.
-
-Possible values:
-
-- Monday - Week starts on Monday
-- Sunday - Week starts on Sunday
-
-Default value: 'Monday'.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -5488,3 +5538,15 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+
+## cross_join_min_rows_to_compress
+
+Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `10000000`.
+
+## cross_join_min_bytes_to_compress
+
+Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `1GiB`.

@@ -200,7 +200,7 @@ public:
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for zero count");
         }
         readBinary(zero_count, buf);
-        count = static_cast<Float64>(negative_store->count + zero_count + store->count);
+        count = negative_store->count + zero_count + store->count;
     }
 
     /// NOLINTEND(readability-static-accessed-through-instance)

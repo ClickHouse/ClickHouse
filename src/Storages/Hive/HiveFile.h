@@ -14,7 +14,7 @@
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Hive/HiveSettings.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
@@ -35,7 +35,7 @@ public:
     using MinMaxIndex = IMergeTreeDataPart::MinMaxIndex;
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
-    enum class FileFormat
+    enum class FileFormat : uint8_t
     {
         RC_FILE,
         TEXT,

@@ -1185,8 +1185,7 @@ bool KeyCondition::tryPrepareSetIndex(
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            if (out_key_column_num < index_mapping.key_index)
-                out_key_column_num = index_mapping.key_index;
+            out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
         }
     };
 
@@ -1945,7 +1944,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     /// Build and optimize it simultaneously.
     struct Node
     {
-        enum class Type
+        enum class Type : uint8_t
         {
             /// Leaf, which is RPNElement.
             Leaf,
@@ -2250,9 +2249,11 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
         return callback(hyperrectangle);
     }
@@ -2262,13 +2263,15 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             hyperrectangle[i] = Range::createWholeUniverse();
         else
             hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
@@ -2324,7 +2327,7 @@ BoolMask KeyCondition::checkInRange(
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             key_ranges.push_back(Range::createWholeUniverse());
         else
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
@@ -2661,6 +2664,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
+            if (element.key_column >= hyperrectangle.size())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Hyperrectangle size is {}, but requested element at posittion {} ({})",
+                                hyperrectangle.size(), element.key_column, element.toString());
+            }
+
             const Range * key_range = &hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
@@ -2860,9 +2870,9 @@ bool KeyCondition::mayBeTrueInRange(
 String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
-        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), true);
     else
-        return toString(fmt::format("column {}", key_column), false);
+        return toString(fmt::format("column {}", key_column), true);
 }
 
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const

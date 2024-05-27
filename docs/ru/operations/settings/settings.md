@@ -1859,7 +1859,7 @@ SELECT * FROM test_table
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
+Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
 
 Возможные значения:
 
@@ -3446,17 +3446,6 @@ SELECT
     (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Позволяет создавать базы данных с движком [Replicated](../../engines/database-engines/replicated.md).
-
-Возможные значения:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Значение по умолчанию: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
