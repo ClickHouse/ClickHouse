@@ -495,7 +495,7 @@ void executeQueryWithParallelReplicas(
             query_ast,
             new_cluster,
             storage_id,
-            std::move(coordinator),
+            coordinator,
             header,
             processed_stage,
             new_context,

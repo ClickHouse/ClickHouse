@@ -119,7 +119,15 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading);
+        bool enable_parallel_reading_,
+        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt);
+
+    std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
+        const ReadFromMergeTree * analyzed_merge_tree,
+        bool enable_parallel_reading_,
+        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -282,6 +290,8 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
+
+    friend class ReadFromMergeTreeCoordinated;
 };
 
 }
