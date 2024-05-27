@@ -1317,23 +1317,24 @@ toStartOfMillisecond(value, [timezone])
 Query without timezone:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999999', 3) AS dt64
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMillisecond(dt64);
 ```
 
 Result:
 
 ``` text
-┌─toStartOfMillisecond(dt64)─┐
-│    2020-01-01 10:20:30.999 │
-└────────────────────────────┘
+┌────toStartOfMillisecond(dt64)─┐
+│ 2020-01-01 10:20:30.999000000 │
+└───────────────────────────────┘
 ```
 
 Query with timezone:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999999', 3) AS dt64
-SELECT toStartOfMilliSecond(dt64, 'Asia/Istanbul');
+┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
+│               2020-01-01 12:20:30.999000000 │
+└─────────────────────────────────────────────┘
 ```
 
 Result:
@@ -1344,13 +1345,9 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-**See also**
-
-- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
-
 ## toStartOfMicrosecond
 
-Rounds down a date with time to the start of the milliseconds.
+Rounds down a date with time to the start of the microseconds.
 
 **Syntax**
 
@@ -1372,22 +1369,22 @@ toStartOfMicrosecond(value, [timezone])
 Query without timezone:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999999', 3) AS dt64
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMicrosecond(dt64);
 ```
 
 Result:
 
 ``` text
-┌─toStartOfMicrosecond(dt64)─┐
-│ 2020-01-01 10:20:30.999000 │
-└────────────────────────────┘
+┌────toStartOfMicrosecond(dt64)─┐
+│ 2020-01-01 10:20:30.999999000 │
+└───────────────────────────────┘
 ```
 
 Query with timezone:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999999', 3) AS dt64
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
 ```
 
@@ -1395,8 +1392,63 @@ Result:
 
 ``` text
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│                  2020-01-01 12:20:30.999000 │
+│               2020-01-01 12:20:30.999999000 │
 └─────────────────────────────────────────────┘
+```
+
+**See also**
+
+- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+
+## toStartOfNanosecond
+
+Rounds down a date with time to the start of the nanoseconds.
+
+**Syntax**
+
+``` sql
+toStartOfNanosecond(value, [timezone])
+```
+
+**Arguments**
+
+- `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Input value with nanoseconds. [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Examples**
+
+Query without timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfNanosecond(dt64);
+```
+
+Result:
+
+``` text
+┌─────toStartOfNanosecond(dt64)─┐
+│ 2020-01-01 10:20:30.999999999 │
+└───────────────────────────────┘
+```
+
+Query with timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
+```
+
+Result:
+
+``` text
+┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
+│              2020-01-01 12:20:30.999999999 │
+└────────────────────────────────────────────┘
 ```
 
 **See also**
