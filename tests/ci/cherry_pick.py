@@ -245,6 +245,10 @@ close it.
         )
         self.cherrypick_pr.add_to_labels(Labels.PR_CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
+        if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
+            self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
+        elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
+            self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
         self.cherrypick_pr.update()
@@ -280,6 +284,10 @@ close it.
             head=self.backport_branch,
         )
         self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
+        if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
+            self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
+        elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
+            self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.backport_pr)
 
     def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
