@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <variant>
 #include <optional>
 #include <deque>
@@ -36,46 +37,12 @@ class ExpressionActions;
 
 namespace JoinStuff
 {
-
 /// Flags needed to implement RIGHT and FULL JOINs.
-class JoinUsedFlags
-{
-    using RawBlockPtr = const Block *;
-    using UsedFlagsForBlock = std::vector<std::atomic_bool>;
-
-    /// For multiple dijuncts each empty in hashmap stores flags for particular block
-    /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
-    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
-
-    bool need_flags;
-
-public:
-    /// Update size for vector with flags.
-    /// Calling this method invalidates existing flags.
-    /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
-    void reinit(size_t size_);
-
-    template <JoinKind KIND, JoinStrictness STRICTNESS>
-    void reinit(const Block * block_ptr);
-
-    bool getUsedSafe(size_t i) const;
-    bool getUsedSafe(const Block * block_ptr, size_t row_idx) const;
-
-    template <bool use_flags, bool flag_per_row, typename T>
-    void setUsed(const T & f);
-
-    template <bool use_flags, bool flag_per_row>
-    void setUsed(const Block * block, size_t row_num, size_t offset);
-
-    template <bool use_flags, bool flag_per_row, typename T>
-    bool getUsed(const T & f);
-
-    template <bool use_flags, bool flag_per_row, typename T>
-    bool setUsedOnce(const T & f);
-};
-
+class JoinUsedFlags;
 }
+
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
+class HashJoinMethods;
 
 /** Data structure for implementation of JOIN.
   * It is just a hash table: keys -> rows of joined ("right") table.
@@ -400,8 +367,8 @@ public:
 
     const Block & savedBlockSample() const { return data->sample_block; }
 
-    bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
-    bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
+    bool isUsed(size_t off) const;
+    bool isUsed(const Block * block_ptr, size_t row_idx) const;
 
     void debugKeys() const;
 
@@ -413,6 +380,9 @@ private:
     friend class NotJoinedHash;
 
     friend class JoinSource;
+
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
+    friend class HashJoinMethods;
 
     std::shared_ptr<TableJoin> table_join;
     const JoinKind kind;
@@ -433,8 +403,7 @@ private:
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
-    mutable JoinStuff::JoinUsedFlags used_flags;
-
+    mutable std::unique_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
 
@@ -475,13 +444,6 @@ private:
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
-
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Block joinBlockImpl(
-        Block & block,
-        const Block & block_with_columns_to_add,
-        const std::vector<const Maps *> & maps_,
-        bool is_join_get = false) const;
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
