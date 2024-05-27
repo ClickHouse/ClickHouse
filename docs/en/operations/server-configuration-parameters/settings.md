@@ -561,25 +561,6 @@ Default value: 5000
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
-## max\_view\_num\_to\_warn {#max-view-num-to-warn}
-If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 10000
-
-**Example**
-
-``` xml
-<max_view_num_to_warn>400</max_view_num_to_warn>
-```
-
-## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
-If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 1000
-
-**Example**
-
-``` xml
-<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
-```
 
 ## max\_part\_num\_to\_warn {#max-part-num-to-warn}
 If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
@@ -1208,7 +1189,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 
 ## include_from {#include_from}
 
-The path to the file with substitutions. Both XML and YAML formats are supported.
+The path to the file with substitutions.
 
 For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
@@ -2879,7 +2860,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 

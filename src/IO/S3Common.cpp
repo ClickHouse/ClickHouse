@@ -1,7 +1,7 @@
 #include <IO/S3Common.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"

@@ -994,8 +994,7 @@ private:
 
 void ReadFromHDFS::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1102,10 +1101,6 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
 
     if (is_partitioned_implementation)
     {
-        String path = current_uri.substr(current_uri.find('/', current_uri.find("//") + 2));
-        if (PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
-
         return std::make_shared<PartitionedHDFSSink>(
             partition_by_ast,
             current_uri,

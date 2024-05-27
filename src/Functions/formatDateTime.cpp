@@ -43,13 +43,13 @@ namespace
 {
 using Pos = const char *;
 
-enum class SupportInteger : uint8_t
+enum class SupportInteger
 {
     Yes,
     No
 };
 
-enum class FormatSyntax : uint8_t
+enum class FormatSyntax
 {
     MySQL,
     Joda
@@ -552,12 +552,12 @@ private:
 
         static size_t jodaEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            Int32 year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
+            auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             String res;
             if (min_represent_digits <= 3)
-                res = year > 0 ? "AD" : "BC";
+                res = static_cast<Int32>(year) > 0 ? "AD" : "BC";
             else
-                res = year > 0 ? "Anno Domini" : "Before Christ";
+                res = static_cast<Int32>(year) > 0 ? "Anno Domini" : "Before Christ";
 
             memcpy(dest, res.data(), res.size());
             return res.size();
@@ -689,7 +689,8 @@ private:
 
         static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
-            min_represent_digits = std::min<size_t>(min_represent_digits, 9);
+            if (min_represent_digits > 9)
+                min_represent_digits = 9;
             if (fractional_second == 0)
             {
                 for (UInt64 i = 0; i < min_represent_digits; ++i)

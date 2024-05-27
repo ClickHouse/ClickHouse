@@ -32,23 +32,15 @@ ColumnGathererStream::ColumnGathererStream(
 
 void ColumnGathererStream::initialize(Inputs inputs)
 {
-    Columns source_columns;
-    source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         if (inputs[i].chunk)
         {
             sources[i].update(inputs[i].chunk.detachColumns().at(0));
-            source_columns.push_back(sources[i].column);
+            if (!result_column)
+                result_column = sources[i].column->cloneEmpty();
         }
     }
-
-    if (source_columns.empty())
-        return;
-
-    result_column = source_columns[0]->cloneEmpty();
-    if (result_column->hasDynamicStructure())
-        result_column->takeDynamicStructureFromSourceColumns(source_columns);
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -60,19 +52,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
     if (source_to_fully_copy) /// Was set on a previous iteration
     {
         Chunk res;
-        /// For columns with Dynamic structure we cannot just take column source_to_fully_copy because resulting column may have
-        /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
-        /// We should insert into data resulting column using insertRangeFrom.
-        if (result_column->hasDynamicStructure())
-        {
-            auto col = result_column->cloneEmpty();
-            col->insertRangeFrom(*source_to_fully_copy->column, 0, source_to_fully_copy->column->size());
-            res.addColumn(std::move(col));
-        }
-        else
-        {
-            res.addColumn(source_to_fully_copy->column);
-        }
+        res.addColumn(source_to_fully_copy->column);
         merged_rows += source_to_fully_copy->size;
         source_to_fully_copy->pos = source_to_fully_copy->size;
         source_to_fully_copy = nullptr;
@@ -116,16 +96,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         Chunk res;
         merged_rows += source_to_fully_copy->column->size();
         merged_bytes += source_to_fully_copy->column->allocatedBytes();
-        if (result_column->hasDynamicStructure())
-        {
-            auto col = result_column->cloneEmpty();
-            col->insertRangeFrom(*source_to_fully_copy->column, 0, source_to_fully_copy->column->size());
-            res.addColumn(std::move(col));
-        }
-        else
-        {
-            res.addColumn(source_to_fully_copy->column);
-        }
+        res.addColumn(source_to_fully_copy->column);
         source_to_fully_copy->pos = source_to_fully_copy->size;
         source_to_fully_copy = nullptr;
         return Status(std::move(res));

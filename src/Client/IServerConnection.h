@@ -68,7 +68,7 @@ class IServerConnection : boost::noncopyable
 public:
     virtual ~IServerConnection() = default;
 
-    enum class Type : uint8_t
+    enum class Type
     {
         SERVER,
         LOCAL

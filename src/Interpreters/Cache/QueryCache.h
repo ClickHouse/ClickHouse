@@ -30,7 +30,7 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage : uint8_t
+    enum class Usage
     {
         Unknown,  /// we don't know what what happened
         None,     /// query result neither written nor read into/from query cache
@@ -145,7 +145,7 @@ public:
 
         Writer(const Writer & other);
 
-        enum class ChunkType : uint8_t {Result, Totals, Extremes};
+        enum class ChunkType {Result, Totals, Extremes};
         void buffer(Chunk && chunk, ChunkType chunk_type);
 
         void finalizeWrite();

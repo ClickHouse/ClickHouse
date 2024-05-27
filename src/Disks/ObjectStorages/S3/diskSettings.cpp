@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
 #include <Common/ProxyConfigurationResolverProvider.h>

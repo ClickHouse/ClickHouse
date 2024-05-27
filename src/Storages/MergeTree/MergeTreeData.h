@@ -434,7 +434,6 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsLightweightDelete() const override;
@@ -736,8 +735,6 @@ public:
     void changeSettings(
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
-
-    static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts

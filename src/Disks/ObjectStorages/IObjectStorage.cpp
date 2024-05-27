@@ -84,12 +84,16 @@ const std::string & IObjectStorage::getCacheName() const
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return read_settings;
+    ReadSettings settings{read_settings};
+    settings.for_object_storage = true;
+    return settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    return write_settings;
+    WriteSettings settings{write_settings};
+    settings.for_object_storage = true;
+    return settings;
 }
 
 }

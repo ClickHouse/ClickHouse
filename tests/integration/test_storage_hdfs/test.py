@@ -895,7 +895,7 @@ def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
 
     assert (
         node1.query(
-            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/unskip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
+            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
         )
         == data
     )
@@ -1114,16 +1114,6 @@ def test_format_detection(started_cluster):
     )
 
     assert expected_result == result
-
-
-def test_write_to_globbed_partitioned_path(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    error = node.query_and_get_error(
-        "insert into function hdfs('hdfs://hdfs1:9000/test_data_*_{_partition_id}.csv') partition by 42 select 42"
-    )
-
-    assert "DATABASE_ACCESS_DENIED" in error
 
 
 def test_respect_object_existence_on_partitioned_write(started_cluster):

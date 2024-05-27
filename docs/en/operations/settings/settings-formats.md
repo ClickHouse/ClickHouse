@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 
@@ -831,13 +831,7 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
-
-Disabled by default.
-
-### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
-
-Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
+Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
 
 Disabled by default.
 

@@ -33,15 +33,15 @@ public:
 
         bool update(const ContextPtr & context);
 
+        void connect(const ContextPtr & context);
+
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
-        bool withPartitionWildcard() const
+        bool withWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
-
-        bool withGlobsIgnorePartitionWildcard() const;
 
         Poco::URI getConnectionURL() const;
 
@@ -97,8 +97,6 @@ public:
     bool supportsPartitionBy() const override;
 
     bool supportsSubcolumns() const override { return true; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 

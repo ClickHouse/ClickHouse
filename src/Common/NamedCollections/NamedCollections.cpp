@@ -100,7 +100,7 @@ void NamedCollectionFactory::add(
     MutableNamedCollectionPtr collection)
 {
     std::lock_guard lock(mutex);
-    addUnlocked(collection_name, collection, lock);
+    return addUnlocked(collection_name, collection, lock);
 }
 
 void NamedCollectionFactory::add(NamedCollectionsMap collections)
@@ -141,7 +141,7 @@ void NamedCollectionFactory::remove(const std::string & collection_name)
 void NamedCollectionFactory::removeIfExists(const std::string & collection_name)
 {
     std::lock_guard lock(mutex);
-    removeIfExistsUnlocked(collection_name, lock); // NOLINT
+    removeIfExistsUnlocked(collection_name, lock);
 }
 
 bool NamedCollectionFactory::removeIfExistsUnlocked(

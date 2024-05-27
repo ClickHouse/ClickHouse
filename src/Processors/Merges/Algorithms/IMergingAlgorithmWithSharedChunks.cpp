@@ -5,7 +5,7 @@ namespace DB
 {
 
 IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
-    Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_)
+    Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs)
     : header(std::move(header_))
     , description(std::move(description_))
     , chunk_allocator(num_inputs + max_row_refs)
@@ -13,7 +13,6 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
     , sources(num_inputs)
     , sources_origin_merge_tree_part_level(num_inputs)
     , out_row_sources_buf(out_row_sources_buf_)
-    , merged_data(std::move(merged_data_))
 {
 }
 
@@ -29,8 +28,6 @@ static void prepareChunk(Chunk & chunk)
 
 void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 {
-    merged_data->initialize(header, inputs);
-
     for (size_t source_num = 0; source_num < inputs.size(); ++source_num)
     {
         if (!inputs[source_num].chunk)

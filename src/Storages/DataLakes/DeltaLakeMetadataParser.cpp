@@ -17,7 +17,6 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <parquet/arrow/reader.h>
 #include <ranges>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 

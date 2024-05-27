@@ -206,25 +206,14 @@ public:
         while (true)
         {
             if (!queue.empty())
-            {
-                processQueue(std::move(lock));
-                return;
-            }
-            else if (postponed.empty())
-            {
+                return processQueue(std::move(lock));
+            if (postponed.empty())
                 wait(lock);
-            }
             else
             {
                 if (postponed.front().key <= now())
-                {
-                    processPostponed(std::move(lock));
-                    return;
-                }
-                else
-                {
-                    waitUntil(lock, postponed.front().key);
-                }
+                    return processPostponed(std::move(lock));
+                waitUntil(lock, postponed.front().key);
             }
         }
     }

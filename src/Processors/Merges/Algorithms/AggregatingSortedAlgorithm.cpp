@@ -70,6 +70,25 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     return def;
 }
 
+static MutableColumns getMergedColumns(const Block & header, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
+{
+    MutableColumns columns;
+    columns.resize(header.columns());
+
+    for (const auto & desc : def.columns_to_simple_aggregate)
+    {
+        const auto & type = desc.nested_type ? desc.nested_type
+                                       : desc.real_type;
+        columns[desc.column_number] = type->createColumn();
+    }
+
+    for (size_t i = 0; i < columns.size(); ++i)
+        if (!columns[i])
+            columns[i] = header.getByPosition(i).type->createColumn();
+
+    return columns;
+}
+
 /// Remove constants and LowCardinality for SimpleAggregateFunction
 static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
 {
@@ -140,24 +159,12 @@ AggregatingSortedAlgorithm::SimpleAggregateDescription::~SimpleAggregateDescript
 
 
 AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
+    MutableColumns columns_,
     UInt64 max_block_size_rows_,
     UInt64 max_block_size_bytes_,
     ColumnsDefinition & def_)
-    : MergedData(false, max_block_size_rows_, max_block_size_bytes_), def(def_)
+    : MergedData(std::move(columns_), false, max_block_size_rows_, max_block_size_bytes_), def(def_)
 {
-}
-
-void AggregatingSortedAlgorithm::AggregatingMergedData::initialize(const DB::Block & header, const IMergingAlgorithm::Inputs & inputs)
-{
-    MergedData::initialize(header, inputs);
-
-    for (const auto & desc : def.columns_to_simple_aggregate)
-    {
-        const auto & type = desc.nested_type ? desc.nested_type
-                                             : desc.real_type;
-        columns[desc.column_number] = type->createColumn();
-    }
-
     initAggregateDescription();
 
     /// Just to make startGroup() simpler.
@@ -260,14 +267,12 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     size_t max_block_size_bytes_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
     , columns_definition(defineColumns(header_, description_))
-    , merged_data(max_block_size_rows_, max_block_size_bytes_, columns_definition)
+    , merged_data(getMergedColumns(header_, columns_definition), max_block_size_rows_, max_block_size_bytes_, columns_definition)
 {
 }
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
-    merged_data.initialize(header, inputs);
-
     for (auto & input : inputs)
         if (input.chunk)
             preprocessChunk(input.chunk, columns_definition);

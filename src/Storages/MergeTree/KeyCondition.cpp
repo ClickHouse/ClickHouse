@@ -1185,7 +1185,8 @@ bool KeyCondition::tryPrepareSetIndex(
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
+            if (out_key_column_num < index_mapping.key_index)
+                out_key_column_num = index_mapping.key_index;
         }
     };
 
@@ -1944,7 +1945,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     /// Build and optimize it simultaneously.
     struct Node
     {
-        enum class Type : uint8_t
+        enum class Type
         {
             /// Leaf, which is RPNElement.
             Leaf,

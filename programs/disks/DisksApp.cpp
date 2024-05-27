@@ -97,8 +97,7 @@ void DisksApp::processOptions()
 
 DisksApp::~DisksApp()
 {
-    if (global_context)
-        global_context->shutdown();
+    global_context->shutdown();
 }
 
 void DisksApp::init(std::vector<String> & common_arguments)

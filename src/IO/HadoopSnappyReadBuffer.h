@@ -23,7 +23,7 @@ namespace DB
 class HadoopSnappyDecoder
 {
 public:
-    enum class Status : uint8_t
+    enum class Status : int
     {
         OK = 0,
         INVALID_INPUT = 1,

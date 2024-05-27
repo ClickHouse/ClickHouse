@@ -42,8 +42,7 @@ public:
             std::shared_ptr<S3QueueFilesMetadata> metadata_,
             std::unique_ptr<GlobIterator> glob_iterator_,
             size_t current_shard_,
-            std::atomic<bool> & shutdown_called_,
-            LoggerPtr logger_);
+            std::atomic<bool> & shutdown_called_);
 
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
@@ -57,7 +56,7 @@ public:
         const std::unique_ptr<GlobIterator> glob_iterator;
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
-        LoggerPtr log;
+        Poco::Logger * log;
 
         const bool sharded_processing;
         const size_t current_shard;

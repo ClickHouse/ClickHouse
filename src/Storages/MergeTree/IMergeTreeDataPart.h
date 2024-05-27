@@ -51,7 +51,7 @@ class MergeTreeTransaction;
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
-enum class DataPartRemovalState : uint8_t
+enum class DataPartRemovalState
 {
     NOT_ATTEMPTED,
     VISIBLE_TO_TRANSACTIONS,
@@ -166,10 +166,6 @@ public:
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
-    /// Get sample column from part. For ordinary columns it just creates column using it's type.
-    /// For columns with dynamic structure it reads sample column with 0 rows from the part.
-    ColumnPtr getColumnSample(const NameAndTypePair & column) const;
-
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
     SerializationPtr getSerialization(const String & column_name) const;
@@ -252,7 +248,7 @@ public:
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
     /// However in some special cases Clickhouse can make a decision without asking keeper.
-    enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
+    enum class BlobsRemovalPolicyForTemporaryParts
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
@@ -449,15 +445,7 @@ public:
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
-    void loadProjections(
-        bool require_columns_checksums,
-        bool check_consistency,
-        bool & has_broken_projection,
-        bool if_not_loaded = false,
-        bool only_metadata = false);
-
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
-    void loadChecksums(bool require);
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -682,6 +670,9 @@ private:
     void loadColumns(bool require);
 
     static void appendFilesOfColumns(Strings & files);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    void loadChecksums(bool require);
 
     static void appendFilesOfChecksums(Strings & files);
 
