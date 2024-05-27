@@ -4,6 +4,12 @@
 #include <Server/PrometheusRequestHandlerConfig.h>
 #include <Server/PrometheusMetricsOnlyRequestHandler.h>
 
+#include "config.h"
+
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+#include <Server/PrometheusRequestHandler.h>
+#endif
+
 
 namespace DB
 {
@@ -37,6 +43,8 @@ namespace
         return factory;
     }
 }
+
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryMain(
     IServer & server,
@@ -87,6 +95,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForRule(
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }
+
+#endif
 
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForKeeper(
     IServer & server,

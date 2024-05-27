@@ -23,9 +23,6 @@ protected:
 };
 
 
-using PrometheusRequestHandler = PrometheusMetricsOnlyRequestHandler;
-
-
 /// The class uses KeeperPrometheusMetricsWriter to generate a response containing
 /// the current metrics of ClickHouse Keeper in the Prometheus format.
 class KeeperPrometheusRequestHandler : public PrometheusMetricsOnlyRequestHandler

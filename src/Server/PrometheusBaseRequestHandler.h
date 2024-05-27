@@ -23,6 +23,9 @@ protected:
     /// Writes the current metrics to the response in the Prometheus format.
     virtual void handleMetrics(HTTPServerRequest & request, HTTPServerResponse & response) { handlerNotFound(request, response); }
 
+    /// Handles the remote write protocol - parses data from request and writes to a TimeSeries table.
+    virtual void handleRemoteWrite(HTTPServerRequest & request, HTTPServerResponse & response) { handlerNotFound(request, response); }
+
     /// Throws an exception that there is no handler for that path.
     void handlerNotFound(HTTPServerRequest & request, HTTPServerResponse & response);
 

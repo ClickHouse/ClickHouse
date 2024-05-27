@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <Core/QualifiedTableName.h>
 
 
 namespace Poco::Util { class AbstractConfiguration; }
@@ -9,7 +9,7 @@ namespace DB
 {
 class HTTPServerRequest;
 
-/// Configuration of a Prometheus protocol handler after it's parsed from a configuration file.
+/// Configuration of Prometheus protocol handlers after they're parsed from a configuration file.
 struct PrometheusRequestHandlerConfig
 {
     /// Handler for exposing ClickHouse metrics:
@@ -32,7 +32,24 @@ struct PrometheusRequestHandlerConfig
 
     std::optional<Metrics> metrics;
 
+    struct EndpointAndTableName
+    {
+        String endpoint;
+        QualifiedTableName table_name;
+    };
+
+    /// Handler for Prometheus remote-write protocol:
+    /// <prometheus>
+    ///     <port>9363</port>  <!-- port is not parsed in PrometheusRequestHandlerConfig -->
+    ///     <remote_write>
+    ///         <endpoint>/write</endpoint>
+    ///         <table>mydb.prometheus</table>
+    ///     </remote_write>
+    /// </prometheus>
+    std::optional<EndpointAndTableName> remote_write;
+
     size_t keep_alive_timeout;
+    bool is_stacktrace_enabled = true;
 
     /// Use endpoints in the config to find out which handler should be used.
     bool detect_handler_by_endpoint = true;
