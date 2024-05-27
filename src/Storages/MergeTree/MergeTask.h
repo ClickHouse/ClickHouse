@@ -2,8 +2,11 @@
 
 #include <list>
 #include <memory>
+#include <unordered_map>
 
 #include <Common/filesystemHelpers.h>
+#include "Storages/MergeTree/MergeTreeIndices.h"
+#include "Storages/Statistics/Statistics.h"
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -170,6 +173,9 @@ private:
         Names all_column_names{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
 
+        IndicesDescription merging_skip_indexes;
+        std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
+
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
         size_t gathering_column_names_size{0};
 
@@ -260,12 +266,14 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
+        void extractMergingAndGatheringColumns();
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<ExecuteAndFinalizeHorizontalPartRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
+
         StageRuntimeContextPtr getContextForNextStage() override;
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
@@ -414,7 +422,7 @@ private:
         return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
     }
 
-    static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static void addStorageColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };
 
 /// FIXME

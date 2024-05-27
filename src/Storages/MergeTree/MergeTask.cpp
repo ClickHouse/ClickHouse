@@ -5,8 +5,15 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include "Common/DateLUT.h"
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include "Core/NamesAndTypes.h"
+#include "Storages/ColumnsDescription.h"
+#include "Storages/IndicesDescription.h"
+#include "Storages/MergeTree/MergeTreeIndices.h"
+#include "Storages/ProjectionsDescription.h"
+#include "Storages/StorageInMemoryMetadata.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -48,59 +55,37 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-
-/// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(
-    const NamesAndTypesList & storage_columns,
-    const ExpressionActionsPtr & sorting_key_expr,
-    const IndicesDescription & indexes,
-    const MergeTreeData::MergingParams & merging_params,
-    NamesAndTypesList & gathering_columns, Names & gathering_column_names,
-    NamesAndTypesList & merging_columns, Names & merging_column_names)
+static Statistics getStatisticsForColumns(
+    const NamesAndTypesList & columns_to_read,
+    const StorageMetadataPtr & metadata_snapshot)
 {
-    Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
-    std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
-    for (const auto & index : indexes)
+    Statistics statistics;
+    const auto & all_columns = metadata_snapshot->getColumns();
+
+    for (const auto & column : columns_to_read)
     {
-        Names index_columns_vec = index.expression->getRequiredColumns();
-        std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
-    }
-
-    /// Force sign column for Collapsing mode
-    if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-        key_columns.emplace(merging_params.sign_column);
-
-    /// Force version column for Replacing mode
-    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
-    {
-        key_columns.emplace(merging_params.is_deleted_column);
-        key_columns.emplace(merging_params.version_column);
-    }
-
-    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
-    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        key_columns.emplace(merging_params.sign_column);
-
-    /// Force to merge at least one column in case of empty key
-    if (key_columns.empty())
-        key_columns.emplace(storage_columns.front().name);
-
-    /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
-
-    for (const auto & column : storage_columns)
-    {
-        if (key_columns.contains(column.name))
+        const auto & desc = all_columns.get(column.name);
+        if (desc.stat)
         {
-            merging_columns.emplace_back(column);
-            merging_column_names.emplace_back(column.name);
-        }
-        else
-        {
-            gathering_columns.emplace_back(column);
-            gathering_column_names.emplace_back(column.name);
+            auto statistic = MergeTreeStatisticsFactory::instance().get(*desc.stat);
+            statistics.push_back(std::move(statistic));
         }
     }
+    return statistics;
+}
+
+static void addSkipIndexesExpressions(
+    QueryPipelineBuilder & builder,
+    const IndicesDescription & indexes,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
+{
+    builder.addTransform(std::make_shared<ExpressionTransform>(
+        builder.getHeader(),
+        indexes.getSingleExpressionForIndices(metadata_snapshot->getColumns(),
+        context)));
+
+    builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
 }
 
 static void addMissedColumnsToSerializationInfos(
@@ -129,6 +114,76 @@ static void addMissedColumnsToSerializationInfos(
     }
 }
 
+/// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
+void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns()
+{
+    const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
+    Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
+
+    std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
+
+    /// Force sign column for Collapsing mode
+    if (ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+        key_columns.emplace(ctx->merging_params.sign_column);
+
+    /// Force version column for Replacing mode
+    if (ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    {
+        key_columns.emplace(ctx->merging_params.is_deleted_column);
+        key_columns.emplace(ctx->merging_params.version_column);
+    }
+
+    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
+    if (ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        key_columns.emplace(ctx->merging_params.sign_column);
+
+    /// Force to merge at least one column in case of empty key
+    if (key_columns.empty())
+        key_columns.emplace(global_ctx->storage_columns.front().name);
+
+    const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+
+    for (const auto & index : skip_indexes)
+    {
+        auto index_columns = index.expression->getRequiredColumns();
+
+        if (index_columns.size() == 1)
+        {
+            const auto & column_name = index_columns.front();
+            global_ctx->skip_indexes_by_column[column_name].push_back(index);
+        }
+        else
+        {
+            std::ranges::copy(index_columns, std::inserter(key_columns, key_columns.end()));
+            global_ctx->merging_skip_indexes.push_back(index);
+        }
+    }
+
+    /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
+
+    for (const auto & column : global_ctx->storage_columns)
+    {
+        if (key_columns.contains(column.name))
+        {
+            global_ctx->merging_columns.emplace_back(column);
+            global_ctx->merging_column_names.emplace_back(column.name);
+
+            auto it = global_ctx->skip_indexes_by_column.find(column.name);
+            if (it != global_ctx->skip_indexes_by_column.end())
+            {
+                for (auto && index : it->second)
+                    global_ctx->merging_skip_indexes.push_back(std::move(index));
+
+                global_ctx->skip_indexes_by_column.erase(it);
+            }
+        }
+        else
+        {
+            global_ctx->gathering_columns.emplace_back(column);
+            global_ctx->gathering_column_names.emplace_back(column.name);
+        }
+    }
+}
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
@@ -204,19 +259,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
-    extractMergingAndGatheringColumns(
-        global_ctx->storage_columns,
-        global_ctx->metadata_snapshot->getSortingKey().expression,
-        global_ctx->metadata_snapshot->getSecondaryIndices(),
-        ctx->merging_params,
-        global_ctx->gathering_columns,
-        global_ctx->gathering_column_names,
-        global_ctx->merging_columns,
-        global_ctx->merging_column_names);
-
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
@@ -226,10 +272,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->force_ttl = false;
 
     if (enabledBlockNumberColumn(global_ctx))
-        addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+        addStorageColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
 
     if (enabledBlockOffsetColumn(global_ctx))
-        addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
+        addStorageColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
     SerializationInfo::Settings info_settings =
     {
@@ -299,17 +345,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_column_names = global_ctx->all_column_names;
-            global_ctx->gathering_columns.clear();
-            global_ctx->gathering_column_names.clear();
+            global_ctx->merging_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
             break;
         }
         case MergeAlgorithm::Vertical:
         {
+            extractMergingAndGatheringColumns();
+
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
             std::map<String, UInt64> local_merged_column_to_size;
-            for (const MergeTreeData::DataPartPtr & part : global_ctx->future_part->parts)
+            for (const auto & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
 
             ctx->column_sizes = ColumnSizeEstimator(
@@ -376,8 +423,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
-        MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
-        MergeTreeStatisticsFactory::instance().getMany(global_ctx->metadata_snapshot->getColumns()),
+        MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
+        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
         ctx->compression_codec,
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
         /*reset_columns=*/ true,
@@ -401,7 +448,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     return false;
 }
 
-void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
+void MergeTask::addStorageColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
 {
     if (global_ctx->storage_columns.contains(name))
         return;
@@ -575,7 +622,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     Names column_names{column_name};
 
     ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
-
     global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
 
     Pipes pipes;
@@ -598,7 +644,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-
     ctx->rows_sources_read_buf->seek(0, 0);
 
     const auto data_settings = global_ctx->data->getSettings();
@@ -609,9 +654,20 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         data_settings->merge_max_block_size,
         data_settings->merge_max_block_size_bytes);
 
-    pipe.addTransform(std::move(transform));
+    QueryPipelineBuilder builder;
+    builder.init(std::move(pipe));
+    builder.addTransform(std::move(transform));
 
-    ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
+    MergeTreeIndices indexes_to_recalc;
+    auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
+
+    if (indexes_it != global_ctx->skip_indexes_by_column.end())
+    {
+        indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
+        addSkipIndexesExpressions(builder, indexes_it->second, global_ctx->metadata_snapshot, global_ctx->data->getContext());
+    }
+
+    ctx->column_parts_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     /// Dereference unique_ptr
     ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
@@ -621,7 +677,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
-
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
@@ -629,11 +684,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->metadata_snapshot,
         ctx->executor->getHeader(),
         ctx->compression_codec,
-        /// we don't need to recalc indices here
-        /// because all of them were already recalculated and written
-        /// as key part of vertical merge
-        std::vector<MergeTreeIndexPtr>{},
-        std::vector<StatisticPtr>{}, /// TODO: think about it
+        indexes_to_recalc,
+        getStatisticsForColumns({*ctx->it_name_and_type}, global_ctx->metadata_snapshot),
         &global_ctx->written_offset_columns,
         global_ctx->to->getIndexGranularity());
 
@@ -1117,13 +1169,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         builder->addTransform(std::move(transform));
     }
 
-    if (global_ctx->metadata_snapshot->hasSecondaryIndices())
-    {
-        const auto & indices = global_ctx->metadata_snapshot->getSecondaryIndices();
-        builder->addTransform(std::make_shared<ExpressionTransform>(
-            builder->getHeader(), indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())));
-        builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
-    }
+    if (!global_ctx->merging_skip_indexes.empty())
+        addSkipIndexesExpressions(*builder, global_ctx->merging_skip_indexes, global_ctx->metadata_snapshot, global_ctx->data->getContext());
 
     if (!subqueries.empty())
         builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), global_ctx->context);
@@ -1172,7 +1219,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
+    bool enough_columns = global_ctx->gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
 
     bool enough_total_rows = total_rows_count >= data_settings->vertical_merge_algorithm_min_rows_to_activate;
 
@@ -1180,7 +1227,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
 
     bool no_parts_overflow = global_ctx->future_part->parts.size() <= RowSourcePart::MAX_PARTS;
 
-    auto merge_alg = (is_supported_storage && enough_total_rows && enough_total_bytes && enough_ordinary_cols && no_parts_overflow) ?
+    auto merge_alg = (is_supported_storage && enough_total_rows && enough_total_bytes && enough_columns && no_parts_overflow) ?
                         MergeAlgorithm::Vertical : MergeAlgorithm::Horizontal;
 
     return merge_alg;
