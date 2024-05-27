@@ -47,12 +47,11 @@ class FunctionFromReadableSize : public IFunction
 {
 public:
     static constexpr auto name = "fromReadableSize";
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFromReadableSize>(); }
-
     String getName() const override { return name; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
+    bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -66,7 +65,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
