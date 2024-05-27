@@ -136,7 +136,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client), std::move(s3_settings), url, s3_capabilities,
-        key_generator, "StorageS3", false, headers_from_ast);
+        key_generator, "StorageS3", false);
 }
 
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection)
