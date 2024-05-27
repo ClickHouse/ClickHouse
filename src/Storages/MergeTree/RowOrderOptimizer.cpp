@@ -110,7 +110,8 @@ std::vector<size_t> getCardinalitiesInPermutedRange(
     std::vector<size_t> cardinalities(other_column_indexes.size());
     for (size_t i = 0; i < other_column_indexes.size(); ++i)
     {
-        const ColumnPtr & column = block.getByPosition(i).column;
+        const size_t column_id = other_column_indexes[i];
+        const ColumnPtr & column = block.getByPosition(column_id).column;
         cardinalities[i] = column->estimateCardinalityInPermutedRange(permutation, equal_range);
     }
     return cardinalities;
@@ -123,19 +124,27 @@ void updatePermutationInEqualRange(
     const EqualRange & equal_range,
     const std::vector<size_t> & cardinalities)
 {
+    LoggerPtr log = getLogger("RowOrderOptimizer");
+
+    LOG_TRACE(log, "Starting optimization in equal range");
+
     std::vector<size_t> column_order(other_column_indexes.size());
     iota(column_order.begin(), column_order.end(), 0);
     auto cmp = [&](size_t lhs, size_t rhs) -> bool { return cardinalities[lhs] < cardinalities[rhs]; };
-    ::sort(column_order.begin(), column_order.end(), cmp);
+    stable_sort(column_order.begin(), column_order.end(), cmp);
 
     std::vector<EqualRange> ranges = {equal_range};
+    LOG_TRACE(log, "equal_range: .from: {}, .to: {}", equal_range.from, equal_range.to);
     for (size_t i : column_order)
     {
         const size_t column_id = other_column_indexes[i];
         const ColumnPtr & column = block.getByPosition(column_id).column;
+        LOG_TRACE(log, "i: {}, column_id: {}, column->getName(): {}, cardinality: {}", i, column_id, column->getName(), cardinalities[i]);
         column->updatePermutation(
-            IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable, 0, 1, permutation, ranges);
+            IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable, 0, 1, permutation, ranges);
     }
+
+    LOG_TRACE(log, "Finish optimization in equal range");
 }
 
 }
