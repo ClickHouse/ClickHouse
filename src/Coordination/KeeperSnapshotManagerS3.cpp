@@ -65,7 +65,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             return;
         }
 
-        auto auth_settings = S3::AuthSettings::loadFromConfig(config, config_prefix, Context::getGlobalContextInstance()->getSettingsRef());
+        auto auth_settings = S3::AuthSettings(config, config_prefix, Context::getGlobalContextInstance()->getSettingsRef());
 
         String endpoint = macros->expand(config.getString(config_prefix + ".endpoint"));
         auto new_uri = S3::URI{endpoint};
@@ -119,10 +119,10 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                auth_settings.use_environment_credentials.value_or(true),
-                auth_settings.use_insecure_imds_request.value_or(false),
-                auth_settings.expiration_window_seconds.value_or(S3::DEFAULT_EXPIRATION_WINDOW_SECONDS),
-                auth_settings.no_sign_request.value_or(false),
+                auth_settings.use_environment_credentials,
+                auth_settings.use_insecure_imds_request,
+                auth_settings.expiration_window_seconds,
+                auth_settings.no_sign_request,
             },
             credentials.GetSessionToken());
 

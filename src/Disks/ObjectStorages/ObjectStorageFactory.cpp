@@ -190,8 +190,8 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto settings = getSettings(config, config_prefix, context, /* for_disk_s3 */true, /* validate_settings */true);
         auto endpoint = getEndpoint(config, config_prefix, context);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* for_disk_s3 */true, /* validate_settings */true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -227,8 +227,8 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto settings = getSettings(config, config_prefix, context, /* for_disk_s3 */true, /* validate_settings */true);
         auto endpoint = getEndpoint(config, config_prefix, context);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* for_disk_s3 */true, /* validate_settings */true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -262,8 +262,8 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-            auto settings = getSettings(config, config_prefix, context, /* for_disk_s3 */true, /* validate_settings */true);
             auto endpoint = getEndpoint(config, config_prefix, context);
+            auto settings = getSettings(config, config_prefix, context, endpoint, /* for_disk_s3 */true, /* validate_settings */true);
             auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 

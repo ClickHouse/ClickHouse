@@ -18,6 +18,7 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
+    const std::string & endpoint,
     bool for_disk_s3,
     bool validate_settings);
 

@@ -119,7 +119,7 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     setURL(url_str);
 }
 
-void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection)
+void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr)
 {
     std::string url_str;
 

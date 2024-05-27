@@ -51,7 +51,7 @@ public:
         ContextPtr context) override;
 
 private:
-    void fromNamedCollection(const NamedCollection & collection) override;
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     S3::URI url;

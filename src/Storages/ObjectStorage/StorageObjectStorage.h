@@ -193,7 +193,7 @@ public:
     String structure = "auto";
 
 protected:
-    virtual void fromNamedCollection(const NamedCollection & collection) = 0;
+    virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
 
     void assertInitialized() const;

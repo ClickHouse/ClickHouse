@@ -249,7 +249,7 @@ AzureClientPtr StorageAzureConfiguration::createClient(bool is_read_only, bool a
     return result;
 }
 
-void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection)
+    void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 

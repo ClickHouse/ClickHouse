@@ -34,14 +34,18 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
+    const std::string & endpoint,
     bool for_disk_s3,
     bool validate_settings)
 {
     const auto & settings = context->getSettingsRef();
     const std::string setting_name_prefix = for_disk_s3 ? "s3_" : "";
 
-    auto auth_settings = S3::AuthSettings::loadFromConfig(config, config_prefix, settings);
-    auto request_settings = S3::RequestSettings::loadFromConfig(config, config_prefix, settings, validate_settings, setting_name_prefix);
+    auto auth_settings = S3::AuthSettings(config, config_prefix, settings);
+    auto request_settings = S3::RequestSettings(config, config_prefix, settings, validate_settings, setting_name_prefix);
+
+    request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(S3::URI(endpoint).uri.getScheme()), config_prefix, config);
 
     return std::make_unique<S3ObjectStorageSettings>(
         request_settings,
@@ -75,7 +79,7 @@ std::unique_ptr<S3::Client> getClient(
     const auto & request_settings = settings.request_settings;
 
     const bool is_s3_express_bucket = S3::isS3ExpressEndpoint(url.endpoint);
-    if (is_s3_express_bucket && auth_settings.region.empty())
+    if (is_s3_express_bucket && auth_settings.region.value.empty())
     {
         throw Exception(
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
@@ -93,43 +97,36 @@ std::unique_ptr<S3::Client> getClient(
         request_settings.put_request_throttler,
         url.uri.getScheme());
 
-    client_configuration.connectTimeoutMs = auth_settings.connect_timeout_ms.value_or(S3::DEFAULT_CONNECT_TIMEOUT_MS);
-    client_configuration.requestTimeoutMs = auth_settings.request_timeout_ms.value_or(S3::DEFAULT_REQUEST_TIMEOUT_MS);
-    client_configuration.maxConnections = static_cast<uint32_t>(auth_settings.max_connections.value_or(S3::DEFAULT_MAX_CONNECTIONS));
-    client_configuration.http_keep_alive_timeout = auth_settings.http_keep_alive_timeout.value_or(S3::DEFAULT_KEEP_ALIVE_TIMEOUT);
-    client_configuration.http_keep_alive_max_requests = auth_settings.http_keep_alive_max_requests.value_or(S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS);
+    client_configuration.connectTimeoutMs = auth_settings.connect_timeout_ms;
+    client_configuration.requestTimeoutMs = auth_settings.request_timeout_ms;
+    client_configuration.maxConnections = static_cast<uint32_t>(auth_settings.max_connections);
+    client_configuration.http_keep_alive_timeout = auth_settings.http_keep_alive_timeout;
+    client_configuration.http_keep_alive_max_requests = auth_settings.http_keep_alive_max_requests;
 
     client_configuration.endpointOverride = url.endpoint;
-    client_configuration.s3_use_adaptive_timeouts = auth_settings.use_adaptive_timeouts.value_or(S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS);
+    client_configuration.s3_use_adaptive_timeouts = auth_settings.use_adaptive_timeouts;
 
-    if (for_disk_s3)
+    if (request_settings.proxy_resolver)
     {
-        /// TODO: move to S3Common auth settings parsing
         /*
         * Override proxy configuration for backwards compatibility with old configuration format.
         * */
-        // if (auto proxy_config = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        //         ProxyConfiguration::protocolFromString(url.uri.getScheme()), config_prefix, config))
-        // {
-        //     client_configuration.per_request_configuration
-        //         = [proxy_config]() { return proxy_config->resolve(); };
-        //     client_configuration.error_report
-        //         = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
-        // }
+        client_configuration.per_request_configuration = [=]() { return request_settings.proxy_resolver->resolve(); };
+        client_configuration.error_report = [=](const auto & request_config) { request_settings.proxy_resolver->errorReport(request_config); };
     }
 
     S3::ClientSettings client_settings{
         .use_virtual_addressing = url.is_virtual_hosted_style,
-        .disable_checksum = auth_settings.disable_checksum.value_or(S3::DEFAULT_DISABLE_CHECKSUM),
-        .gcs_issue_compose_request = auth_settings.gcs_issue_compose_request.value_or(false),
+        .disable_checksum = auth_settings.disable_checksum,
+        .gcs_issue_compose_request = auth_settings.gcs_issue_compose_request,
     };
 
     auto credentials_configuration = S3::CredentialsConfiguration
     {
-        auth_settings.use_environment_credentials.value_or(S3::DEFAULT_USE_ENVIRONMENT_CREDENTIALS),
-        auth_settings.use_insecure_imds_request.value_or(false),
-        auth_settings.expiration_window_seconds.value_or(S3::DEFAULT_EXPIRATION_WINDOW_SECONDS),
-        auth_settings.no_sign_request.value_or(S3::DEFAULT_NO_SIGN_REQUEST),
+        auth_settings.use_environment_credentials,
+        auth_settings.use_insecure_imds_request,
+        auth_settings.expiration_window_seconds,
+        auth_settings.no_sign_request,
     };
 
     return S3::ClientFactory::instance().create(

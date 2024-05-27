@@ -28,5 +28,8 @@ inline static constexpr uint64_t DEFAULT_MAX_PART_NUMBER = 10000;
 /// Other settings.
 inline static constexpr uint64_t DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE = 32 * 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_MAX_INFLIGHT_PARTS_FOR_ONE_FILE = 20;
+inline static constexpr uint64_t DEFAULT_LIST_OBJECT_KEYS_SIZE = 1000;
+inline static constexpr uint64_t DEFAULT_ALLOW_NATIVE_COPY = true;
+inline static constexpr uint64_t DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD = false;
 
 }

@@ -32,6 +32,7 @@ namespace ErrorCodes
 
 class RemoteHostFilter;
 class NamedCollection;
+struct ProxyConfigurationResolver;
 
 class S3Exception : public Exception
 {
@@ -72,64 +73,34 @@ namespace Poco::Util
 namespace DB::S3
 {
 
-HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+#define AUTH_SETTINGS(M, ALIAS) \
+    M(String, access_key_id, "", "", 0) \
+    M(String, secret_access_key, "", "", 0) \
+    M(String, session_token, "", "", 0) \
+    M(String, region, "", "", 0) \
+    M(String, server_side_encryption_customer_key_base64, "", "", 0) \
 
-ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
-
-struct AuthSettings
-{
-    std::string access_key_id;
-    std::string secret_access_key;
-    std::string session_token;
-    std::string region;
-    std::string server_side_encryption_customer_key_base64;
-
-    HTTPHeaderEntries headers;
-    std::unordered_set<std::string> users;
-    ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
-
-    std::optional<size_t> connect_timeout_ms;
-    std::optional<size_t> request_timeout_ms;
-    std::optional<size_t> max_connections;
-    std::optional<size_t> http_keep_alive_timeout;
-    std::optional<size_t> http_keep_alive_max_requests;
-    std::optional<size_t> expiration_window_seconds;
-
-    std::optional<bool> use_environment_credentials;
-    std::optional<bool> no_sign_request;
-    std::optional<bool> use_adaptive_timeouts;
-    std::optional<bool> use_insecure_imds_request;
-    std::optional<bool> is_virtual_hosted_style;
-    std::optional<bool> disable_checksum;
-    std::optional<bool> gcs_issue_compose_request;
-
-    bool hasUpdates(const AuthSettings & other) const;
-    void updateFrom(const AuthSettings & from);
-
-    bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
-
-    static AuthSettings loadFromConfig(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const DB::Settings & settings,
-        const std::string & setting_name_prefix = "");
-
-    static AuthSettings loadFromSettings(const DB::Settings & settings);
-
-    static AuthSettings loadFromNamedCollection(const NamedCollection & collection);
-
-    void updateFromSettings(const DB::Settings & settings, bool if_changed);
-
-private:
-    bool operator==(const AuthSettings & other) const = default;
-};
+#define CLIENT_SETTINGS(M, ALIAS) \
+    M(UInt64, connect_timeout_ms, DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
+    M(UInt64, request_timeout_ms, DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
+    M(UInt64, max_connections, DEFAULT_MAX_CONNECTIONS, "", 0) \
+    M(UInt64, http_keep_alive_timeout, DEFAULT_KEEP_ALIVE_TIMEOUT, "", 0) \
+    M(UInt64, http_keep_alive_max_requests, DEFAULT_KEEP_ALIVE_MAX_REQUESTS, "", 0) \
+    M(UInt64, expiration_window_seconds, DEFAULT_EXPIRATION_WINDOW_SECONDS, "", 0) \
+    M(Bool, use_environment_credentials, DEFAULT_USE_ENVIRONMENT_CREDENTIALS, "", 0) \
+    M(Bool, no_sign_request, DEFAULT_NO_SIGN_REQUEST, "", 0) \
+    M(Bool, use_insecure_imds_request, false, "", 0) \
+    M(Bool, use_adaptive_timeouts, DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
+    M(Bool, is_virtual_hosted_style, false, "", 0) \
+    M(Bool, disable_checksum, DEFAULT_DISABLE_CHECKSUM, "", 0) \
+    M(Bool, gcs_issue_compose_request, false, "", 0) \
 
 #define REQUEST_SETTINGS(M, ALIAS) \
     M(UInt64, max_single_read_retries, 4, "", 0) \
     M(UInt64, request_timeout_ms, DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
-    M(UInt64, list_object_keys_size, 1000, "", 0) \
-    M(Bool, allow_native_copy, true, "", 0) \
-    M(Bool, check_objects_after_upload, false, "", 0) \
+    M(UInt64, list_object_keys_size, DEFAULT_LIST_OBJECT_KEYS_SIZE, "", 0) \
+    M(Bool, allow_native_copy, DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
+    M(Bool, check_objects_after_upload, DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
     M(Bool, throw_on_zero_files_match, false, "", 0) \
     M(UInt64, max_single_operation_copy_size, DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     M(String, storage_class_name, "", "", 0) \
@@ -145,23 +116,56 @@ private:
     M(UInt64, max_single_part_upload_size, DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, "", 0) \
     M(UInt64, max_unexpected_write_error_retries, 4, "", 0) \
 
+#define CLIENT_SETTINGS_LIST(M, ALIAS) \
+    CLIENT_SETTINGS(M, ALIAS)             \
+    AUTH_SETTINGS(M, ALIAS)
 
 #define REQUEST_SETTINGS_LIST(M, ALIAS) \
     REQUEST_SETTINGS(M, ALIAS)             \
     PART_UPLOAD_SETTINGS(M, ALIAS)
 
+DECLARE_SETTINGS_TRAITS(AuthSettingsTraits, CLIENT_SETTINGS_LIST)
 DECLARE_SETTINGS_TRAITS(RequestSettingsTraits, REQUEST_SETTINGS_LIST)
+
+struct AuthSettings : public BaseSettings<AuthSettingsTraits>
+{
+    AuthSettings() = default;
+
+    AuthSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const DB::Settings & settings,
+        const std::string & setting_name_prefix = "");
+
+    AuthSettings(const DB::Settings & settings);
+
+    AuthSettings(const NamedCollection & collection);
+
+    void updateFromSettings(const DB::Settings & settings, bool if_changed);
+    bool hasUpdates(const AuthSettings & other) const;
+    void updateIfChanged(const AuthSettings & settings);
+    bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
+
+    HTTPHeaderEntries headers;
+    std::unordered_set<std::string> users;
+    ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+};
 
 struct RequestSettings : public BaseSettings<RequestSettingsTraits>
 {
-    void validateUploadSettings();
+    RequestSettings() = default;
 
-    ThrottlerPtr get_request_throttler;
-    ThrottlerPtr put_request_throttler;
+    /// Create request settings from DB::Settings.
+    explicit RequestSettings(const DB::Settings & settings, bool validate_settings = true);
 
-    static RequestSettings loadFromSettings(const DB::Settings & settings, bool validate_settings = true);
-    static RequestSettings loadFromNamedCollection(const NamedCollection & collection, bool validate_settings = true);
-    static RequestSettings loadFromConfig(
+    /// Create request settings from NamedCollection.
+    RequestSettings(
+        const NamedCollection & collection,
+        const DB::Settings & settings,
+        bool validate_settings = true);
+
+    /// Create request settings from Config.
+    RequestSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const DB::Settings & settings,
@@ -170,9 +174,18 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings = true);
     void updateIfChanged(const RequestSettings & settings);
+    void validateUploadSettings();
+
+    ThrottlerPtr get_request_throttler;
+    ThrottlerPtr put_request_throttler;
+    std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
 private:
-    void initializeThrottler(const DB::Settings & settings);
+    void finishInit(const DB::Settings & settings, bool validate_settings);
 };
+
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
 
 }

@@ -61,6 +61,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -101,146 +102,14 @@ ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, c
     return sse_kms_config;
 }
 
-AuthSettings AuthSettings::loadFromConfig(
+AuthSettings::AuthSettings(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const DB::Settings & settings,
+    const DB::Settings &, /// TODO: use settings
     const std::string & setting_name_prefix)
 {
-    auto auth_settings = AuthSettings::loadFromSettings(settings);
-
     const std::string prefix = config_prefix + "." + setting_name_prefix;
-    auto has = [&](const std::string & key) -> bool { return config.has(prefix + key); };
-    auto get_uint = [&](const std::string & key) -> size_t { return config.getUInt64(prefix + key); };
-    auto get_bool = [&](const std::string & key) -> bool { return config.getBool(prefix + key); };
-    auto get_string = [&](const std::string & key) -> std::string { return config.getString(prefix + key); };
-
-    if (has("access_key_id"))
-        auth_settings.access_key_id = get_string("access_key_id");
-    if (has("secret_access_key"))
-        auth_settings.secret_access_key = get_string("secret_access_key");
-    if (has("session_token"))
-        auth_settings.secret_access_key = get_string("session_token");
-
-    if (has("region"))
-        auth_settings.region = get_string("region");
-    if (has("server_side_encryption_customer_key_base64"))
-        auth_settings.region = get_string("server_side_encryption_customer_key_base64");
-
-    if (has("connect_timeout_ms"))
-        auth_settings.connect_timeout_ms = get_uint("connect_timeout_ms");
-    if (has("request_timeout_ms"))
-        auth_settings.request_timeout_ms = get_uint("request_timeout_ms");
-    if (has("max_connections"))
-        auth_settings.max_connections = get_uint("max_connections");
-
-    if (has("http_keep_alive_timeout"))
-        auth_settings.http_keep_alive_timeout = get_uint("http_keep_alive_timeout");
-    if (has("http_keep_alive_max_requests"))
-        auth_settings.http_keep_alive_max_requests = get_uint("http_keep_alive_max_requests");
-
-    if (has("use_environment_credentials"))
-        auth_settings.use_environment_credentials = get_bool("use_environment_credentials");
-    if (has("use_adaptive_timeouts"))
-        auth_settings.use_adaptive_timeouts = get_bool("use_adaptive_timeouts");
-    if (has("no_sing_request"))
-        auth_settings.no_sign_request = get_bool("no_sing_request");
-    if (has("expiration_window_seconds"))
-        auth_settings.expiration_window_seconds = get_uint("expiration_window_seconds");
-    if (has("gcs_issue_compose_request"))
-        auth_settings.gcs_issue_compose_request = get_bool("gcs_issue_compose_request");
-    if (has("use_insecure_imds_request"))
-        auth_settings.use_insecure_imds_request = get_bool("use_insecure_imds_request");
-
-    auth_settings.headers = getHTTPHeaders(config_prefix, config);
-    auth_settings.server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-    for (const auto & key : keys)
-    {
-        if (startsWith(key, "user"))
-            auth_settings.users.insert(config.getString(config_prefix + "." + key));
-    }
-
-    return auth_settings;
-}
-
-AuthSettings AuthSettings::loadFromSettings(const DB::Settings & settings)
-{
-    AuthSettings auth_settings{};
-    auth_settings.updateFromSettings(settings, /* if_changed */false);
-    return auth_settings;
-}
-
-void AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_changed)
-{
-    if (!if_changed || settings.s3_connect_timeout_ms.changed)
-        connect_timeout_ms = settings.s3_connect_timeout_ms;
-    if (!if_changed || settings.s3_request_timeout_ms.changed)
-        request_timeout_ms = settings.s3_request_timeout_ms;
-    if (!if_changed || settings.s3_max_connections.changed)
-        max_connections = settings.s3_max_connections;
-    if (!if_changed || settings.s3_use_adaptive_timeouts.changed)
-        use_adaptive_timeouts = settings.s3_use_adaptive_timeouts;
-    if (!if_changed || settings.s3_disable_checksum.changed)
-        disable_checksum = settings.s3_disable_checksum;
-}
-
-bool AuthSettings::hasUpdates(const AuthSettings & other) const
-{
-    AuthSettings copy = *this;
-    copy.updateFrom(other);
-    return *this != copy;
-}
-
-void AuthSettings::updateFrom(const AuthSettings & from)
-{
-    /// Update with check for emptyness only parameters which
-    /// can be passed not only from config, but via ast.
-
-    if (!from.access_key_id.empty())
-        access_key_id = from.access_key_id;
-    if (!from.secret_access_key.empty())
-        secret_access_key = from.secret_access_key;
-    if (!from.session_token.empty())
-        session_token = from.session_token;
-
-    if (!from.headers.empty())
-        headers = from.headers;
-    if (!from.region.empty())
-        region = from.region;
-
-    server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
-    server_side_encryption_kms_config = from.server_side_encryption_kms_config;
-
-    if (from.use_environment_credentials.has_value())
-       use_environment_credentials = from.use_environment_credentials;
-
-    if (from.use_insecure_imds_request.has_value())
-        use_insecure_imds_request = from.use_insecure_imds_request;
-
-    if (from.expiration_window_seconds.has_value())
-        expiration_window_seconds = from.expiration_window_seconds;
-
-    if (from.no_sign_request.has_value())
-        no_sign_request = from.no_sign_request;
-
-    users.insert(from.users.begin(), from.users.end());
-}
-
-RequestSettings RequestSettings::loadFromConfig(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const DB::Settings & settings,
-    bool validate_settings,
-    const std::string & setting_name_prefix)
-{
-    auto request_settings = RequestSettings::loadFromSettings(settings, validate_settings);
-    String prefix = config_prefix + "." + setting_name_prefix;
-
-    auto values = request_settings.allMutable();
-    for (auto & field : values)
+    for (auto & field : allMutable())
     {
         const auto path = prefix + field.getName();
         if (config.has(path))
@@ -257,22 +126,92 @@ RequestSettings RequestSettings::loadFromConfig(
         }
     }
 
-    if (!request_settings.storage_class_name.value.empty())
-        request_settings.storage_class_name = Poco::toUpperInPlace(request_settings.storage_class_name.value);
+    headers = getHTTPHeaders(config_prefix, config);
+    server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
-    if (validate_settings)
-        request_settings.validateUploadSettings();
-
-    request_settings.initializeThrottler(settings);
-
-    return request_settings;
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    for (const auto & key : keys)
+    {
+        if (startsWith(key, "user"))
+            users.insert(config.getString(config_prefix + "." + key));
+    }
 }
 
-RequestSettings RequestSettings::loadFromNamedCollection(const NamedCollection & collection, bool validate_settings)
+AuthSettings::AuthSettings(const DB::Settings & settings)
 {
-    RequestSettings request_settings{};
+    updateFromSettings(settings, /* if_changed */false);
+}
 
-    auto values = request_settings.allMutable();
+void AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_changed)
+{
+    for (auto & field : allMutable())
+    {
+        const auto setting_name = "s3_" + field.getName();
+        if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
+        {
+            set(field.getName(), settings.get(setting_name));
+        }
+    }
+}
+
+bool AuthSettings::hasUpdates(const AuthSettings & other) const
+{
+    AuthSettings copy = *this;
+    copy.updateIfChanged(other);
+    return *this != copy;
+}
+
+void AuthSettings::updateIfChanged(const AuthSettings & settings)
+{
+    /// Update with check for emptyness only parameters which
+    /// can be passed not only from config, but via ast.
+
+    for (auto & setting : settings.all())
+    {
+        if (setting.isValueChanged())
+            set(setting.getName(), setting.getValue());
+    }
+
+    if (!settings.headers.empty())
+        headers = settings.headers;
+    server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
+    users.insert(settings.users.begin(), settings.users.end());
+}
+
+RequestSettings::RequestSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings,
+    bool validate_settings,
+    const std::string & setting_name_prefix)
+{
+    String prefix = config_prefix + "." + setting_name_prefix;
+    for (auto & field : allMutable())
+    {
+        const auto path = prefix + field.getName();
+        if (config.has(path))
+        {
+            auto which = field.getValue().getType();
+            if (isInt64OrUInt64FieldType(which))
+                field.setValue(config.getUInt64(path));
+            else if (which == Field::Types::String)
+                field.setValue(config.getString(path));
+            else if (which == Field::Types::Bool)
+                field.setValue(config.getBool(path));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+        }
+    }
+    finishInit(settings, validate_settings);
+}
+
+RequestSettings::RequestSettings(
+    const NamedCollection & collection,
+    const DB::Settings & settings,
+    bool validate_settings)
+{
+    auto values = allMutable();
     for (auto & field : values)
     {
         const auto path = field.getName();
@@ -289,26 +228,17 @@ RequestSettings RequestSettings::loadFromNamedCollection(const NamedCollection &
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
         }
     }
-
-    if (!request_settings.storage_class_name.value.empty())
-        request_settings.storage_class_name = Poco::toUpperInPlace(request_settings.storage_class_name.value);
-
-    if (validate_settings)
-        request_settings.validateUploadSettings();
-
-    // request_settings.initializeThrottler(settings);
-
-    return request_settings;
+    finishInit(settings, validate_settings);
 }
 
-RequestSettings RequestSettings::loadFromSettings(const DB::Settings & settings, bool validate_settings)
+RequestSettings::RequestSettings(const DB::Settings & settings, bool validate_settings)
 {
-    RequestSettings request_settings{};
-    request_settings.updateFromSettings(settings, /* if_changed */false, validate_settings);
-    return request_settings;
+    updateFromSettings(settings, /* if_changed */false, validate_settings);
+    finishInit(settings, validate_settings);
 }
 
-void RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings)
+void RequestSettings::updateFromSettings(
+    const DB::Settings & settings, bool if_changed, bool /* validate_settings */) /// TODO: process validate_settings
 {
     for (auto & field : allMutable())
     {
@@ -318,12 +248,6 @@ void RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_
             set(field.getName(), settings.get(setting_name));
         }
     }
-
-    if (!storage_class_name.value.empty())
-        storage_class_name = Poco::toUpperInPlace(storage_class_name.value);
-
-    if (validate_settings)
-        validateUploadSettings();
 }
 
 void RequestSettings::updateIfChanged(const RequestSettings & settings)
@@ -335,8 +259,14 @@ void RequestSettings::updateIfChanged(const RequestSettings & settings)
     }
 }
 
-void RequestSettings::initializeThrottler(const DB::Settings & settings)
+void RequestSettings::finishInit(const DB::Settings & settings, bool validate_settings)
 {
+    if (!storage_class_name.value.empty() && storage_class_name.changed)
+        storage_class_name = Poco::toUpperInPlace(storage_class_name.value);
+
+    if (validate_settings)
+        validateUploadSettings();
+
     /// NOTE: it would be better to reuse old throttlers
     /// to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time.
@@ -443,6 +373,9 @@ void RequestSettings::validateUploadSettings()
 
 }
 
+/// TODO: sometimes disk settings have fallback to "s3" section settings from config, support this.
+
+IMPLEMENT_SETTINGS_TRAITS(S3::AuthSettingsTraits, CLIENT_SETTINGS_LIST)
 IMPLEMENT_SETTINGS_TRAITS(S3::RequestSettingsTraits, REQUEST_SETTINGS_LIST)
 
 }

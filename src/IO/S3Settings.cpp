@@ -32,8 +32,8 @@ void S3SettingsByEndpoint::loadFromConfig(
         if (config.has(endpoint_path))
         {
             auto endpoint = config.getString(endpoint_path);
-            auto auth_settings = S3::AuthSettings::loadFromConfig(config, key_path, settings);
-            auto request_settings = S3::RequestSettings::loadFromConfig(config, key_path, settings);
+            auto auth_settings = S3::AuthSettings(config, key_path, settings);
+            auto request_settings = S3::RequestSettings(config, key_path, settings);
             s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), std::move(request_settings)});
         }
     }
