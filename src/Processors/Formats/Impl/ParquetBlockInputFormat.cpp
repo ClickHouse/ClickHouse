@@ -453,7 +453,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
         auto rows = adative_chunk_size(row_group);
-        row_group_batches.back().adaptive_chunk_size = rows ? format_settings.parquet.max_block_size :rows;
+        row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
 }
 
