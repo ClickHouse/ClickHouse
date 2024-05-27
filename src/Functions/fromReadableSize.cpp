@@ -83,51 +83,26 @@ public:
             // tryReadFloatText does seem to not raise any error when there is leading whitespace so we cehck for it explicitly
             skipWhitespaceIfAny(buf);
             if (buf.getPosition() > 0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {} - Leading whitespace is not allowed (\"{}\")",
-                    getName(),
-                    str
-                );
-            }
+                throw_bad_arguments("Leading whitespace is not allowed", str);
+
             Float64 base = 0;
             if (!tryReadFloatText(base, buf))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {} - Unable to parse readable size numeric component (\"{}\")",
-                    getName(),
-                    str
-                );
-            }
+                throw_bad_arguments("Unable to parse readable size numeric component", str);
+
             skipWhitespaceIfAny(buf);
+
             String unit;
             readStringUntilWhitespace(unit, buf);
             if (!buf.eof())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Found trailing characters after readable size string (\"{}\")", getName(), str
-                );
-            }
+                throw_bad_arguments("Found trailing characters after readable size string", str);
             boost::algorithm::to_lower(unit);
             auto iter = size_unit_to_bytes.find(unit);
             if (iter == size_unit_to_bytes.end())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Unknown readable size unit (\"{}\")", getName(), unit
-                );
-            }
+                throw_bad_arguments("Unknown readable size unit", unit);
+
             Float64 raw_num_bytes = base * iter->second;
             if (raw_num_bytes > std::numeric_limits<UInt64>::max())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {} - Result is too big for output type (UInt64) (\"{}\").",
-                    getName(),
-                    raw_num_bytes
-                );
-            }
+                throw_bad_arguments("Result is too big for output type (UInt64)", raw_num_bytes);
             // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
             // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
             UInt64 result = static_cast<UInt64>(std::ceil(raw_num_bytes));
@@ -137,8 +112,17 @@ public:
 
         return col_to;
     }
-};
 
+
+private:
+
+    template <typename Arg>
+    void throw_bad_arguments(const String & msg, Arg arg) const
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - {} (\"{}\")", getName(), msg, arg);
+    }
+
+};
 }
 
 REGISTER_FUNCTION(FromReadableSize)
