@@ -418,6 +418,21 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
 
+    auto adative_chunk_size = [&](int row_group_idx) -> size_t
+    {
+        size_t total_size = 0;
+        auto row_group_meta = metadata->RowGroup(row_group_idx);
+        for (int column_index : column_indices)
+        {
+            total_size += row_group_meta->ColumnChunk(column_index)->total_uncompressed_size();
+        }
+        if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
+        auto average_row_bytes = total_size / row_group_meta->num_rows();
+        /// max_block_bytes >= num_rows >= 128
+        auto num_rows = std::min(format_settings.parquet.prefer_block_bytes/average_row_bytes, format_settings.parquet.max_block_size);
+        return std::max(num_rows, 128UL);
+    };
+
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
@@ -437,6 +452,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
+        auto rows = adative_chunk_size(row_group);
+        row_group_batches.back().adaptive_chunk_size = rows ? format_settings.parquet.max_block_size :rows;
     }
 }
 
@@ -446,7 +463,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
 
     parquet::ArrowReaderProperties properties;
     properties.set_use_threads(false);
-    properties.set_batch_size(format_settings.parquet.max_block_size);
+    properties.set_batch_size(row_group_batch.adaptive_chunk_size);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
