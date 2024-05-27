@@ -14,10 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
