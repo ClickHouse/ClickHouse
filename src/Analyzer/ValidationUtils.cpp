@@ -422,6 +422,10 @@ void validateTreeSize(const QueryTreeNodePtr & node,
                 subtree_size += node_to_tree_size[node_to_process_child];
             }
 
+            auto * constant_node = node_to_process->as<ConstantNode>();
+            if (constant_node && constant_node->hasSourceExpression())
+                subtree_size += node_to_tree_size[constant_node->getSourceExpression()];
+
             node_to_tree_size.emplace(node_to_process, subtree_size);
             continue;
         }
