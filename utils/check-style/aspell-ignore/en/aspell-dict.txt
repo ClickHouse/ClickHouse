@@ -246,6 +246,7 @@ DockerHub
 DoubleDelta
 Doxygen
 Durre
+doesnt
 ECMA
 Ecto
 EdgeAngle
@@ -1617,6 +1618,8 @@ gcem
 generateRandom
 generateRandomStructure
 generateSeries
+generateSnowflakeID
+generateSnowflakeIDThreadMonotonic
 generateULID
 generateUUIDv
 geoDistance

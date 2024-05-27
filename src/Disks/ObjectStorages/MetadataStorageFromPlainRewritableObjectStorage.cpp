@@ -26,11 +26,11 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
     object_storage->listObjects(root, files, 0);
     for (const auto & file : files)
     {
-        auto remote_path = std::filesystem::path(file.relative_path);
+        auto remote_path = std::filesystem::path(file->relative_path);
         if (remote_path.filename() != PREFIX_PATH_FILE_NAME)
             continue;
 
-        StoredObject object{file.relative_path};
+        StoredObject object{file->relative_path};
 
         auto read_buf = object_storage->readObject(object);
         String local_path;
@@ -88,7 +88,7 @@ std::vector<std::string> getDirectChildrenOnRewritableDisk(
     auto skip_list = std::set<std::string>{PREFIX_PATH_FILE_NAME};
     for (const auto & elem : remote_paths)
     {
-        const auto & path = elem.relative_path;
+        const auto & path = elem->relative_path;
         chassert(path.find(storage_key) == 0);
         const auto child_pos = storage_key.size();
 

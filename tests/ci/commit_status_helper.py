@@ -20,7 +20,6 @@ from github.Repository import Repository
 from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
 from env_helper import (
     GITHUB_REPOSITORY,
-    GITHUB_RUN_URL,
     GITHUB_UPSTREAM_REPOSITORY,
     TEMP_PATH,
 )
@@ -433,11 +432,8 @@ def set_mergeable_check(
     commit: Commit,
     description: str = "",
     state: StatusType = SUCCESS,
-    hide_url: bool = False,
 ) -> CommitStatus:
-    report_url = GITHUB_RUN_URL
-    if hide_url:
-        report_url = ""
+    report_url = ""
     return post_commit_status(
         commit,
         state,
@@ -469,7 +465,6 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
 def trigger_mergeable_check(
     commit: Commit,
     statuses: CommitStatuses,
-    hide_url: bool = False,
     set_if_green: bool = False,
     workflow_failed: bool = False,
 ) -> StatusType:
@@ -484,18 +479,16 @@ def trigger_mergeable_check(
 
     success = []
     fail = []
+    pending = []
     for status in required_checks:
         if status.state == SUCCESS:
             success.append(status.context)
+        elif status.state == PENDING:
+            pending.append(status.context)
         else:
             fail.append(status.context)
 
     state: StatusType = SUCCESS
-
-    if success:
-        description = ", ".join(success)
-    else:
-        description = "awaiting job statuses"
 
     if fail:
         description = "failed: " + ", ".join(fail)
@@ -503,6 +496,13 @@ def trigger_mergeable_check(
     elif workflow_failed:
         description = "check workflow failures"
         state = FAILURE
+    elif pending:
+        description = "pending: " + ", ".join(pending)
+        state = PENDING
+    else:
+        # all good
+        description = ", ".join(success)
+
     description = format_description(description)
 
     if not set_if_green and state == SUCCESS:
@@ -510,7 +510,7 @@ def trigger_mergeable_check(
         pass
     else:
         if mergeable_status is None or mergeable_status.description != description:
-            set_mergeable_check(commit, description, state, hide_url)
+            set_mergeable_check(commit, description, state)
 
     return state
 
@@ -556,13 +556,12 @@ def update_upstream_sync_status(
     post_commit_status(
         last_synced_upstream_commit,
         sync_status,
-        "",  # let's won't expose any urls from cloud
+        "",
         "",
         StatusNames.SYNC,
     )
     trigger_mergeable_check(
         last_synced_upstream_commit,
         get_commit_filtered_statuses(last_synced_upstream_commit),
-        True,
         set_if_green=can_set_green_mergeable_status,
     )
