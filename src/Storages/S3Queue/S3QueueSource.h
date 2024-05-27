@@ -21,7 +21,6 @@ class StorageS3QueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
-
     using ConfigurationPtr = Storage::ConfigurationPtr;
     using GlobIterator = StorageObjectStorageSource::GlobIterator;
     using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
@@ -36,8 +35,7 @@ public:
     struct S3QueueObjectInfo : public ObjectInfo
     {
         S3QueueObjectInfo(
-            const std::string & key_,
-            const ObjectMetadata & object_metadata_,
+            const ObjectInfo & object_info,
             Metadata::FileMetadataPtr processing_holder_);
 
         Metadata::FileMetadataPtr processing_holder;

@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
+#include <Common/getRandomASCIIString.h>
 #include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -32,10 +33,9 @@ namespace ErrorCodes
 }
 
 StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
-        const std::string & key_,
-        const ObjectMetadata & object_metadata_,
+        const ObjectInfo & object_info,
         Metadata::FileMetadataPtr processing_holder_)
-    : ObjectInfo(key_, object_metadata_)
+    : ObjectInfo(object_info.relative_path, object_info.metadata)
     , processing_holder(processing_holder_)
 {
 }
@@ -127,9 +127,9 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextK
                 if (!bucket_keys.empty())
                 {
                     /// Take the key from the front, the order is important.
-                    auto key_with_info = bucket_keys.front();
+                    auto object_info = bucket_keys.front();
                     bucket_keys.pop_front();
-                    return key_with_info;
+                    return object_info;
                 }
 
                 /// No more keys in bucket, remove it from cache.
@@ -184,9 +184,9 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextK
                 processor = current_processor;
 
                 /// Take the key from the front, the order is important.
-                auto key_with_info = bucket_keys.front();
+                auto object_info = bucket_keys.front();
                 bucket_keys.pop_front();
-                return key_with_info;
+                return object_info;
             }
         }
 
@@ -196,23 +196,23 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextK
             return {};
         }
 
-        auto key_with_info = glob_iterator->next();
-        if (key_with_info)
+        auto object_info = glob_iterator->next();
+        if (object_info)
         {
-            const auto bucket = metadata->getBucketForPath(key_with_info->key);
+            const auto bucket = metadata->getBucketForPath(object_info->relative_path);
 
             LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}",
-                     key_with_info->getFileName(), bucket,
+                     object_info->getFileName(), bucket,
                      current_bucket.has_value() ? toString(current_bucket.value()) : "None");
 
             if (current_bucket.has_value())
             {
                 if (current_bucket.value() != bucket)
                 {
-                    listed_keys_cache[bucket].keys.emplace_back(key_with_info);
+                    listed_keys_cache[bucket].keys.emplace_back(object_info);
                     continue;
                 }
-                return key_with_info;
+                return object_info;
             }
             else
             {
@@ -223,7 +223,7 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextK
                 }
 
                 current_bucket = bucket;
-                return key_with_info;
+                return object_info;
             }
         }
         else
@@ -241,7 +241,7 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextK
     }
 }
 
-StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::next()
+StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl()
 {
     while (!shutdown_called)
     {
@@ -255,11 +255,9 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::next()
             return {};
         }
 
-        auto file_metadata = metadata->getFileMetadata(val->key);
+        auto file_metadata = metadata->getFileMetadata(val->relative_path);
         if (file_metadata->setProcessing())
-        {
-            return std::make_shared<S3QueueObjectInfo>(val->key, val->info, file_metadata);
-        }
+            return std::make_shared<S3QueueObjectInfo>(*val, file_metadata);
     }
     return {};
 }
@@ -325,8 +323,8 @@ Chunk StorageS3QueueSource::generate()
         if (!reader)
             break;
 
-        const auto * key_with_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
-        auto file_metadata = key_with_info->processing_holder;
+        const auto * object_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
+        auto file_metadata = object_info->processing_holder;
         auto file_status = file_metadata->getFileStatus();
 
         if (isCancelled())
@@ -342,7 +340,7 @@ Chunk StorageS3QueueSource::generate()
                 catch (...)
                 {
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             key_with_info->relative_path, getCurrentExceptionMessage(true));
+                             object_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getObjectInfo().getPath(), *file_status, processed_rows_from_file, false);
@@ -371,7 +369,7 @@ Chunk StorageS3QueueSource::generate()
                 catch (...)
                 {
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                              key_with_info->relative_path, getCurrentExceptionMessage(true));
+                              object_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(path, *file_status, processed_rows_from_file, false);
@@ -418,7 +416,7 @@ Chunk StorageS3QueueSource::generate()
         }
 
         file_metadata->setProcessed();
-        applyActionAfterProcessing(reader.getFile());
+        applyActionAfterProcessing(reader.getObjectInfo().relative_path);
 
         appendLogElement(path, *file_status, processed_rows_from_file, true);
         file_status.reset();
@@ -440,7 +438,7 @@ Chunk StorageS3QueueSource::generate()
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
-        internal_source->create_reader_pool.wait();
+        internal_source->create_reader_pool->wait();
         reader_future = internal_source->createReaderAsync();
     }
 

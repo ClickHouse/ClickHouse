@@ -182,7 +182,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
 
     while (true)
     {
-        current_object_info = file_iterator->next(0);
+        current_object_info = file_iterator->next();
 
         if (!current_object_info)
         {

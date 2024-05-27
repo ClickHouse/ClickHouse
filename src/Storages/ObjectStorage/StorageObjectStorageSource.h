@@ -116,13 +116,13 @@ protected:
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    ReaderHolder createReader(size_t processor = 0);
-    std::future<ReaderHolder> createReaderAsync(size_t processor = 0);
+    ReaderHolder createReader();
+    std::future<ReaderHolder> createReaderAsync();
     std::unique_ptr<ReadBuffer> createReadBuffer(const ObjectInfo & object_info);
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const ObjectInfo & object_info);
-    void lazyInitialize(size_t processor);
+    void lazyInitialize();
 };
 
 class StorageObjectStorageSource::IIterator
@@ -134,10 +134,10 @@ public:
 
     virtual size_t estimatedKeysCount() = 0;
 
-    ObjectInfoPtr next(size_t processor);
+    ObjectInfoPtr next();
 
 protected:
-    virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
+    virtual ObjectInfoPtr nextImpl() = 0;
     LoggerPtr logger;
 };
 
@@ -149,7 +149,7 @@ public:
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr nextImpl(size_t) override;
+    ObjectInfoPtr nextImpl() override;
 
     ReadTaskCallback callback;
     ObjectInfos buffer;
@@ -175,8 +175,8 @@ public:
     size_t estimatedKeysCount() override;
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
-    ObjectInfoPtr nextImplUnlocked(size_t processor);
+    ObjectInfoPtr nextImpl() override;
+    ObjectInfoPtr nextImplUnlocked();
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
@@ -220,7 +220,7 @@ public:
     size_t estimatedKeysCount() override { return keys.size(); }
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
+    ObjectInfoPtr nextImpl() override;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
@@ -284,7 +284,7 @@ public:
     };
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
+    ObjectInfoPtr nextImpl() override;
     std::shared_ptr<IArchiveReader> createArchiveReader(ObjectInfoPtr object_info) const;
 
     const ObjectStoragePtr object_storage;

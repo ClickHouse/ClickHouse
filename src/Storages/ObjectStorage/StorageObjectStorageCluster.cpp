@@ -88,7 +88,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {
-        auto object_info = iterator->next(0);
+        auto object_info = iterator->next();
         if (object_info)
             return object_info->getPath();
         else
