@@ -45,18 +45,52 @@ namespace
         return res;
     }
 
+    /// Extracts a qualified table name from the config. It can be set either as
+    ///     <table>mydb.prometheus</table>
+    /// or
+    ///     <database>mydb</database>
+    ///     <table>prometheus</table>
+    QualifiedTableName parseTableNameFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        QualifiedTableName res;
+        res.table = config.getString(config_prefix + ".table", "prometheus");
+        res.database = config.getString(config_prefix + ".database", "");
+        if (res.database.empty())
+            res = QualifiedTableName::parseFromString(res.table);
+        if (res.database.empty())
+            res.database = "default";
+        return res;
+    }
+
+    /// Parses a configuration like this:
+    /// <!-- <type>remote_write</type> (Implied, not actually parsed) -->
+    /// <table>db.time_series_table_name</table>
+    PrometheusRequestHandlerConfig parseRemoteWriteConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        PrometheusRequestHandlerConfig res;
+        res.type = PrometheusRequestHandlerConfig::Type::RemoteWrite;
+        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseCommonConfig(config, res);
+        return res;
+    }
+
     /// Parses a configuration like this:
     /// <type>expose_metrics</type>
     /// <metrics>true</metrics>
     /// <asynchronous_metrics>true</asynchronous_metrics>
     /// <events>true</events>
     /// <errors>true</errors>
+    /// -OR-
+    /// <type>remote_write</type>
+    /// <table>db.time_series_table_name</table>
     PrometheusRequestHandlerConfig parseHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
         String type = config.getString(config_prefix + ".type");
 
         if (type == "expose_metrics")
             return parseExposeMetricsConfig(config, config_prefix);
+        else if (type == "remote_write")
+            return parseRemoteWriteConfig(config, config_prefix);
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }

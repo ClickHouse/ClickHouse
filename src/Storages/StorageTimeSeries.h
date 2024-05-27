@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/IStorage.h>
 
 
@@ -103,5 +104,8 @@ private:
     std::vector<Target> targets;
     bool has_inner_tables;
 };
+
+std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
+std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
 
 }

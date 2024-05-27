@@ -9,6 +9,19 @@
 #include <Server/PrometheusMetricsWriter.h>
 #include "config.h"
 
+#include <Access/Credentials.h>
+#include <Common/CurrentThread.h>
+#include <IO/SnappyReadBuffer.h>
+#include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Session.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/checkHTTPHeader.h>
+#include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
+
 
 namespace DB
 {
@@ -74,6 +87,154 @@ public:
 };
 
 
+/// Base implementation of a protocol with Context and authentication.
+class PrometheusRequestHandler::ImplWithContext : public Impl
+{
+public:
+    explicit ImplWithContext(PrometheusRequestHandler & parent) : Impl(parent), default_settings(parent.server.context()->getSettingsRef()) { }
+
+    virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
+
+protected:
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        SCOPE_EXIT({
+            request_credentials.reset();
+            context.reset();
+            session.reset();
+            params.reset();
+        });
+
+        params = std::make_unique<HTMLForm>(default_settings, request);
+        parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
+
+        if (!authenticateUserAndMakeContext(request, response))
+            return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
+                    /// and `request_credentials` must be preserved until the next request or until any exception.
+
+        /// Initialize query scope.
+        std::optional<CurrentThread::QueryScope> query_scope;
+        if (context)
+            query_scope.emplace(context);
+
+        handlingRequestWithContext(request, response);
+    }
+
+    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
+    {
+        session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
+
+        if (!authenticateUser(request, response))
+            return false;
+
+        makeContext(request);
+        return true;
+    }
+
+    bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
+    {
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, server().context(), log());
+    }
+
+    void makeContext(HTTPServerRequest & request)
+    {
+        context = session->makeQueryContext();
+
+        /// Anything else beside HTTP POST should be readonly queries.
+        setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+
+        auto roles = params->getAll("role");
+        if (!roles.empty())
+            context->setCurrentRoles(roles);
+
+        auto param_could_be_skipped = [&] (const String & name)
+        {
+            /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+            if (name.empty())
+                return true;
+
+            /// Some parameters (database, default_format, everything used in the code above) do not
+            /// belong to the Settings class.
+            static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
+            return reserved_param_names.contains(name);
+        };
+
+        /// Settings can be overridden in the query.
+        SettingsChanges settings_changes;
+        for (const auto & [key, value] : *params)
+        {
+            if (!param_could_be_skipped(key))
+            {
+                /// Other than query parameters are treated as settings.
+                settings_changes.push_back({key, value});
+            }
+        }
+
+        context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        context->applySettingsChanges(settings_changes);
+
+        /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+        context->setCurrentQueryId(params->get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    }
+
+    void onException() override
+    {
+        // So that the next requests on the connection have to always start afresh in case of exceptions.
+        request_credentials.reset();
+    }
+
+    const Settings & default_settings;
+    std::unique_ptr<HTMLForm> params;
+    std::unique_ptr<Session> session;
+    std::unique_ptr<Credentials> request_credentials;
+    ContextMutablePtr context;
+};
+
+
+/// Implementation of the remote-write protocol.
+class PrometheusRequestHandler::RemoteWriteImpl : public ImplWithContext
+{
+public:
+    using ImplWithContext::ImplWithContext;
+
+    void beforeHandlingRequest(HTTPServerRequest & request) override
+    {
+        LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteWrite);
+    }
+
+    void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
+    {
+#if USE_PROMETHEUS_PROTOBUFS
+        checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
+        checkHTTPHeader(request, "Content-Encoding", "snappy");
+
+        ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
+            std::make_unique<SnappyReadBuffer>(wrapReadBufferReference(request.getStream()))};
+
+        prometheus::WriteRequest write_request;
+        if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+
+        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
+        PrometheusRemoteWriteProtocol protocol{table, context};
+
+        if (write_request.timeseries_size())
+            protocol.writeTimeSeries(write_request.timeseries());
+
+        if (write_request.metadata_size())
+            protocol.writeMetricsMetadata(write_request.metadata());
+
+        response.setContentType("text/plain; charset=UTF-8");
+        response.send();
+
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote write protocol is disabled");
+#endif
+    }
+};
+
+
 PrometheusRequestHandler::PrometheusRequestHandler(
     IServer & server_,
     const PrometheusRequestHandlerConfig & config_,
@@ -97,6 +258,11 @@ void PrometheusRequestHandler::createImpl()
         case PrometheusRequestHandlerConfig::Type::ExposeMetrics:
         {
             impl = std::make_unique<ExposeMetricsImpl>(*this);
+            return;
+        }
+        case PrometheusRequestHandlerConfig::Type::RemoteWrite:
+        {
+            impl = std::make_unique<RemoteWriteImpl>(*this);
             return;
         }
     }

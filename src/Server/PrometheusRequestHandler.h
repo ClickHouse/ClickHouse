@@ -11,7 +11,7 @@ class IServer;
 class PrometheusMetricsWriter;
 class WriteBufferFromHTTPServerResponse;
 
-/// Handles requests for prometheus protocols (expose_metrics).
+/// Handles requests for prometheus protocols (expose_metrics, remote_write).
 class PrometheusRequestHandler : public HTTPRequestHandler
 {
 public:
@@ -41,7 +41,9 @@ private:
     const LoggerPtr log;
 
     class Impl;
+    class ImplWithContext;
     class ExposeMetricsImpl;
+    class RemoteWriteImpl;
     std::unique_ptr<Impl> impl;
 
     String http_method;
