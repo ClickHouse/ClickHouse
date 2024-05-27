@@ -479,14 +479,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         column_indices.push_back(index);
     }
 
-    std::unique_ptr<parquet::arrow::FileReader> file_reader;
+    auto parquet_reader = parquet::ParquetFileReader::Open(
+        arrow_file,
+        parquet::default_reader_properties(),
+        metadata);
 
-    parquet::arrow::FileReaderBuilder builder;
-    THROW_ARROW_NOT_OK(
-        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
-    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
-
-    auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
+    auto & bf_reader = parquet_reader->GetBloomFilterReader();
     auto bloom_filter_condition = format_settings.parquet.bloom_filter_push_down
         ? make_bloom_filter_condition(bf_reader, getPort().getHeader(), column_name_to_index, filter_dag, ctx)
         : nullptr;

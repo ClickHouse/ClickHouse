@@ -45,7 +45,7 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    ParquetBloomFilterCondition(const std::vector<RPNElement> & rpn_);
+    explicit ParquetBloomFilterCondition(const std::vector<RPNElement> & rpn_);
 
     bool mayBeTrueOnRowGroup(const IndexToColumnBF & bf);
 
