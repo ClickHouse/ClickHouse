@@ -33,7 +33,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
-#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
+#include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 #include <boost/container/flat_set.hpp>
 
@@ -59,8 +59,6 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 
     extern const int NO_ELEMENTS_IN_CONFIG;
-
-    extern const int REQUIRED_PASSWORD;
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
@@ -519,7 +517,7 @@ void HTTPHandler::processQuery(
             {
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-                formatExceptionForClient(status.code, request, response, used_output);
+                setHTTPResponseStatusAndHeadersForException(status.code, request, response, used_output.out_holder.get(), log);
                 current_output_format.setException(status.message);
                 current_output_format.finalize();
                 used_output.exception_is_written = true;
@@ -553,7 +551,7 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    formatExceptionForClient(exception_code, request, response, used_output);
+    setHTTPResponseStatusAndHeadersForException(exception_code, request, response, used_output.out_holder.get(), log);
 
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
@@ -613,38 +611,6 @@ catch (...)
     tryLogCurrentException(log, "Cannot send exception to client");
 
     used_output.cancel();
-}
-
-void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
-{
-    if (used_output.out_holder)
-        used_output.out_holder->setExceptionCode(exception_code);
-    else
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-    /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
-    /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
-    /// to avoid reading part of the current request body in the next request.
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
-    {
-        try
-        {
-            if (!request.getStream().eof())
-                request.getStream().ignoreAll();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Cannot read remaining request body during exception handling");
-            response.setKeepAlive(false);
-        }
-    }
-
-    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-        response.requireAuthentication("ClickHouse server HTTP API");
-    else
-        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
 }
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
