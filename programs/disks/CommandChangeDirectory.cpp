@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
-
 class CommandChangeDirectory final : public ICommand
 {
 public:
@@ -28,9 +23,7 @@ public:
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
         DiskWithPath & disk = getDiskWithPath(client, options, "disk");
-        // std::cerr << "Disk name: " << disk.getDisk()->getName() << std::endl;
         String path = getValueFromCommandLineOptionsThrow<String>(options, "path");
-        // std::cerr << "Disk path: " << path << std::endl;
         disk.setPath(path);
     }
 };

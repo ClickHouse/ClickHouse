@@ -8,18 +8,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
-
 class CommandRead final : public ICommand
 {
 public:
     CommandRead()
     {
         command_name = "read";
-        // command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "Read a file from `FROM_PATH` to `TO_PATH`";
         options_description.add_options()(
             "path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (mandatory, positional)")(

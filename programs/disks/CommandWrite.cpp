@@ -9,18 +9,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
-
 class CommandWrite final : public ICommand
 {
 public:
     CommandWrite()
     {
         command_name = "write";
-        // command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "Write a file from `FROM_PATH` to `TO_PATH`";
         options_description.add_options()("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin`")(
             "path-to", po::value<String>(), "file to which we are writing (mandatory, positional)");

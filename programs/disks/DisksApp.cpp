@@ -257,7 +257,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
 #ifdef CLICKHOUSE_CLOUD
-    // command_descriptions.emplace("packed-io", makeCommandPackedIO());
+    command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
 }
 

@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+};
+
 using ProgramOptionsDescription = boost::program_options::options_description;
 using CommandLineOptions = boost::program_options::variables_map;
 

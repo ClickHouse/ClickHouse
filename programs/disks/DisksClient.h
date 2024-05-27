@@ -24,7 +24,6 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-
 std::vector<String> split(const String & text, const String & delimiters);
 
 using ProgramOptionsDescription = boost::program_options::options_description;
@@ -34,6 +33,7 @@ using CommandLineOptions = boost::program_options::variables_map;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 };
 
 class DiskWithPath
