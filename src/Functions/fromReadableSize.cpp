@@ -1,4 +1,4 @@
-#include <limits>
+#include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/convert.hpp>
 #include <boost/convert/strtol.hpp>
@@ -8,6 +8,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <limits>
+#include <string_view>
 
 namespace DB
 {
@@ -73,145 +77,65 @@ public:
         auto & res_data = col_to->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
-        {
+        {   
             std::string_view str = arguments[0].column->getDataAt(i).toView();
-            Int64 token_tail = 0;
-            Int64 token_front = 0;
-            Int64 last_pos = str.length() - 1;
-            UInt64 result = 0;
-
-            /// no valid characters
-            if (last_pos < 0)
+            ReadBufferFromString buf(str);
+            // tryReadFloatText does seem to not raise any error when there is leading whitespace so we cehck for it explicitly
+            skipWhitespaceIfAny(buf);
+            if (buf.getPosition() > 0)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {}, don't find valid characters, str: \"{}\".",
+                    "Invalid expression for function {} - Leading whitespace is not allowed (\"{}\")",
                     getName(),
-                    String(str));
+                    str
+                );
             }
-
-            /// last pos character must be character and not be separator or number after ignoring '.' and ' '
-            if (!isalpha(str[last_pos]))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, str: \"{}\".", getName(), String(str));
-            }
-
-            /// scan spaces at the beginning
-            scanSpaces(str, token_tail, last_pos);
-            token_front = token_tail;
-            /// scan unsigned integer
-            if (!scanUnsignedInteger(str, token_tail, last_pos))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {}, find number failed, str: \"{}\".",
-                    getName(),
-                    String(str));
-            }
-
-            /// if there is a '.', then scan another integer to get a float number
-            if (token_tail <= last_pos && str[token_tail] == '.')
-            {
-                token_tail++;
-                if (!scanUnsignedInteger(str, token_tail, last_pos))
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid expression for function {}, find number after '.' failed, str: \"{}\".",
-                        getName(),
-                        String(str));
-                }
-            }
-
-            /// convert float/integer string to float
             Float64 base = 0;
-            std::string_view base_str = str.substr(token_front, token_tail - token_front);
-            auto value = boost::convert<Float64>(base_str, boost::cnv::strtol());
-            if (!value.has_value())
+            if (!tryReadFloatText(base, buf))
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {}, convert string to float64 failed: \"{}\".",
+                    "Invalid expression for function {} - Unable to parse readable size numeric component (\"{}\")",
                     getName(),
-                    String(base_str));
+                    str
+                );
             }
-            base = value.get();
-
-            scanSpaces(str, token_tail, last_pos);
-            token_front = token_tail;
-
-            /// scan a unit
-            if (!scanUnit(str, token_tail, last_pos))
+            skipWhitespaceIfAny(buf);
+            String unit;
+            readStringUntilWhitespace(unit, buf);
+            if (!buf.eof())
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {}, find unit failed, str: \"{}\".",
-                    getName(),
-                    String(str));
+                    ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Found trailing characters after readable size string (\"{}\")", getName(), str
+                );
             }
-
-            std::string unit = std::string{str.substr(token_front, token_tail - token_front)};
             boost::algorithm::to_lower(unit);
             auto iter = size_unit_to_bytes.find(unit);
-            if (iter == size_unit_to_bytes.end()) /// not find unit
+            if (iter == size_unit_to_bytes.end())
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
+                    ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Unknown readable size unit (\"{}\")", getName(), unit
+                );
             }
             Float64 raw_num_bytes = base * iter->second;
             if (raw_num_bytes > std::numeric_limits<UInt64>::max())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid expression for function {}, result is too big for output data type (UInt64): \"{}\".",
+                    "Invalid expression for function {} - Result is too big for output type (UInt64) (\"{}\").",
                     getName(),
                     raw_num_bytes
                 );
             }
             // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
             // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
-            result = static_cast<UInt64>(std::ceil(raw_num_bytes));
+            UInt64 result = static_cast<UInt64>(std::ceil(raw_num_bytes));
 
             res_data.emplace_back(result);
         }
 
         return col_to;
-    }
-
-    /// scan an unsigned integer number
-    static bool scanUnsignedInteger(std::string_view & str, Int64 & index, Int64 last_pos)
-    {
-        int64_t begin_index = index;
-        while (index <= last_pos && isdigit(str[index]))
-        {
-            index++;
-        }
-        return index != begin_index;
-    }
-
-    /// scan a unit
-    static bool scanUnit(std::string_view & str, Int64 & index, Int64 last_pos)
-    {
-        int64_t begin_index = index;
-        while (index <= last_pos && !isdigit(str[index]) && !isSeparator(str[index]))
-        {
-            index++;
-        }
-        return index != begin_index;
-    }
-
-    /// scan spaces
-    static void scanSpaces(std::string_view & str, Int64 & index, Int64 last_pos)
-    {
-        while (index <= last_pos && (str[index] == ' '))
-        {
-            index++;
-        }
-    }
-
-    static bool isSeparator(char symbol)
-    {
-        return symbol == ';' || symbol == '-' || symbol == '+' || symbol == ',' || symbol == ':' || symbol == ' ';
     }
 };
 
