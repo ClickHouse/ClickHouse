@@ -6,6 +6,7 @@
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/GWPAsan.h>
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -14,12 +15,6 @@
 
 #if !USE_JEMALLOC
 #    include <cstdlib>
-#endif
-
-#if USE_GWP_ASAN
-#    include <gwp_asan/guarded_pool_allocator.h>
-#    include <gwp_asan/optional/options_parser.h>
-
 #endif
 
 namespace ProfileEvents
@@ -31,10 +26,6 @@ namespace ProfileEvents
 
 namespace Memory
 {
-
-#if USE_GWP_ASAN
-extern gwp_asan::GuardedPoolAllocator GuardedAlloc;
-#endif
 
 inline ALWAYS_INLINE size_t alignToSizeT(std::align_val_t align) noexcept
 {
