@@ -1,7 +1,6 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
-#include "Columns/IColumn.h"
 
 
 namespace DB
@@ -69,9 +68,10 @@ const ChunksToSquash* ApplySquashing::getInfoFromChunk(const Chunk & chunk)
     return agg_info;
 }
 
-PlanSquashing::PlanSquashing(size_t min_block_size_rows_, size_t min_block_size_bytes_)
+PlanSquashing::PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
+    , header(std::move(header_))
 {
 }
 
@@ -141,8 +141,7 @@ Chunk PlanSquashing::convertToChunk(std::vector<Chunk> && chunks)
 
     chunks.clear();
 
-    Columns cols = {};
-    return Chunk(cols, 0, info);
+    return Chunk(header.cloneEmptyColumns(), 0, info);
 }
 
 void PlanSquashing::expandCurrentSize(size_t rows, size_t bytes)

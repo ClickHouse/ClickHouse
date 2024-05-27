@@ -1267,7 +1267,7 @@ private:
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
-    std::vector<PlanSquashing> projection_squash_plannings;
+    std::vector<PlanSquashing *> projection_squash_plannings;
     std::vector<ApplySquashing> projection_squashes;
     const ProjectionsDescription & projections;
 
@@ -1282,12 +1282,15 @@ private:
 
 void PartMergerWriter::prepare()
 {
+    projection_squash_plannings.reserve(ctx->projections_to_build.size());
+    projection_squashes.reserve(ctx->projections_to_build.size());
     const auto & settings = ctx->context->getSettingsRef();
 
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
+        PlanSquashing plan_squashing(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squash_plannings.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squash_plannings.push_back(&plan_squashing);
         projection_squashes.emplace_back(ctx->updated_header);
     }
 
@@ -1313,24 +1316,21 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             const auto & projection = *ctx->projections_to_build[i];
 
-            Block projection_block;
+            Chunk planned_chunk;
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                Block to_plan = projection.calculate(cur_block, ctx->context);
-                Chunk planned_chunk = projection_squash_plannings[i].add({to_plan.getColumns(), to_plan.rows()});
-                Chunk projection_chunk;
-                if (planned_chunk.hasChunkInfo())
-                    projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
+                Block block_to_squash = projection.calculate(cur_block, ctx->context);
+                planned_chunk = projection_squash_plannings[i]->add({block_to_squash.getColumns(), block_to_squash.rows()});
+            }
+
+            if (planned_chunk.hasChunkInfo())
+            {
+                Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
                 ColumnsWithTypeAndName cols;
                 for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
                     cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
-                projection_block = Block(cols);
-            }
-
-            if (projection_block)
-            {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                    *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
                 tmp_part.part->getDataPartStorage().commitTransaction();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
@@ -1349,18 +1349,16 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     {
         const auto & projection = *ctx->projections_to_build[i];
         auto & projection_squash_plan = projection_squash_plannings[i];
-        auto planned_chunk = projection_squash_plan.flush();
-        Chunk projection_chunk;
+        auto planned_chunk = projection_squash_plan->flush();
         if (planned_chunk.hasChunkInfo())
-            projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
-        ColumnsWithTypeAndName cols;
-        for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-            cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
-        auto projection_block = Block(cols);
-        if (projection_block)
         {
+            Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
+            ColumnsWithTypeAndName cols;
+            for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
+                cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
             temp_part.part->getDataPartStorage().commitTransaction();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
