@@ -74,15 +74,11 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view str{arguments[0].column->getDataAt(i)};
+            std::string_view str = arguments[0].column->getDataAt(i).toView();
             Int64 token_tail = 0;
             Int64 token_front = 0;
             Int64 last_pos = str.length() - 1;
             UInt64 result = 0;
-
-            /// ignore '.' and ' ' at the end of string
-            while (last_pos >= 0 && (str[last_pos] == ' ' || str[last_pos] == '.'))
-                --last_pos;
 
             /// no valid characters
             if (last_pos < 0)

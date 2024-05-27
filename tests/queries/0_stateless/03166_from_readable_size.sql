@@ -27,5 +27,5 @@ SELECT fromReadableSize('3.00 KiB');    -- 3072
 -- Resulting bytes are rounded up
 SELECT fromReadableSize('1.0001 KiB');  -- 1025
 
--- Surrounding whitespace and trailing punctuation is ignored
-SELECT fromReadableSize('   1    KiB.   ');
+-- Leading & infix whitespace is ignored
+SELECT fromReadableSize('   1    KiB');
