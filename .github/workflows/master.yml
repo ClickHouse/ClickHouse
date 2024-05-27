@@ -27,15 +27,16 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 sync_pr.py --merge || :
-      - name: Python unit tests
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          echo "Testing the main ci directory"
-          python3 -m unittest discover -s . -p 'test_*.py'
-          for dir in *_lambda/; do
-            echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
+# Runs in MQ:
+#      - name: Python unit tests
+#        run: |
+#          cd "$GITHUB_WORKSPACE/tests/ci"
+#          echo "Testing the main ci directory"
+#          python3 -m unittest discover -s . -p 'test_*.py'
+#          for dir in *_lambda/; do
+#            echo "Testing $dir"
+#            python3 -m unittest discover -s "$dir" -p 'test_*.py'
+#          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -135,7 +136,7 @@ jobs:
 
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Builds_1, Builds_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Debug
@@ -162,7 +163,7 @@ jobs:
           python3 mark_release_ready.py
 
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs: [RunConfig, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
