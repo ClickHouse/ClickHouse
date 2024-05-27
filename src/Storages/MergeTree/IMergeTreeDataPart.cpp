@@ -34,7 +34,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -793,7 +793,8 @@ void IMergeTreeDataPart::addProjectionPart(
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded)
+void IMergeTreeDataPart::loadProjections(
+    bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded, bool only_metadata)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
@@ -813,7 +814,10 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
 
                 try
                 {
-                    part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                    if (only_metadata)
+                        part->loadChecksums(require_columns_checksums);
+                    else
+                        part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
                 }
                 catch (...)
                 {
@@ -2428,6 +2432,38 @@ void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
     is_broken = true;
     exception = message;
     exception_code = code;
+}
+
+ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) const
+{
+    const size_t total_mark = getMarksCount();
+    /// If column doesn't have dynamic subcolumns or part has no data, just create column using it's type.
+    if (!column.type->hasDynamicSubcolumns() || !total_mark)
+        return column.type->createColumn();
+
+    /// Otherwise, read sample column with 0 rows from the part, so it will load dynamic structure.
+    NamesAndTypesList cols;
+    cols.emplace_back(column);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    MergeTreeReaderPtr reader = getReader(
+        cols,
+        storage_snapshot_ptr,
+        MarkRanges{MarkRange(0, 1)},
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
+        storage.getContext()->getMarkCache().get(),
+        std::make_shared<AlterConversions>(),
+        MergeTreeReaderSettings{},
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    Columns result;
+    result.resize(1);
+    reader->readRows(0, 1, false, 0, result);
+    return result[0];
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

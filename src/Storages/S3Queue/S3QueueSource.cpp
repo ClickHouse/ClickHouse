@@ -5,9 +5,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Common/getRandomASCIIString.h>
 #include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace CurrentMetrics
@@ -31,11 +31,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
+StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
         const std::string & key_,
-        std::optional<S3::ObjectInfo> info_,
+        const ObjectMetadata & object_metadata_,
         Metadata::FileMetadataPtr processing_holder_)
-    : StorageS3Source::KeyWithInfo(key_, info_)
+    : ObjectInfo(key_, object_metadata_)
     , processing_holder(processing_holder_)
 {
 }
@@ -45,7 +45,8 @@ StorageS3QueueSource::FileIterator::FileIterator(
     std::unique_ptr<GlobIterator> glob_iterator_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
-    : metadata(metadata_)
+    : StorageObjectStorageSource::IIterator("S3QueueIterator")
+    , metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , current_processor(getRandomASCIIString(10)) /// TODO: add server uuid?
     , shutdown_called(shutdown_called_)
@@ -90,7 +91,7 @@ void StorageS3QueueSource::FileIterator::releaseAndResetCurrentBucket()
     }
 }
 
-StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket()
+StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket()
 {
     /// We need this lock to maintain consistency between listing s3 directory
     /// and getting/putting result into listed_keys_cache.
@@ -240,7 +241,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::getNext
     }
 }
 
-StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
+StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::next()
 {
     while (!shutdown_called)
     {
@@ -257,7 +258,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
         auto file_metadata = metadata->getFileMetadata(val->key);
         if (file_metadata->setProcessing())
         {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, file_metadata);
+            return std::make_shared<S3QueueObjectInfo>(val->key, val->info, file_metadata);
         }
     }
     return {};
@@ -271,7 +272,7 @@ size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
 StorageS3QueueSource::StorageS3QueueSource(
     String name_,
     const Block & header_,
-    std::unique_ptr<StorageS3Source> internal_source_,
+    std::unique_ptr<StorageObjectStorageSource> internal_source_,
     std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
     const S3QueueAction & action_,
     RemoveFileFunc remove_file_func_,
@@ -296,11 +297,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     , remove_file_func(remove_file_func_)
     , log(log_)
 {
-}
-
-StorageS3QueueSource::~StorageS3QueueSource()
-{
-    internal_source->create_reader_pool.wait();
 }
 
 String StorageS3QueueSource::getName() const
@@ -329,7 +325,7 @@ Chunk StorageS3QueueSource::generate()
         if (!reader)
             break;
 
-        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+        const auto * key_with_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
         auto file_metadata = key_with_info->processing_holder;
         auto file_status = file_metadata->getFileStatus();
 
@@ -346,14 +342,16 @@ Chunk StorageS3QueueSource::generate()
                 catch (...)
                 {
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             key_with_info->key, getCurrentExceptionMessage(true));
+                             key_with_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+                appendLogElement(reader.getObjectInfo().getPath(), *file_status, processed_rows_from_file, false);
             }
 
             break;
         }
+
+        const auto & path = reader.getObjectInfo().getPath();
 
         if (shutdown_called)
         {
@@ -364,7 +362,7 @@ Chunk StorageS3QueueSource::generate()
             {
                 LOG_DEBUG(
                     log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
-                    processed_rows_from_file, reader.getFile());
+                    processed_rows_from_file, path);
 
                 try
                 {
@@ -373,10 +371,10 @@ Chunk StorageS3QueueSource::generate()
                 catch (...)
                 {
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             key_with_info->key, getCurrentExceptionMessage(true));
+                              key_with_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+                appendLogElement(path, *file_status, processed_rows_from_file, false);
 
                 /// Leave the file half processed. Table is being dropped, so we do not care.
                 break;
@@ -384,7 +382,7 @@ Chunk StorageS3QueueSource::generate()
 
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
                      "Will process the file fully and then shutdown",
-                     reader.getFile(), processed_rows_from_file);
+                     path, processed_rows_from_file);
         }
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
@@ -398,30 +396,31 @@ Chunk StorageS3QueueSource::generate()
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), reader.getPath());
+                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
 
                 file_status->processed_rows += chunk.getNumRows();
                 processed_rows_from_file += chunk.getNumRows();
 
-                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath(), reader.getKeyWithInfo().info->size);
+                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
+                    chunk, requested_virtual_columns, path, reader.getObjectInfo().metadata->size_bytes);
                 return chunk;
             }
         }
         catch (...)
         {
             const auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getFile(), message);
+            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
             file_metadata->setFailed(message);
 
-            appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+            appendLogElement(path, *file_status, processed_rows_from_file, false);
             throw;
         }
 
         file_metadata->setProcessed();
         applyActionAfterProcessing(reader.getFile());
 
-        appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, true);
+        appendLogElement(path, *file_status, processed_rows_from_file, true);
         file_status.reset();
         processed_rows_from_file = 0;
 
@@ -437,7 +436,7 @@ Chunk StorageS3QueueSource::generate()
         if (!reader)
             break;
 
-        file_status = files_metadata->getFileStatus(reader.getFile());
+        file_status = files_metadata->getFileStatus(reader.getObjectInfo().getPath());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.

@@ -282,4 +282,34 @@ private:
     std::unique_ptr<WriteFileOperation> write_operation;
 };
 
+struct TruncateMetadataFileOperation final : public IMetadataOperation
+{
+    const TruncateFileOperationOutcomePtr outcome = std::make_shared<TruncateFileOperationOutcome>();
+
+    TruncateMetadataFileOperation(
+        const std::string & path_,
+        size_t target_size_,
+        const MetadataStorageFromDisk & metadata_storage_,
+        IDisk & disk_)
+        : path(path_)
+        , target_size(target_size_)
+        , metadata_storage(metadata_storage_)
+        , disk(disk_)
+    {
+    }
+
+    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
+
+    void undo(std::unique_lock<SharedMutex> & lock) override;
+
+private:
+    std::string path;
+    size_t target_size;
+
+    const MetadataStorageFromDisk & metadata_storage;
+    IDisk & disk;
+
+    std::unique_ptr<WriteFileOperation> write_operation;
+};
+
 }

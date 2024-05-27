@@ -37,6 +37,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -159,6 +160,8 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
     extern const Metric AttachedTable;
+    extern const Metric AttachedView;
+    extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
 }
@@ -358,6 +361,8 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
+    std::atomic_size_t max_view_num_to_warn = 10000lu;
+    std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
@@ -934,6 +939,10 @@ Strings Context::getWarnings() const
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
+        if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}", shared->max_view_num_to_warn));
+        if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
@@ -1641,7 +1650,7 @@ void Context::updateExternalTable(const String & table_name, std::shared_ptr<Tem
     std::lock_guard lock(mutex);
     auto it = external_tables_mapping.find(table_name);
     if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exists", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
 
     it->second = std::move(temporary_table);
 }
@@ -3710,6 +3719,18 @@ void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
     shared->max_table_num_to_warn= max_table_to_warn;
 }
 
+void Context::setMaxViewNumToWarn(size_t max_view_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_view_num_to_warn= max_view_to_warn;
+}
+
+void Context::setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_dictionary_num_to_warn= max_dictionary_to_warn;
+}
+
 void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
@@ -5188,10 +5209,10 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 }
 
 #if USE_LIBURING
-IOUringReader & Context::getIOURingReader() const
+IOUringReader & Context::getIOUringReader() const
 {
     callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+        shared->io_uring_reader = createIOUringReader();
     });
 
     return *shared->io_uring_reader;
