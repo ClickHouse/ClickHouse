@@ -22,7 +22,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -115,38 +114,6 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
-}
-
-Float64 ColumnNullable::getFloat64(size_t n) const
-{
-    if (isNullAt(n))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat64", getName(), n);
-    else
-        return getNestedColumn().getFloat64(n);
-}
-
-Float32 ColumnNullable::getFloat32(size_t n) const
-{
-    if (isNullAt(n))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat32", getName(), n);
-    else
-        return getNestedColumn().getFloat32(n);
-}
-
-UInt64 ColumnNullable::getUInt(size_t n) const
-{
-    if (isNullAt(n))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getUInt", getName(), n);
-    else
-        return getNestedColumn().getUInt(n);
-}
-
-Int64 ColumnNullable::getInt(size_t n) const
-{
-    if (isNullAt(n))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getInt", getName(), n);
-    else
-        return getNestedColumn().getInt(n);
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)
@@ -868,15 +835,6 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
-void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
-{
-    Columns nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
-    nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
-}
-
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
@@ -931,25 +889,6 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
         return makeNullable(column);
 
     return column;
-}
-
-ColumnPtr removeNullable(const ColumnPtr & column)
-{
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-        return column_nullable->getNestedColumnPtr();
-    return column;
-}
-
-ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
-{
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-    {
-        if (!column_low_cardinality->nestedIsNullable())
-            return column;
-        return column_low_cardinality->cloneWithDefaultOnNull();
-    }
-
-    return removeNullable(column);
 }
 
 }

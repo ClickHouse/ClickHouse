@@ -1,5 +1,3 @@
-// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
-
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -11,7 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -1174,7 +1172,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             else if (parent_cversion > node.cversion)
                 node.cversion = parent_cversion;
 
-            node.pzxid = std::max(zxid, node.pzxid);
+            if (zxid > node.pzxid)
+                node.pzxid = zxid;
             node.increaseNumChildren();
         };
 
@@ -1352,8 +1351,9 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     [zxid](KeeperStorage::Node & parent)
                     {
-                        parent.pzxid = std::max(parent.pzxid, zxid);
-                    }
+                        if (parent.pzxid < zxid)
+                            parent.pzxid = zxid;
+                   }
                 }
             );
         };
@@ -2708,5 +2708,3 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
-
-// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

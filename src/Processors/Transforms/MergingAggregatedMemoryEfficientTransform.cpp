@@ -363,7 +363,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->chunk_num = chunks_to_merge->chunk_num;
     chunk.setChunkInfo(std::move(res_info));
 
-    auto block = params->aggregator.mergeBlocks(blocks_list, params->final, is_cancelled);
+    auto block = params->aggregator.mergeBlocks(blocks_list, params->final);
 
     if (!required_sort_description.empty())
         sortBlock(block, required_sort_description);

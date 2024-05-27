@@ -105,10 +105,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
         && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
-#if USE_SSH
-        && (lhs.ssh_keys == rhs.ssh_keys)
-#endif
-        && (lhs.http_auth_scheme == rhs.http_auth_scheme)
+        && (lhs.ssh_keys == rhs.ssh_keys) && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name);
 }
 
@@ -118,16 +115,13 @@ void AuthenticationData::setPassword(const String & password_)
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(password_));
-            return;
+            return setPasswordHashBinary(Util::stringToDigest(password_));
 
         case AuthenticationType::SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeSHA256(password_));
-            return;
+            return setPasswordHashBinary(Util::encodeSHA256(password_));
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
-            return;
+            return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
 
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
@@ -149,7 +143,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
+    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
 }
 
 String AuthenticationData::getPassword() const
@@ -332,7 +326,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
             break;
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
         }
         case AuthenticationType::HTTP:
@@ -361,7 +355,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     {
 #if USE_SSH
         AuthenticationData auth_data(*query.type);
-        std::vector<SSHKey> keys;
+        std::vector<ssh::SSHKey> keys;
 
         size_t args_size = query.children.size();
         for (size_t i = 0; i < args_size; ++i)
@@ -372,7 +366,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
             try
             {
-                keys.emplace_back(SSHKeyFactory::makePublicKeyFromBase64(key_base64, type));
+                keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(key_base64, type));
             }
             catch (const std::invalid_argument &)
             {
@@ -383,7 +377,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         auth_data.setSSHKeys(std::move(keys));
         return auth_data;
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
     }
 

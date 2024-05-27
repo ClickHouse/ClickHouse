@@ -28,16 +28,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
-{
-    std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
-};
-
-struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
-{
-    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
-};
-
 void SerializationVariant::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -45,7 +35,6 @@ void SerializationVariant::enumerateStreams(
 {
     const auto * type_variant = data.type ? &assert_cast<const DataTypeVariant &>(*data.type) : nullptr;
     const auto * column_variant = data.column ? &assert_cast<const ColumnVariant &>(*data.column) : nullptr;
-    const auto * variant_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariant>(data.deserialize_state) : nullptr;
 
     auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
@@ -70,8 +59,7 @@ void SerializationVariant::enumerateStreams(
         auto variant_data = SubstreamData(variants[i])
                              .withType(type_variant ? type_variant->getVariant(i) : nullptr)
                              .withColumn(column_variant ? column_variant->getVariantPtrByGlobalDiscriminator(i) : nullptr)
-                             .withSerializationInfo(data.serialization_info)
-                             .withDeserializeState(variant_deserialize_state ? variant_deserialize_state->states[i] : nullptr);
+                             .withSerializationInfo(data.serialization_info);
 
         addVariantElementToPath(settings.path, i);
         settings.path.back().data = variant_data;
@@ -81,6 +69,16 @@ void SerializationVariant::enumerateStreams(
 
     settings.path.pop_back();
 }
+
+struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
+{
+    std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
+};
+
+struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
+{
+    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
+};
 
 void SerializationVariant::serializeBinaryBulkStatePrefix(
     const IColumn & column,
@@ -125,8 +123,7 @@ void SerializationVariant::serializeBinaryBulkStateSuffix(
 
 void SerializationVariant::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
     variant_state->states.resize(variants.size());
@@ -135,7 +132,7 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     for (size_t i = 0; i < variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->states[i], cache);
+        variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->states[i]);
         settings.path.pop_back();
     }
 
@@ -144,13 +141,12 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
 }
 
 
-void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(
+void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
     size_t limit,
     SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state,
-    std::unordered_map<String, size_t> & variants_statistics) const
+    SerializeBinaryBulkStatePtr & state) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
     if (const size_t size = col.size(); limit == 0 || offset + limit > size)
@@ -189,7 +185,6 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         {
             addVariantElementToPath(settings.path, i);
             variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->states[i]);
-            variants_statistics[variant_names[i]] += col.getVariantByGlobalDiscriminator(i).size();
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -210,7 +205,6 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         addVariantElementToPath(settings.path, non_empty_global_discr);
         /// We can use the same offset/limit as for whole Variant column
         variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->states[non_empty_global_discr]);
-        variants_statistics[variant_names[non_empty_global_discr]] += limit;
         settings.path.pop_back();
         settings.path.pop_back();
         return;
@@ -250,23 +244,12 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
                 variant_offsets_and_limits[i].second,
                 settings,
                 variant_state->states[i]);
-            variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
             settings.path.pop_back();
         }
     }
     settings.path.pop_back();
 }
 
-void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
-    const DB::IColumn & column,
-    size_t offset,
-    size_t limit,
-    DB::ISerialization::SerializeBinaryBulkSettings & settings,
-    DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
-{
-    std::unordered_map<String, size_t> tmp_statistics;
-    serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics);
-}
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
@@ -511,8 +494,10 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
         {
             auto [elem_nested_depth, elem_priority, elem_simple_nested_depth] = getTypeTextDeserializePriority(elem, nested_depth + 1, simple_nested_depth, priority_map);
             sum_priority += elem_priority;
-            max_nested_depth = std::max(elem_nested_depth, max_nested_depth);
-            max_simple_nested_depth = std::max(elem_simple_nested_depth, max_simple_nested_depth);
+            if (elem_nested_depth > max_nested_depth)
+                max_nested_depth = elem_nested_depth;
+            if (elem_simple_nested_depth > max_simple_nested_depth)
+                max_simple_nested_depth = elem_simple_nested_depth;
         }
 
         return {max_nested_depth, sum_priority + priority_map.at(TypeIndex::Tuple), max_simple_nested_depth};
@@ -533,9 +518,12 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
         for (const auto & variant : variant_type->getVariants())
         {
             auto [variant_max_depth, variant_priority, variant_simple_nested_depth] = getTypeTextDeserializePriority(variant, nested_depth, simple_nested_depth, priority_map);
-            max_priority = std::max(variant_priority, max_priority);
-            max_depth = std::max(variant_max_depth, max_depth);
-            max_simple_nested_depth = std::max(variant_simple_nested_depth, max_simple_nested_depth);
+            if (variant_priority > max_priority)
+                max_priority = variant_priority;
+            if (variant_max_depth > max_depth)
+                max_depth = variant_max_depth;
+            if (variant_simple_nested_depth > max_simple_nested_depth)
+                max_simple_nested_depth = variant_simple_nested_depth;
         }
 
         return {max_depth, max_priority, max_simple_nested_depth};
@@ -616,14 +604,14 @@ void SerializationVariant::serializeTextEscaped(const IColumn & column, size_t r
 bool SerializationVariant::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
+    readEscapedString(field, istr);
     return tryDeserializeTextEscapedImpl(column, field, settings);
 }
 
 void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
+    readEscapedString(field, istr);
     if (!tryDeserializeTextEscapedImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse escaped value of type {} here: {}", variant_name, field);
 }
@@ -812,7 +800,7 @@ void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    if (!tryReadJSONField(field, istr, settings.json))
+    if (!tryReadJSONField(field, istr))
         return false;
     return tryDeserializeTextJSONImpl(column, field, settings);
 }
@@ -820,7 +808,7 @@ bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer &
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readJSONField(field, istr, settings.json);
+    readJSONField(field, istr);
     if (!tryDeserializeTextJSONImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }

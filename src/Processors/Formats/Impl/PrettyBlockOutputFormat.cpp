@@ -7,8 +7,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -18,14 +16,7 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
 {
-    /// Decide whether we should print a tip near the single number value in the result.
-    if (header_.getColumns().size() == 1)
-    {
-        /// Check if it is a numeric type, possible wrapped by Nullable or LowCardinality.
-        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_.getDataTypes().at(0)));
-        if (isNumber(type))
-            readable_number_tip = true;
-    }
+    readable_number_tip = header_.getColumns().size() == 1 && WhichDataType(header_.getDataTypes()[0]->getTypeId()).isNumber();
 }
 
 
@@ -504,9 +495,6 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     auto columns = chunk.getColumns();
     auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
     if (!is_single_number)
-        return;
-
-    if (columns[0]->isNullAt(0))
         return;
 
     auto value = columns[0]->getFloat64(0);

@@ -100,7 +100,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
-        getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
+        return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -154,7 +154,7 @@ public:
 
     void getExtremes(Field & min, Field & max) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        return dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -208,7 +208,7 @@ public:
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
+        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }

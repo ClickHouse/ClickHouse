@@ -31,17 +31,16 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include <filesystem>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int FILE_DOESNT_EXIST;
-extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
-extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -66,14 +65,14 @@ IcebergMetadata::IcebergMetadata(
 namespace
 {
 
-enum class ManifestEntryStatus : uint8_t
+enum class ManifestEntryStatus
 {
     EXISTING = 0,
     ADDED = 1,
     DELETED = 2,
 };
 
-enum class DataFileContent : uint8_t
+enum class DataFileContent
 {
     DATA = 0,
     POSITION_DELETES = 1,

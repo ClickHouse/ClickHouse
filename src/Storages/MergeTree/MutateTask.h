@@ -51,7 +51,7 @@ private:
 
     bool prepare();
 
-    enum class State : uint8_t
+    enum class State
     {
         NEED_PREPARE,
         NEED_EXECUTE

@@ -17,9 +17,6 @@ namespace DB
 /// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
-
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -30,7 +27,7 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage : uint8_t
+    enum class Usage
     {
         Unknown,  /// we don't know what what happened
         None,     /// query result neither written nor read into/from query cache
@@ -145,7 +142,7 @@ public:
 
         Writer(const Writer & other);
 
-        enum class ChunkType : uint8_t {Result, Totals, Extremes};
+        enum class ChunkType {Result, Totals, Extremes};
         void buffer(Chunk && chunk, ChunkType chunk_type);
 
         void finalizeWrite();

@@ -172,10 +172,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of data type Object.
-    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Returns true if the storage supports storing of dynamic subcolumns.
+    /// For now it makes sense only for data type Object.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
@@ -267,10 +265,7 @@ public:
 
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
-    virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
-    {
-        return false;
-    }
+    virtual bool supportsTrivialCountOptimization() const { return false; }
 
 private:
     StorageID storage_id;

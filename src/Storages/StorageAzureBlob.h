@@ -33,15 +33,15 @@ public:
 
         bool update(const ContextPtr & context);
 
+        void connect(const ContextPtr & context);
+
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
-        bool withPartitionWildcard() const
+        bool withWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
-
-        bool withGlobsIgnorePartitionWildcard() const;
 
         Poco::URI getConnectionURL() const;
 
@@ -98,11 +98,9 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
-
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -332,7 +330,7 @@ private:
     LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.

@@ -18,7 +18,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : header(std::move(header_))
-    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_)
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size_, max_block_size_bytes_)
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
@@ -47,9 +47,18 @@ void MergingSortedAlgorithm::addInput()
     cursors.emplace_back();
 }
 
+static void prepareChunk(Chunk & chunk)
+{
+    auto num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->convertToFullColumnIfConst();
+
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    merged_data.initialize(header, inputs);
     current_inputs = std::move(inputs);
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
@@ -59,7 +68,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         if (!chunk)
             continue;
 
-        convertToFullIfConst(chunk);
+        prepareChunk(chunk);
         cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
@@ -83,7 +92,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    convertToFullIfConst(input.chunk);
+    prepareChunk(input.chunk);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 

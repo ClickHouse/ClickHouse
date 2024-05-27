@@ -28,7 +28,7 @@ class FormatSchemaInfo;
 class ProtobufSchemas : private boost::noncopyable
 {
 public:
-    enum class WithEnvelope : uint8_t
+    enum class WithEnvelope
     {
         // Return descriptor for a top-level message with a user-provided name.
         // Example: In protobuf schema

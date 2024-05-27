@@ -167,7 +167,6 @@ public:
     Stats stats;
     size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
-    size_t sent_initial_requests{0};
     ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
@@ -178,16 +177,8 @@ public:
     virtual ~ImplInterface() = default;
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
-    virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
+    virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
-
-    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
-    {
-        if (++sent_initial_requests > replicas_count)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas");
-
-        doHandleInitialAllRangesAnnouncement(std::move(announcement));
-    }
 
     void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
@@ -224,7 +215,7 @@ public:
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
 
-    void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
+    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
 
     void markReplicaAsUnavailable(size_t replica_number) override;
 
@@ -232,6 +223,7 @@ private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
     const size_t mark_segment_size{0};
 
+    size_t sent_initial_requests{0};
     bool state_initialized{false};
     size_t finished_replicas{0};
 
@@ -299,7 +291,7 @@ private:
 
     void setProgressCallback();
 
-    enum class ScanMode : uint8_t
+    enum class ScanMode
     {
         /// Main working set for the replica
         TakeWhatsMineByHash,
@@ -430,7 +422,7 @@ void DefaultCoordinator::setProgressCallback()
     }
 }
 
-void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     const auto replica_num = announcement.replica_num;
 
@@ -445,9 +437,10 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     ++stats[replica_num].number_of_requests;
     replica_status[replica_num].is_announcement_received = true;
 
+    ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
+    if (sent_initial_requests == replicas_count)
         setProgressCallback();
 
     /// Sift the queue to move out all invisible segments
@@ -788,11 +781,6 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         {
             /// Nobody will come to process any more data
 
-            for (const auto & part : all_parts_to_read)
-                if (!part.description.ranges.empty())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Some segments were left unread for the part {}", part.description.describe());
-
             if (!ranges_for_stealing_queue.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Some orphaned segments were left unread");
 
@@ -830,7 +818,7 @@ public:
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
-    void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
+    void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
@@ -852,7 +840,7 @@ void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 }
 
 template <CoordinationMode mode>
-void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     LOG_TRACE(log, "Received an announcement {}", announcement.describe());
 
@@ -993,9 +981,12 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-        initialize(announcement.mode);
+    {
+        mode = announcement.mode;
+        initialize();
+    }
 
-    pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -1005,7 +996,10 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-        initialize(request.mode);
+    {
+        mode = request.mode;
+        initialize();
+    }
 
     const auto replica_num = request.replica_num;
     auto response = pimpl->handleRequest(std::move(request));
@@ -1030,7 +1024,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
         pimpl->markReplicaAsUnavailable(replica_number);
 }
 
-void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
+void ParallelReplicasReadingCoordinator::initialize()
 {
     switch (mode)
     {

@@ -50,7 +50,7 @@ RefreshTaskHolder RefreshTask::create(
         for (auto && dependency : strategy.dependencies->children)
             deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
-    context->getRefreshSet().emplace(view.getStorageID(), deps, task);
+    task->set_handle = context->getRefreshSet().emplace(view.getStorageID(), deps, task);
 
     return task;
 }
@@ -507,11 +507,6 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
         return std::chrono::system_clock::now();
     else
         return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
-}
-
-void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
-{
-    set_handle = std::move(set_handle_);
 }
 
 }
