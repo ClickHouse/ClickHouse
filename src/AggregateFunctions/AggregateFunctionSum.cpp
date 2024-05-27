@@ -28,6 +28,16 @@ struct SumSimple
 };
 
 template <typename T>
+struct Sum0Simple
+{
+    using ResultType = std::conditional_t<is_decimal<T>,
+                                          std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
+                                          NearestFieldType<T>>;
+    using AggregateDataType = AggregateFunctionSumData<ResultType>;
+    using Function = AggregateFunctionSum<T, ResultType, AggregateDataType, AggregateFunctionTypeSum0>;
+};
+
+template <typename T>
 struct SumSameType
 {
     using ResultType = T;
@@ -44,6 +54,7 @@ struct SumKahan
 };
 
 template <typename T> using AggregateFunctionSumSimple = typename SumSimple<T>::Function;
+template <typename T> using AggregateFunctionSum0Simple = typename Sum0Simple<T>::Function;
 template <typename T> using AggregateFunctionSumWithOverflow = typename SumSameType<T>::Function;
 template <typename T> using AggregateFunctionSumKahan =
     std::conditional_t<is_decimal<T>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
@@ -75,6 +86,8 @@ void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
     factory.registerFunction("sum", createAggregateFunctionSum<AggregateFunctionSumSimple>, AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("sumWithOverflow", createAggregateFunctionSum<AggregateFunctionSumWithOverflow>);
     factory.registerFunction("sumKahan", createAggregateFunctionSum<AggregateFunctionSumKahan>);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    factory.registerFunction("sum0", {createAggregateFunctionSum<AggregateFunctionSum0Simple>, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }
