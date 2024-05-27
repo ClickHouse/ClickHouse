@@ -7,7 +7,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
-#include <set>
 
 namespace DB
 {
@@ -27,15 +26,22 @@ void DiskSelector::assertInitialized() const
 }
 
 
-void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
+void DiskSelector::initialize(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
+    std::cerr << "Config Prefix: " << config_prefix << std::endl;
+    for (auto & key : keys)
+        std::cerr << "Key inside disk selector initialize: " << key;
+    std::cerr << std::endl;
 
     auto & factory = DiskFactory::instance();
 
     constexpr auto default_disk_name = "default";
     bool has_default_disk = false;
+    constexpr auto local_disk_name = "local";
+    bool has_local_disk = false;
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
@@ -43,6 +49,9 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
 
         if (disk_name == default_disk_name)
             has_default_disk = true;
+
+        if (disk_name == local_disk_name)
+            has_local_disk = true;
 
         const auto disk_config_prefix = config_prefix + "." + disk_name;
 
@@ -54,10 +63,11 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
     if (!has_default_disk)
     {
         disks.emplace(
-            default_disk_name,
-            std::make_shared<DiskLocal>(
-                default_disk_name, context->getPath(), 0, context, config, config_prefix));
+            default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
+
+    if (!has_local_disk)
+        disks.emplace(local_disk_name, std::make_shared<DiskLocal>(local_disk_name, "/", 0, context, config, config_prefix));
 
     is_initialized = true;
 }

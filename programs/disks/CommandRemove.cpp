@@ -1,12 +1,12 @@
-#include "ICommand.h"
 #include <Interpreters/Context.h>
+#include "ICommand.h"
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 class CommandRemove final : public ICommand
@@ -15,40 +15,23 @@ public:
     CommandRemove()
     {
         command_name = "remove";
-        description = "Remove file or directory with all children. Throws exception if file doesn't exists.\nPath should be in format './' or './path' or 'path'";
-        usage = "remove [OPTION]... <PATH>";
+        description = "Remove file or directory with all children. Throws exception if file doesn't exists.\nPath should be in format './' "
+                      "or './path' or 'path'";
+        options_description.add_options()("path", po::value<String>(), "path from which we copy (mandatory, positional)");
+        positional_options_description.add("path", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override
-    {}
-
-    void execute(
-        const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
-        Poco::Util::LayeredConfiguration & config) override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (command_arguments.size() != 1)
-        {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
-
-        String disk_name = config.getString("disk", "default");
-
-        const String & path = command_arguments[0];
-
-        DiskPtr disk = disk_selector->get(disk_name);
-
-        String relative_path = validatePathAndGetAsRelative(path);
-
-        disk->removeRecursive(relative_path);
+        auto disk = client.getCurrentDiskWithPath();
+        const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
+        disk.getDisk()->removeRecursive(path);
     }
 };
-}
 
-std::unique_ptr <DB::ICommand> makeCommandRemove()
+CommandPtr makeCommandRemove()
 {
     return std::make_unique<DB::CommandRemove>();
+}
+
 }

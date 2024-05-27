@@ -1,12 +1,12 @@
-#include "ICommand.h"
 #include <Interpreters/Context.h>
+#include "ICommand.h"
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 class CommandMove final : public ICommand
@@ -16,44 +16,29 @@ public:
     {
         command_name = "move";
         description = "Move file or directory from `from_path` to `to_path`";
-        usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
+        options_description.add_options()("path-from", po::value<String>(), "path from which we copy (mandatory, positional)")(
+            "path-to", po::value<String>(), "path to which we copy (mandatory, positional)");
+        positional_options_description.add("path-from", 1);
+        positional_options_description.add("path-to", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override
-    {}
-
-    void execute(
-        const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
-        Poco::Util::LayeredConfiguration & config) override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (command_arguments.size() != 2)
-        {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
+        auto disk = client.getCurrentDiskWithPath();
 
-        String disk_name = config.getString("disk", "default");
+        String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
+        String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
-        const String & path_from = command_arguments[0];
-        const String & path_to = command_arguments[1];
-
-        DiskPtr disk = disk_selector->get(disk_name);
-
-        String relative_path_from = validatePathAndGetAsRelative(path_from);
-        String relative_path_to = validatePathAndGetAsRelative(path_to);
-
-        if (disk->isFile(relative_path_from))
-            disk->moveFile(relative_path_from, relative_path_to);
+        if (disk.getDisk()->isFile(path_from))
+            disk.getDisk()->moveFile(path_from, path_from);
         else
-            disk->moveDirectory(relative_path_from, relative_path_to);
+            disk.getDisk()->moveDirectory(path_from, path_from);
     }
 };
-}
 
-std::unique_ptr <DB::ICommand> makeCommandMove()
+CommandPtr makeCommandMove()
 {
     return std::make_unique<DB::CommandMove>();
+}
+
 }
