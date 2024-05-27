@@ -2350,7 +2350,7 @@ public:
     inline void insertRankIntoColumn(const WindowTransform * transform, size_t function_index) const
     {
         auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
-        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(transform->peer_group_start_row_number) - 1);
+        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(transform->peer_group_start_row_number));
     }
 };
 
