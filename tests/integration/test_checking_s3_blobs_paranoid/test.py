@@ -532,11 +532,12 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         SELECT
             *
         FROM system.numbers
-        LIMIT 1000000
+        LIMIT 1000000000
         SETTINGS
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=10000,
-            s3_check_objects_after_upload=0
+            s3_check_objects_after_upload=0,
+            s3_max_inflight_parts_for_one_file=1000
         """,
         query_id=insert_query_id,
     )
