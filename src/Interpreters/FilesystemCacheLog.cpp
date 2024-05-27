@@ -26,7 +26,6 @@ static String typeToString(FilesystemCacheLogElement::CacheType type)
         case FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE:
             return "WRITE_THROUGH_CACHE";
     }
-    UNREACHABLE();
 }
 
 ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()

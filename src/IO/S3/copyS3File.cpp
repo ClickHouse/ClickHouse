@@ -316,23 +316,23 @@ namespace
                 num_parts = (total_size + part_size - 1) / part_size;
             }
 
-            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
-            {
-                String msg;
-                if (num_parts < 1)
-                    msg = "Number of parts is zero";
-                else if (num_parts > max_part_number)
-                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
-                else if (part_size < min_upload_part_size)
-                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
-                else
-                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
+            String error;
+            if (num_parts < 1)
+                error = "Number of parts is zero";
+            else if (num_parts > max_part_number)
+                error = fmt::format("Number of parts exceeds {}/{}", num_parts, max_part_number);
+            else if (part_size < min_upload_part_size)
+                error = fmt::format("Size of a part is less than {}/{}", part_size, min_upload_part_size);
+            else if (part_size > max_upload_part_size)
+                error = fmt::format("Size of a part exceeds {}/{}", part_size, max_upload_part_size);
 
+            if (!error.empty())
+            {
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "{} while writing {} bytes to S3. Check max_part_number = {}, "
                     "min_upload_part_size = {}, max_upload_part_size = {}",
-                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+                    error, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
             }
 
             /// We've calculated the size of a normal part (the final part can be smaller).
