@@ -428,7 +428,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         }
         if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
         auto average_row_bytes = total_size / row_group_meta->num_rows();
-        /// max_block_bytes >= num_rows >= 128
+        /// max_block_size >= num_rows >= 128
         auto num_rows = std::min(format_settings.parquet.prefer_block_bytes/average_row_bytes, format_settings.parquet.max_block_size);
         return std::max(num_rows, 128UL);
     };
