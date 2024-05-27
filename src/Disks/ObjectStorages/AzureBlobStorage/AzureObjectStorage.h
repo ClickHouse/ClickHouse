@@ -85,9 +85,9 @@ public:
         const String & object_namespace_,
         const String & description_);
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -144,7 +144,8 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override { return object_namespace ; }
 

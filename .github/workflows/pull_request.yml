@@ -33,9 +33,12 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get a version
           filter: tree:0
-      - name: Cancel Sync PR workflow
+      - name: Cancel previous Sync PR workflow
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
+      - name: Set pending Sync status
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --set-pending-status
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -177,7 +180,7 @@ jobs:
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
