@@ -577,6 +577,7 @@ void S3ObjectStorage::applyNewSettings(
     auto settings_from_config = getSettings(config, config_prefix, context, for_disk_s3, context->getSettingsRef().s3_validate_request_settings);
     auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
     modified_settings->auth_settings.updateFrom(settings_from_config->auth_settings);
+    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         modified_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
@@ -585,7 +586,7 @@ void S3ObjectStorage::applyNewSettings(
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
     {
-        auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
+        auto new_client = getClient(uri, *settings_from_config, context, for_disk_s3);
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(modified_settings));

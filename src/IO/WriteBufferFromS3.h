@@ -79,7 +79,6 @@ private:
     const String bucket;
     const String key;
     const S3::RequestSettings request_settings;
-    const S3::RequestSettings::PartUploadSettings & upload_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;

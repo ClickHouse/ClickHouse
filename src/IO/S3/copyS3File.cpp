@@ -66,7 +66,6 @@ namespace
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
             , request_settings(request_settings_)
-            , upload_settings(request_settings.upload_settings)
             , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_s3(for_disk_s3_)
@@ -82,7 +81,6 @@ namespace
         const String & dest_bucket;
         const String & dest_key;
         const S3::RequestSettings & request_settings;
-        const S3::RequestSettings::PartUploadSettings & upload_settings;
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         bool for_disk_s3;
@@ -127,8 +125,8 @@ namespace
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
 
-            const auto & storage_class_name = upload_settings.storage_class_name;
-            if (!storage_class_name.empty())
+            const auto & storage_class_name = request_settings.storage_class_name;
+            if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             client_ptr->setKMSHeaders(request);
@@ -185,7 +183,7 @@ namespace
 
             request.SetMultipartUpload(multipart_upload);
 
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
@@ -290,9 +288,9 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            auto max_part_number = upload_settings.max_part_number;
-            auto min_upload_part_size = upload_settings.min_upload_part_size;
-            auto max_upload_part_size = upload_settings.max_upload_part_size;
+            auto max_part_number = request_settings.max_part_number;
+            auto min_upload_part_size = request_settings.min_upload_part_size;
+            auto max_upload_part_size = request_settings.max_upload_part_size;
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
@@ -479,7 +477,7 @@ namespace
 
         void performCopy()
         {
-            if (size <= upload_settings.max_single_part_upload_size)
+            if (size <= request_settings.max_single_part_upload_size)
                 performSinglepartUpload();
             else
                 performMultipartUpload();
@@ -512,8 +510,8 @@ namespace
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
 
-            const auto & storage_class_name = upload_settings.storage_class_name;
-            if (!storage_class_name.empty())
+            const auto & storage_class_name = request_settings.storage_class_name;
+            if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
@@ -524,7 +522,7 @@ namespace
 
         void processPutRequest(S3::PutObjectRequest & request)
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
@@ -666,7 +664,7 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-            if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
+            if (!supports_multipart_copy || size <= request_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
                 performMultipartUploadCopy();
@@ -710,8 +708,8 @@ namespace
                 request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
-            const auto & storage_class_name = upload_settings.storage_class_name;
-            if (!storage_class_name.empty())
+            const auto & storage_class_name = request_settings.storage_class_name;
+            if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
@@ -722,7 +720,7 @@ namespace
 
         void processCopyRequest(S3::CopyObjectRequest & request)
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CopyObject);

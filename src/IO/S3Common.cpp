@@ -237,113 +237,68 @@ RequestSettings RequestSettings::loadFromConfig(
     const std::string & setting_name_prefix)
 {
     auto request_settings = RequestSettings::loadFromSettings(settings, validate_settings);
-
     String prefix = config_prefix + "." + setting_name_prefix;
-    auto has = [&](const std::string & key) -> bool { return config.has(prefix + key); };
-    auto get_uint = [&](const std::string & key) -> size_t { return config.getUInt64(prefix + key); };
-    auto get_string = [&](const std::string & key) -> std::string { return config.getString(prefix + key); };
-    auto get_bool = [&](const std::string & key) -> bool { return config.getBool(prefix + key); };
 
-    if (has("strict_upload_part_size"))
-        request_settings.upload_settings.strict_upload_part_size = get_uint("strict_upload_part_size");
-    if (has("min_upload_part_size"))
-        request_settings.upload_settings.min_upload_part_size = get_uint("min_upload_part_size");
-    if (has("max_upload_part_size"))
-        request_settings.upload_settings.max_upload_part_size = get_uint("max_upload_part_size");
-    if (has("upload_part_size_multiply_factor"))
-        request_settings.upload_settings.upload_part_size_multiply_factor = get_uint("upload_part_size_multiply_factor");
-    if (has("upload_part_size_multiply_parts_count_threshold"))
-        request_settings.upload_settings.upload_part_size_multiply_parts_count_threshold = get_uint("upload_part_size_multiply_parts_count_threshold");
-    if (has("max_inflight_parts_for_one_file"))
-        request_settings.upload_settings.max_inflight_parts_for_one_file = get_uint("max_inflight_parts_for_one_file");
-    if (has("max_part_number"))
-        request_settings.upload_settings.max_part_number = get_uint("max_part_number");
-    if (has("max_single_part_upload_size"))
-        request_settings.upload_settings.max_single_part_upload_size = get_uint("max_single_part_upload_size");
-    if (has("max_single_operation_copy_size"))
-        request_settings.upload_settings.max_single_operation_copy_size = get_uint("max_single_operation_copy_size");
-    if (has("s3_storage_class"))
-        request_settings.upload_settings.storage_class_name = get_string("s3_storage_class");
+    auto values = request_settings.allMutable();
+    for (auto & field : values)
+    {
+        const auto path = prefix + field.getName();
+        if (config.has(path))
+        {
+            auto which = field.getValue().getType();
+            if (isInt64OrUInt64FieldType(which))
+                field.setValue(config.getUInt64(path));
+            else if (which == Field::Types::String)
+                field.setValue(config.getString(path));
+            else if (which == Field::Types::Bool)
+                field.setValue(config.getBool(path));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+        }
+    }
 
-    request_settings.upload_settings.storage_class_name = Poco::toUpperInPlace(request_settings.upload_settings.storage_class_name);
+    if (!request_settings.storage_class_name.value.empty())
+        request_settings.storage_class_name = Poco::toUpperInPlace(request_settings.storage_class_name.value);
+
     if (validate_settings)
-        request_settings.upload_settings.validate();
+        request_settings.validateUploadSettings();
 
-    if (has("max_single_read_retries"))
-        request_settings.max_single_read_retries = get_uint("max_single_read_retries");
-    if (has("check_objects_after_upload"))
-        request_settings.check_objects_after_upload = get_bool("check_objects_after_upload");
-    if (has("list_object_keys_size"))
-        request_settings.list_object_keys_size = get_uint("list_object_keys_size");
-    if (has("allow_native_copy"))
-        request_settings.allow_native_copy = get_bool("allow_native_copy");
-    if (has("throw_on_zero_files_match"))
-        request_settings.throw_on_zero_files_match = get_bool("throw_on_zero_files_match");
-    if (has("request_timeout_ms"))
-        request_settings.request_timeout_ms = get_uint("request_timeout_ms");
+    request_settings.initializeThrottler(settings);
 
-    /// NOTE: it would be better to reuse old throttlers
-    /// to avoid losing token bucket state on every config reload,
-    /// which could lead to exceeding limit for short time.
-    /// But it is good enough unless very high `burst` values are used.
-    if (UInt64 max_get_rps = has("max_get_rps") ? get_uint("max_get_rps") : settings.s3_max_get_rps)
-    {
-        size_t default_max_get_burst = settings.s3_max_get_burst
-            ? settings.s3_max_get_burst
-            : (Throttler::default_burst_seconds * max_get_rps);
-        size_t max_get_burst = has("max_get_burst") ? get_uint("max_get_burst") : default_max_get_burst;
-        request_settings.get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
-    }
-    if (UInt64 max_put_rps = has("max_put_rps") ? get_uint("max_put_rps") : settings.s3_max_put_rps)
-    {
-        size_t default_max_put_burst = settings.s3_max_put_burst
-            ? settings.s3_max_put_burst
-            : (Throttler::default_burst_seconds * max_put_rps);
-        size_t max_put_burst = has("max_put_burst") ? get_uint("max_put_burst") : default_max_put_burst;
-        request_settings.put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
-    }
     return request_settings;
 }
 
 RequestSettings RequestSettings::loadFromNamedCollection(const NamedCollection & collection, bool validate_settings)
 {
-    RequestSettings settings{};
+    RequestSettings request_settings{};
 
-    if (collection.has("strict_upload_part_size"))
-        settings.upload_settings.strict_upload_part_size = collection.get<UInt64>("strict_upload_part_size");
-    if (collection.has("min_upload_part_size"))
-        settings.upload_settings.min_upload_part_size = collection.get<UInt64>("min_upload_part_size");
-    if (collection.has("max_upload_part_size"))
-        settings.upload_settings.min_upload_part_size = collection.get<UInt64>("max_upload_part_size");
-    if (collection.has("upload_part_size_multiply_factor"))
-        settings.upload_settings.upload_part_size_multiply_factor = collection.get<UInt64>("upload_part_size_multiply_factor");
-    if (collection.has("upload_part_size_multiply_parts_count_threshold"))
-        settings.upload_settings.upload_part_size_multiply_parts_count_threshold = collection.get<UInt64>("upload_part_size_multiply_parts_count_threshold");
-    if (collection.has("max_inflight_parts_for_one_file"))
-        settings.upload_settings.max_inflight_parts_for_one_file = collection.get<UInt64>("max_inflight_parts_for_one_file");
-    if (collection.has("max_part_number"))
-        settings.upload_settings.max_single_part_upload_size = collection.get<UInt64>("max_part_number");
-    if (collection.has("max_single_part_upload_size"))
-        settings.upload_settings.max_single_part_upload_size = collection.get<UInt64>("max_single_part_upload_size");
-    if (collection.has("max_single_operation_copy_size"))
-        settings.upload_settings.max_single_part_upload_size = collection.get<UInt64>("max_single_operation_copy_size");
-    if (collection.has("s3_storage_class"))
-        settings.upload_settings.storage_class_name = collection.get<String>("s3_storage_class");
+    auto values = request_settings.allMutable();
+    for (auto & field : values)
+    {
+        const auto path = field.getName();
+        if (collection.has(path))
+        {
+            auto which = field.getValue().getType();
+            if (isInt64OrUInt64FieldType(which))
+                field.setValue(collection.get<UInt64>(path));
+            else if (which == Field::Types::String)
+                field.setValue(collection.get<String>(path));
+            else if (which == Field::Types::Bool)
+                field.setValue(collection.get<bool>(path));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+        }
+    }
 
-    settings.upload_settings.storage_class_name = Poco::toUpperInPlace(settings.upload_settings.storage_class_name);
+    if (!request_settings.storage_class_name.value.empty())
+        request_settings.storage_class_name = Poco::toUpperInPlace(request_settings.storage_class_name.value);
+
     if (validate_settings)
-        settings.upload_settings.validate();
+        request_settings.validateUploadSettings();
 
-    if (collection.has("max_single_read_retries"))
-        settings.max_single_read_retries = collection.get<UInt64>("max_single_read_retries");
-    if (collection.has("list_object_keys_size"))
-        settings.list_object_keys_size = collection.get<UInt64>("list_object_keys_size");
-    if (collection.has("allow_native_copy"))
-        settings.allow_native_copy = collection.get<bool>("allow_native_copy");
-    if (collection.has("throw_on_zero_files_match"))
-        settings.throw_on_zero_files_match = collection.get<bool>("throw_on_zero_files_match");
+    // request_settings.initializeThrottler(settings);
 
-    return settings;
+    return request_settings;
 }
 
 RequestSettings RequestSettings::loadFromSettings(const DB::Settings & settings, bool validate_settings)
@@ -355,58 +310,57 @@ RequestSettings RequestSettings::loadFromSettings(const DB::Settings & settings,
 
 void RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings)
 {
-    if (!if_changed || settings.s3_strict_upload_part_size.changed)
-        upload_settings.strict_upload_part_size = settings.s3_strict_upload_part_size;
-    if (!if_changed || settings.s3_min_upload_part_size.changed)
-        upload_settings.min_upload_part_size = settings.s3_min_upload_part_size;
-    if (!if_changed || settings.s3_max_upload_part_size.changed)
-        upload_settings.max_upload_part_size = settings.s3_max_upload_part_size;
-    if (!if_changed || settings.s3_upload_part_size_multiply_factor.changed)
-        upload_settings.upload_part_size_multiply_factor = settings.s3_upload_part_size_multiply_factor;
-    if (!if_changed || settings.s3_upload_part_size_multiply_parts_count_threshold.changed)
-        upload_settings.upload_part_size_multiply_parts_count_threshold = settings.s3_upload_part_size_multiply_parts_count_threshold;
-    if (!if_changed || settings.s3_max_inflight_parts_for_one_file.changed)
-        upload_settings.max_inflight_parts_for_one_file = settings.s3_max_inflight_parts_for_one_file;
-    if (!if_changed || settings.s3_max_part_number.changed)
-        upload_settings.max_part_number = settings.s3_max_part_number;
-    if (!if_changed || settings.s3_max_single_part_upload_size.changed)
-        upload_settings.max_single_part_upload_size = settings.s3_max_single_part_upload_size;
-    if (!if_changed || settings.s3_max_single_operation_copy_size.changed)
-        upload_settings.max_part_number = settings.s3_max_single_operation_copy_size;
+    for (auto & field : allMutable())
+    {
+        const auto setting_name = "s3_" + field.getName();
+        if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
+        {
+            set(field.getName(), settings.get(setting_name));
+        }
+    }
+
+    if (!storage_class_name.value.empty())
+        storage_class_name = Poco::toUpperInPlace(storage_class_name.value);
 
     if (validate_settings)
-        upload_settings.validate();
+        validateUploadSettings();
+}
 
-    if (!if_changed || settings.s3_max_single_read_retries.changed)
-        max_single_read_retries = settings.s3_max_single_read_retries;
-    if (!if_changed || settings.s3_check_objects_after_upload.changed)
-        check_objects_after_upload = settings.s3_check_objects_after_upload;
-    if (!if_changed || settings.s3_max_unexpected_write_error_retries.changed)
-        max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
-    if (!if_changed || settings.s3_list_object_keys_size.changed)
-        list_object_keys_size = settings.s3_list_object_keys_size;
-    if (!if_changed || settings.s3_throw_on_zero_files_match.changed)
-        throw_on_zero_files_match = settings.s3_throw_on_zero_files_match;
-    if (!if_changed || settings.s3_request_timeout_ms.changed)
-        request_timeout_ms = settings.s3_request_timeout_ms;
-
-    if ((!if_changed || settings.s3_max_get_rps.changed || settings.s3_max_get_burst.changed) && settings.s3_max_get_rps)
+void RequestSettings::updateIfChanged(const RequestSettings & settings)
+{
+    for (auto & setting : settings.all())
     {
-        size_t max_get_burst = settings.s3_max_get_burst
-            ? settings.s3_max_get_burst
-            : Throttler::default_burst_seconds * settings.s3_max_get_rps;
-        get_request_throttler = std::make_shared<Throttler>(settings.s3_max_get_rps, max_get_burst);
-    }
-    if ((!if_changed || settings.s3_max_put_rps.changed || settings.s3_max_put_burst.changed) && settings.s3_max_put_rps)
-    {
-        size_t max_put_burst = settings.s3_max_put_burst
-            ? settings.s3_max_put_burst
-            : Throttler::default_burst_seconds * settings.s3_max_put_rps;
-        put_request_throttler = std::make_shared<Throttler>(settings.s3_max_put_rps, max_put_burst);
+        if (setting.isValueChanged())
+            set(setting.getName(), setting.getValue());
     }
 }
 
-void RequestSettings::PartUploadSettings::validate()
+void RequestSettings::initializeThrottler(const DB::Settings & settings)
+{
+    /// NOTE: it would be better to reuse old throttlers
+    /// to avoid losing token bucket state on every config reload,
+    /// which could lead to exceeding limit for short time.
+    /// But it is good enough unless very high `burst` values are used.
+    if (UInt64 max_get_rps = isChanged("max_get_rps") ? get("max_get_rps").get<UInt64>() : settings.s3_max_get_rps)
+    {
+        size_t default_max_get_burst = settings.s3_max_get_burst
+            ? settings.s3_max_get_burst
+            : (Throttler::default_burst_seconds * max_get_rps);
+
+        size_t max_get_burst = isChanged("max_get_burts") ? get("max_get_burst").get<UInt64>() : default_max_get_burst;
+        get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
+    }
+    if (UInt64 max_put_rps = isChanged("max_put_rps") ? get("max_put_rps").get<UInt64>() : settings.s3_max_put_rps)
+    {
+        size_t default_max_put_burst = settings.s3_max_put_burst
+            ? settings.s3_max_put_burst
+            : (Throttler::default_burst_seconds * max_put_rps);
+        size_t max_put_burst = isChanged("max_put_burts") ? get("max_put_burst").get<UInt64>() : default_max_put_burst;
+        put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
+    }
+}
+
+void RequestSettings::validateUploadSettings()
 {
     static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
     if (strict_upload_part_size && strict_upload_part_size < min_upload_part_size_limit)
@@ -469,7 +423,7 @@ void RequestSettings::PartUploadSettings::validate()
             ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
 
     size_t maybe_overflow;
-    if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
+    if (common::mulOverflow(max_upload_part_size.value, upload_part_size_multiply_factor.value, maybe_overflow))
         throw Exception(
                         ErrorCodes::INVALID_SETTING_VALUE,
                         "Setting upload_part_size_multiply_factor is too big ({}). "
@@ -477,16 +431,18 @@ void RequestSettings::PartUploadSettings::validate()
                         ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
-    if (!storage_class_name.empty() && !storage_class_names.contains(storage_class_name))
+    if (!storage_class_name.value.empty() && !storage_class_names.contains(storage_class_name))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
-            storage_class_name);
+            storage_class_name.value);
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
 }
 
 }
+
+IMPLEMENT_SETTINGS_TRAITS(S3::RequestSettingsTraits, REQUEST_SETTINGS_LIST)
 
 }

@@ -16,6 +16,7 @@
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3Defines.h>
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
@@ -123,34 +124,38 @@ private:
     bool operator==(const AuthSettings & other) const = default;
 };
 
-struct RequestSettings
+#define REQUEST_SETTINGS(M, ALIAS) \
+    M(UInt64, max_single_read_retries, 4, "", 0) \
+    M(UInt64, request_timeout_ms, DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
+    M(UInt64, list_object_keys_size, 1000, "", 0) \
+    M(Bool, allow_native_copy, true, "", 0) \
+    M(Bool, check_objects_after_upload, false, "", 0) \
+    M(Bool, throw_on_zero_files_match, false, "", 0) \
+    M(UInt64, max_single_operation_copy_size, DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
+    M(String, storage_class_name, "", "", 0) \
+
+#define PART_UPLOAD_SETTINGS(M, ALIAS) \
+    M(UInt64, strict_upload_part_size, 0, "", 0) \
+    M(UInt64, min_upload_part_size, DEFAULT_MIN_UPLOAD_PART_SIZE, "", 0) \
+    M(UInt64, max_upload_part_size, DEFAULT_MAX_UPLOAD_PART_SIZE, "", 0) \
+    M(UInt64, upload_part_size_multiply_factor, DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_FACTOR, "", 0) \
+    M(UInt64, upload_part_size_multiply_parts_count_threshold, DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_PARTS_COUNT_THRESHOLD, "", 0) \
+    M(UInt64, max_inflight_parts_for_one_file, DEFAULT_MAX_INFLIGHT_PARTS_FOR_ONE_FILE, "", 0) \
+    M(UInt64, max_part_number, DEFAULT_MAX_PART_NUMBER, "", 0) \
+    M(UInt64, max_single_part_upload_size, DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, "", 0) \
+    M(UInt64, max_unexpected_write_error_retries, 4, "", 0) \
+
+
+#define REQUEST_SETTINGS_LIST(M, ALIAS) \
+    REQUEST_SETTINGS(M, ALIAS)             \
+    PART_UPLOAD_SETTINGS(M, ALIAS)
+
+DECLARE_SETTINGS_TRAITS(RequestSettingsTraits, REQUEST_SETTINGS_LIST)
+
+struct RequestSettings : public BaseSettings<RequestSettingsTraits>
 {
-    size_t max_single_read_retries = 4;
-    size_t request_timeout_ms = 30000;
-    size_t max_unexpected_write_error_retries = 4;
-    size_t list_object_keys_size = 1000;
+    void validateUploadSettings();
 
-    bool allow_native_copy = true;
-    bool check_objects_after_upload = false;
-    bool throw_on_zero_files_match = false;
-
-    struct PartUploadSettings
-    {
-        size_t strict_upload_part_size = 0;
-        size_t min_upload_part_size = 16 * 1024 * 1024;
-        size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
-        size_t upload_part_size_multiply_factor = 2;
-        size_t upload_part_size_multiply_parts_count_threshold = 500;
-        size_t max_inflight_parts_for_one_file = 20;
-        size_t max_part_number = 10000;
-        size_t max_single_part_upload_size = 32 * 1024 * 1024;
-        size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
-        String storage_class_name;
-
-        void validate();
-    };
-
-    PartUploadSettings upload_settings;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
 
@@ -164,6 +169,10 @@ struct RequestSettings
         const std::string & setting_name_prefix = "");
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings = true);
+    void updateIfChanged(const RequestSettings & settings);
+
+private:
+    void initializeThrottler(const DB::Settings & settings);
 };
 
 }

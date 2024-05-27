@@ -228,7 +228,7 @@ BackupWriterS3::BackupWriterS3(
     request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
     request_settings.allow_native_copy = allow_s3_native_copy;
-    request_settings.upload_settings.storage_class_name = storage_class_name;
+    request_settings.storage_class_name = storage_class_name;
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
