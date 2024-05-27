@@ -570,31 +570,25 @@ void StorageURLSink::consume(Chunk chunk)
 void StorageURLSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    cancelBuffers();
     cancelled = true;
+    releaseBuffers();
 }
 
-void StorageURLSink::onException(std::exception_ptr exception)
+void StorageURLSink::onException(std::exception_ptr)
 {
     std::lock_guard lock(cancel_mutex);
-    try
-    {
-        std::rethrow_exception(exception);
-    }
-    catch (...)
-    {
-        /// An exception context is needed to proper delete write buffers without finalization
-        release();
-    }
+    cancelBuffers();
+    releaseBuffers();
 }
 
 void StorageURLSink::onFinish()
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    finalizeBuffers();
 }
 
-void StorageURLSink::finalize()
+void StorageURLSink::finalizeBuffers()
 {
     if (!writer)
         return;
@@ -608,15 +602,21 @@ void StorageURLSink::finalize()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        release();
+        releaseBuffers();
         throw;
     }
 }
 
-void StorageURLSink::release()
+void StorageURLSink::releaseBuffers()
 {
     writer.reset();
     write_buf->finalize();
+}
+
+void StorageURLSink::cancelBuffers()
+{
+    writer->cancel();
+    write_buf->cancel();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink

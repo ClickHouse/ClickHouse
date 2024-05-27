@@ -1780,8 +1780,9 @@ public:
     void onCancel() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        cancelBuffers();
         cancelled = true;
+        releaseBuffers();
     }
 
     void onException(std::exception_ptr exception) override
@@ -1794,18 +1795,18 @@ public:
         catch (...)
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            release();
+            releaseBuffers();
         }
     }
 
     void onFinish() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        finalizeBuffers();
     }
 
 private:
-    void finalize()
+    void finalizeBuffers()
     {
         if (!writer)
             return;
@@ -1819,15 +1820,21 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            release();
+            releaseBuffers();
             throw;
         }
     }
 
-    void release()
+    void releaseBuffers()
     {
         writer.reset();
         write_buf->finalize();
+    }
+
+    void cancelBuffers()
+    {
+        writer->cancel();
+        write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;

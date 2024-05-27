@@ -257,8 +257,10 @@ public:
     void onFinish() override;
 
 private:
-    void finalize();
-    void release();
+    void finalizeBuffers();
+    void releaseBuffers();
+    void cancelBuffers();
+
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;

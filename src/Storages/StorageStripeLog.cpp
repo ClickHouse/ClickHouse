@@ -207,7 +207,10 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
+                data_out->cancel();
                 data_out.reset();
+
+                data_out_compressed->cancel();
                 data_out_compressed.reset();
 
                 /// Truncate files to the older sizes.

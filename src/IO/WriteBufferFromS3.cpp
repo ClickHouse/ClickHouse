@@ -225,6 +225,11 @@ void WriteBufferFromS3::finalizeImpl()
     }
 }
 
+void WriteBufferFromS3::cancelImpl()
+{
+    tryToAbortMultipartUpload();
+}
+
 String WriteBufferFromS3::getVerboseLogDetails() const
 {
     String multipart_upload_details;
@@ -265,8 +270,16 @@ WriteBufferFromS3::~WriteBufferFromS3()
 {
     LOG_TRACE(limitedLog, "Close WriteBufferFromS3. {}.", getShortLogDetails());
 
+    if (canceled)
+        LOG_INFO(
+            log,
+            "WriteBufferFromS3 was canceled."
+            "The file might not be written to S3. "
+            "{}.",
+            getVerboseLogDetails());
+
     /// That destructor could be call with finalized=false in case of exceptions
-    if (!finalized)
+    if (!finalized && !canceled)
     {
         LOG_INFO(
             log,

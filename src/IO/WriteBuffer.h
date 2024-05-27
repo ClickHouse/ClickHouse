@@ -121,6 +121,9 @@ public:
         if (finalized)
             return;
 
+        if (canceled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancelation.");
+
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
@@ -131,6 +134,25 @@ public:
         {
             pos = working_buffer.begin();
             finalized = true;
+            throw;
+        }
+    }
+
+    void cancel()
+    {
+        if (canceled || finalized)
+            return;
+
+        LockMemoryExceptionInThread lock(VariableContext::Global);
+        try
+        {
+            cancelImpl();
+            canceled = true;
+        }
+        catch (...)
+        {
+            pos = working_buffer.begin();
+            canceled = true;
             throw;
         }
     }
@@ -150,7 +172,12 @@ protected:
         next();
     }
 
+    virtual void cancelImpl()
+    {
+    }
+
     bool finalized = false;
+    bool canceled = false;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

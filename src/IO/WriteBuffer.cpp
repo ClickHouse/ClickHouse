@@ -11,7 +11,7 @@ namespace DB
 WriteBuffer::~WriteBuffer()
 {
     // That destructor could be call with finalized=false in case of exceptions
-    if (count() > 0 && !finalized)
+    if (count() > 0 && !finalized && !canceled)
     {
         /// It is totally OK to destroy instance without finalization when an exception occurs
         /// However it is suspicious to destroy instance without finalization at the green path
