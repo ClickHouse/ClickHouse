@@ -186,6 +186,8 @@ public:
         size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
         size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
         size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
+        size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
+        size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 
         bool operator==(const Iterator & other) const
         {

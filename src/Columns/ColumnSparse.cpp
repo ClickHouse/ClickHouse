@@ -323,7 +323,9 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     size_t res_offset = 0;
     auto offset_it = begin();
-    for (size_t i = 0; i < _size; ++i, ++offset_it)
+    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
+    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
+    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
     {
         if (!offset_it.isDefault())
         {
@@ -338,6 +340,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             {
                 values_filter.push_back(0);
             }
+            offset_it.increaseCurrentOffset();
         }
         else
         {
