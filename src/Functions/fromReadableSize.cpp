@@ -6,8 +6,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include "base/types.h"
 
 namespace DB
 {
@@ -55,26 +55,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                getName(),
-                arguments.size());
-
-        if (arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                getName(),
-                arguments.size());
-
-        const IDataType & type = *arguments[0];
-
-        if (!isString(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
+        FunctionArgumentDescriptors args
+        {
+            {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeUInt64>();
     }
