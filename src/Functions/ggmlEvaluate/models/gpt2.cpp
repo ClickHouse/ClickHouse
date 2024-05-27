@@ -32,7 +32,7 @@ extern const int SYNTAX_ERROR;
 
 static const std::string ModelArchName = "gpt2";
 
-void Gpt2Model::loadImpl(ConfigPtr config)
+void Gpt2Model::loadImpl(const ConfigPtr & config)
 {
     //  bool gpt2_model_load(const std::string & fname, gpt2_model & model, gpt_vocab & vocab, int n_ctx, int n_gpu_layers) {
     auto fname = getPathFromConfig(config, ModelArchName);

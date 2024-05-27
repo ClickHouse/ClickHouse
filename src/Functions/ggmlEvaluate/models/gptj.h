@@ -76,7 +76,7 @@ public:
     }
 
 private:
-    void loadImpl(ConfigPtr config) override;
+    void loadImpl(const ConfigPtr & config) override;
     std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) override;
 
     bool evalInternal(

@@ -24,11 +24,11 @@ class IGgmlModel
 public:
     virtual ~IGgmlModel() = default;
 
-    void load(ConfigPtr config);
+    void load(const ConfigPtr & config);
     std::string eval(const std::string & input, const GgmlModelParams & user_params);
 
 private:
-    virtual void loadImpl(ConfigPtr config) = 0;
+    virtual void loadImpl(const ConfigPtr & config) = 0;
     virtual std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) = 0;
 
     bool loaded = false;

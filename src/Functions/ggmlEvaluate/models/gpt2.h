@@ -77,7 +77,7 @@ public:
     ~Gpt2Model() override { ggml_free(state.ctx_w); }
 
 private:
-    void loadImpl(ConfigPtr config) override;
+    void loadImpl(const ConfigPtr & config) override;
     std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) override;
 
     ggml_cgraph * gpt2_graph(int n_past, int n_tokens);

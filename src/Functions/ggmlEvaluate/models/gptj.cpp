@@ -26,7 +26,7 @@ extern const int RECEIVED_EMPTY_DATA;
 }
 
 // load the model's weights from a file
-void GptJModel::loadImpl(ConfigPtr config)
+void GptJModel::loadImpl(const ConfigPtr & config)
 {
     auto fname = getPathFromConfig(config, ModelArchName);
     auto fin = std::ifstream(fname, std::ios::binary);
