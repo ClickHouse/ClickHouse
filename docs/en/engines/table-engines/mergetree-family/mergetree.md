@@ -178,6 +178,10 @@ Additional parameters that control the behavior of the `MergeTree` (optional):
 
 `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](/docs/en/operations/settings/merge-tree-settings.md/#max-partitions-to-read) in the global setting.
 
+#### allow_experimental_optimized_row_order
+
+`allow_experimental_optimized_row_order` - Experimental. Enables the optimization of the row order during inserts to improve the compressability of the data for compression codecs (e.g. LZ4). Analyzes and reorders the data, and thus increases the CPU overhead of inserts.
+
 **Example of Sections Setting**
 
 ``` sql

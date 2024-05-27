@@ -212,9 +212,9 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     bool inserted = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        size_t id = permutation[i];
-        StringRef ref = getDataAt(id);
-        elements.emplace(ref, inserted);
+        size_t permuted_i = permutation[i];
+        StringRef value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
     }
     return elements.size();
 }

@@ -47,13 +47,13 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
         sorted_column_indexes.reserve(sorting_key_columns_count);
         for (const SortColumnDescription & sort_column : sort_description)
         {
-            size_t id = block.getPositionByName(sort_column.column_name);
-            sorted_column_indexes.emplace_back(id);
+            size_t idx = block.getPositionByName(sort_column.column_name);
+            sorted_column_indexes.emplace_back(idx);
         }
         ::sort(sorted_column_indexes.begin(), sorted_column_indexes.end());
+
         std::vector<size_t> all_column_indexes(all_columns_count);
         std::iota(all_column_indexes.begin(), all_column_indexes.end(), 0);
-
         std::set_difference(
             all_column_indexes.begin(),
             all_column_indexes.end(),
@@ -78,8 +78,9 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
 ///          --------
 ///          2      1     a     3
 ///          ----------------------
-EqualRanges getEqualRanges(const Block & block, const SortDescription & sort_description, const IColumn::Permutation & permutation)
+EqualRanges getEqualRanges(const Block & block, const SortDescription & sort_description, const IColumn::Permutation & permutation, const LoggerPtr & log)
 {
+    LOG_TRACE(log, "Finding equal ranges");
     EqualRanges ranges;
     const size_t rows = block.rows();
     if (sort_description.empty())
@@ -139,8 +140,12 @@ void updatePermutationInEqualRange(
 
 }
 
-void RowOrderOptimizer::optimize(const Block & block, const SortDescription & description, IColumn::Permutation & permutation)
+void RowOrderOptimizer::optimize(const Block & block, const SortDescription & sort_description, IColumn::Permutation & permutation)
 {
+    LoggerPtr log = getLogger("RowOrderOptimizer");
+
+    LOG_TRACE(log, "Starting optimization");
+
     if (block.columns() == 0)
         return; /// a table without columns, this should not happen in the first place ...
 
@@ -151,17 +156,10 @@ void RowOrderOptimizer::optimize(const Block & block, const SortDescription & de
         iota(permutation.data(), rows, IColumn::Permutation::value_type(0));
     }
 
-    const EqualRanges equal_ranges = getEqualRanges(block, description, permutation);
-    LoggerPtr log = getLogger("RowOrderOptimizer");
-    LOG_TRACE(
-        log,
-        "block.columns(): {}, block.rows(): {}, description.size(): {}, equal_ranges.size(): {}",
-        block.columns(),
-        block.rows(),
-        description.size(),
-        equal_ranges.size());
+    const EqualRanges equal_ranges = getEqualRanges(block, sort_description, permutation, log);
+    const std::vector<size_t> other_columns_indexes = getOtherColumnIndexes(block, sort_description);
 
-    const std::vector<size_t> other_columns_indexes = getOtherColumnIndexes(block, description);
+    LOG_TRACE(log, "block.columns(): {}, block.rows(): {}, sort_description.size(): {}, equal_ranges.size(): {}", block.columns(), block.rows(), sort_description.size(), equal_ranges.size());
 
     for (const auto & equal_range : equal_ranges)
     {
@@ -170,6 +168,8 @@ void RowOrderOptimizer::optimize(const Block & block, const SortDescription & de
         const std::vector<size_t> cardinalities = getCardinalitiesInPermutedRange(block, other_columns_indexes, permutation, equal_range);
         updatePermutationInEqualRange(block, other_columns_indexes, permutation, equal_range, cardinalities);
     }
+
+    LOG_TRACE(log, "Finished optimization");
 }
 
 }

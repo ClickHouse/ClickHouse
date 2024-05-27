@@ -674,15 +674,15 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
     bool inserted = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        size_t id = permutation[i];
-        if (isNullAt(id))
+        size_t permuted_i = permutation[i];
+        if (isNullAt(permuted_i))
         {
             has_null = true;
         }
         else
         {
-            StringRef ref = getDataAt(id);
-            elements.emplace(ref, inserted);
+            StringRef value = getDataAt(permuted_i);
+            elements.emplace(value, inserted);
         }
     }
     return elements.size() + (has_null ? 1 : 0);
