@@ -2,6 +2,10 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/quoteString.h>
+#include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
@@ -11,10 +15,6 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
-#include <Common/formatReadable.h>
-#include <Common/quoteString.h>
-#include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollections.h>
 
 
 namespace ProfileEvents
@@ -50,7 +50,6 @@ bool S3Exception::isRetryableError() const
 namespace DB::ErrorCodes
 {
     extern const int S3_ERROR;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 #endif
@@ -62,6 +61,7 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace S3

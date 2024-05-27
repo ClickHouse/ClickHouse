@@ -3,24 +3,24 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
-
-#include "config.h"
-
-#if USE_AWS_S3
-
+#include <IO/S3Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Throttler.h>
 #include <Core/Settings.h>
+#include <Core/BaseSettings.h>
+#include <Interpreters/Context.h>
+#include <unordered_set>
+
+#include "config.h"
+
+#if USE_AWS_S3
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Credentials.h>
-#include <IO/S3Defines.h>
-
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
-#include <unordered_set>
 
 namespace DB
 {
@@ -29,10 +29,6 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
 }
-
-class RemoteHostFilter;
-class NamedCollection;
-struct ProxyConfigurationResolver;
 
 class S3Exception : public Exception
 {
@@ -70,7 +66,12 @@ namespace Poco::Util
     class AbstractConfiguration;
 };
 
-namespace DB::S3
+namespace DB
+{
+class NamedCollection;
+struct ProxyConfigurationResolver;
+
+namespace S3
 {
 
 #define AUTH_SETTINGS(M, ALIAS) \
@@ -139,7 +140,7 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
 
     AuthSettings(const DB::Settings & settings);
 
-    AuthSettings(const NamedCollection & collection);
+    AuthSettings(const DB::NamedCollection & collection);
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed);
     bool hasUpdates(const AuthSettings & other) const;
@@ -188,4 +189,5 @@ HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Ut
 
 ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
 
+}
 }
