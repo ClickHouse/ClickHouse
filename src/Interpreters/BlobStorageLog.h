@@ -58,7 +58,7 @@ public:
     bool shouldIgnorePath(const String & path) const;
 protected:
     void prepareTable() override;
-    ContextMutablePtr getQueryContext(const ContextPtr & context_) const override;
+    void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;
 
 private:
     String prefix_to_ignore;

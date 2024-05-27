@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
+#include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -148,7 +149,7 @@ protected:
     void prepareTable() override;
 
     /// Some tables can override settings for internal queries
-    virtual ContextMutablePtr getQueryContext(const ContextPtr & context_) const;
+    virtual void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const;
 
 private:
     /* Saving thread data */

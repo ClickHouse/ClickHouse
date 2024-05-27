@@ -517,9 +517,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = getQueryContext(getContext());
-        /// We always want to deliver the data to the original table regardless of the MVs
-        insert_context->setSetting("materialized_views_ignore_errors", true);
+        auto insert_context = Context::createCopy(context);
+        insert_context->makeQueryContext();
+        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -599,10 +599,10 @@ void SystemLog<LogElement>::prepareTable()
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
-            auto query_context = getQueryContext(getContext());
-            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-            query_context->setSetting("check_table_dependencies", Field{false});
-            query_context->setSetting("check_referential_table_dependencies", Field{false});
+            auto query_context = Context::createCopy(context);
+            query_context->makeQueryContext();
+            addSettingsForQuery(query_context, IAST::QueryKind::Rename);
+
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -617,7 +617,9 @@ void SystemLog<LogElement>::prepareTable()
         /// Create the table.
         LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
-        auto query_context = getQueryContext(getContext());
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+        addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
         InterpreterCreateQuery interpreter(create_query_ast, query_context);
@@ -632,13 +634,20 @@ void SystemLog<LogElement>::prepareTable()
     is_prepared = true;
 }
 
-
 template <typename LogElement>
-ContextMutablePtr SystemLog<LogElement>::getQueryContext(const ContextPtr & context_) const
+void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const
 {
-    auto query_context = Context::createCopy(context_);
-    query_context->makeQueryContext();
-    return query_context;
+    if (query_kind == IAST::QueryKind::Insert)
+    {
+        /// We always want to deliver the data to the original table regardless of the MVs
+        mutable_context->setSetting("materialized_views_ignore_errors", true);
+    }
+    else if (query_kind == IAST::QueryKind::Rename)
+    {
+        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+        mutable_context->setSetting("check_table_dependencies", Field{false});
+        mutable_context->setSetting("check_referential_table_dependencies", Field{false});
+    }
 }
 
 template <typename LogElement>

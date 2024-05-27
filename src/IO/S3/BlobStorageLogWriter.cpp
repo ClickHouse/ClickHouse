@@ -57,22 +57,15 @@ void BlobStorageLogWriter::addEvent(
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 {
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD /// Keeper standalone build doesn't have a context
-    const auto & global_context = Context::getGlobalContextInstance();
-    bool enable_blob_storage_log = global_context->getSettingsRef().enable_blob_storage_log;
-    if (auto blob_storage_log = global_context->getBlobStorageLog())
+    if (auto blob_storage_log = Context::getGlobalContextInstance()->getBlobStorageLog())
     {
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
 
         log_writer->disk_name = disk_name;
-        const auto & query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-        if (query_context)
-        {
+        if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
             log_writer->query_id = CurrentThread::getQueryId();
-            enable_blob_storage_log = query_context->getSettingsRef().enable_blob_storage_log;
-        }
 
-        if (enable_blob_storage_log)
-            return log_writer;
+        return log_writer;
     }
 #endif
     return {};

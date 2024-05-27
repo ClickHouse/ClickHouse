@@ -71,13 +71,12 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(error_message);
 }
 
-ContextMutablePtr BlobStorageLog::getQueryContext(const ContextPtr & context_) const
+void BlobStorageLog::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const
 {
-    /// Override setting in INSERT query context to disable logging blobs inserted to the table itself
-    auto result_context = Context::createCopy(context_);
-    result_context->makeQueryContext();
-    result_context->setSetting("enable_blob_storage_log", false);
-    return result_context;
+    SystemLog<BlobStorageLogElement>::addSettingsForQuery(mutable_context, query_kind);
+
+    if (query_kind == IAST::QueryKind::Insert)
+        mutable_context->setSetting("enable_blob_storage_log", false);
 }
 
 static std::string_view normalizePath(std::string_view path)
