@@ -314,6 +314,8 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
+
+            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -328,6 +330,8 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
+
+            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -342,6 +346,8 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
+
+            UNREACHABLE();
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
