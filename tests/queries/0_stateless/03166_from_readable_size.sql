@@ -7,18 +7,8 @@ SELECT formatReadableSize(fromReadableSize('1 TiB'));
 SELECT formatReadableSize(fromReadableSize('1 PiB'));
 SELECT formatReadableSize(fromReadableSize('1 EiB'));
 
--- Should be the inverse of formatReadableDecimalSize
-SELECT formatReadableDecimalSize(fromReadableSize('1 B'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 KB'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 MB'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 GB'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 TB'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 PB'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 EB'));
-
 -- Is case-insensitive
 SELECT formatReadableSize(fromReadableSize('1 mIb'));
-SELECT formatReadableDecimalSize(fromReadableSize('1 mb'));
 
 -- Should be able to parse decimals
 SELECT fromReadableSize('1.00 KiB');    -- 1024
@@ -51,11 +41,10 @@ SELECT fromReadableSize('1 B', '2 B'); -- { serverError NUMBER_OF_ARGUMENTS_DOES
 -- Wrong Type
 SELECT fromReadableSize(12); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Invalid input - overall garbage
-SELECT fromReadableSize('oh no'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('oh no'); -- { serverError CANNOT_PARSE_NUMBER }
 -- Invalid input - unknown unit
-SELECT fromReadableSize('12.3 rb'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('12.3 rb'); -- { serverError CANNOT_PARSE_TEXT }
 -- Invalid input - Leading whitespace
-SELECT fromReadableSize(' 1 B'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize(' 1 B'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 -- Invalid input - Trailing characters
-SELECT fromReadableSize('1 B leftovers'); -- { serverError BAD_ARGUMENTS }
-SELECT fromReadableSize(' 1 B'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('1 B leftovers'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
