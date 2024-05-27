@@ -998,7 +998,7 @@ Result:
 
 ## reinterpretAsUInt8
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type UInt8. 
+Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1008,11 +1008,7 @@ reinterpretAsUInt8(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as UInt8. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as UInt8. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1040,7 +1036,7 @@ Result:
 
 ## reinterpretAsUInt16
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type UInt16. 
+Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1050,11 +1046,7 @@ reinterpretAsUInt16(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as UInt16. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as UInt16. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1082,7 +1074,7 @@ Result:
 
 ## reinterpretAsUInt32
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type UInt32. 
+Performs byte reinterpretation by treating the input value as a value of type UInt32. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
 **Syntax**
 
@@ -1092,11 +1084,7 @@ reinterpretAsUInt32(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as UInt32. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as UInt32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1124,7 +1112,7 @@ Result:
 
 ## reinterpretAsUInt64
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type UInt64. 
+Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1134,11 +1122,7 @@ reinterpretAsUInt64(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as UInt64. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as UInt64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1166,7 +1150,7 @@ Result:
 
 ## reinterpretAsUInt128
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type UInt128. 
+Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1176,11 +1160,7 @@ reinterpretAsUInt128(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as UInt64. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as UInt128. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1208,7 +1188,7 @@ Result:
 
 ## reinterpretAsUInt256
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type UInt256. 
+Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -1218,11 +1198,7 @@ reinterpretAsUInt256(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as UInt256. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as UInt256. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1250,7 +1226,7 @@ Result:
 
 ## reinterpretAsInt8
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Int8. 
+Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1260,11 +1236,7 @@ reinterpretAsInt8(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as Int8. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as Int8. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1292,7 +1264,7 @@ Result:
 
 ## reinterpretAsInt16
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Int16. 
+Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -1302,11 +1274,7 @@ reinterpretAsInt16(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as Int16. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as Int16. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1334,7 +1302,7 @@ Result:
 
 ## reinterpretAsInt32
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Int32. 
+Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1344,11 +1312,7 @@ reinterpretAsInt32(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as Int32. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as Int32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1376,7 +1340,7 @@ Result:
 
 ## reinterpretAsInt64
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Int64. 
+Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1386,11 +1350,7 @@ reinterpretAsInt64(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as Int64. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as Int64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1418,7 +1378,7 @@ Result:
 
 ## reinterpretAsInt128
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Int128. 
+Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1428,11 +1388,7 @@ reinterpretAsInt128(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as Int128. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as Int128. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1460,7 +1416,7 @@ Result:
 
 ## reinterpretAsInt256
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Int256. 
+Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1470,11 +1426,7 @@ reinterpretAsInt256(x)
 
 **Parameters**
 
-- `x`: value to byte reinterpret as Int256. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to byte reinterpret as Int256. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1502,7 +1454,7 @@ Result:
 
 ## reinterpretAsFloat32
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Float32. 
+Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1512,11 +1464,7 @@ reinterpretAsFloat32(x)
 
 **Parameters**
 
-- `x`: value to reinterpret as Float32. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to reinterpret as Float32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1540,7 +1488,7 @@ Result:
 
 ## reinterpretAsFloat64
 
-Performs byte reinterpretation similar to [reinterpret_cast](https://en.cppreference.com/w/cpp/language/reinterpret_cast) to type Float64. 
+Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1550,11 +1498,7 @@ reinterpretAsFloat64(x)
 
 **Parameters**
 
-- `x`: value to reinterpret as Float64. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: value to reinterpret as Float64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1588,11 +1532,7 @@ reinterpretAsDate(x)
 
 **Parameters**
 
-- `x`: number of days since the beginning of the Unix Epoch. 
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: number of days since the beginning of the Unix Epoch. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
@@ -1632,11 +1572,7 @@ reinterpretAsDateTime(x)
 
 **Parameters**
 
-- `x`: number of seconds since the beginning of the Unix Epoch.
-
-:::note
-Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-:::
+- `x`: number of seconds since the beginning of the Unix Epoch. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
