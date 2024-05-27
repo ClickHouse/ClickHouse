@@ -75,12 +75,11 @@ private:
         }
         std::cout << "\n";
 
-        for (const auto & file_name : file_names)
+        for (const auto & file_name : selected_and_sorted_file_names)
         {
             auto path = absolute_path + "/" + file_name;
             if (disk.isDirectory(path))
-                if (show_hidden || (!file_name.starts_with('.')))
-                    listRecursive(disk, path, show_hidden);
+                listRecursive(disk, path, show_hidden);
         }
     }
 };
