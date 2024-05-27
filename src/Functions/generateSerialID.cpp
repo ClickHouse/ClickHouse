@@ -6,7 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 
-
 namespace DB
 {
 
@@ -29,7 +28,8 @@ public:
 
     explicit FunctionSerial(ContextPtr context_) : context(context_)
     {
-        if (context->hasZooKeeper()) {
+        if (context->hasZooKeeper())
+        {
             zk = context->getZooKeeper();
         }
     }
@@ -71,8 +71,9 @@ public:
         if (zk->expired())
             zk = context->getZooKeeper();
 
-        // slow?
-        if (zk->exists(function_node_name) && zk->getChildren(function_node_name).size() == MAX_SERIES_NUMBER) {
+        Coordination::Stat stat;
+        if (zk->exists(function_node_name, &stat) && stat.numChildren == MAX_SERIES_NUMBER)
+        {
             throw Exception(ErrorCodes::KEEPER_EXCEPTION,
             "At most {} serial nodes can be created",
             MAX_SERIES_NUMBER);
@@ -96,7 +97,6 @@ public:
         zk->createAncestors(counter_path);
         zk->createIfNotExists(counter_path, "1");
 
-        Coordination::Stat stat;
         while (true)
         {
             const String counter_string = zk->get(counter_path, &stat);
