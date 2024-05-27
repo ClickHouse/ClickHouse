@@ -145,11 +145,10 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     /// Because the real SquashingTransform is only used for INSERT, not for SELECT ... INTO OUTFILE.
     /// The latter doesn't even have a pipeline where a transform could be inserted, so it's more
     /// convenient to do the squashing here. It's also parallelized here.
-
     if (chunk.getNumRows() != 0)
     {
         staging_rows += chunk.getNumRows();
-        staging_bytes += chunk.bytes();
+        staging_bytes += chunk.allocatedBytes();
         staging_chunks.push_back(std::move(chunk));
     }
 
@@ -282,11 +281,17 @@ void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
         writeUsingArrow(std::move(chunks));
     else
     {
-        Chunk concatenated = std::move(chunks[0]);
-        for (size_t i = 1; i < chunks.size(); ++i)
-            concatenated.append(chunks[i]);
+        Chunk concatenated;
+        while (!chunks.empty())
+        {
+            chunks_count++;
+            if (concatenated.empty())
+                concatenated = std::move(chunks.back());
+            else
+                concatenated.append(chunks.back());
+            chunks.pop_back();
+        }
         chunks.clear();
-
         writeRowGroupInOneThread(std::move(concatenated));
     }
 }
