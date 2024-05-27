@@ -7,10 +7,6 @@
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/filesystemHelpers.h>
-#include "ICommand.h"
-
-#include <cstring>
-#include <memory>
 
 #include <Disks/registerDisks.h>
 

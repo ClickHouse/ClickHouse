@@ -1,6 +1,5 @@
 #pragma once
 
-#include <__tuple>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -8,10 +7,7 @@
 #include <vector>
 #include <Client/ReplxxLineReader.h>
 #include <Loggers/Loggers.h>
-#include "Disks/DiskSelector.h"
 #include "Disks/IDisk.h"
-#include "ICommand_fwd.h"
-#include "IO/ReadHelpers.h"
 
 #include <Interpreters/Context.h>
 #include <boost/program_options/options_description.hpp>
@@ -63,8 +59,6 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} at disk {} is not a directory", path, disk->getName());
         }
     }
-
-    String getPrompt() { return disk->getName() + ":" + path + "$ "; }
 
     String getAbsolutePath(const String & any_path) const { return normalizePath(fs::path(path) / any_path); }
 

@@ -23,7 +23,6 @@
 namespace DB
 {
 
-// namespace po = boost::program_options;
 namespace po = boost::program_options;
 using ProgramOptionsDescription = po::options_description;
 using PositionalProgramOptionsDescription = po::positional_options_description;
@@ -127,7 +126,8 @@ DB::CommandPtr makeCommandRead();
 DB::CommandPtr makeCommandRemove();
 DB::CommandPtr makeCommandWrite();
 DB::CommandPtr makeCommandMkDir();
-DB::CommandPtr makeCommandPackedIO();
 DB::CommandPtr makeCommandSwitchDisk();
-
+#ifdef CLICKHOUSE_CLOUD
+DB::CommandPtr makeCommandPackedIO();
+#endif
 }

@@ -227,9 +227,11 @@ void DisksApp::runInteractiveReplxx()
 
     while (true)
     {
-        String prompt = client->getCurrentDiskWithPath().getPrompt();
+        DiskWithPath disk_with_path = client->getCurrentDiskWithPath();
+        String prompt = "\x1b[1;34m" + disk_with_path.getDisk()->getName() + "\x1b[0m:" + "\x1b[1;31m" + disk_with_path.getCurrentPath()
+            + "\x1b[0m$ ";
 
-        auto input = lr.readLine(prompt, ":-] ");
+        auto input = lr.readLine(prompt, "\x1b[1;31m:-] \x1b[0m");
         if (input.empty())
             break;
 
