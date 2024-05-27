@@ -27,24 +27,24 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_map<std::string_view, UInt64> size_unit_to_bytes =
+const std::unordered_map<std::string_view, Float64> size_unit_to_bytes =
 {
-    {"b", 1L},
+    {"b", 1.0},
     // ISO/IEC 80000-13 binary units
-    {"kib", 1024L},
-    {"mib", 1024L * 1024L},
-    {"gib", 1024L * 1024L * 1024L},
-    {"tib", 1024L * 1024L * 1024L * 1024L},
-    {"pib", 1024L * 1024L * 1024L * 1024L * 1024L},
-    {"eib", 1024L * 1024L * 1024L * 1024L * 1024L * 1024L},
+    {"kib", 1024.0},
+    {"mib", 1024.0 * 1024.0},
+    {"gib", 1024.0 * 1024.0 * 1024.0},
+    {"tib", 1024.0 * 1024.0 * 1024.0 * 1024.0},
+    {"pib", 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0},
+    {"eib", 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0},
 
     // SI units
-    {"kb", 1000L},
-    {"mb", 1000L * 1000L},
-    {"gb", 1000L * 1000L * 1000L},
-    {"tb", 1000L * 1000L * 1000L * 1000L},
-    {"pb", 1000L * 1000L * 1000L * 1000L * 1000L},
-    {"eb", 1000L * 1000L * 1000L * 1000L * 1000L * 1000L},
+    {"kb", 1000.0},
+    {"mb", 1000.0 * 1000.0},
+    {"gb", 1000.0 * 1000.0 * 1000.0},
+    {"tb", 1000.0 * 1000.0 * 1000.0 * 1000.0},
+    {"pb", 1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0},
+    {"eb", 1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0},
 };
 
 class FunctionFromReadableSize : public IFunction
@@ -66,14 +66,14 @@ public:
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeFloat64>();
     }
 
     
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto col_to = ColumnUInt64::create();
+        auto col_to = ColumnFloat64::create();
         auto & res_data = col_to->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -100,14 +100,8 @@ public:
             if (iter == size_unit_to_bytes.end())
                 throw_bad_arguments("Unknown readable size unit", unit);
 
-            Float64 raw_num_bytes = base * iter->second;
-            if (raw_num_bytes > std::numeric_limits<UInt64>::max())
-                throw_bad_arguments("Result is too big for output type (UInt64)", raw_num_bytes);
-            // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
-            // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
-            UInt64 result = static_cast<UInt64>(std::ceil(raw_num_bytes));
-
-            res_data.emplace_back(result);
+            Float64 num_bytes = base * iter->second;
+            res_data.emplace_back(num_bytes);
         }
 
         return col_to;
