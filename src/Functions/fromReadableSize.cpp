@@ -1,119 +1,46 @@
 #include <base/types.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/convert.hpp>
-#include <boost/convert/strtol.hpp>
-
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <limits>
-#include <string_view>
+#include <Functions/fromReadable.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace
 {
 
-const std::unordered_map<std::string_view, Float64> size_unit_to_bytes =
+// ISO/IEC 80000-13 binary units
+const std::unordered_map<std::string_view, Float64> scale_factors =
 {
     {"b", 1.0},
-    // ISO/IEC 80000-13 binary units
     {"kib", 1024.0},
     {"mib", 1024.0 * 1024.0},
     {"gib", 1024.0 * 1024.0 * 1024.0},
     {"tib", 1024.0 * 1024.0 * 1024.0 * 1024.0},
     {"pib", 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0},
     {"eib", 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0},
-
-    // SI units
-    {"kb", 1000.0},
-    {"mb", 1000.0 * 1000.0},
-    {"gb", 1000.0 * 1000.0 * 1000.0},
-    {"tb", 1000.0 * 1000.0 * 1000.0 * 1000.0},
-    {"pb", 1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0},
-    {"eb", 1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0},
 };
 
-class FunctionFromReadableSize : public IFunction
+struct Impl
 {
-public:
     static constexpr auto name = "fromReadableSize";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFromReadableSize>(); }
-    String getName() const override { return name; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    static Float64 getScaleFactorForUnit(const String & unit)  // Assumes the unit is already in lowercase
     {
-        FunctionArgumentDescriptors args
+        auto iter = scale_factors.find(unit);
+        if (iter == scale_factors.end())
         {
-            {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-        validateFunctionArgumentTypes(*this, arguments, args);
-
-        return std::make_shared<DataTypeFloat64>();
-    }
-
-    
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        auto col_to = ColumnFloat64::create();
-        auto & res_data = col_to->getData();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {   
-            std::string_view str = arguments[0].column->getDataAt(i).toView();
-            ReadBufferFromString buf(str);
-            // tryReadFloatText does seem to not raise any error when there is leading whitespace so we cehck for it explicitly
-            skipWhitespaceIfAny(buf);
-            if (buf.getPosition() > 0)
-                throw_bad_arguments("Leading whitespace is not allowed", str);
-
-            Float64 base = 0;
-            if (!tryReadFloatText(base, buf))
-                throw_bad_arguments("Unable to parse readable size numeric component", str);
-
-            skipWhitespaceIfAny(buf);
-
-            String unit;
-            readStringUntilWhitespace(unit, buf);
-            if (!buf.eof())
-                throw_bad_arguments("Found trailing characters after readable size string", str);
-            boost::algorithm::to_lower(unit);
-            auto iter = size_unit_to_bytes.find(unit);
-            if (iter == size_unit_to_bytes.end())
-                throw_bad_arguments("Unknown readable size unit", unit);
-
-            Float64 num_bytes = base * iter->second;
-            res_data.emplace_back(num_bytes);
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_TEXT,
+                "Invalid expression for function {} - Unknown readable size unit (\"{}\")",
+                name,
+                unit
+            );
         }
-
-        return col_to;
-    }
-
-
-private:
-
-    template <typename Arg>
-    void throw_bad_arguments(const String & msg, Arg arg) const
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - {} (\"{}\")", getName(), msg, arg);
+        return iter->second;
     }
 
 };
@@ -121,7 +48,7 @@ private:
 
 REGISTER_FUNCTION(FromReadableSize)
 {
-    factory.registerFunction<FunctionFromReadableSize>(FunctionDocumentation
+    factory.registerFunction<FunctionFromReadable<Impl>>(FunctionDocumentation
         {
             .description=R"(
 Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes:
