@@ -1,36 +1,67 @@
-#include <cstdint>
 #include <Common/GWPAsan.h>
 
 #if USE_GWP_ASAN
+#    include <IO/ReadHelpers.h>
 #    include <gwp_asan/common.h>
 #    include <gwp_asan/crash_handler.h>
 #    include <gwp_asan/guarded_pool_allocator.h>
 #    include <gwp_asan/optional/options_parser.h>
+#    include <Common/ErrorCodes.h>
+#    include <Common/Exception.h>
 #    include <Common/Logger.h>
 #    include <Common/StackTrace.h>
 #    include <Common/logger_useful.h>
+
+#    include <iostream>
+#    include <unordered_map>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+     extern const int LOGICAL_ERROR;
+}
+
+}
 
 namespace Memory
 {
 
 namespace
 {
-     size_t getBackTrace(uintptr_t * trace_buffer, size_t buffer_size)
-     {
-          StackTrace stacktrace;
-          auto trace_size = std::min(buffer_size, stacktrace.getSize());
-          const auto & frame_pointers = stacktrace.getFramePointers();
-          memcpy(trace_buffer, frame_pointers.data(), std::min(trace_size, buffer_size) * sizeof(uintptr_t));
-          return trace_size;
-     }
+size_t getBackTrace(uintptr_t * trace_buffer, size_t buffer_size)
+{
+    StackTrace stacktrace;
+    auto trace_size = std::min(buffer_size, stacktrace.getSize());
+    const auto & frame_pointers = stacktrace.getFramePointers();
+    memcpy(trace_buffer, frame_pointers.data(), trace_size * sizeof(uintptr_t));
+    return trace_size;
+}
+
+__attribute__((__format__ (__printf__, 1, 0)))
+void printString(const char * format, ...) // NOLINT(cert-dcl50-cpp)
+{
+    std::array<char, 1024> formatted;
+    va_list args;
+    va_start(args, format);
+
+    if (vsnprintf(formatted.data(), formatted.size(), format, args) > 0)
+        std::cerr << formatted.data() << std::endl;
+
+    va_end(args);
+}
+
 }
 
 gwp_asan::GuardedPoolAllocator GuardedAlloc;
+
 static bool guarded_alloc_initialized = []
 {
-    gwp_asan::options::initOptions();
-    gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
-    opts.MaxSimultaneousAllocations = 1024;
+    const char * env_options_raw = std::getenv("GWP_ASAN_OPTIONS"); // NOLINT(concurrency-mt-unsafe)
+    if (env_options_raw)
+        gwp_asan::options::initOptions(env_options_raw, printString);
+
+    auto & opts = gwp_asan::options::getOptions();
     opts.Backtrace = getBackTrace;
     GuardedAlloc.init(opts);
 
@@ -53,8 +84,9 @@ bool isGWPAsanError(uintptr_t fault_address)
 namespace
 {
 
-struct ScopedEndOfReportDecorator {
-    explicit ScopedEndOfReportDecorator(Poco::LoggerPtr log_) : log(std::move(log_)) {}
+struct ScopedEndOfReportDecorator
+{
+    explicit ScopedEndOfReportDecorator(Poco::LoggerPtr log_) : log(std::move(log_)) { }
     ~ScopedEndOfReportDecorator() { LOG_FATAL(log, "*** End GWP-ASan report ***"); }
     Poco::LoggerPtr log;
 };
@@ -108,8 +140,6 @@ void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan:
         }
     }
 
-    // Possible number of digits of a 64-bit number: ceil(log10(2^64)) == 20. Add
-    // a null terminator, and round to the nearest 8-byte boundary.
     uint64_t thread_id = gwp_asan::getThreadID();
     std::string thread_id_string = thread_id == gwp_asan::kInvalidThreadID ? "<unknown" : fmt::format("{}", thread_id);
 

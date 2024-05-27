@@ -1,9 +1,9 @@
 #include <Common/Allocator.h>
-#include <Common/memory.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/Exception.h>
+#include <Common/GWPAsan.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
