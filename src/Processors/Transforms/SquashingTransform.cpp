@@ -12,14 +12,14 @@ extern const int LOGICAL_ERROR;
 SquashingTransform::SquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , planSquashing(header, min_block_size_rows, min_block_size_bytes)
+    , planSquashing(min_block_size_rows, min_block_size_bytes)
     , applySquashing(header)
 {
 }
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    Chunk planned_chunk = planSquashing.add(chunk);
+    Chunk planned_chunk = planSquashing.add(std::move(chunk));
     if (planned_chunk.hasChunkInfo())
         cur_chunk = applySquashing.add(std::move(planned_chunk));
 }
@@ -60,7 +60,7 @@ void SquashingTransform::work()
 SimpleSquashingTransform::SimpleSquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ISimpleTransform(header, header, false)
-    , planSquashing(header, min_block_size_rows, min_block_size_bytes)
+    , planSquashing(min_block_size_rows, min_block_size_bytes)
     , applySquashing(header)
 {
 }
@@ -69,7 +69,7 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        Chunk planned_chunk = planSquashing.add(chunk);
+        Chunk planned_chunk = planSquashing.add(std::move(chunk));
         if (planned_chunk.hasChunkInfo())
             chunk = applySquashing.add(std::move(planned_chunk));
     }

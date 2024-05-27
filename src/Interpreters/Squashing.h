@@ -25,33 +25,6 @@ struct ChunksToSquash : public ChunkInfo
   *
   * Order of data is kept.
   */
-class Squashing
-{
-public:
-    /// Conditions on rows and bytes are OR-ed. If one of them is zero, then corresponding condition is ignored.
-    Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
-
-    /** Add next block and possibly returns squashed block.
-      * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
-      */
-    Block add(Block && block);
-    Block add(const Block & block);
-
-private:
-    size_t min_block_size_rows;
-    size_t min_block_size_bytes;
-
-    Block accumulated_block;
-
-    template <typename ReferenceType>
-    Block addImpl(ReferenceType block);
-
-    template <typename ReferenceType>
-    void append(ReferenceType block);
-
-    bool isEnoughSize(const Block & block);
-    bool isEnoughSize(size_t rows, size_t bytes) const;
-};
 
 class ApplySquashing
 {
@@ -75,9 +48,9 @@ private:
 class PlanSquashing
 {
 public:
-    PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    PlanSquashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
-    Chunk add(Chunk & input_chunk);
+    Chunk add(Chunk && input_chunk);
     Chunk flush();
     bool isDataLeft()
     {
@@ -95,7 +68,7 @@ private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
 
-    const Block header;
+    // const Block header;
     CurrentSize accumulated_size;
 
     void expandCurrentSize(size_t rows, size_t bytes);

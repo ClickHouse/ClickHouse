@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 
 namespace ProfileEvents
@@ -1266,7 +1267,8 @@ private:
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
-    std::vector<Squashing> projection_squashes;
+    std::vector<PlanSquashing> projection_squash_plannings;
+    std::vector<ApplySquashing> projection_squashes;
     const ProjectionsDescription & projections;
 
     ExecutableTaskPtr merge_projection_parts_task_ptr;
@@ -1285,7 +1287,8 @@ void PartMergerWriter::prepare()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squash_plannings.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squashes.emplace_back(ctx->updated_header);
     }
 
     existing_rows_count = 0;
@@ -1313,7 +1316,15 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             Block projection_block;
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
+                Block to_plan = projection.calculate(cur_block, ctx->context);
+                Chunk planned_chunk = projection_squash_plannings[i].add({to_plan.getColumns(), to_plan.rows()});
+                Chunk projection_chunk;
+                if (planned_chunk.hasChunkInfo())
+                    projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
+                ColumnsWithTypeAndName cols;
+                for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
+                    cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+                projection_block = Block(cols);
             }
 
             if (projection_block)
@@ -1337,8 +1348,15 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         const auto & projection = *ctx->projections_to_build[i];
-        auto & projection_squash = projection_squashes[i];
-        auto projection_block = projection_squash.add({});
+        auto & projection_squash_plan = projection_squash_plannings[i];
+        auto planned_chunk = projection_squash_plan.flush();
+        Chunk projection_chunk;
+        if (planned_chunk.hasChunkInfo())
+            projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
+        ColumnsWithTypeAndName cols;
+        for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
+            cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+        auto projection_block = Block(cols);
         if (projection_block)
         {
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
