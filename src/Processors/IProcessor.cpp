@@ -36,8 +36,6 @@ std::string IProcessor::statusToName(Status status)
         case Status::ExpandPipeline:
             return "ExpandPipeline";
     }
-
-    UNREACHABLE();
 }
 
 }
