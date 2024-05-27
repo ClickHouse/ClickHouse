@@ -165,6 +165,7 @@ StorageS3Queue::StorageS3Queue(
 
     if (s3queue_settings->mode == S3QueueMode::ORDERED && !s3queue_settings->s3queue_last_processed_path.value.empty())
     {
+        ///TODO:
         // files_metadata->setFileProcessed(s3queue_settings->s3queue_last_processed_path.value);
     }
 }

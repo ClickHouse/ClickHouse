@@ -93,11 +93,13 @@ OrderedFileMetadata::Bucket OrderedFileMetadata::getBucketForPath(const std::str
 
 static std::string getProcessorInfo(const std::string & processor_id)
 {
+    /// Add information which will be useful for debugging just in case.
+    /// TODO: add it for Unordered mode as well.
     Poco::JSON::Object json;
     json.set("hostname", DNSResolver::instance().getHostName());
     json.set("processor_id", processor_id);
 
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
@@ -112,6 +114,7 @@ OrderedFileMetadata::BucketHolderPtr OrderedFileMetadata::tryAcquireBucket(
     const auto bucket_lock_path = zk_path / "buckets" / toString(bucket) / "lock";
     const auto processor_info = getProcessorInfo(processor);
 
+    /// TODO: move this somewhere so that we do not do it each time.
     zk_client->createAncestors(bucket_lock_path);
 
     auto code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Ephemeral);
@@ -219,12 +222,6 @@ void OrderedFileMetadata::setProcessedImpl()
         else
             requests.push_back(zkutil::makeCreateRequest(processed_node_path, node_metadata_str, zkutil::CreateMode::Persistent));
 
-            // if (useBucketsForProcessing())
-            // {
-            //     auto bucket_lock_path = getBucketLockPath(getBucketForPath(path));
-            //     /// TODO: add version
-            //     requests.push_back(zkutil::makeCheckRequest(bucket_lock_path, -1));
-            // }
         if (processing_id.has_value())
             requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 

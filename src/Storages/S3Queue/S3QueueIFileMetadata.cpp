@@ -185,7 +185,7 @@ bool IFileMetadata::setProcessing()
     else
         file_status->updateState(file_state);
 
-    LOG_TEST(log, "File {} has state `{}`", path, file_state);
+    LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
     return success;
 }
 

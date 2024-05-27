@@ -65,6 +65,7 @@ void StorageS3QueueSource::FileIterator::releaseAndResetCurrentBucket()
     {
         if (current_bucket.has_value())
         {
+            /// TODO: release the bucket via release() method instead - to make it throw exceptions.
             bucket_holder.reset(); /// Release the bucket.
             current_bucket.reset();
         }
