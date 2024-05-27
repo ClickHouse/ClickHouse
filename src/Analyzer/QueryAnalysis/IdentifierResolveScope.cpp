@@ -6,6 +6,11 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+
     IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, IdentifierResolveScope * parent_scope_)
         : scope_node(std::move(scope_node_))
         , parent_scope(parent_scope_)
