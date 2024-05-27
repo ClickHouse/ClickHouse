@@ -891,11 +891,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (reading)
                             break;
 
+                        last_node = node;
                         if (!node->children.empty())
+                        {
                             node = node->children.at(0);
+                        }
                         else
                         {
-                            last_node = node;
                             node = nullptr;
                         }
                     }
