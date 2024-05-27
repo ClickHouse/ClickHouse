@@ -36,6 +36,7 @@ void copyS3File(
     const String & src_key,
     size_t src_offset,
     size_t src_size,
+    std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
@@ -43,8 +44,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    bool for_disk_s3 = false,
-    std::shared_ptr<const S3::Client> dest_s3_client = nullptr);
+    bool for_disk_s3 = false);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3

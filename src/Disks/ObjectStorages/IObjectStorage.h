@@ -4,6 +4,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <filesystem>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>

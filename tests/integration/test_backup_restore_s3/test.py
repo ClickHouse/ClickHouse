@@ -28,6 +28,10 @@ node = cluster.add_instance(
 
 
 def setup_minio_users():
+    # create 2 extra users with restricted access
+    # miniorestricted1 - full access to bucket 'root', no access to other buckets
+    # miniorestricted2 - full access to bucket 'root2', no access to other buckets
+    # storage policy 'policy_s3_restricted' defines a policy for storing files inside bucket 'root' using 'miniorestricted1' user
     for user, bucket in [("miniorestricted1", "root"), ("miniorestricted2", "root2")]:
         print(
             cluster.exec_in_container(

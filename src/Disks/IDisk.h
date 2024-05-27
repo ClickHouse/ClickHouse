@@ -14,7 +14,6 @@
 #include <Disks/DirectoryIterator.h>
 
 #include <memory>
-#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
@@ -470,6 +469,17 @@ public:
     void markDiskAsCustom() { is_custom_disk = true; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
+
+#if USE_AWS_S3
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getS3StorageClient() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+#endif
+
 
 protected:
     friend class DiskDecorator;

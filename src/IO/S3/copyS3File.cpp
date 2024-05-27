@@ -654,7 +654,16 @@ namespace
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
+            : UploadHelper(
+                client_ptr_,
+                dest_bucket_,
+                dest_key_,
+                request_settings_,
+                object_metadata_,
+                schedule_,
+                for_disk_s3_,
+                blob_storage_log_,
+                getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -869,6 +878,7 @@ void copyS3File(
     const String & src_key,
     size_t src_offset,
     size_t src_size,
+    std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
@@ -876,8 +886,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    bool for_disk_s3,
-    std::shared_ptr<const S3::Client> dest_s3_client)
+    bool for_disk_s3)
 {
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;
