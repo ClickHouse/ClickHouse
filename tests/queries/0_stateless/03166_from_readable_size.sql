@@ -27,5 +27,26 @@ SELECT fromReadableSize('3.00 KiB');    -- 3072
 -- Resulting bytes are rounded up
 SELECT fromReadableSize('1.0001 KiB');  -- 1025
 
--- Leading & infix whitespace is ignored
-SELECT fromReadableSize('   1    KiB');
+-- Infix whitespace is ignored
+SELECT fromReadableSize('1    KiB');
+SELECT fromReadableSize('1KiB');
+
+
+-- ERRORS
+-- No arguments
+SELECT fromReadableSize() -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- Too many arguments
+SELECT fromReadableSize('1 B', '2 B') -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- Wrong Type
+SELECT fromReadableSize(12) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Invalid input - overall garbage
+SELECT fromReadableSize("oh no") -- { serverError BAD_ARGUMENTS }
+-- Invalid input - unknown unit
+SELECT fromReadableSize("12.3 rb") -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Leading whitespace
+SELECT fromReadableSize(' 1 B') -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Trailing characters
+SELECT fromReadableSize('1 B leftovers') -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize(' 1 B') -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Result too big to fit in output typez
+SELECT fromReadableSize('1000000 EiB') -- { serverError BAD_ARGUMENTS }
