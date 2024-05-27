@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <base/types.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <Core/Block.h>
