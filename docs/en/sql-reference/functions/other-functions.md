@@ -797,7 +797,6 @@ Result:
 ## fromReadableSize
 
 Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes.
- - As the conversion might lead to decimal bytes the result will be rounded up to the next integer to represent the minimum number of bytes that can fit the passed size.
  - Accepts up to the Exabyte (EB/EiB)  
 
 **Arguments**
@@ -806,7 +805,7 @@ Given a string containing the readable representation of a byte size, this funct
 
 **Returned value**
 
-- Number of bytes represented by the readable size [UInt64](../data-types/int-uint.md).
+- Number of bytes represented by the readable size [Float64](../data-types/float.md).
 
 Example:
 
