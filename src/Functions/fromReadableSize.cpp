@@ -42,7 +42,6 @@ const std::unordered_map<std::string_view, UInt64> size_unit_to_bytes =
     {"pb", 1000 * 1000 * 1000 * 1000 * 1000},
     {"eb", 1000 * 1000 * 1000 * 1000 * 1000 * 1000},
 };
-constexpr UInt64 MAX_UINT64 = std::numeric_limits<UInt64>::max();
 
 class FunctionFromReadableSize : public IFunction
 {
@@ -178,7 +177,7 @@ public:
                     ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
             }
             Float64 raw_num_bytes = base * iter->second;
-            if (raw_num_bytes > MAX_UINT64)
+            if (raw_num_bytes > std::numeric_limits<UInt64>::max())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
