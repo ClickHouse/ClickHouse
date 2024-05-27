@@ -24,6 +24,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+};
+
+
 CommandPtr DisksApp::getCommandByName(String command) const
 {
     auto it = aliases.find(command);

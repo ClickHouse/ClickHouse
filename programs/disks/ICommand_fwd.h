@@ -1,6 +1,6 @@
-#include <memory>
-#include <string>
+#pragma once
 
+#include <memory>
 
 namespace DB
 {
