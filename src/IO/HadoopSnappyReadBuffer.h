@@ -88,6 +88,7 @@ public:
             case Status::TOO_LARGE_COMPRESSED_BLOCK:
                 return "TOO_LARGE_COMPRESSED_BLOCK";
         }
+        UNREACHABLE();
     }
 
     explicit HadoopSnappyReadBuffer(

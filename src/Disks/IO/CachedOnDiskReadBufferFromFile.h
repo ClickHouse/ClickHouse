@@ -140,6 +140,7 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
+        UNREACHABLE();
     }
 
     size_t first_offset = 0;

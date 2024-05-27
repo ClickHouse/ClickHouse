@@ -42,7 +42,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        chassert(false);
+        UNREACHABLE();
     }
 }
 
@@ -538,6 +538,8 @@ const char * getTokenName(TokenType type)
 APPLY_FOR_TOKENS(M)
 #undef M
     }
+
+    UNREACHABLE();
 }
 
 
