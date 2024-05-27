@@ -31,10 +31,6 @@ void DiskSelector::initialize(
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    std::cerr << "Config Prefix: " << config_prefix << std::endl;
-    for (auto & key : keys)
-        std::cerr << "Key inside disk selector initialize: " << key;
-    std::cerr << std::endl;
 
     auto & factory = DiskFactory::instance();
 
