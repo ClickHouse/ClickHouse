@@ -287,7 +287,7 @@ static std::chrono::steady_clock::duration parseSessionTimeout(const Poco::Util:
 }
 
 std::optional<std::unordered_map<String, String>>
-parseHttpResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+parseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
@@ -1346,7 +1346,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 }
 
 std::optional<std::unordered_map<String, String>>
-parseHttpResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+parseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::unordered_map<String, String> http_response_headers_override;
     String http_response_headers_key = config_prefix + ".handler.http_response_headers";
@@ -1354,7 +1354,7 @@ parseHttpResponseHeaders(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(http_response_headers_key))
     {
         Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_prefix + ".handler.http_response_headers", keys);
+        config.keys(http_response_headers_key, keys);
         for (const auto & key : keys)
             http_response_headers_override[key] = config.getString(http_response_headers_key_prefix + key);
     }
@@ -1372,7 +1372,7 @@ createDynamicHandlerFactory(IServer & server, const Poco::Util::AbstractConfigur
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
-    std::optional<std::unordered_map<String, String>> http_response_headers_override = parseHttpResponseHeaders(config, config_prefix);
+    std::optional<std::unordered_map<String, String>> http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
     auto creator = [&server, query_param_name, http_response_headers_override]() -> std::unique_ptr<DynamicQueryHandler>
     { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override); };
@@ -1436,7 +1436,7 @@ createPredefinedHandlerFactory(IServer & server, const Poco::Util::AbstractConfi
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
-    std::optional<std::unordered_map<String, String>> http_response_headers_override = parseHttpResponseHeaders(config, config_prefix);
+    std::optional<std::unordered_map<String, String>> http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
