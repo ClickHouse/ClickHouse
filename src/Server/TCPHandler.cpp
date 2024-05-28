@@ -897,7 +897,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
             ColumnsWithTypeAndName cols;
             if (result_chunk.hasColumns())
                 for (size_t j = 0; j < result_chunk.getNumColumns(); ++ j)
-                    cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], state.input_header.getDataTypes()[j], state.input_header.getNames()[j]));
+                    cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], state.block_for_insert.getDataTypes()[j], state.block_for_insert.getNames()[j]));
             auto result = Block(cols);
             return PushResult
             {
@@ -914,7 +914,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     ColumnsWithTypeAndName cols;
     if (result_chunk.hasColumns())
         for (size_t j = 0; j < result_chunk.getNumColumns(); ++ j)
-            cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], state.input_header.getDataTypes()[j], state.input_header.getNames()[j]));
+            cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], state.block_for_insert.getDataTypes()[j], state.block_for_insert.getNames()[j]));
     auto result = Block(cols);
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
