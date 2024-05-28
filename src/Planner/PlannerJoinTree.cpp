@@ -884,29 +884,28 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     // (1) find read step
                     QueryPlan::Node * node = query_plan.getRootNode();
                     ReadFromMergeTree * reading = nullptr;
-                    QueryPlan::Node * last_node = nullptr;
                     while (node)
                     {
                         reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
                         if (reading)
                             break;
 
-                        last_node = node;
+                        QueryPlan::Node * prev_node = node;
                         if (!node->children.empty())
                         {
+                            chassert(node->children.size() == 1);
                             node = node->children.at(0);
                         }
                         else
                         {
-                            node = nullptr;
+                            if (prev_node->step)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Step is expected to be ReadFromMergeTree but it's {}", prev_node->step->getName());
+                            else
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Step is expected to be ReadFromMergeTree, and wtf - last node with empty step");
                         }
                     }
 
-                    // chassert(reading);
-                    if (!reading)
-                    {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading step is expected to be ReadFromMergeTree but it's {}", last_node->step->getName());
-                    }
+                    chassert(reading);
 
                     // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                     if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
@@ -955,9 +954,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_context,
                             table_expression_query_info.storage_limits);
                         query_plan = std::move(query_plan_parallel_replicas);
-
-                        const Block & query_plan_header = query_plan.getCurrentDataStream().header;
-                        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas query_plan_header:\n{}", query_plan_header.dumpStructure());
                     }
                 }
 
