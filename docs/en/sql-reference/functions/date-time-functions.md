@@ -3959,7 +3959,7 @@ Result:
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
 :::note
-This function gives the same result that `now('UTC')` would. It was added only for MySQL support and `now` is the preferred usage.
+This function gives the same result that `now('UTC')` would. It was added only for MySQL support and [`now`](#now-now) is the preferred usage.
 :::
 
 **Syntax**
