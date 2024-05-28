@@ -890,10 +890,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (reading)
                             break;
 
+                        QueryPlan::Node * prev_node = node;
                         if (!node->children.empty())
+                        {
+                            chassert(node->children.size() == 1);
                             node = node->children.at(0);
+                        }
                         else
-                            node = nullptr;
+                        {
+                            if (prev_node->step)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Step is expected to be ReadFromMergeTree but it's {}", prev_node->step->getName());
+                            else
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Step is expected to be ReadFromMergeTree, and wtf - last node with empty step");
+                        }
                     }
 
                     chassert(reading);
@@ -948,9 +957,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             table_expression_query_info.storage_limits,
                             std::move(reading_step));
                         query_plan = std::move(query_plan_parallel_replicas);
-
-                        const Block & query_plan_header = query_plan.getCurrentDataStream().header;
-                        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas query_plan_header:\n{}", query_plan_header.dumpStructure());
                     }
                 }
 
