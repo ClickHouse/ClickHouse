@@ -9,25 +9,24 @@ namespace DB
 namespace
 {
 
-// ISO/IEC 80000-13 binary units
-const std::unordered_map<std::string_view, size_t> scale_factors =
-{
-    {"b", 1L},
-    {"kib", 1024L},
-    {"mib", 1024L * 1024L},
-    {"gib", 1024L * 1024L * 1024L},
-    {"tib", 1024L * 1024L * 1024L * 1024L},
-    {"pib", 1024L * 1024L * 1024L * 1024L * 1024L},
-    {"eib", 1024L * 1024L * 1024L * 1024L * 1024L * 1024L},
-};
-
 struct Impl
 {
-    static const std::unordered_map<std::string_view, size_t> & getScaleFactors()
+    static const ScaleFactors & getScaleFactors()
     {
+        // ISO/IEC 80000-13 binary units
+        static const ScaleFactors scale_factors =
+        {
+            {"b", 1ull},
+            {"kib", 1024ull},
+            {"mib", 1024ull * 1024ull},
+            {"gib", 1024ull * 1024ull * 1024ull},
+            {"tib", 1024ull * 1024ull * 1024ull * 1024ull},
+            {"pib", 1024ull * 1024ull * 1024ull * 1024ull * 1024ull},
+            {"eib", 1024ull * 1024ull * 1024ull * 1024ull * 1024ull * 1024ull},
+        };
+
         return scale_factors;
     }
-
 };
 
 

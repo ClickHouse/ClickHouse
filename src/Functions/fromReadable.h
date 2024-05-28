@@ -36,6 +36,8 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
+using ScaleFactors = std::unordered_map<std::string_view, size_t>;
+
 /** fromReadble*Size - Returns the number of bytes corresponding to a given readable binary or decimal size.
   * Examples:
   *  - `fromReadableSize('123 MiB')`
@@ -92,7 +94,7 @@ public:
             );
         }
 
-        const std::unordered_map<std::string_view, size_t> & scale_factors = Impl::getScaleFactors();
+        const ScaleFactors & scale_factors = Impl::getScaleFactors();
 
         auto col_res = ColumnUInt64::create(input_rows_count);
 

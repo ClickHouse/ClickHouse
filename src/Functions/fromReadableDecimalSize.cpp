@@ -8,21 +8,21 @@ namespace DB
 namespace
 {
 
-const std::unordered_map<std::string_view, size_t> scale_factors =
-{
-    {"b", 1L},
-    {"kb", 1000L},
-    {"mb", 1000L * 1000L},
-    {"gb", 1000L * 1000L * 1000L},
-    {"tb", 1000L * 1000L * 1000L * 1000L},
-    {"pb", 1000L * 1000L * 1000L * 1000L * 1000L},
-    {"eb", 1000L * 1000L * 1000L * 1000L * 1000L * 1000L},
-};
-
 struct Impl
 {
-    static const std::unordered_map<std::string_view, size_t> & getScaleFactors()
+    static const ScaleFactors & getScaleFactors()
     {
+        static const ScaleFactors scale_factors =
+        {
+            {"b", 1ull},
+            {"kb", 1000ull},
+            {"mb", 1000ull * 1000ull},
+            {"gb", 1000ull * 1000ull * 1000ull},
+            {"tb", 1000ull * 1000ull * 1000ull * 1000ull},
+            {"pb", 1000ull * 1000ull * 1000ull * 1000ull * 1000ull},
+            {"eb", 1000ull * 1000ull * 1000ull * 1000ull * 1000ull * 1000ull},
+        };
+
         return scale_factors;
     }
 };
