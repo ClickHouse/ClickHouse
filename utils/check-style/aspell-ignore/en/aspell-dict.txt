@@ -1619,6 +1619,7 @@ gcem
 generateRandom
 generateRandomStructure
 generateSeries
+generateSnowflakeID
 generateULID
 generateUUIDv
 geoDistance
