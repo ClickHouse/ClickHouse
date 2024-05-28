@@ -84,9 +84,15 @@ def test_dynamic_query_handler():
             headers={"XXX": "xxx"},
         )
         assert 200 == res_custom_ct.status_code
-        assert "application/whatever; charset=cp1337" == res_custom_ct.headers["content-type"]
+        assert (
+            "application/whatever; charset=cp1337"
+            == res_custom_ct.headers["content-type"]
+        )
         assert "it works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Works"]
-        assert "also works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        assert (
+            "also works"
+            == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
 
 
 def test_predefined_query_handler():
@@ -146,7 +152,9 @@ def test_predefined_query_handler():
         assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
         assert "application/generic+one" == res2.headers["content-type"]
         assert "it works" == res2.headers["X-Test-Http-Response-Headers-Works"]
-        assert "also works" == res2.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        assert (
+            "also works" == res2.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
 
         cluster.instance.query(
             "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
