@@ -1,11 +1,7 @@
 #include <IO/S3Settings.h>
 
 #include <IO/S3Common.h>
-
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Exception.h>
-#include <Common/Throttler.h>
-#include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
 
 
@@ -32,8 +28,8 @@ void S3SettingsByEndpoint::loadFromConfig(
         if (config.has(endpoint_path))
         {
             auto endpoint = config.getString(endpoint_path);
-            auto auth_settings = S3::AuthSettings(config, key_path, settings);
-            auto request_settings = S3::RequestSettings(config, key_path, settings);
+            auto auth_settings = S3::AuthSettings(config, settings, /* for_disk_s3 */false, config_prefix);
+            auto request_settings = S3::RequestSettings(config, settings, /* for_disk_s3 */false, settings.s3_validate_request_settings, config_prefix);
             s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), std::move(request_settings)});
         }
     }

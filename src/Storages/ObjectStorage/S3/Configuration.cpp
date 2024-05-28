@@ -112,11 +112,8 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         config, config_prefix, context, url.endpoint, /* for_disk_s3 */false,
         settings.s3_validate_request_settings);
 
-    request_settings.updateFromSettings(settings, /* if_changed */true);
-    auth_settings.updateIfChanged(s3_settings->auth_settings);
-
-    s3_settings->auth_settings = auth_settings;
-    s3_settings->request_settings = request_settings;
+    s3_settings->auth_settings.updateIfChanged(auth_settings);
+    s3_settings->request_settings.updateIfChanged(request_settings);
 
     if (!headers_from_ast.empty())
     {

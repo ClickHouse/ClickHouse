@@ -73,6 +73,14 @@ struct ProxyConfigurationResolver;
 
 namespace S3
 {
+/// We use s3 settings for DiskS3, StorageS3 (StorageS3Cluster, S3Queue, etc), BackupIO_S3, etc.
+/// 1. For DiskS3 we usually have configuration in disk section in configuration file.
+///    All s3 related settings start with "s3_" prefix there.
+///    If some setting is absent from disk configuration, we look up for it in the "s3." server config section,
+///    where s3 settings no longer have "s3_" prefix like in disk configuration section.
+///    If the settings is absent there as well, we look up for it in Users config (where query/session settings are also updated).
+/// 2. For StorageS3 and similar - we look up to "s3." config section (again - settings there do not have "s3_" prefix).
+///    If some setting is absent from there, we lool up for it in Users config.
 
 #define AUTH_SETTINGS(M, ALIAS) \
     M(String, access_key_id, "", "", 0) \
@@ -134,9 +142,9 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
 
     AuthSettings(
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
         const DB::Settings & settings,
-        const std::string & setting_name_prefix = "");
+        bool for_disk_s3,
+        const std::string & disk_config_prefix = "");
 
     AuthSettings(const DB::Settings & settings);
 
@@ -156,6 +164,14 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
 {
     RequestSettings() = default;
 
+    /// Create request settings from Config.
+    RequestSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const DB::Settings & settings,
+        bool for_disk_s3,
+        bool validate_settings = true,
+        const std::string & disk_config_path = "");
+
     /// Create request settings from DB::Settings.
     explicit RequestSettings(const DB::Settings & settings, bool validate_settings = true);
 
@@ -164,14 +180,6 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
         const NamedCollection & collection,
         const DB::Settings & settings,
         bool validate_settings = true);
-
-    /// Create request settings from Config.
-    RequestSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const DB::Settings & settings,
-        bool validate_settings = true,
-        const std::string & setting_name_prefix = "");
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings = true);
     void updateIfChanged(const RequestSettings & settings);
@@ -183,6 +191,7 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
 
 private:
     void finishInit(const DB::Settings & settings, bool validate_settings);
+    void normalizeSettings();
 };
 
 HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);

@@ -104,28 +104,55 @@ ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, c
 
 AuthSettings::AuthSettings(
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const DB::Settings &, /// TODO: use settings
-    const std::string & setting_name_prefix)
+    const DB::Settings & settings,
+    bool for_disk_s3,
+    const std::string & disk_config_prefix)
 {
-    const std::string prefix = config_prefix + "." + setting_name_prefix;
+    if (for_disk_s3 && disk_config_prefix.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk config path cannot be empty");
+
+    auto update_value_if_exists = [&](const std::string & path, SettingFieldRef & field) -> bool
+    {
+        if (!config.has(path))
+            return false;
+
+        auto which = field.getValue().getType();
+        if (isInt64OrUInt64FieldType(which))
+            field.setValue(config.getUInt64(path));
+        else if (which == Field::Types::String)
+            field.setValue(config.getString(path));
+        else if (which == Field::Types::Bool)
+            field.setValue(config.getBool(path));
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+        return true;
+    };
+
     for (auto & field : allMutable())
     {
-        const auto path = prefix + field.getName();
-        if (config.has(path))
+        std::string path, fallback_path;
+        if (for_disk_s3)
         {
-            auto which = field.getValue().getType();
-            if (isInt64OrUInt64FieldType(which))
-                field.setValue(config.getUInt64(path));
-            else if (which == Field::Types::String)
-                field.setValue(config.getString(path));
-            else if (which == Field::Types::Bool)
-                field.setValue(config.getBool(path));
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+            path = fmt::format("{}.s3_{}", disk_config_prefix, field.getName());
+            fallback_path = fmt::format("s3.{}", field.getName());
+        }
+        else
+            path = fmt::format("s3.{}", field.getName());
+
+        bool updated = update_value_if_exists(path, field);
+
+        if (!updated && !fallback_path.empty())
+            updated = update_value_if_exists(fallback_path, field);
+
+        if (!updated)
+        {
+            auto setting_name = "s3_" + field.getName();
+            if (settings.has(setting_name) && settings.isChanged(setting_name))
+                field.setValue(settings.get(setting_name));
         }
     }
 
+    const auto config_prefix = for_disk_s3 ? disk_config_prefix : "s3";
     headers = getHTTPHeaders(config_prefix, config);
     server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
@@ -150,7 +177,7 @@ void AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_cha
         const auto setting_name = "s3_" + field.getName();
         if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
         {
-            set(field.getName(), settings.get(setting_name));
+            field.setValue(settings.get(setting_name));
         }
     }
 }
@@ -164,9 +191,6 @@ bool AuthSettings::hasUpdates(const AuthSettings & other) const
 
 void AuthSettings::updateIfChanged(const AuthSettings & settings)
 {
-    /// Update with check for emptyness only parameters which
-    /// can be passed not only from config, but via ast.
-
     for (auto & setting : settings.all())
     {
         if (setting.isValueChanged())
@@ -175,34 +199,64 @@ void AuthSettings::updateIfChanged(const AuthSettings & settings)
 
     if (!settings.headers.empty())
         headers = settings.headers;
+
+    if (!settings.users.empty())
+        users.insert(settings.users.begin(), settings.users.end());
+
     server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
-    users.insert(settings.users.begin(), settings.users.end());
 }
 
 RequestSettings::RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
     const DB::Settings & settings,
+    bool for_disk_s3,
     bool validate_settings,
-    const std::string & setting_name_prefix)
+    const std::string & disk_config_path)
 {
-    String prefix = config_prefix + "." + setting_name_prefix;
+    if (for_disk_s3 && disk_config_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk config path cannot be empty");
+
+    auto update_value_if_exists = [&](const std::string & path, SettingFieldRef & field) -> bool
+    {
+        if (!config.has(path))
+            return false;
+
+        auto which = field.getValue().getType();
+        if (isInt64OrUInt64FieldType(which))
+            field.setValue(config.getUInt64(path));
+        else if (which == Field::Types::String)
+            field.setValue(config.getString(path));
+        else if (which == Field::Types::Bool)
+            field.setValue(config.getBool(path));
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+        return true;
+    };
+
     for (auto & field : allMutable())
     {
-        const auto path = prefix + field.getName();
-        if (config.has(path))
+        std::string path, fallback_path;
+        if (for_disk_s3)
         {
-            auto which = field.getValue().getType();
-            if (isInt64OrUInt64FieldType(which))
-                field.setValue(config.getUInt64(path));
-            else if (which == Field::Types::String)
-                field.setValue(config.getString(path));
-            else if (which == Field::Types::Bool)
-                field.setValue(config.getBool(path));
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+            path = fmt::format("{}.s3_{}", disk_config_path, field.getName());
+            fallback_path = fmt::format("s3.{}", field.getName());
+        }
+        else
+            path = fmt::format("s3.{}", field.getName());
+
+        bool updated = update_value_if_exists(path, field);
+
+        if (!updated && !fallback_path.empty())
+            updated = update_value_if_exists(fallback_path, field);
+
+        if (!updated)
+        {
+            auto setting_name = "s3_" + field.getName();
+            if (settings.has(setting_name) && settings.isChanged(setting_name))
+                field.setValue(settings.get(setting_name));
         }
     }
+
     finishInit(settings, validate_settings);
 }
 
@@ -238,7 +292,7 @@ RequestSettings::RequestSettings(const DB::Settings & settings, bool validate_se
 }
 
 void RequestSettings::updateFromSettings(
-    const DB::Settings & settings, bool if_changed, bool /* validate_settings */) /// TODO: process validate_settings
+    const DB::Settings & settings, bool if_changed, bool validate_settings)
 {
     for (auto & field : allMutable())
     {
@@ -248,6 +302,10 @@ void RequestSettings::updateFromSettings(
             set(field.getName(), settings.get(setting_name));
         }
     }
+
+    normalizeSettings();
+    if (validate_settings)
+        validateUploadSettings();
 }
 
 void RequestSettings::updateIfChanged(const RequestSettings & settings)
@@ -259,11 +317,15 @@ void RequestSettings::updateIfChanged(const RequestSettings & settings)
     }
 }
 
-void RequestSettings::finishInit(const DB::Settings & settings, bool validate_settings)
+void RequestSettings::normalizeSettings()
 {
     if (!storage_class_name.value.empty() && storage_class_name.changed)
         storage_class_name = Poco::toUpperInPlace(storage_class_name.value);
+}
 
+void RequestSettings::finishInit(const DB::Settings & settings, bool validate_settings)
+{
+    normalizeSettings();
     if (validate_settings)
         validateUploadSettings();
 
@@ -372,8 +434,6 @@ void RequestSettings::validateUploadSettings()
 }
 
 }
-
-/// TODO: sometimes disk settings have fallback to "s3" section settings from config, support this.
 
 IMPLEMENT_SETTINGS_TRAITS(S3::AuthSettingsTraits, CLIENT_SETTINGS_LIST)
 IMPLEMENT_SETTINGS_TRAITS(S3::RequestSettingsTraits, REQUEST_SETTINGS_LIST)
