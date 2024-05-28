@@ -49,7 +49,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -88,7 +89,8 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
+    static CastArgumentsResult
+    castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
 
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
@@ -145,8 +147,11 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::castRemoveNullable(const ColumnPt
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
         if (!array_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast array column to column with type {} in function {}",
-                data_type->getName(), getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot cast array column to column with type {} in function {}",
+                data_type->getName(),
+                getName());
 
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
         return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
@@ -156,8 +161,8 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::castRemoveNullable(const ColumnPt
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
 
         if (!tuple_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}",
-                            data_type->getName(), getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}", data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
         Columns columns(columns_number);
@@ -184,12 +189,8 @@ FunctionArrayLogicalBase<intersect>::CastArgumentsResult FunctionArrayLogicalBas
     const auto & type_nested = type_array->getNestedType();
     auto type_not_nullable_nested = removeNullable(type_nested);
 
-    const bool is_numeric_or_string =
-        isNumber(type_not_nullable_nested)
-        || isDate(type_not_nullable_nested)
-        || isDateTime(type_not_nullable_nested)
-        || isDateTime64(type_not_nullable_nested)
-        || isDate32(type_not_nullable_nested)
+    const bool is_numeric_or_string = isNumber(type_not_nullable_nested) || isDate(type_not_nullable_nested)
+        || isDateTime(type_not_nullable_nested) || isDateTime64(type_not_nullable_nested) || isDate32(type_not_nullable_nested)
         || isStringOrFixedString(type_not_nullable_nested);
 
     DataTypePtr nullable_return_type;
@@ -255,8 +256,8 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
 }
 
 template <bool intersect>
-FunctionArrayLogicalBase<intersect>::UnpackedArrays FunctionArrayLogicalBase<intersect>::prepareArrays(
-    const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const
+FunctionArrayLogicalBase<intersect>::UnpackedArrays
+FunctionArrayLogicalBase<intersect>::prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const
 {
     UnpackedArrays arrays;
 
@@ -300,20 +301,16 @@ FunctionArrayLogicalBase<intersect>::UnpackedArrays FunctionArrayLogicalBase<int
             /// In case the column was casted, we need to create an overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
-                const auto & nested_init_type = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
+                const auto & nested_init_type
+                    = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
                 const auto & nested_cast_type = typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType();
 
-                if (isInteger(nested_init_type)
-                    || isDate(nested_init_type)
-                    || isDate32(nested_init_type)
-                    || isDateTime(nested_init_type)
+                if (isInteger(nested_init_type) || isDate(nested_init_type) || isDate32(nested_init_type) || isDateTime(nested_init_type)
                     || isDateTime64(nested_init_type))
                 {
                     /// Compare original and casted columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                        {arg.nested_column->getPtr(), nested_init_type, ""},
-                        {initial_column->getPtr(), nested_cast_type, ""},
-                        context);
+                        {arg.nested_column->getPtr(), nested_init_type, ""}, {initial_column->getPtr(), nested_cast_type, ""}, context);
 
                     arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
@@ -339,7 +336,8 @@ FunctionArrayLogicalBase<intersect>::UnpackedArrays FunctionArrayLogicalBase<int
             if (arrays.base_rows == 0 && rows > 0)
                 arrays.base_rows = rows;
             else if (arrays.base_rows != rows)
-                throw Exception( ErrorCodes::LOGICAL_ERROR, "Non-const array columns in function {} should have the same number of rows", getName());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Non-const array columns in function {} should have the same number of rows", getName());
         }
     }
 
@@ -366,7 +364,8 @@ void FunctionArrayLogicalBase<intersect>::DecimalExecutor::operator()(TypeList<T
 
 template <bool intersect>
 template <typename ValueType, typename ColumnType, bool is_numeric_column>
-ColumnPtr FunctionArrayLogicalBase<intersect>::execute( const FunctionArrayLogicalBase<intersect>::UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
+ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
+    const FunctionArrayLogicalBase<intersect>::UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
 {
     auto args = arrays.args.size();
     auto rows = arrays.base_rows;
@@ -571,9 +570,12 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Argument {} for function {} must be an array but it has type {}.",
-                            i, getName(), arguments[i]->getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument {} for function {} must be an array but it has type {}.",
+                i,
+                getName(),
+                arguments[i]->getName());
 
         const auto & nested_type = array_type->getNestedType();
 
@@ -611,7 +613,8 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
 }
 
 template <bool intersect>
-ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
@@ -649,11 +652,16 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(const ColumnsWithType
         WhichDataType which(not_nullable_nested_return_type);
 
         if (which.isDate())
-            result_column = FunctionArrayLogicalBase<intersect>::execute<DataTypeDate::FieldType, ColumnVector<DataTypeDate::FieldType>, true>( arrays, std::move(column));
+            result_column
+                = FunctionArrayLogicalBase<intersect>::execute<DataTypeDate::FieldType, ColumnVector<DataTypeDate::FieldType>, true>(
+                    arrays, std::move(column));
         else if (which.isDate32())
-            result_column = FunctionArrayLogicalBase<intersect>::execute<DataTypeDate32::FieldType, ColumnVector<DataTypeDate32::FieldType>, true>( arrays, std::move(column));
+            result_column
+                = FunctionArrayLogicalBase<intersect>::execute<DataTypeDate32::FieldType, ColumnVector<DataTypeDate32::FieldType>, true>(
+                    arrays, std::move(column));
         else if (which.isDateTime())
-            result_column = FunctionArrayLogicalBase<intersect>:: execute<DataTypeDateTime::FieldType, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
+            result_column = FunctionArrayLogicalBase<intersect>::
+                execute<DataTypeDateTime::FieldType, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
         else if (which.isString())
             result_column = FunctionArrayLogicalBase<intersect>::execute<StringRef, ColumnString, false>(arrays, std::move(column));
         else if (which.isFixedString())
