@@ -64,8 +64,8 @@ public:
     std::string describe() const;
 };
 
-constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
-constexpr inline auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
+constexpr auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
+constexpr auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
 inline size_t getAdaptiveMrkSizeCompact(size_t columns_num);
 
 }
