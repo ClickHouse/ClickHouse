@@ -1122,24 +1122,38 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
-    if (table_node || table_function_node)
+    if (!table_node && !table_function_node)
+        return;
+
+    auto & table_expression_modifiers = table_node ? table_node->getTableExpressionModifiers() : table_function_node->getTableExpressionModifiers();
+    if (!table_expression_modifiers.has_value())
+        return;
+
+    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+    if (table_expression_modifiers->hasFinal() && !storage->supportsFinal())
     {
-        auto table_expression_modifiers = table_node ? table_node->getTableExpressionModifiers() : table_function_node->getTableExpressionModifiers();
+        if (!table_expression_modifiers->isFromParentSubquery())
+            throw Exception(ErrorCodes::ILLEGAL_FINAL,
+                "Storage {} doesn't support FINAL",
+                storage->getName());
 
-        if (table_expression_modifiers.has_value())
-        {
-            const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_expression_modifiers->hasFinal() && !storage->supportsFinal())
-                throw Exception(ErrorCodes::ILLEGAL_FINAL,
-                    "Storage {} doesn't support FINAL",
-                    storage->getName());
-
-            if (table_expression_modifiers->hasSampleSizeRatio() && !storage->supportsSampling())
-                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
-                    "Storage {} doesn't support sampling",
-                    storage->getStorageID().getFullNameNotQuoted());
-        }
+        table_expression_modifiers->setHasFinal(false);
     }
+
+    if (table_expression_modifiers->hasSampleSizeRatio() && !storage->supportsSampling())
+    {
+        if (!table_expression_modifiers->isFromParentSubquery())
+            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                "Storage {} doesn't support sampling",
+                storage->getName());
+
+        table_expression_modifiers->setSampleSizeRatio({});
+        table_expression_modifiers->setSampleOffsetRatio({});
+    }
+
+    table_expression_modifiers->setIsFromParentSubquery(false);
+    if (!table_expression_modifiers->hasFinal() && !table_expression_modifiers->hasSampleSizeRatio())
+        table_expression_modifiers = {};
 }
 
 void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)

@@ -57,8 +57,11 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
-/// Extract all TableNodes from the query tree.
-QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
+/** Extract all table nodes from the query tree.
+  * If extract_table_function_nodes = true, then additionally extract all table functions nodes.
+  * If extract_identifier_nodes = true, then additionally extract all identifier nodes.
+  */
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree, bool extract_table_function_nodes = false, bool extract_identifier_nodes = false);
 
 /// Extract table, table function, query, union from join tree.
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);

@@ -22,6 +22,18 @@ public:
         , sample_offset_ratio(sample_offset_ratio_)
     {}
 
+    /// Returns true if modifiers were passed from parent subquery
+    bool isFromParentSubquery() const
+    {
+        return is_from_parent_subquery;
+    }
+
+    /// Returns true if modifiers were passed from parent subquery
+    void setIsFromParentSubquery(bool value)
+    {
+        is_from_parent_subquery = value;
+    }
+
     /// Returns true if final is specified, false otherwise
     bool hasFinal() const
     {
@@ -46,6 +58,12 @@ public:
         return sample_size_ratio;
     }
 
+    /// Set sample size ratio
+    void setSampleSizeRatio(std::optional<Rational> value)
+    {
+        sample_size_ratio = value;
+    }
+
     /// Returns true if sample offset ratio is specified, false otherwise
     bool hasSampleOffsetRatio() const
     {
@@ -58,6 +76,12 @@ public:
         return sample_offset_ratio;
     }
 
+    /// Set sample offset ratio
+    void setSampleOffsetRatio(std::optional<Rational> value)
+    {
+        sample_offset_ratio = value;
+    }
+
     /// Dump into buffer
     void dump(WriteBuffer & buffer) const;
 
@@ -68,6 +92,7 @@ public:
     String formatForErrorMessage() const;
 
 private:
+    bool is_from_parent_subquery = false;
     bool has_final = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
