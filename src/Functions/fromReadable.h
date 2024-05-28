@@ -115,6 +115,7 @@ private:
     UInt64 parseReadableFormat(const std::unordered_map<std::string_view, size_t> & scale_factors, const std::string_view & str) const
     {
         ReadBufferFromString buf(str);
+
         // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
         skipWhitespaceIfAny(buf);
         if (buf.getPosition() > 0)
