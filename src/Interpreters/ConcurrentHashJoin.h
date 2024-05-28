@@ -10,6 +10,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool_fwd.h>
 
 namespace DB
 {
@@ -66,7 +67,7 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
-    ThreadPool pool;
+    std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
     std::mutex totals_mutex;
