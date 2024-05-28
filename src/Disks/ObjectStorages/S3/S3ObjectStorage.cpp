@@ -470,13 +470,14 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         try
         {
             copyS3File(
-                current_client,
-                uri.bucket,
-                object_from.remote_path,
-                0,
-                size,
-                dest_s3->uri.bucket,
-                object_to.remote_path,
+                /*src_s3_client=*/current_client,
+                /*src_bucket=*/uri.bucket,
+                /*src_key=*/object_from.remote_path,
+                /*src_offset=*/0,
+                /*src_size=*/size,
+                /*dest_s3_client=*/current_client,
+                /*dest_bucket=*/dest_s3->uri.bucket,
+                /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
                 patchSettings(read_settings),
                 BlobStorageLogWriter::create(disk_name),
@@ -510,13 +511,15 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
 
-    copyS3File(current_client,
-        uri.bucket,
-        object_from.remote_path,
-        0,
-        size,
-        uri.bucket,
-        object_to.remote_path,
+    copyS3File(
+        /*src_s3_client=*/current_client,
+        /*src_bucket=*/uri.bucket,
+        /*src_key=*/object_from.remote_path,
+        /*src_offset=*/0,
+        /*src_size=*/size,
+        /*dest_s3_client=*/current_client,
+        /*dest_bucket=*/uri.bucket,
+        /*dest_key=*/object_to.remote_path,
         settings_ptr->request_settings,
         patchSettings(read_settings),
         BlobStorageLogWriter::create(disk_name),
@@ -571,6 +574,11 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
     return key_generator->generate(path, /* is_directory */ false);
+}
+
+std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
+{
+    return client.get();
 }
 
 }
