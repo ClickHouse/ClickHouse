@@ -307,7 +307,7 @@ ParquetRecordReader::ParquetRecordReader(
     : file_reader(createFileReader(std::move(arrow_file), std::move(metadata)))
     , reader_properties(reader_properties_)
     , header(std::move(header_))
-    , max_block_size(format_settings.parquet.max_block_size)
+    , max_block_rows(format_settings.parquet.max_block_rows)
     , row_groups_indices(std::move(row_groups_indices_))
     , left_rows(getTotalRows(*file_reader->metadata()))
 {
@@ -356,7 +356,7 @@ Chunk ParquetRecordReader::readChunk()
     }
 
     Columns columns(header.columns());
-    auto num_rows_read = std::min(max_block_size, cur_row_group_left_rows);
+    auto num_rows_read = std::min(max_block_rows, cur_row_group_left_rows);
     for (size_t i = 0; i < header.columns(); i++)
     {
         columns[i] = castColumn(

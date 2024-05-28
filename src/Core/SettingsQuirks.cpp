@@ -117,7 +117,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         "min_insert_block_size_bytes_for_materialized_views",
         "min_external_table_block_size_rows",
         "max_joined_block_size_rows",
-        "input_format_parquet_max_block_size"};
+        "input_format_parquet_max_block_rows"};
     for (auto const & setting : block_rows_settings)
     {
         if (auto block_size = get_current_value(setting).get<UInt64>();

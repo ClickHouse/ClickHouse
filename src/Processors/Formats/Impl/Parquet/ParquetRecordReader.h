@@ -36,7 +36,7 @@ private:
     std::shared_ptr<parquet::RowGroupReader> cur_row_group_reader;
     ParquetColReaders column_readers;
 
-    UInt64 max_block_size;
+    UInt64 max_block_rows;
 
     std::vector<int> parquet_col_indice;
     std::vector<int> row_groups_indices;

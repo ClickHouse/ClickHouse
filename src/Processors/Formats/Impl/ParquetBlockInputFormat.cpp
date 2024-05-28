@@ -424,13 +424,14 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         auto row_group_meta = metadata->RowGroup(row_group_idx);
         for (int column_index : column_indices)
         {
+            auto column = row_group_meta->ColumnChunk(column_index);
             total_size += row_group_meta->ColumnChunk(column_index)->total_uncompressed_size();
         }
         if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
-        auto average_row_bytes = total_size / row_group_meta->num_rows();
-        /// max_block_size >= num_rows >= 128
-        auto num_rows = std::min(format_settings.parquet.prefer_block_bytes/average_row_bytes, format_settings.parquet.max_block_size);
-        return std::max(num_rows, 128UL);
+        auto average_row_bytes = static_cast<double>(total_size) / row_group_meta->num_rows();
+        const size_t preferred_num_rows = static_cast<size_t>(format_settings.parquet.prefer_block_bytes/average_row_bytes);
+        const size_t MIN_ROW_NUM = 128;
+        return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), format_settings.parquet.max_block_rows);
     };
 
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
@@ -453,7 +454,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
         auto rows = adative_chunk_size(row_group);
-        row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
+        row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_rows;
     }
 }
 
