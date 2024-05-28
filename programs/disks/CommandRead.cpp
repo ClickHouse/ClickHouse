@@ -2,7 +2,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include "Common/Exception.h"
 #include <Common/TerminalSize.h>
 #include "ICommand.h"
 
