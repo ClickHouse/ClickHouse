@@ -75,7 +75,7 @@ public:
         else
             return return_type;
     }
-    
+
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -90,7 +90,7 @@ public:
                 getName()
             );
         }
-        
+
         std::unordered_map<std::string_view, size_t> scale_factors = Impl::getScaleFactors();
 
         auto col_res = ColumnUInt64::create(input_rows_count);
@@ -102,7 +102,7 @@ public:
         auto & res_data = col_res->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
-        {   
+        {
             std::string_view str = col_str->getDataAt(i).toView();
             try
             {
