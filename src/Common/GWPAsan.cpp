@@ -13,16 +13,6 @@
 #    include <Common/logger_useful.h>
 
 #    include <iostream>
-#    include <unordered_map>
-
-namespace DB
-{
-namespace ErrorCodes
-{
-     extern const int LOGICAL_ERROR;
-}
-
-}
 
 namespace Memory
 {
