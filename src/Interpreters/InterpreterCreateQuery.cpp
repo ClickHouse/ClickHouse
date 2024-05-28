@@ -434,7 +434,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->default_expression);
         }
 
-        column_declaration->ephemeral_default = column.default_desc.kind == ColumnDefaultKind::Ephemeral;
+        column_declaration->ephemeral_default = column.default_desc.ephemeral_default;
 
         if (!column.comment.empty())
         {
@@ -657,6 +657,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
+            column.default_desc.ephemeral_default = col_decl.ephemeral_default;
         }
         else if (col_decl.type)
             column.type = name_type_it->type;
