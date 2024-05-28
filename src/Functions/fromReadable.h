@@ -147,7 +147,7 @@ private:
         }
 
         Float64 base = 0;
-        if (!tryReadFloatTextPrecise(base, buf))    // If we use the default (fast) tryReadFloatText this returns True on garbage input
+        if (!tryReadFloatTextPrecise(base, buf))    // If we use the default (fast) tryReadFloatText this returns True on garbage input so we use the Precise version
         {
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER,
@@ -156,7 +156,6 @@ private:
                 str
             );
         }
-        // NaN propagation complicated the behaviour of the orNull & orZero flavours so we don't support it.
         else if (std::isnan(base) || !std::isfinite(base))
         {
             throw Exception(
@@ -191,8 +190,7 @@ private:
                 unit
             );
         }
-
-        if (!buf.eof())
+        else if (!buf.eof())
         {
             throw Exception(
                 ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
