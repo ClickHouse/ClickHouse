@@ -90,7 +90,7 @@ def test_lost_part_same_replica(start_cluster):
             )
 
         assert node1.contains_in_log(
-            "Created empty part"
+            f"Created empty part {victim_part_from_the_middle}"
         ), f"Seems like empty part {victim_part_from_the_middle} is not created or log message changed"
 
         assert node1.query("SELECT COUNT() FROM mt0") == "4\n"
@@ -160,7 +160,9 @@ def test_lost_part_other_replica(start_cluster):
                 "SELECT * FROM system.replication_queue FORMAT Vertical"
             )
 
-        assert node1.contains_in_log("Created empty part") or node1.contains_in_log(
+        assert node1.contains_in_log(
+            f"Created empty part {victim_part_from_the_middle}"
+        ) or node1.contains_in_log(
             f"Part {victim_part_from_the_middle} looks broken. Removing it and will try to fetch."
         ), f"Seems like empty part {victim_part_from_the_middle} is not created or log message changed"
 
