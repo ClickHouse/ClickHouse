@@ -65,7 +65,17 @@ function save_settings_clean()
   script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
 }
 
+# We save the (numeric) version of the old server to compare setting changes between the 2
+# We do this since we are testing against the latest release, not taking into account release candidates, so we might
+# be testing current master (24.6) against the latest stable release (24.4)
+function save_major_version()
+{
+  local out=$1 && shift
+  clickhouse-local -q "SELECT a[1]::UInt64 * 100 + a[2]::UInt64 as v FROM (Select splitByChar('.', version()) as a) into outfile '$out'"
+}
+
 save_settings_clean 'old_settings.native'
+save_major_version 'old_version.native'
 
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
@@ -125,6 +135,7 @@ then
   save_settings_clean 'new_settings.native'
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
+  CREATE TABLE old_version AS file('old_version.native');
   CREATE TABLE new_settings AS file('new_settings.native');
 
   SELECT
@@ -135,8 +146,11 @@ then
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
-      FROM system.settings_changes
-      WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
+      FROM
+      (
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes
+      )
+      WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
   SETTINGS join_use_nulls = 1
   INTO OUTFILE 'changed_settings.txt'
@@ -149,8 +163,11 @@ then
       FROM old_settings
   )) AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
-      FROM system.settings_changes
-      WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
+      FROM
+      (
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes
+      )
+      WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
   INTO OUTFILE 'new_settings.txt'
   FORMAT PrettyCompactNoEscapes;
