@@ -35,6 +35,21 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
+/** fromReadble*Size - Returns the number of bytes corresponding to a given readable binary or decimal size.
+  * Examples:
+  *  - `fromReadableSize('123 MiB')`
+  *  - `fromReadableDecimalSize('123 MB')`
+  * Meant to be the inverse of `formatReadable*Size` with the following exceptions:
+  *  - Number of bytes is returned as an unsigned integer amount instead of a float. Decimal points are rounded up to the nearest integer.
+  *  - Negative numbers are not allowed as negative sizes don't make sense.
+  * Flavours:
+  *  - fromReadableSize
+  *  - fromReadableSizeOrNull
+  *  - fromReadableSizeOrZero
+  *  - fromReadableDecimalSize
+  *  - fromReadableDecimalSizeOrNull
+  *  - fromReadableDecimalSizeOrZero
+  */
 template <typename Name, typename Impl, ErrorHandling error_handling>
 class FunctionFromReadable : public IFunction
 {
