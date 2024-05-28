@@ -60,12 +60,13 @@ struct GroupConcatDataBase
         size += str_size;
     }
 
-    void insert(const IColumn * column, const DataTypePtr & data_type, size_t row_num, Arena * arena)
+    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
     {
-        auto casted_column = castColumn({column->getPtr(), data_type, "tmp"}, std::make_shared<DataTypeString>());
-        StringRef string = assert_cast<const ColumnString &>(*casted_column).getDataAt(row_num);
+        WriteBufferFromOwnString buff;
+        serialization->serializeText(*column, row_num, buff, FormatSettings{});
+        auto string = buff.stringView();
 
-        insertChar(string.data, string.size, arena);
+        insertChar(string.data(), string.size(), arena);
     }
 };
 
@@ -92,15 +93,16 @@ struct GroupConcatData<true> final : public GroupConcatDataBase
 
     UInt64 getString(size_t i) const { return offsets[i * 2]; }
 
-    void insert(const IColumn * column, const DataTypePtr & data_type, size_t row_num, Arena * arena)
+    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
     {
-        auto casted_column = castColumn({column->getPtr(), data_type, "tmp"}, std::make_shared<DataTypeString>());
-        StringRef string = assert_cast<const ColumnString &>(   *casted_column).getDataAt(row_num);
+        WriteBufferFromOwnString buff;
+        serialization->serializeText(*column, row_num, buff, FormatSettings{});
+        auto string = buff.stringView();
 
-        checkAndUpdateSize(string.size, arena);
-        memcpy(data + size, string.data, string.size);
+        checkAndUpdateSize(string.size(), arena);
+        memcpy(data + size, string.data(), string.size());
         offsets.push_back(size, arena);
-        size += string.size;
+        size += string.size();
         offsets.push_back(size, arena);
         num_rows++;
     }
@@ -113,7 +115,7 @@ class GroupConcatImpl final
     static constexpr auto name = "groupConcat";
     using Data = GroupConcatData<has_limit>;
 
-    DataTypePtr & data_type;
+    SerializationPtr serialization;
     UInt64 limit;
     const String delimiter;
 
@@ -121,7 +123,7 @@ public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
         : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
             {data_type_}, parameters_, std::make_shared<DataTypeString>())
-        , data_type(this->argument_types[0])
+        , serialization(this->argument_types[0]->getDefaultSerialization())
         , limit(limit_)
         , delimiter(delimiter_)
     {
@@ -141,7 +143,7 @@ public:
             cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
         cur_data.is_state_empty = false;
-        cur_data.insert(columns[0], data_type, row_num, arena);
+        cur_data.insert(columns[0], serialization, row_num, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -258,14 +260,12 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     if (parameters.size() == 2)
     {
         auto type = parameters[1].getType();
-        if (type == Field::Types::Int64 || type == Field::Types::UInt64)
-        {
-            const auto get_limit = (type == Field::Types::Int64) ? parameters[1].get<Int64>() : parameters[1].get<UInt64>();
-            if (get_limit <= 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be positive number, got: {}", name, get_limit);
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be positive number", name);
+
+        if (type != Field::Types::Int64 && type != Field::Types::UInt64)
+               throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be positive number", name);
+        if ((type == Field::Types::Int64 && parameters[1].get<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[1].get<UInt64>() == 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be positive number, got: {}", name, parameters[1].get<Int64>());
 
         has_limit = true;
         limit = parameters[1].get<UInt64>();
