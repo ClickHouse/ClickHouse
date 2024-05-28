@@ -41,6 +41,18 @@ SELECT fromReadableDecimalSize('+3.1415 KB');
 -- Can parse amounts in scientific notation
 SELECT fromReadableDecimalSize('10e2 B');
 
+-- Can parse floats with no decimal points
+SELECT fromReadableDecimalSize('5. B');
+
+-- Can parse numbers with leading zeroes
+SELECT fromReadableDecimalSize('002 KB');
+
+-- Can parse octal-like
+SELECT fromReadableDecimalSize('08 KB');
+
+-- Can parse various flavours of zero
+SELECT fromReadableDecimalSize('0 KB'), fromReadableDecimalSize('+0 KB'), fromReadableDecimalSize('-0 KB');
+
 -- ERRORS
 -- No arguments
 SELECT fromReadableDecimalSize(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -62,6 +74,22 @@ SELECT fromReadableDecimalSize('1 KiB'); -- { serverError CANNOT_PARSE_TEXT }
 SELECT fromReadableDecimalSize('-1 KB'); -- { serverError BAD_ARGUMENTS }
 -- Invalid input - Input too large to fit in UInt64
 SELECT fromReadableDecimalSize('1000 EB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Hexadecimal is not supported
+SELECT fromReadableDecimalSize('0xa123 KB'); -- { serverError CANNOT_PARSE_TEXT }
+-- Invalid input - NaN is not supported, with or without sign and with different capitalizations
+SELECT fromReadableDecimalSize('nan KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('+nan KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('-nan KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('NaN KB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Infinite is not supported, with or without sign, in all its forms
+SELECT fromReadableDecimalSize('inf KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('+inf KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('-inf KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('infinite KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('+infinite KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('-infinite KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('Inf KB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableDecimalSize('Infinite KB'); -- { serverError BAD_ARGUMENTS }
 
 
 -- OR NULL
@@ -72,7 +100,7 @@ SELECT
 
 -- Returns NULL on invalid values
 SELECT
-    arrayJoin(['invalid', '1 Joe', '1 KiB', ' 1 GB', '1 TB with fries']) AS readable_sizes,
+    arrayJoin(['invalid', '1 Joe', '1 KiB', ' 1 GB', '1 TB with fries', 'NaN KB', 'Inf KB', '0xa123 KB']) AS readable_sizes,
     fromReadableDecimalSizeOrNull(readable_sizes) AS filesize;
 
 
@@ -84,6 +112,6 @@ SELECT
 
 -- Returns NULL on invalid values
 SELECT
-    arrayJoin(['invalid', '1 Joe', '1 KiB', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
+    arrayJoin(['invalid', '1 Joe', '1 KiB', ' 1 GiB', '1 TiB with fries', 'NaN KB', 'Inf KB', '0xa123 KB']) AS readable_sizes,
     fromReadableDecimalSizeOrZero(readable_sizes) AS filesize;
 

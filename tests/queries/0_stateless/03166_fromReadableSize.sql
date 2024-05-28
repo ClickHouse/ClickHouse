@@ -41,6 +41,18 @@ SELECT fromReadableSize('+3.1415 KiB');
 -- Can parse amounts in scientific notation
 SELECT fromReadableSize('10e2 B');
 
+-- Can parse floats with no decimal points
+SELECT fromReadableSize('5. B');
+
+-- Can parse numbers with leading zeroes
+SELECT fromReadableSize('002 KiB');
+
+-- Can parse octal-like
+SELECT fromReadableSize('08 KiB');
+
+-- Can parse various flavours of zero
+SELECT fromReadableSize('0 KiB'), fromReadableSize('+0 KiB'), fromReadableSize('-0 KiB');
+
 -- ERRORS
 -- No arguments
 SELECT fromReadableSize(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -62,6 +74,23 @@ SELECT fromReadableSize('1 KB'); -- { serverError CANNOT_PARSE_TEXT }
 SELECT fromReadableSize('-1 KiB'); -- { serverError BAD_ARGUMENTS }
 -- Invalid input - Input too large to fit in UInt64
 SELECT fromReadableSize('1000 EiB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Hexadecimal is not supported
+SELECT fromReadableSize('0xa123 KiB'); -- { serverError CANNOT_PARSE_TEXT }
+-- Invalid input - NaN is not supported, with or without sign and with different capitalizations
+SELECT fromReadableSize('nan KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('+nan KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('-nan KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('NaN KiB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Infinite is not supported, with or without sign, in all its forms
+SELECT fromReadableSize('inf KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('+inf KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('-inf KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('infinite KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('+infinite KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('-infinite KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('Inf KiB'); -- { serverError BAD_ARGUMENTS }
+SELECT fromReadableSize('Infinite KiB'); -- { serverError BAD_ARGUMENTS }
+
 
 
 -- OR NULL
@@ -72,7 +101,7 @@ SELECT
 
 -- Returns NULL on invalid values
 SELECT
-    arrayJoin(['invalid', '1 Joe', '1KB', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
+    arrayJoin(['invalid', '1 Joe', '1KB', ' 1 GiB', '1 TiB with fries', 'NaN KiB', 'Inf KiB', '0xa123 KiB']) AS readable_sizes,
     fromReadableSizeOrNull(readable_sizes) AS filesize;
 
 
@@ -84,6 +113,6 @@ SELECT
 
 -- Returns NULL on invalid values
 SELECT
-    arrayJoin(['invalid', '1 Joe', '1KB', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
+    arrayJoin(['invalid', '1 Joe', '1KB', ' 1 GiB', '1 TiB with fries', 'NaN KiB', 'Inf KiB', '0xa123 KiB']) AS readable_sizes,
     fromReadableSizeOrZero(readable_sizes) AS filesize;
 
