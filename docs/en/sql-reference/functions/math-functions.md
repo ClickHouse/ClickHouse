@@ -415,8 +415,8 @@ Alias: `power(x, y)`
 
 **Arguments**
 
-- `x` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md)
-- `y` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md)
+- `x` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+- `y` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
 
 **Returned value**
 
@@ -635,8 +635,8 @@ atan2(y, x)
 
 **Arguments**
 
-- `y` — y-coordinate of the point through which the ray passes. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
-- `x` — x-coordinate of the point through which the ray passes. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
+- `y` — y-coordinate of the point through which the ray passes. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — x-coordinate of the point through which the ray passes. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
@@ -670,8 +670,8 @@ hypot(x, y)
 
 **Arguments**
 
-- `x` — The first cathetus of a right-angle triangle. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
-- `y` — The second cathetus of a right-angle triangle. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
+- `x` — The first cathetus of a right-angle triangle. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `y` — The second cathetus of a right-angle triangle. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
@@ -838,7 +838,7 @@ degrees(x)
 
 **Arguments**
 
-- `x` — Input in radians. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).  
+- `x` — Input in radians. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
