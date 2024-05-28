@@ -79,8 +79,9 @@ topLevelDomain(url)
 
 **Arguments**
 
-- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
+:::note
 The URL can be specified with or without a scheme. Examples:
 
 ``` text
@@ -88,24 +89,68 @@ svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
 ```
+:::
 
 **Returned values**
 
-- Domain name. If ClickHouse can parse the input string as a URL.
-- Empty string. If ClickHouse cannot parse the input string as a URL.
-
-Type: `String`.
+- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 ```
 
+Result:
+
 ``` text
 ┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
 │ com                                                                │
 └────────────────────────────────────────────────────────────────────┘
+```
+
+### topLevelDomainRFC
+
+Extracts the the top-level domain from a URL. It is similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
+
+``` sql
+topLevelDomainRFC(url)
+```
+
+**Arguments**
+
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+
+:::note
+The URL can be specified with or without a scheme. Examples:
+
+``` text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://clickhouse.com/time/
+```
+:::
+
+**Returned values**
+
+- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT topLevelDomainRFC('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
+```
+
+Result:
+
+``` text
+┌─topLevelDomainRFC('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
+│ com                                                                   │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### firstSignificantSubdomain
