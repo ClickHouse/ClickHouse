@@ -82,7 +82,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-
         const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col_str)
         {
@@ -106,15 +105,18 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view str = col_str->getDataAt(i).toView();
+            std::string_view value = col_str->getDataAt(i).toView();
             try
             {
-                auto num_bytes = parseReadableFormat(scale_factors, str);
+                UInt64 num_bytes = parseReadableFormat(scale_factors, value);
                 res_data[i] = num_bytes;
             }
-            catch (...)
+            catch (const Exception &)
             {
-                if constexpr (error_handling == ErrorHandling::Exception) { throw; }
+                if constexpr (error_handling == ErrorHandling::Exception)
+                {
+                    throw;
+                }
                 else
                 {
                     res_data[i] = 0;
@@ -129,12 +131,11 @@ public:
             return col_res;
     }
 
-
 private:
 
-    UInt64 parseReadableFormat(const std::unordered_map<std::string_view, size_t> & scale_factors, const std::string_view & str) const
+    UInt64 parseReadableFormat(const ScaleFactors & scale_factors, const std::string_view & value) const
     {
-        ReadBufferFromString buf(str);
+        ReadBufferFromString buf(value);
 
         // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
         skipWhitespaceIfAny(buf);
@@ -144,7 +145,7 @@ private:
                 ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
                 "Invalid expression for function {} - Leading whitespace is not allowed (\"{}\")",
                 getName(),
-                str
+                value
             );
         }
 
@@ -155,7 +156,7 @@ private:
                 ErrorCodes::CANNOT_PARSE_NUMBER,
                 "Invalid expression for function {} - Unable to parse readable size numeric component (\"{}\")",
                 getName(),
-                str
+                value
             );
         }
         else if (std::isnan(base) || !std::isfinite(base))
@@ -198,7 +199,7 @@ private:
                 ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
                 "Invalid expression for function {} - Found trailing characters after readable size string (\"{}\")",
                 getName(),
-                str
+                value
             );
         }
 
