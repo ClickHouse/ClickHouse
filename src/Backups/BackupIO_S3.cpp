@@ -188,7 +188,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 fs::path(s3_uri.key) / path_in_backup,
                 0,
                 file_size,
-                /* dest_s3_client= */ destination_disk->getObjectStorage()->getS3StorageClient(),
+                /* dest_s3_client= */ destination_disk->getS3StorageClient(),
                 /* dest_bucket= */ blob_path[1],
                 /* dest_key= */ blob_path[0],
                 s3_settings.request_settings,
@@ -253,7 +253,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
-                src_disk->getObjectStorage()->getS3StorageClient(),
+                src_disk->getS3StorageClient(),
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
