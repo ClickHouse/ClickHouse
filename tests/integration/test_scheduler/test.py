@@ -448,7 +448,5 @@ def test_mutation_workload_change():
             ).strip()
         )
 
-        breakpoint()
-
         assert reads_before < reads_after
         assert writes_before < writes_after
