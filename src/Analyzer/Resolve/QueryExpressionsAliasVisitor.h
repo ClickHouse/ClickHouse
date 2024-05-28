@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/QueryAnalysis/ScopeAliases.h>
+#include <Analyzer/Resolve/ScopeAliases.h>
 #include <Analyzer/LambdaNode.h>
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/QueryAnalysis/IdentifierLookup.h>
+#include <Analyzer/Resolve/IdentifierLookup.h>
 
 namespace DB
 {

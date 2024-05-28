@@ -56,10 +56,10 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
 
-#include <Analyzer/QueryAnalysis/QueryAnalyzer.h>
-#include <Analyzer/QueryAnalysis/QueryExpressionsAliasVisitor.h>
-#include <Analyzer/QueryAnalysis/IdentifierResolveScope.h>
-#include <Analyzer/QueryAnalysis/TableExpressionsAliasVisitor.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 
 namespace ProfileEvents
 {

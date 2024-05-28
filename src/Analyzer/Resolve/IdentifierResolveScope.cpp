@@ -1,4 +1,4 @@
-#include <Analyzer/QueryAnalysis/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Interpreters/Context.h>
 #include <Analyzer/QueryNode.h>

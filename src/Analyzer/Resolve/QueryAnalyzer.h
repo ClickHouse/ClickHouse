@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/QueryAnalysis/IdentifierLookup.h>
+#include <Analyzer/Resolve/IdentifierLookup.h>
 
 #include <Core/Joins.h>
 #include <Core/NamesAndTypes.h>

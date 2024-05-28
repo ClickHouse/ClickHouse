@@ -1,5 +1,5 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/QueryAnalysis/QueryAnalyzer.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueTableAliases.h>
 
 namespace DB

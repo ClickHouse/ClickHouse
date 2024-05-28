@@ -4,10 +4,10 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <Analyzer/QueryAnalysis/IdentifierLookup.h>
-#include <Analyzer/QueryAnalysis/ScopeAliases.h>
-#include <Analyzer/QueryAnalysis/TableExpressionData.h>
-#include <Analyzer/QueryAnalysis/ExpressionsStack.h>
+#include <Analyzer/Resolve/IdentifierLookup.h>
+#include <Analyzer/Resolve/ScopeAliases.h>
+#include <Analyzer/Resolve/TableExpressionData.h>
+#include <Analyzer/Resolve/ExpressionsStack.h>
 
 namespace DB
 {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/QueryAnalysis/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 
