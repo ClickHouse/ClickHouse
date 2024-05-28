@@ -649,7 +649,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
                 return request_fn_(request_);
             }
-            catch (Poco::Net::ConnectionResetException &)
+            catch (Poco::Net::NetException &)
             {
 
                 if constexpr (IsReadMethod)
@@ -743,18 +743,26 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
 
     std::string region;
-    auto outcome = HeadBucket(req);
-    if (outcome.IsSuccess())
+
+    try
     {
-        const auto & result = outcome.GetResult();
-        region = result.GetBucketRegion();
+        auto outcome = HeadBucket(req);
+        if (outcome.IsSuccess())
+        {
+            const auto & result = outcome.GetResult();
+            region = result.GetBucketRegion();
+        }
+        else
+        {
+            static const std::string region_header = "x-amz-bucket-region";
+            const auto & headers = outcome.GetError().GetResponseHeaders();
+            if (auto it = headers.find(region_header); it != headers.end())
+                region = it->second;
+        }
     }
-    else
+    catch (...)
     {
-        static const std::string region_header = "x-amz-bucket-region";
-        const auto & headers = outcome.GetError().GetResponseHeaders();
-        if (auto it = headers.find(region_header); it != headers.end())
-            region = it->second;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (region.empty())
