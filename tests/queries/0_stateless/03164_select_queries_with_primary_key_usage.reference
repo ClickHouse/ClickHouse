@@ -1,0 +1,24 @@
+1
+100
+100
+100
+100
+Row 1:
+──────
+queries_with_primary_key_usage: 1
+
+Row 2:
+──────
+queries_with_primary_key_usage: 1
+
+Row 3:
+──────
+queries_with_primary_key_usage: 1
+
+Row 4:
+──────
+queries_with_primary_key_usage: 0
+
+Row 5:
+──────
+queries_with_primary_key_usage: 0
