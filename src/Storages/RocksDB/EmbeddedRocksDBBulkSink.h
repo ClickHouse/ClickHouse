@@ -49,7 +49,7 @@ private:
     bool isEnoughSize(const std::vector<Chunk> & input_chunks) const;
     bool isEnoughSize(const Chunk & chunk) const;
     /// Serialize chunks to rocksdb key-value pairs
-    std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(const std::vector<Chunk> & input_chunks) const;
+    std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(std::vector<Chunk> && input_chunks) const;
 
     StorageEmbeddedRocksDB & storage;
     StorageMetadataPtr metadata_snapshot;

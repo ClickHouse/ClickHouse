@@ -177,7 +177,7 @@ static std::pair<ColumnPtr, DataTypePtr> convertObjectColumnToTuple(
 static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
     const ColumnPtr & column, const DataTypePtr & type)
 {
-    if (!type->hasDynamicSubcolumns())
+    if (!type->hasDynamicSubcolumnsDeprecated())
         return {column, type};
 
     if (const auto * type_object = typeid_cast<const DataTypeObject *>(type.get()))
@@ -243,7 +243,7 @@ void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & sto
 {
     for (auto & column : block)
     {
-        if (!column.type->hasDynamicSubcolumns())
+        if (!column.type->hasDynamicSubcolumnsDeprecated())
             continue;
 
         std::tie(column.column, column.type)
@@ -417,7 +417,7 @@ static DataTypePtr getLeastCommonTypeForTuple(
 static DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
     const DataTypePtr & type_in_storage, const DataTypes & concrete_types, bool check_ambiguos_paths)
 {
-    if (!type_in_storage->hasDynamicSubcolumns())
+    if (!type_in_storage->hasDynamicSubcolumnsDeprecated())
         return type_in_storage;
 
     if (isObject(type_in_storage))
@@ -459,7 +459,7 @@ DataTypePtr getLeastCommonTypeForDynamicColumns(
 
 DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage)
 {
-    if (!type_in_storage->hasDynamicSubcolumns())
+    if (!type_in_storage->hasDynamicSubcolumnsDeprecated())
         return type_in_storage;
 
     if (isObject(type_in_storage))
@@ -494,7 +494,7 @@ bool hasDynamicSubcolumns(const ColumnsDescription & columns)
     return std::any_of(columns.begin(), columns.end(),
         [](const auto & column)
         {
-            return column.type->hasDynamicSubcolumns();
+            return column.type->hasDynamicSubcolumnsDeprecated();
         });
 }
 
@@ -1065,7 +1065,7 @@ Field FieldVisitorFoldDimension::operator()(const Null & x) const
 void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)
 {
     for (auto & column : columns)
-        if (column.type->hasDynamicSubcolumns())
+        if (column.type->hasDynamicSubcolumnsDeprecated())
             column.type = createConcreteEmptyDynamicColumn(column.type);
 }
 

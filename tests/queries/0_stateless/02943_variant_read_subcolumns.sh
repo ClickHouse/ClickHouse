@@ -9,7 +9,6 @@ CLICKHOUSE_LOG_COMMENT=
 
 CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --use_variant_as_common_type=1 --allow_suspicious_variant_types=1"
 
-
 function test()
 {
     echo "test"

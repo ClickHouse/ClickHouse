@@ -695,7 +695,6 @@ String serializeQuery(const IAST & query, size_t max_length)
 
 }
 
-// static
 void AsynchronousInsertQueue::processData(
     InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
 try
@@ -704,6 +703,8 @@ try
         return;
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
+
+    setThreadName("AsyncInsertQ");
 
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);

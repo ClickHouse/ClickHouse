@@ -532,6 +532,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
                 if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type)
                     && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type)
                     && !isVariant(query_columns[col_idx].type)
+                    && !isDynamic(query_columns[col_idx].type)
                     && output_columns.has(query_columns[col_idx].name))
                 {
                     query_sample_block.setColumn(

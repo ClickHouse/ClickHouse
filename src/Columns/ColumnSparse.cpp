@@ -8,7 +8,6 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 #include <bit>
@@ -799,6 +798,15 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
     size_t current_offset = it - offsets_data.begin();
     return Iterator(offsets_data, _size, current_offset, n);
+}
+
+void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+{
+    Columns values_source_columns;
+    values_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+    values->takeDynamicStructureFromSourceColumns(values_source_columns);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

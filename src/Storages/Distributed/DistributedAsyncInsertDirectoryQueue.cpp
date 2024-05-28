@@ -13,7 +13,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>

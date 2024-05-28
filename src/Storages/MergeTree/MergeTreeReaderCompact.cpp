@@ -196,7 +196,7 @@ void MergeTreeReaderCompact::readPrefix(
             deserialize_settings.getter = buffer_getter_for_prefix;
             ISerialization::DeserializeBinaryBulkStatePtr state_for_prefix;
 
-            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
+            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix, nullptr);
         }
 
         SerializationPtr serialization;
@@ -206,7 +206,8 @@ void MergeTreeReaderCompact::readPrefix(
             serialization = getSerializationInPart(name_and_type);
 
         deserialize_settings.getter = buffer_getter;
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name]);
+        deserialize_settings.dynamic_read_statistics = true;
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name], nullptr);
     }
     catch (Exception & e)
     {

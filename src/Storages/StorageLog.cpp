@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -254,7 +254,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
     }
 
     settings.getter = create_stream_getter(false);

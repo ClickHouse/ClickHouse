@@ -40,6 +40,7 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 {
+    removeConstAndSparse(inputs);
     current_inputs = std::move(inputs);
     states.resize(num_inputs);
     for (size_t i = 0; i < num_inputs; ++i)
@@ -48,6 +49,7 @@ void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeConstAndSparse(input);
     if (!input.chunk.hasRows())
         return;
 
