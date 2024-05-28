@@ -268,9 +268,31 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
 
         if (!node->children.empty())
             node = node->children.at(0);
+        else
+            node = nullptr;
     }
 
     chassert(reading);
+
+    const auto * analyzed_merge_tree = typeid_cast<const ReadFromMergeTree *>(read_from_merge_tree.get());
+    if (!analyzed_merge_tree->hasAnalyzedResult())
+        analyzed_merge_tree->selectRangesToRead();
+
+    switch (analyzed_merge_tree->getReadType())
+    {
+    case ReadFromMergeTree::ReadType::Default:
+        coordinator->initialize(CoordinationMode::Default);
+        break;
+    case ReadFromMergeTree::ReadType::InOrder:
+        coordinator->initialize(CoordinationMode::WithOrder);
+        break;
+    case ReadFromMergeTree::ReadType::InReverseOrder:
+        coordinator->initialize(CoordinationMode::ReverseOrder);
+        break;
+    case ReadFromMergeTree::ReadType::ParallelReplicas:
+        chassert(false);
+        UNREACHABLE();
+    }
 
     MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)
     {
@@ -281,7 +303,6 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
     { return coordinator->handleRequest(std::move(req)); };
 
-    const auto * analyzed_merge_tree = typeid_cast<const ReadFromMergeTree *>(read_from_merge_tree.get());
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, true, all_ranges_cb, read_task_cb);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 

@@ -203,6 +203,12 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    ReadType getReadType() const
+    {
+        chassert(analyzed_result_ptr);
+        return analyzed_result_ptr->read_type;
+    }
+
 private:
     static AnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,

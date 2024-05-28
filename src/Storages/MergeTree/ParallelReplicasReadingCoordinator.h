@@ -30,8 +30,8 @@ public:
     /// needed to report total rows to read
     void setProgressCallback(ProgressCallback callback);
 
-private:
     void initialize(CoordinationMode mode);
+private:
 
     std::mutex mutex;
     size_t replicas_count{0};
