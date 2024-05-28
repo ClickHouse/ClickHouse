@@ -33,7 +33,7 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
 
         cluster.exec_in_container(
             container_id,
-            ["python", server_name, str(port)],
+            ["python3", server_name, str(port)],
             detach=True,
         )
 

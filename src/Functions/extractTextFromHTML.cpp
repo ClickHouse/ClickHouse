@@ -3,7 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <base/find_symbols.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 
 /** A function to extract text from HTML or XHTML.

@@ -5,6 +5,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -83,7 +84,7 @@ public:
         rhs->getArguments().getNodes().push_back(rhs_count);
         resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
 
-        const auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
+        auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
         if (column_id == 0)
             new_node->getArguments().getNodes() = {lhs, rhs};
         else if (column_id == 1)
@@ -93,7 +94,12 @@ public:
         if (!new_node)
             return;
 
-        node = new_node;
+        QueryTreeNodePtr res = std::move(new_node);
+
+        if (!res->getResultType()->equals(*function_node->getResultType()))
+            res = createCastFunction(res, function_node->getResultType(), getContext());
+
+        node = std::move(res);
 
     }
 
@@ -120,7 +126,7 @@ private:
 
 }
 
-void RewriteSumFunctionWithSumAndCountPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RewriteSumFunctionWithSumAndCountPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     RewriteSumFunctionWithSumAndCountVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

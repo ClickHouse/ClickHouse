@@ -1,7 +1,7 @@
 import pytest
 import time
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -9,38 +9,35 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node3 = cluster.add_instance(
     "node3",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 

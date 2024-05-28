@@ -11,8 +11,8 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE default_by_other_column (a Float32 DEFA
 
 echo 'CSV'
 echo '\N, 1, \N, "2019-07-22", "[10, 20, 30]", \N
-1, world, 3, "2019-07-23", \N, tuple, 3.14
-2, \N, 123, \N, "[]", test, 2.71828
+1, world, 3, "2019-07-23", \N, "('\''tuple'\'', 3.14)"
+2, \N, 123, \N, "[]", "('\''test'\'', 2.71828)"
 3, \N, \N, \N, \N, \N' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO null_as_default FORMAT CSV";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM null_as_default ORDER BY i";
 $CLICKHOUSE_CLIENT --query="TRUNCATE TABLE null_as_default";

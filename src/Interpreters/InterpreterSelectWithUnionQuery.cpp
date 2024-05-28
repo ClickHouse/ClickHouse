@@ -56,7 +56,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no children in ASTSelectWithUnionQuery");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No children in ASTSelectWithUnionQuery");
 
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,

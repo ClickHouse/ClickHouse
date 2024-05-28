@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/Event.h>
 
@@ -88,6 +89,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
     void startup() override;
@@ -149,6 +152,7 @@ private:
 
     /// There are `num_shards` of independent buffers.
     const size_t num_shards;
+    std::unique_ptr<ThreadPool> flush_pool;
     std::vector<Buffer> buffers;
 
     const Thresholds min_thresholds;

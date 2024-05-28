@@ -1,3 +1,4 @@
+SET allow_deprecated_functions = 1;
 drop table if exists largestTriangleThreeBucketsTestFloat64Float64;
 
 CREATE TABLE largestTriangleThreeBucketsTestFloat64Float64

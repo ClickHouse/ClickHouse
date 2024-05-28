@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -39,7 +40,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     return description;
 }
 
-void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & name_and_cluster : context->getClusters())
         writeCluster(res_columns, name_and_cluster, {});

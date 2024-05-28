@@ -82,7 +82,7 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
     }
 }
 
-bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const TableFunctionNode &>(rhs);
     if (table_function_name != rhs_typed.table_function_name)
@@ -97,7 +97,7 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
 
-void TableFunctionNode::updateTreeHashImpl(HashState & state) const
+void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(table_function_name.size());
     state.update(table_function_name);

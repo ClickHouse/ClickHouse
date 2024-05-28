@@ -42,7 +42,7 @@ private:
             return;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        bool is_final_supported = storage && storage->supportsFinal();
+        bool is_final_supported = storage && !storage->isRemote() && storage->supportsFinal();
         if (!is_final_supported)
             return;
 
@@ -67,7 +67,7 @@ private:
 
 }
 
-void AutoFinalOnQueryPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AutoFinalOnQueryPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto visitor = AutoFinalOnQueryPassVisitor(std::move(context));
     visitor.visit(query_tree_node);

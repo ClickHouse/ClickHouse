@@ -13,7 +13,9 @@ Creates a new view. Views can be [normal](#normal-view), [materialized](#materia
 Syntax:
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] 
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
+AS SELECT ...
 ```
 
 Normal views do not store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
@@ -52,7 +54,9 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] 
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
+AS SELECT ...
 ```
 
 :::tip
@@ -90,6 +94,49 @@ Note that materialized view is influenced by [optimize_on_insert](../../../opera
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
+
+## SQL security {#sql_security}
+
+`DEFINER` and `SQL SECURITY` allow you to specify which ClickHouse user to use when executing the view's underlying query.
+`SQL SECURITY` has three legal values: `DEFINER`, `INVOKER`, or `NONE`. You can specify any existing user or `CURRENT_USER` in the `DEFINER` clause.
+
+The following table will explain which rights are required for which user in order to select from view. 
+Note that regardless of the SQL security option, in every case it is still required to have `GRANT SELECT ON <view>` in order to read from it.
+
+| SQL security option | View                                                            | Materialized View                                                                                                 |
+|---------------------|-----------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `DEFINER alice`     | `alice` must have a `SELECT` grant for the view's source table. | `alice` must have a `SELECT` grant for the view's source table and an `INSERT` grant for the view's target table. |
+| `INVOKER`           | User must have a `SELECT` grant for the view's source table.    | `SQL SECURITY INVOKER` can't be specified for materialized views.                                                 |
+| `NONE`              | -                                                               | -                                                                                                                 |
+
+:::note
+`SQL SECURITY NONE` is a deprecated option. Any user with the rights to create views with `SQL SECURITY NONE` will be able to execute any arbitrary query.
+Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order to create a view with this option.
+:::
+
+If `DEFINER`/`SQL SECURITY` aren't specified, the default values are used:
+- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](../../../operations/settings/settings.md#default_normal_view_sql_security))
+- `DEFINER`: `CURRENT_USER` ([configurable by settings](../../../operations/settings/settings.md#default_view_definer))
+
+If a view is attached without `DEFINER`/`SQL SECURITY` specified, the default value is `SQL SECURITY NONE` for the materialized view and `SQL SECURITY INVOKER` for the normal view.
+
+To change SQL security for an existing view, use 
+```sql
+ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
+```
+
+### Examples sql security
+```sql
+CREATE test_view
+DEFINER = alice SQL SECURITY DEFINER
+AS SELECT ...
+```
+
+```sql
+CREATE test_view
+SQL SECURITY INVOKER
+AS SELECT ...
+```
 
 ## Live View [Deprecated]
 
@@ -259,7 +306,7 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 Note that elements emitted by a late firing should be treated as updated results of a previous computation. Instead of firing at the end of windows, the window view will fire immediately when the late event arrives. Thus, it will result in multiple outputs for the same window. Users need to take these duplicated results into account or deduplicate them.
 
-You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE … MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
+You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE ... MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
 
 ### Monitoring New Windows
 

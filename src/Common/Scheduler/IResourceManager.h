@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class ISchedulerNode;
+using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
+
 /*
  * Instance of derived class holds everything required for resource consumption,
  * including resources currently registered at `SchedulerRoot`. This is required to avoid
@@ -21,7 +24,7 @@ namespace DB
 class IClassifier : private boost::noncopyable
 {
 public:
-    virtual ~IClassifier() {}
+    virtual ~IClassifier() = default;
 
     /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
@@ -38,7 +41,7 @@ using ClassifierPtr = std::shared_ptr<IClassifier>;
 class IResourceManager : private boost::noncopyable
 {
 public:
-    virtual ~IResourceManager() {}
+    virtual ~IResourceManager() = default;
 
     /// Initialize or reconfigure manager.
     virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;

@@ -10,6 +10,8 @@
 #include <IO/ReadHelpers.h>
 #include <base/JSON.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace fs = std::filesystem;
 

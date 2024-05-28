@@ -1,13 +1,14 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Core/ColumnNumbers.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
+#include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <Common/assert_cast.h>
-
 
 namespace DB
 {
@@ -21,10 +22,7 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionIsNotNull>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsNotNull>(); }
 
     std::string getName() const override
     {
@@ -47,39 +45,37 @@ public:
     {
         const ColumnWithTypeAndName & elem = arguments[0];
 
-        if (isVariant(elem.type))
+        if (isVariant(elem.type) || isDynamic(elem.type))
         {
-            const auto & discriminators = checkAndGetColumn<ColumnVariant>(*elem.column)->getLocalDiscriminators();
+            const auto & column_variant = isVariant(elem.type) ? checkAndGetColumn<ColumnVariant>(*elem.column) : checkAndGetColumn<ColumnDynamic>(*elem.column).getVariantColumn();
+            const auto & discriminators = column_variant.getLocalDiscriminators();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
-            data.reserve(discriminators.size());
-            for (auto discr : discriminators)
-                data.push_back(discr != ColumnVariant::NULL_DISCRIMINATOR);
+            data.resize(discriminators.size());
+            for (size_t i = 0; i < discriminators.size(); ++i)
+                data[i] = discriminators[i] != ColumnVariant::NULL_DISCRIMINATOR;
             return res;
         }
 
         if (elem.type->isLowCardinalityNullable())
         {
-            const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
-            const size_t null_index = low_cardinality_column->getDictionary().getNullValueIndex();
+            const auto & low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
+            const size_t null_index = low_cardinality_column.getDictionary().getNullValueIndex();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
-            data.reserve(low_cardinality_column->size());
-            for (size_t i = 0; i != low_cardinality_column->size(); ++i)
-                data.push_back(low_cardinality_column->getIndexAt(i) != null_index);
+            data.resize(low_cardinality_column.size());
+            for (size_t i = 0; i != low_cardinality_column.size(); ++i)
+                data[i] = (low_cardinality_column.getIndexAt(i) != null_index);
             return res;
         }
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
             const auto & src_data = nullable->getNullMapData();
             auto & res_data = assert_cast<ColumnUInt8 &>(*res_column).getData();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = !src_data[i];
-
+            vector(src_data, res_data);
             return res_column;
         }
         else
@@ -88,8 +84,34 @@ public:
             return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
         }
     }
-};
 
+private:
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res) /// NOLINT
+    {
+        size_t size = null_map.size();
+        for (size_t i = 0; i < size; ++i)
+            res[i] = !null_map[i];
+    }))
+
+    static void NO_INLINE vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(null_map, res);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(null_map, res);
+            return;
+        }
+#endif
+        vectorImpl(null_map, res);
+    }
+};
 }
 
 REGISTER_FUNCTION(IsNotNull)

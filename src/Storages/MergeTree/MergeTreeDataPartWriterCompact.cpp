@@ -1,22 +1,12 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {
 
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-static CompressionCodecPtr getMarksCompressionCodec(const String & marks_compression_codec)
-{
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -49,30 +39,43 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
-            getMarksCompressionCodec(settings_.marks_compression_codec),
+             CompressionCodecFactory::instance().get(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
-        ASTPtr compression;
-        if (column.name == BlockNumberColumn::name)
-            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
-        else
-            compression = storage_columns.getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, compression);
+        auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
+        addStreams(column, nullptr, compression);
     }
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::initDynamicStreamsIfNeeded(const Block & block)
+{
+    if (is_dynamic_streams_initialized)
+        return;
+
+    is_dynamic_streams_initialized = true;
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
+    for (const auto & column : columns_list)
+    {
+        if (column.type->hasDynamicSubcolumns())
+        {
+            auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
+            addStreams(column, block.getByName(column.name).column, compression);
+        }
+    }
+}
+
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc)
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
@@ -95,7 +98,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    data_part->getSerialization(column.name)->enumerateStreams(callback, column.type);
+    data_part->getSerialization(name_and_type.name)->enumerateStreams(callback, name_and_type.type, column);
 }
 
 namespace
@@ -152,6 +155,7 @@ void writeColumnSingleGranule(
     serialize_settings.getter = stream_getter;
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
+    serialize_settings.dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::DynamicStatisticsMode::PREFIX;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -162,6 +166,9 @@ void writeColumnSingleGranule(
 
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
+    /// On first block of data initialize streams for dynamic subcolumns.
+    initDynamicStreamsIfNeeded(block);
+
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)

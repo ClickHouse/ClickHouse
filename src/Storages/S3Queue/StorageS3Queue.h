@@ -8,16 +8,11 @@
 #include <Storages/IStorage.h>
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/S3Queue/S3QueueSource.h>
-#include <Storages/StorageS3.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <Storages/StorageFactory.h>
 
-
-namespace Aws::S3
-{
-class Client;
-}
 
 namespace DB
 {
@@ -26,18 +21,19 @@ class S3QueueFilesMetadata;
 class StorageS3Queue : public IStorage, WithContext
 {
 public:
-    using Configuration = typename StorageS3::Configuration;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     StorageS3Queue(
         std::unique_ptr<S3QueueSettings> s3queue_settings_,
-        const Configuration & configuration_,
+        ConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        ASTStorage * engine_args);
+        ASTStorage * engine_args,
+        LoadingStrictnessLevel mode);
 
     String getName() const override { return "S3Queue"; }
 
@@ -51,9 +47,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
-    const auto & getFormatName() const { return configuration.format; }
+    const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
 
@@ -68,10 +62,10 @@ private:
     const S3QueueAction after_processing;
 
     std::shared_ptr<S3QueueFilesMetadata> files_metadata;
-    Configuration configuration;
+    ConfigurationPtr configuration;
+    ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
-    NamesAndTypesList virtual_columns;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
@@ -88,6 +82,7 @@ private:
     void drop() override;
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<StorageS3QueueSource> createSource(
@@ -103,7 +98,6 @@ private:
 
     void createOrCheckMetadata(const StorageInMemoryMetadata & storage_metadata);
     void checkTableStructure(const String & zookeeper_prefix, const StorageInMemoryMetadata & storage_metadata);
-    Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
 };
 
 }

@@ -19,7 +19,7 @@ ColumnsDescription StorageSystemLicenses::getColumnsDescription()
     };
 }
 
-void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto * it = library_licenses; *it; it += 4)
     {

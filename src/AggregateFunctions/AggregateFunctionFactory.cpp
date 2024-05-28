@@ -1,11 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -100,7 +100,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: cannot find aggregate function combinator "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
                             "to apply a function to Nullable arguments.");
 
         DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
@@ -123,7 +123,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: AggregateFunctionFactory returned nullptr");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
     return with_original_arguments;
 }
 

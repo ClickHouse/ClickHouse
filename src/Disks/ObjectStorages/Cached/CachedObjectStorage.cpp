@@ -43,10 +43,6 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
 {
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
-
-    if (!canUseReadThroughCache(read_settings))
-        modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
     return object_storage->patchSettings(modified_settings);
 }
 
@@ -180,7 +176,7 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
 }
@@ -196,24 +192,15 @@ void CachedObjectStorage::shutdown()
 }
 
 void CachedObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    ContextPtr context, const ApplyNewSettingsOptions & options)
 {
-    object_storage->applyNewSettings(config, config_prefix, context);
+    object_storage->applyNewSettings(config, config_prefix, context, options);
 }
 
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
-}
-
-bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
-{
-    if (!settings.avoid_readthrough_cache_outside_query_context)
-        return true;
-
-    return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
-        && !CurrentThread::getQueryId().empty();
 }
 
 }

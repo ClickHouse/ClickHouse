@@ -12,6 +12,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
 - Bug Fix (user-visible misbehavior in an official stable release)
+- CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
 
 
@@ -39,3 +40,41 @@ At a minimum, the following information should be added (but add more as needed)
 
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
+
+<details>
+    <summary>CI Settings</summary>
+
+**NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
+**NOTE:** Checked options will be applied if set before CI RunConfig/PrepareRunConfig step
+- [ ] <!---ci_include_integration--> Allow: Integration Tests
+- [ ] <!---ci_include_stateless--> Allow: Stateless tests
+- [ ] <!---ci_include_stateful--> Allow: Stateful tests
+- [ ] <!---ci_include_unit--> Allow: Unit tests
+- [ ] <!---ci_include_performance--> Allow: Performance tests
+- [ ] <!---ci_include_aarch64--> Allow: All with aarch64
+- [ ] <!---ci_include_asan--> Allow: All with ASAN
+- [ ] <!---ci_include_tsan--> Allow: All with TSAN
+- [ ] <!---ci_include_analyzer--> Allow: All with Analyzer
+- [ ] <!---ci_include_azure --> Allow: All with Azure
+- [ ] <!---ci_include_KEYWORD--> Allow: Add your option here
+---
+- [ ] <!---ci_exclude_fast--> Exclude: Fast test
+- [ ] <!---ci_exclude_integration--> Exclude: Integration Tests
+- [ ] <!---ci_exclude_stateless--> Exclude: Stateless tests
+- [ ] <!---ci_exclude_stateful--> Exclude: Stateful tests
+- [ ] <!---ci_exclude_performance--> Exclude: Performance tests
+- [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
+- [ ] <!---ci_exclude_tsan--> Exclude: All with TSAN
+- [ ] <!---ci_exclude_msan--> Exclude: All with MSAN
+- [ ] <!---ci_exclude_ubsan--> Exclude: All with UBSAN
+- [ ] <!---ci_exclude_coverage--> Exclude: All with Coverage
+- [ ] <!---ci_exclude_aarch64--> Exclude: All with Aarch64
+---
+- [ ] <!---do_not_test--> do not test (only style check)
+- [ ] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
+- [ ] <!---no_ci_cache--> disable CI cache (job reuse)
+- [ ] <!---batch_0--> allow: batch 1 for multi-batch jobs
+- [ ] <!---batch_1--> allow: batch 2
+- [ ] <!---batch_2--> allow: batch 3
+- [ ] <!---batch_3_4_5--> allow: batch 4, 5 and 6
+</details>
