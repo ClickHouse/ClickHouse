@@ -4,13 +4,13 @@ sidebar_position: 105
 sidebar_label: JSON
 ---
 
-There are two sets of functions to parse JSON.
-   - `simpleJSON*` (`visitParam*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
-   - `JSONExtract*` is made to parse normal JSON.
+There are two sets of functions to parse JSON:
+   - `simpleJSON*` (`visitParam*`) which is made for parsing a limited subset of JSON, but to do so extremely fast.
+   - `JSONExtract*` which is made for parsing normal JSON.
 
-# simpleJSON/visitParam functions
+# simpleJSON / visitParam functions
 
-ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be. They try to do as little as possible to get the job done as quickly as possible.
 
 The following assumptions are made:
 
@@ -29,6 +29,8 @@ Checks whether there is a field named `field_name`.  The result is `UInt8`.
 simpleJSONHas(json, field_name)
 ```
 
+Alias: `visitParamHas`.
+
 **Parameters**
 
 - `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
@@ -36,7 +38,7 @@ simpleJSONHas(json, field_name)
 
 **Returned value**
 
-It returns `1` if the field exists, `0` otherwise.
+- Returns `1` if the field exists, `0` otherwise. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -55,6 +57,8 @@ SELECT simpleJSONHas(json, 'foo') FROM jsons;
 SELECT simpleJSONHas(json, 'bar') FROM jsons;
 ```
 
+Result:
+
 ```response
 1
 0
@@ -69,6 +73,8 @@ Parses `UInt64` from the value of the field named `field_name`. If this is a str
 simpleJSONExtractUInt(json, field_name)
 ```
 
+Alias: `visitParamExtractUInt`.
+
 **Parameters**
 
 - `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
@@ -76,7 +82,7 @@ simpleJSONExtractUInt(json, field_name)
 
 **Returned value**
 
-It returns the number parsed from the field if the field exists and contains a number, `0` otherwise.
+- Returns the number parsed from the field if the field exists and contains a number, `0` otherwise. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -98,6 +104,8 @@ INSERT INTO jsons VALUES ('{"baz":2}');
 SELECT simpleJSONExtractUInt(json, 'foo') FROM jsons ORDER BY json;
 ```
 
+Result:
+
 ```response
 0
 4
@@ -116,6 +124,8 @@ Parses `Int64` from the value of the field named `field_name`. If this is a stri
 simpleJSONExtractInt(json, field_name)
 ```
 
+Alias: `visitParamExtractInt`.
+
 **Parameters**
 
 - `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
@@ -123,7 +133,7 @@ simpleJSONExtractInt(json, field_name)
 
 **Returned value**
 
-It returns the number parsed from the field if the field exists and contains a number, `0` otherwise.
+- Returns the number parsed from the field if the field exists and contains a number, `0` otherwise. [Int64](../data-types/int-uint.md).
 
 **Example**
 
@@ -145,6 +155,8 @@ INSERT INTO jsons VALUES ('{"baz":2}');
 SELECT simpleJSONExtractInt(json, 'foo') FROM jsons ORDER BY json;
 ```
 
+Result:
+
 ```response
 0
 -4
@@ -163,6 +175,8 @@ Parses `Float64` from the value of the field named `field_name`. If this is a st
 simpleJSONExtractFloat(json, field_name)
 ```
 
+Alias: `visitParamExtractFloat`.
+
 **Parameters**
 
 - `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
@@ -170,7 +184,7 @@ simpleJSONExtractFloat(json, field_name)
 
 **Returned value**
 
-It returns the number parsed from the field if the field exists and contains a number, `0` otherwise.
+- Returns the number parsed from the field if the field exists and contains a number, `0` otherwise. [Float64](../data-types/float.md/#float32-float64).
 
 **Example**
 
@@ -192,6 +206,8 @@ INSERT INTO jsons VALUES ('{"baz":2}');
 SELECT simpleJSONExtractFloat(json, 'foo') FROM jsons ORDER BY json;
 ```
 
+Result:
+
 ```response
 0
 -4000
@@ -209,6 +225,8 @@ Parses a true/false value from the value of the field named `field_name`. The re
 ```sql
 simpleJSONExtractBool(json, field_name)
 ```
+
+Alias: `visitParamExtractBool`.
 
 **Parameters**
 
@@ -240,6 +258,8 @@ SELECT simpleJSONExtractBool(json, 'bar') FROM jsons ORDER BY json;
 SELECT simpleJSONExtractBool(json, 'foo') FROM jsons ORDER BY json;
 ```
 
+Result:
+
 ```response
 0
 1
@@ -257,6 +277,8 @@ Returns the value of the field named `field_name` as a `String`, including separ
 simpleJSONExtractRaw(json, field_name)
 ```
 
+Alias: `visitParamExtractRaw`.
+
 **Parameters**
 
 - `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
@@ -264,7 +286,7 @@ simpleJSONExtractRaw(json, field_name)
 
 **Returned value**
 
-It returns the value of the field as a [`String`](../data-types/string.md#string), including separators if the field exists, or an empty `String` otherwise.
+- Returns the value of the field as a string, including separators if the field exists, or an empty string otherwise. [`String`](../data-types/string.md#string)
 
 **Example**
 
@@ -286,6 +308,8 @@ INSERT INTO jsons VALUES ('{"baz":2}');
 SELECT simpleJSONExtractRaw(json, 'foo') FROM jsons ORDER BY json;
 ```
 
+Result:
+
 ```response
 
 "-4e3"
@@ -304,6 +328,8 @@ Parses `String` in double quotes from the value of the field named `field_name`.
 simpleJSONExtractString(json, field_name)
 ```
 
+Alias: `visitParamExtractString`.
+
 **Parameters**
 
 - `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
@@ -311,7 +337,7 @@ simpleJSONExtractString(json, field_name)
 
 **Returned value**
 
-It returns the value of a field as a [`String`](../data-types/string.md#string), including separators. The value is unescaped. It returns an empty `String`: if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist.
+- Returns the unescaped value of a field as a string, including separators. An empty string is returned if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist. [String](../data-types/string.md).
 
 **Implementation details**
 
@@ -336,6 +362,8 @@ INSERT INTO jsons VALUES ('{"foo":"hello}');
 SELECT simpleJSONExtractString(json, 'foo') FROM jsons ORDER BY json;
 ```
 
+Result:
+
 ```response
 \n\0
 
@@ -343,41 +371,13 @@ SELECT simpleJSONExtractString(json, 'foo') FROM jsons ORDER BY json;
 
 ```
 
-## visitParamHas
-
-This function is [an alias of `simpleJSONHas`](./json-functions#simplejsonhas).
-
-## visitParamExtractUInt
-
-This function is [an alias of `simpleJSONExtractUInt`](./json-functions#simplejsonextractuint).
-
-## visitParamExtractInt
-
-This function is [an alias of `simpleJSONExtractInt`](./json-functions#simplejsonextractint).
-
-## visitParamExtractFloat
-
-This function is [an alias of `simpleJSONExtractFloat`](./json-functions#simplejsonextractfloat).
-
-## visitParamExtractBool
-
-This function is [an alias of `simpleJSONExtractBool`](./json-functions#simplejsonextractbool).
-
-## visitParamExtractRaw
-
-This function is [an alias of `simpleJSONExtractRaw`](./json-functions#simplejsonextractraw).
-
-## visitParamExtractString
-
-This function is [an alias of `simpleJSONExtractString`](./json-functions#simplejsonextractstring).
-
 # JSONExtract functions
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements.
+The following functions are based on [simdjson](https://github.com/lemire/simdjson), and designed for more complex JSON parsing requirements.
 
 ## isValidJSON(json)
 
-Checks that passed string is a valid json.
+Checks that passed string is valid JSON.
 
 Examples:
 
@@ -386,30 +386,40 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices_or_keys\]...)
+## JSONHas
 
-If the value exists in the JSON document, `1` will be returned.
+If the value exists in the JSON document, `1` will be returned. If the value does not exist, `0` will be returned.
 
-If the value does not exist, `0` will be returned.
+**Syntax**
 
-Examples:
+```sql
+JSONHas(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns `1` if the value exists in `json`, otherwise `0`. [UInt8](../data-types/int-uint.md).
+
+**Examples**
+
+Query:
 
 ``` sql
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 ```
 
-`indices_or_keys` is a list of zero or more arguments each of them can be either string or integer.
-
-- String = access object member by key.
-- Positive integer = access the n-th member/key from the beginning.
-- Negative integer = access the n-th member/key from the end.
-
-Minimum index of the element is 1. Thus the element 0 does not exist.
-
-You may use integers to access both JSON arrays and JSON objects.
-
-So, for example:
+The minimum index of the element is 1. Thus the element 0 does not exist. You may use integers to access both JSON arrays and JSON objects. For example:
 
 ``` sql
 SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
@@ -419,26 +429,62 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices_or_keys\]...)
+## JSONLength
 
-Return the length of a JSON array or a JSON object.
+Return the length of a JSON array or a JSON object. If the value does not exist or has the wrong type, `0` will be returned.
 
-If the value does not exist or has a wrong type, `0` will be returned.
+**Syntax**
 
-Examples:
+```sql
+JSONLength(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns the length of the JSON array or JSON object. Returns `0` if the value does not exist or has the wrong type. [UInt64](../data-types/int-uint.md).
+
+**Examples**
 
 ``` sql
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices_or_keys\]...)
+## JSONType
 
-Return the type of a JSON value.
+Return the type of a JSON value. If the value does not exist, `Null` will be returned.
 
-If the value does not exist, `Null` will be returned.
+**Syntax**
 
-Examples:
+```sql
+JSONType(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns the type of a JSON value as a string, otherwise if the value doesn't exists it returns `Null`. [String](../data-types/string.md).
+
+**Examples**
 
 ``` sql
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
@@ -446,35 +492,191 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices_or_keys\]...)
+## JSONExtractUInt
 
-## JSONExtractInt(json\[, indices_or_keys\]...)
+Parses JSON and extracts a value of UInt type.
 
-## JSONExtractFloat(json\[, indices_or_keys\]...)
+**Syntax**
 
-## JSONExtractBool(json\[, indices_or_keys\]...)
-
-Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
-
-If the value does not exist or has a wrong type, `0` will be returned.
-
-Examples:
-
-``` sql
-SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
-SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
-SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+```sql
+JSONExtractUInt(json [, indices_or_keys]...)
 ```
 
-## JSONExtractString(json\[, indices_or_keys\]...)
+**Parameters**
 
-Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
-If the value does not exist or has a wrong type, an empty string will be returned.
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
 
-The value is unescaped. If unescaping failed, it returns an empty string.
+**Returned value**
 
-Examples:
+- Returns a UInt value if it exists, otherwise it returns `Null`. [UInt64](../data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) as x, toTypeName(x);
+```
+
+Result:
+
+```response
+┌───x─┬─toTypeName(x)─┐
+│ 300 │ UInt64        │
+└─────┴───────────────┘
+```
+
+## JSONExtractInt
+
+Parses JSON and extracts a value of Int type.
+
+**Syntax**
+
+```sql
+JSONExtractInt(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns an Int value if it exists, otherwise it returns `Null`. [Int64](../data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) as x, toTypeName(x);
+```
+
+Result:
+
+```response
+┌───x─┬─toTypeName(x)─┐
+│ 300 │ Int64         │
+└─────┴───────────────┘
+```
+
+## JSONExtractFloat
+
+Parses JSON and extracts a value of Int type.
+
+**Syntax**
+
+```sql
+JSONExtractFloat(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns an Float value if it exists, otherwise it returns `Null`. [Float64](../data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) as x, toTypeName(x);
+```
+
+Result:
+
+```response
+┌───x─┬─toTypeName(x)─┐
+│ 200 │ Float64       │
+└─────┴───────────────┘
+```
+
+## JSONExtractBool
+
+Parses JSON and extracts a boolean value. If the value does not exist or has a wrong type, `0` will be returned.
+
+**Syntax**
+
+```sql
+JSONExtractBool(json\[, indices_or_keys\]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns a Boolean value if it exists, otherwise it returns `0`. [Float64](../data-types/boolean.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT JSONExtractBool('{"passed": true}', 'passed');
+```
+
+Result:
+
+```response
+┌─JSONExtractBool('{"passed": true}', 'passed')─┐
+│                                             1 │
+└───────────────────────────────────────────────┘
+```
+
+## JSONExtractString
+
+Parses JSON and extracts a string. This function is similar to [`visitParamExtractString`](#simplejsonextractstring) functions. If the value does not exist or has a wrong type, an empty string will be returned.
+
+**Syntax**
+
+```sql
+JSONExtractString(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns an unescapated string from `json`. If unescaping failed, if the value does not exist or if it has a wrong type then it returns an empty string. [String](../data-types/string.md).
+
+**Examples**
 
 ``` sql
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
@@ -526,7 +728,7 @@ Parses a JSON string and extracts the keys.
 JSONExtractKeys(json[, a, b, c...])
 ```
 
-**Arguments**
+**Parameters**
 
 - `json` — [String](../data-types/string.md) with valid JSON.
 - `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../data-types/string.md) to get the field by the key or an [Integer](../data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
@@ -552,27 +754,63 @@ text
 └────────────────────────────────────────────────────────────┘
 ```
 
-## JSONExtractRaw(json\[, indices_or_keys\]...)
+## JSONExtractRaw
 
-Returns a part of JSON as unparsed string.
+Returns part of the JSON as an unparsed string. If the part does not exist or has the wrong type, an empty string will be returned.
 
-If the part does not exist or has a wrong type, an empty string will be returned.
+**Syntax**
 
-Example:
+```sql
+JSONExtractRaw(json [, indices_or_keys]...)
+```
+
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns part of the JSON as an unparsed string. Otherwise, an empty string is returned if the part does not exist or has the wrong type. [String](../data-types/string.md).
+
+**Example**
 
 ``` sql
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw(json\[, indices_or_keys...\])
+## JSONExtractArrayRaw(json [, indices_or_keys...])
 
-Returns an array with elements of JSON array, each represented as unparsed string.
+Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn’t array, an empty array will be returned.
 
-If the part does not exist or isn’t array, an empty array will be returned.
+**Syntax**
 
-Example:
+```sql
+JSONExtractArrayRaw(json [, indices_or_keys...])
+```
 
-``` sql
+**Parameters**
+
+- `json`: JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns an array with elements of JSON array, each represented as unparsed string. Otherwise, an empty array is returned if the part does not exist or is not an array. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Example**
+
+```sql
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"'];
 ```
 
@@ -640,13 +878,30 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## JSON_EXISTS(json, path)
+## JSON_EXISTS
 
-If the value exists in the JSON document, `1` will be returned.
+If the value exists in the JSON document, `1` will be returned. If the value does not exist, `0` will be returned.
 
-If the value does not exist, `0` will be returned.
+**Syntax**
 
-Examples:
+```sql
+JSON_EXISTS(json, path)
+```
+
+**Parameters**
+
+- `json`: A string with valid JSON. [String](../data-types/string.md). 
+- `path`: A string representing the path. [String](../data-types/string.md).
+
+:::note
+Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
+:::
+
+**Returned value**
+
+- Returns `1` if the value exists in the JSON document, otherwise `0`.
+
+**Examples**
 
 ``` sql
 SELECT JSON_EXISTS('{"hello":1}', '$.hello');
@@ -655,17 +910,32 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
+## JSON_QUERY
+
+Parses a JSON and extract a value as a JSON array or JSON object. If the value does not exist, an empty string will be returned.
+
+**Syntax**
+
+```sql
+JSON_QUERY(json, path)
+```
+
+**Parameters**
+
+- `json`: A string with valid JSON. [String](../data-types/string.md). 
+- `path`: A string representing the path. [String](../data-types/string.md).
+
 :::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
 :::
 
-## JSON_QUERY(json, path)
+**Returned value**
 
-Parses a JSON and extract a value as JSON array or JSON object.
+- Returns the extracted value as a JSON array or JSON object. Otherwise it returns an empty string if the value does not exist. [String](../data-types/string.md).
 
-If the value does not exist, an empty string will be returned.
+**Example**
 
-Example:
+Query:
 
 ``` sql
 SELECT JSON_QUERY('{"hello":"world"}', '$.hello');
@@ -682,17 +952,38 @@ Result:
 [2]
 String
 ```
+
+## JSON_VALUE
+
+Parses a JSON and extract a value as a JSON scalar. If the value does not exist, an empty string will be returned by default.
+
+This function is controlled by the following settings:
+
+- by SET `function_json_value_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default.
+- by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
+
+**Syntax**
+
+```sql
+JSON_VALUE(json, path)
+```
+
+**Parameters**
+
+- `json`: A string with valid JSON. [String](../data-types/string.md). 
+- `path`: A string representing the path. [String](../data-types/string.md).
+
 :::note
-Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
+Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
 :::
 
-## JSON_VALUE(json, path)
+**Returned value**
 
-Parses a JSON and extract a value as JSON scalar.
+- Returns the extracted value as a JSON scalar if it exists, otherwise an empty string is returned. [String](../data-types/string.md).
 
-If the value does not exist, an empty string will be returned by default, and by SET `function_json_value_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
+**Example**
 
-Example:
+Query:
 
 ``` sql
 SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
@@ -711,10 +1002,6 @@ world
 2
 String
 ```
-
-:::note
-Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
-:::
 
 ## toJSONString
 
