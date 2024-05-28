@@ -901,6 +901,113 @@ SELECT
 └────────────────┴─────────┘
 ```
 
+## fromReadableDecimalSize
+
+Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes.
+
+**Syntax**
+
+```sql
+fromReadableDecimalSize(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with decimal units ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KB', '3 MB', '5.314 KB']) AS readable_sizes,
+    fromReadableDecimalSize(readable_sizes) AS sizes
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KB           │    1000 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KB       │    5314 │
+└────────────────┴─────────┘
+```
+
+## fromReadableDecimalSizeOrNull
+
+Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes, or `NULL` if unable to parse the value.
+
+**Syntax**
+
+```sql
+fromReadableDecimalSizeOrNull(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with decimal units ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KB', '3 MB', '5.314 KB', 'invalid']) AS readable_sizes,
+    fromReadableDecimalSizeOrNull(readable_sizes) AS sizes
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KB           │    1000 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KB       │    5314 │
+│ invalid        │    ᴺᵁᴸᴸ │
+└────────────────┴─────────┘
+```
+
+## fromReadableDecimalSizeOrZero
+
+Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes, or 0 if unable to parse the value.
+
+**Syntax**
+
+```sql
+fromReadableDecimalSizeOrZero(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with decimal units ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KB', '3 MB', '5.314 KB', 'invalid']) AS readable_sizes,
+    fromReadableSizeOrZero(readable_sizes) AS sizes
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KB           │    1000 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KB       │    5000 │
+│ invalid        │       0 │
+└────────────────┴─────────┘
+```
+
 ## formatReadableQuantity
 
 Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as string.
