@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (name String, event Int8) ENGINE = MergeTree ORDER BY name SETTINGS allow_experimental_optimized_row_order = true;
 INSERT INTO tab VALUES ('Igor', 3), ('Egor', 1), ('Egor', 2), ('Igor', 2), ('Igor', 1);
 
-SELECT * FROM tab SETTINGS max_threads=1;
+SELECT * FROM tab ORDER BY name SETTINGS max_threads=1;
 
 DROP TABLE tab;
 
@@ -38,7 +38,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (name FixedString(2), timestamp Float32, money Float64, flag Nullable(Int32)) ENGINE = MergeTree ORDER BY (flag, money) SETTINGS allow_experimental_optimized_row_order = True, allow_nullable_key = True;
 INSERT INTO tab VALUES ('AB', 0, 42, Null), ('AB', 0, 42, Null), ('A', 1, 42, Null), ('AB', 1, 9.81, 0), ('B', 0, 42, Null), ('B', -1, 3.14, Null), ('B', 1, 2.7, 1), ('B', 0, 42, 1), ('A', 1, 42, 1), ('B', 1, 42, Null), ('B', 0, 2.7, 1), ('A', 0, 2.7, 1), ('B', 2, 3.14, Null), ('A', 0, 3.14, Null), ('A', 1, 2.7, 1), ('A', 1, 42, Null);
 
-SELECT * FROM tab SETTINGS max_threads=1;
+SELECT * FROM tab ORDER BY (flag, money) SETTINGS max_threads=1;
 
 DROP TABLE tab;
 
@@ -70,6 +70,6 @@ SETTINGS allow_experimental_optimized_row_order = True;
 
 INSERT INTO tab VALUES ('A', '2020-01-01', [0.0, 1.1], 10, 'some string', {'key':'value'}, (123)), ('A', '2020-01-01', [0.0, 1.1], NULL, 'example', {}, (26)), ('A', '2020-01-01', [2.2, 1.1], 1, 'some other string', {'key2':'value2'}, (5)), ('A', '2020-01-02', [0.0, 1.1], 10, 'some string', {'key':'value'}, (123)), ('A', '2020-01-02', [0.0, 2.2], 10, 'example', {}, (26)), ('A', '2020-01-02', [2.2, 1.1], 1, 'some other string', {'key2':'value2'}, (5)), ('B', '2020-01-04', [0.0, 1.1], 10, 'some string', {'key':'value'}, (123)), ('B', '2020-01-04', [0.0, 2.2], Null, 'example', {}, (26)), ('B', '2020-01-04', [2.2, 1.1], 1, 'some string', {'key2':'value2'}, (5)), ('B', '2020-01-05', [0.0, 1.1], 10, 'some string', {'key':'value'}, (123)), ('B', '2020-01-05', [0.0, 2.2], Null, 'example', {}, (26)), ('B', '2020-01-05', [2.2, 1.1], 1, 'some other string', {'key':'value'}, (5)), ('C', '2020-01-04', [0.0, 1.1], 10, 'some string', {'key':'value'}, (5)), ('C', '2020-01-04', [0.0, 2.2], Null, 'example', {}, (26)), ('C', '2020-01-04', [2.2, 1.1], 1, 'some other string', {'key2':'value2'}, (5));
 
-SELECT * FROM tab SETTINGS max_threads=1;
+SELECT * FROM tab ORDER BY (fixed_str, event_date) SETTINGS max_threads=1;
 
 DROP TABLE tab;
