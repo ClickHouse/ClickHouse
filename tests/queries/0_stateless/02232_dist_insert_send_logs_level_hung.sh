@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, disable
+# Tags: long, no-parallel, disabled
 # Tag: no-parallel - too heavy
 # Tag: long        - too heavy
-# Tag: disable Takes too long to be always run in CI
+# Tag: disabled    - Always takes 4+ minutes, in serial mode, which is too much to be always run in CI
 
 # This is the regression test when remote peer send some logs for INSERT,
 # it is easy to archive using materialized views, with small block size.
