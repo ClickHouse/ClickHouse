@@ -2660,6 +2660,9 @@ toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
 toStartOfYear
+toStartOfMicrosecond
+toStartOfMillisecond
+toStartOfNanosecond
 toString
 toStringCutToZero
 toTime
