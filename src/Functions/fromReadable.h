@@ -70,6 +70,8 @@ public:
                 "Illegal column {} of first ('str') argument of function {}. Must be string.",
                 arguments[0].column->getName(),
                 getName());
+        
+        std::unordered_map<std::string_view, Float64> scale_factors = Impl::getScaleFactors();
 
         auto col_res = ColumnFloat64::create(input_rows_count);
 
@@ -84,7 +86,7 @@ public:
             std::string_view str = col_str->getDataAt(i).toView();
             try
             {
-                auto num_bytes = parseReadableFormat(str);
+                auto num_bytes = parseReadableFormat(scale_factors, str);
                 res_data[i] = num_bytes;
             }
             catch (...)
@@ -111,7 +113,7 @@ private:
         throw Exception(code, "Invalid expression for function {} - {} (\"{}\")", getName(), msg, arg);
     }
 
-    Float64 parseReadableFormat(const std::string_view & str) const
+    Float64 parseReadableFormat(const std::unordered_map<std::string_view, Float64> & scale_factors, const std::string_view & str) const
     {
         ReadBufferFromString buf(str);
         // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
@@ -129,7 +131,6 @@ private:
         if (!buf.eof())
             throwException(ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE, "Found trailing characters after readable size string", str);
         boost::algorithm::to_lower(unit);
-        std::unordered_map<std::string_view, Float64> scale_factors = Impl::getScaleFactors();
         auto iter = scale_factors.find(unit);
         if (iter == scale_factors.end())
         {
