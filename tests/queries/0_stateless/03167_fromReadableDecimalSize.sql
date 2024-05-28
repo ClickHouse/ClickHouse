@@ -32,6 +32,15 @@ SELECT fromReadableDecimalSize(materialize('1 KB'));
 -- Output is NULL if NULL arg is passed
 SELECT fromReadableDecimalSize(NULL);
 
+-- Can parse more decimal places than Float64's precision
+SELECT fromReadableDecimalSize('3.14159265358979323846264338327950288419716939937510 KB');
+
+-- Can parse sizes prefixed with a plus sign
+SELECT fromReadableDecimalSize('+3.1415 KB');
+
+-- Can parse amounts in scientific notation
+SELECT fromReadableDecimalSize('10e2 B');
+
 -- ERRORS
 -- No arguments
 SELECT fromReadableDecimalSize(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
