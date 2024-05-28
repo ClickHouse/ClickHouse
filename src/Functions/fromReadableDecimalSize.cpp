@@ -4,10 +4,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_PARSE_TEXT;
-}
 
 namespace
 {
@@ -26,29 +22,36 @@ const std::unordered_map<std::string_view, Float64> scale_factors =
 
 struct Impl
 {
-    static constexpr auto name = "fromReadableDecimalSize";
-
-    static Float64 getScaleFactorForUnit(const String & unit)  // Assumes the unit is already in lowercase
+    static const std::unordered_map<std::string_view, Float64> & getScaleFactors()
     {
-        auto iter = scale_factors.find(unit);
-        if (iter == scale_factors.end())
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_PARSE_TEXT,
-                "Invalid expression for function {} - Unknown readable size unit (\"{}\")",
-                name,
-                unit
-            );
-        }
-        return iter->second;
+        return scale_factors;
     }
-
 };
+
+struct NameFromReadableDecimalSize
+{
+    static constexpr auto name = "fromReadableDecimalSize";
+};
+
+struct NameFromReadableDecimalSizeOrNull
+{
+    static constexpr auto name = "fromReadableDecimalSizeOrNull";
+};
+
+struct NameFromReadableDecimalSizeOrZero
+{
+    static constexpr auto name = "fromReadableDecimalSizeOrZero";
+};
+
+using FunctionFromReadableDecimalSize = FunctionFromReadable<NameFromReadableDecimalSize, Impl, ErrorHandling::Exception>;
+using FunctionFromReadableDecimalSizeOrNull = FunctionFromReadable<NameFromReadableDecimalSizeOrNull, Impl, ErrorHandling::Null>;
+using FunctionFromReadableDecimalSizeOrZero = FunctionFromReadable<NameFromReadableDecimalSizeOrZero, Impl, ErrorHandling::Zero>;
+
 }
 
 REGISTER_FUNCTION(FromReadableDecimalSize)
 {
-    factory.registerFunction<FunctionFromReadable<Impl>>(FunctionDocumentation
+    factory.registerFunction<FunctionFromReadableDecimalSize>(FunctionDocumentation
         {
             .description=R"(
 Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes:
@@ -65,6 +68,8 @@ Accepts readable sizes up to the Exabyte (EB/EiB).
             .categories{"OtherFunctions"}
         }
     );
+    factory.registerFunction<FunctionFromReadableDecimalSizeOrNull>();
+    factory.registerFunction<FunctionFromReadableDecimalSizeOrZero>();
 }
 
 }

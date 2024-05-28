@@ -4,10 +4,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_PARSE_TEXT;
-}
 
 namespace
 {
@@ -26,29 +22,38 @@ const std::unordered_map<std::string_view, Float64> scale_factors =
 
 struct Impl
 {
-    static constexpr auto name = "fromReadableSize";
-
-    static Float64 getScaleFactorForUnit(const String & unit)  // Assumes the unit is already in lowercase
+    static const std::unordered_map<std::string_view, Float64> & getScaleFactors()
     {
-        auto iter = scale_factors.find(unit);
-        if (iter == scale_factors.end())
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_PARSE_TEXT,
-                "Invalid expression for function {} - Unknown readable size unit (\"{}\")",
-                name,
-                unit
-            );
-        }
-        return iter->second;
+        return scale_factors;
     }
 
 };
+
+
+struct NameFromReadableSize
+{
+    static constexpr auto name = "fromReadableSize";
+};
+
+struct NameFromReadableSizeOrNull
+{
+    static constexpr auto name = "fromReadableSizeOrNull";
+};
+
+struct NameFromReadableSizeOrZero
+{
+    static constexpr auto name = "fromReadableSizeOrZero";
+};
+
+using FunctionFromReadableSize = FunctionFromReadable<NameFromReadableSize, Impl, ErrorHandling::Exception>;
+using FunctionFromReadableSizeOrNull = FunctionFromReadable<NameFromReadableSizeOrNull, Impl, ErrorHandling::Null>;
+using FunctionFromReadableSizeOrZero = FunctionFromReadable<NameFromReadableSizeOrZero, Impl, ErrorHandling::Zero>;
+
 }
 
 REGISTER_FUNCTION(FromReadableSize)
 {
-    factory.registerFunction<FunctionFromReadable<Impl>>(FunctionDocumentation
+    factory.registerFunction<FunctionFromReadableSize>(FunctionDocumentation
         {
             .description=R"(
 Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes:
@@ -65,6 +70,7 @@ Accepts readable sizes up to the Exabyte (EB/EiB).
             .categories{"OtherFunctions"}
         }
     );
+    factory.registerFunction<FunctionFromReadableSizeOrNull>();
+    factory.registerFunction<FunctionFromReadableSizeOrZero>();
 }
-
 }

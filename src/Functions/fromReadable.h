@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 enum class ErrorHandling : uint8_t
@@ -28,13 +29,12 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-template <typename Impl, ErrorHandling error_handling>
+template <typename Name, typename Impl, ErrorHandling error_handling>
 class FunctionFromReadable : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFromReadable<Impl, error_handling>>(); }
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFromReadable<Name, Impl, error_handling>>(); }
 
     String getName() const override { return name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -60,12 +60,13 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto col_res = ColumnFloat64::create();
-        auto & res_data = col_res->getData();
+        auto col_res = ColumnFloat64::create(input_rows_count);
 
         ColumnUInt8::MutablePtr col_null_map;
         if constexpr (error_handling == ErrorHandling::Null)
             col_null_map = ColumnUInt8::create(input_rows_count, 0);
+
+        auto & res_data = col_res->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {   
@@ -73,7 +74,7 @@ public:
             try
             {
                 auto num_bytes = parseReadableFormat(str);
-                res_data.emplace_back(num_bytes);
+                res_data[i] = num_bytes;
             }
             catch (...)
             {
@@ -117,8 +118,18 @@ private:
         if (!buf.eof())
             throwException(ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE, "Found trailing characters after readable size string", str);
         boost::algorithm::to_lower(unit);
-        Float64 scale_factor = Impl::getScaleFactorForUnit(unit);
-        return base * scale_factor;
+        std::unordered_map<std::string_view, Float64> scale_factors = Impl::getScaleFactors();
+        auto iter = scale_factors.find(unit);
+        if (iter == scale_factors.end())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_TEXT,
+                "Invalid expression for function {} - Unknown readable size unit (\"{}\")",
+                getName(),
+                unit
+            );
+        }
+        return base * iter->second;
     }
 };
 }
