@@ -47,13 +47,13 @@ class HilbertEncodeLookupTable<2>
 public:
     constexpr static UInt8 LOOKUP_TABLE[64] = {
         0, 51, 20, 5, 17, 18, 39, 6,
-    46, 45, 24, 9, 15, 60, 43, 10,
-    16, 1, 62, 31, 35, 2, 61, 44,
-    4, 55, 8, 59, 21, 22, 25, 26,
-    42, 41, 38, 37, 11, 56, 7, 52,
-    28, 13, 50, 19, 47, 14, 49, 32,
-    58, 27, 12, 63, 57, 40, 29, 30,
-    54, 23, 34, 33, 53, 36, 3, 48
+        46, 45, 24, 9, 15, 60, 43, 10,
+        16, 1, 62, 31, 35, 2, 61, 44,
+        4, 55, 8, 59, 21, 22, 25, 26,
+        42, 41, 38, 37, 11, 56, 7, 52,
+        28, 13, 50, 19, 47, 14, 49, 32,
+        58, 27, 12, 63, 57, 40, 29, 30,
+        54, 23, 34, 33, 53, 36, 3, 48
     };
 };
 
@@ -183,8 +183,8 @@ public:
                 auto ratio = mask->getColumn(i).getUInt(0);
                 if (ratio > 32)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Illegal argument {} of function {}, should be a number in range 0-32",
-                        arguments[0].column->getName(), getName());
+                                    "Illegal argument {} of function {}, should be a number in range 0-32",
+                                    arguments[0].column->getName(), getName());
             }
         }
 
@@ -226,8 +226,8 @@ public:
         }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal number of UInt arguments of function {}: should be not more than 2 dimensions",
-            getName());
+                        "Illegal number of UInt arguments of function {}: should be not more than 2 dimensions",
+                        getName());
     }
 };
 
