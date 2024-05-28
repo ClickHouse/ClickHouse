@@ -285,9 +285,9 @@ close it.
         )
         self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
         if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
-            self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
+            self.backport_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
         elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
-            self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
+            self.backport_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.backport_pr)
 
     def ping_cherry_pick_assignees(self, dry_run: bool) -> None:

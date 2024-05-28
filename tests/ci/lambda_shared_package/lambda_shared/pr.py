@@ -87,7 +87,7 @@ LABEL_CATEGORIES = {
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
     "pr-critical-bugfix": [
-        "Critical Bug Fix (critical issues in non-experimental features, auto backport)"
+        "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"
     ],
     "pr-build": [
         "Build/Testing/Packaging Improvement",

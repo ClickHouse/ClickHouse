@@ -25,6 +25,7 @@ categories_preferred_order = (
     "New Feature",
     "Performance Improvement",
     "Improvement",
+    "Critical Bug Fix",
     "Bug Fix",
     "Build/Testing/Packaging Improvement",
     "Other",
@@ -112,7 +113,7 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         in_changelog = merge_commit in SHA_IN_CHANGELOG
         if in_changelog:
             desc = generate_description(pr, repos[repo_name])
-            if desc is not None:
+            if desc:
                 if desc.category not in descriptions:
                     descriptions[desc.category] = []
                 descriptions[desc.category].append(desc)
@@ -187,7 +188,7 @@ def parse_args() -> argparse.Namespace:
 
 
 # This function mirrors the PR description checks in ClickhousePullRequestTrigger.
-# Returns False if the PR should not be mentioned changelog.
+# Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
     if item.head.ref.startswith("backport/"):
