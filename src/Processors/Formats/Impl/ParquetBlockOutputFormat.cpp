@@ -285,12 +285,11 @@ void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
         while (!chunks.empty())
         {
             if (concatenated.empty())
-                concatenated = std::move(chunks.back());
+                concatenated.swap(chunks.back());
             else
-                concatenated.append(std::move(chunks.back()));
+                concatenated.append(chunks.back());
             chunks.pop_back();
         }
-        chunks.clear();
         writeRowGroupInOneThread(std::move(concatenated));
     }
 }
