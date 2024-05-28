@@ -72,35 +72,127 @@ select x1, x2, x3 from test order by 3 limit 1 by 1;
 100	100	1
 10	1	10
 1	10	100
-explain syntax select x3, x2, x1 from test order by 1;
+explain syntax select x3, x2, x1 from test order by 1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3,
     x2,
     x1
 FROM test
 ORDER BY x3 ASC
-explain syntax select x3 + 1, x2, x1 from test order by 1;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3, x2, x1 from test order by 1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    x3 Int32
+    x2 Int32
+    x1 Int32
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: x2, result_type: Int32, source_id: 3
+      COLUMN id: 5, column_name: x1, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 8, column_name: x3, result_type: Int32, source_id: 3
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3 + 1, x2, x1 from test order by 1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3 + 1,
     x2,
     x1
 FROM test
 ORDER BY x3 + 1 ASC
-explain syntax select x3, x2, x1 from test order by -1;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3 + 1, x2, x1 from test order by 1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(x3, 1) Int64
+    x2 Int32
+    x1 Int32
+  PROJECTION
+    LIST id: 1, nodes: 3
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: x3, result_type: Int32, source_id: 5
+            CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+      COLUMN id: 7, column_name: x2, result_type: Int32, source_id: 5
+      COLUMN id: 8, column_name: x1, result_type: Int32, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 9, nodes: 1
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 11, function_name: plus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: x3, result_type: Int32, source_id: 5
+                CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3, x2, x1 from test order by -1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3,
     x2,
     x1
 FROM test
 ORDER BY x1 ASC
-explain syntax select x3 + 1, x2, x1 from test order by -1;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3, x2, x1 from test order by -1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    x3 Int32
+    x2 Int32
+    x1 Int32
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: x2, result_type: Int32, source_id: 3
+      COLUMN id: 5, column_name: x1, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 8, column_name: x1, result_type: Int32, source_id: 3
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3 + 1, x2, x1 from test order by -1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3 + 1,
     x2,
     x1
 FROM test
 ORDER BY x1 ASC
-explain syntax select x3, x3 - x2, x2, x1 from test order by 2;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3 + 1, x2, x1 from test order by -1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(x3, 1) Int64
+    x2 Int32
+    x1 Int32
+  PROJECTION
+    LIST id: 1, nodes: 3
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: x3, result_type: Int32, source_id: 5
+            CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+      COLUMN id: 7, column_name: x2, result_type: Int32, source_id: 5
+      COLUMN id: 8, column_name: x1, result_type: Int32, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 9, nodes: 1
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 11, column_name: x1, result_type: Int32, source_id: 5
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3, x3 - x2, x2, x1 from test order by 2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3,
     x3 - x2,
@@ -108,7 +200,37 @@ SELECT
     x1
 FROM test
 ORDER BY x3 - x2 ASC
-explain syntax select x3, x3 - x2, x2, x1 from test order by -2;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3, x3 - x2, x2, x1 from test order by 2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    x3 Int32
+    minus(x3, x2) Int64
+    x2 Int32
+    x1 Int32
+  PROJECTION
+    LIST id: 1, nodes: 4
+      COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+      FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 5, nodes: 2
+            COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+            COLUMN id: 6, column_name: x2, result_type: Int32, source_id: 3
+      COLUMN id: 6, column_name: x2, result_type: Int32, source_id: 3
+      COLUMN id: 7, column_name: x1, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 8, nodes: 1
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 10, function_name: minus, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 12, column_name: x3, result_type: Int32, source_id: 3
+                COLUMN id: 13, column_name: x2, result_type: Int32, source_id: 3
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3, x3 - x2, x2, x1 from test order by -2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3,
     x3 - x2,
@@ -116,21 +238,147 @@ SELECT
     x1
 FROM test
 ORDER BY x2 ASC
-explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by 2;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3, x3 - x2, x2, x1 from test order by -2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    x3 Int32
+    minus(x3, x2) Int64
+    x2 Int32
+    x1 Int32
+  PROJECTION
+    LIST id: 1, nodes: 4
+      COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+      FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 5, nodes: 2
+            COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+            COLUMN id: 6, column_name: x2, result_type: Int32, source_id: 3
+      COLUMN id: 6, column_name: x2, result_type: Int32, source_id: 3
+      COLUMN id: 7, column_name: x1, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 8, nodes: 1
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 10, column_name: x2, result_type: Int32, source_id: 3
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by 2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3,
     if(x3 > 10, x3, x1 + x2),
     x1 + x2
 FROM test
 ORDER BY if(x3 > 10, x3, x1 + x2) ASC
-explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by -2;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by 2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    x3 Int32
+    if(greater(x3, 10), x3, plus(x1, x2)) Int64
+    plus(x1, x2) Int64
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+      FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 5, nodes: 3
+            FUNCTION id: 6, function_name: greater, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 7, nodes: 2
+                  COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+                  CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
+            COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+            FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: x1, result_type: Int32, source_id: 3
+                  COLUMN id: 12, column_name: x2, result_type: Int32, source_id: 3
+      FUNCTION id: 13, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 14, nodes: 2
+            COLUMN id: 11, column_name: x1, result_type: Int32, source_id: 3
+            COLUMN id: 12, column_name: x2, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 15, nodes: 1
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 17, function_name: if, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 18, nodes: 3
+                FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      COLUMN id: 21, column_name: x3, result_type: Int32, source_id: 3
+                      CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt8
+                COLUMN id: 21, column_name: x3, result_type: Int32, source_id: 3
+                FUNCTION id: 23, function_name: plus, function_type: ordinary, result_type: Int64
+                  ARGUMENTS
+                    LIST id: 24, nodes: 2
+                      COLUMN id: 25, column_name: x1, result_type: Int32, source_id: 3
+                      COLUMN id: 26, column_name: x2, result_type: Int32, source_id: 3
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by -2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x3,
     if(x3 > 10, x3, x1 + x2),
     x1 + x2
 FROM test
 ORDER BY if(x3 > 10, x3, x1 + x2) ASC
-explain syntax select max(x1), x2 from test group by 2 order by 1, 2;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by -2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    x3 Int32
+    if(greater(x3, 10), x3, plus(x1, x2)) Int64
+    plus(x1, x2) Int64
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+      FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 5, nodes: 3
+            FUNCTION id: 6, function_name: greater, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 7, nodes: 2
+                  COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+                  CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
+            COLUMN id: 2, column_name: x3, result_type: Int32, source_id: 3
+            FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: x1, result_type: Int32, source_id: 3
+                  COLUMN id: 12, column_name: x2, result_type: Int32, source_id: 3
+      FUNCTION id: 13, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 14, nodes: 2
+            COLUMN id: 11, column_name: x1, result_type: Int32, source_id: 3
+            COLUMN id: 12, column_name: x2, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  ORDER BY
+    LIST id: 15, nodes: 1
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 17, function_name: if, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 18, nodes: 3
+                FUNCTION id: 19, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      COLUMN id: 21, column_name: x3, result_type: Int32, source_id: 3
+                      CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt8
+                COLUMN id: 21, column_name: x3, result_type: Int32, source_id: 3
+                FUNCTION id: 23, function_name: plus, function_type: ordinary, result_type: Int64
+                  ARGUMENTS
+                    LIST id: 24, nodes: 2
+                      COLUMN id: 25, column_name: x1, result_type: Int32, source_id: 3
+                      COLUMN id: 26, column_name: x2, result_type: Int32, source_id: 3
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select max(x1), x2 from test group by 2 order by 1, 2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     max(x1),
     x2
@@ -139,7 +387,37 @@ GROUP BY x2
 ORDER BY
     max(x1) ASC,
     x2 ASC
-explain syntax select max(x1), x2 from test group by -1 order by -2, -1;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select max(x1), x2 from test group by 2 order by 1, 2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    max(x1) Int32
+    x2 Int32
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: max, function_type: aggregate, result_type: Int32
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: x1, result_type: Int32, source_id: 5
+      COLUMN id: 6, column_name: x2, result_type: Int32, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 7, nodes: 1
+      COLUMN id: 8, column_name: x2, result_type: Int32, source_id: 5
+  ORDER BY
+    LIST id: 9, nodes: 2
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 11, function_name: max, function_type: aggregate, result_type: Int32
+            ARGUMENTS
+              LIST id: 12, nodes: 1
+                COLUMN id: 13, column_name: x1, result_type: Int32, source_id: 5
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 15, column_name: x2, result_type: Int32, source_id: 5
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select max(x1), x2 from test group by -1 order by -2, -1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     max(x1),
     x2
@@ -148,7 +426,37 @@ GROUP BY x2
 ORDER BY
     max(x1) ASC,
     x2 ASC
-explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select max(x1), x2 from test group by -1 order by -2, -1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    max(x1) Int32
+    x2 Int32
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: max, function_type: aggregate, result_type: Int32
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: x1, result_type: Int32, source_id: 5
+      COLUMN id: 6, column_name: x2, result_type: Int32, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 7, nodes: 1
+      COLUMN id: 8, column_name: x2, result_type: Int32, source_id: 5
+  ORDER BY
+    LIST id: 9, nodes: 2
+      SORT id: 10, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 11, function_name: max, function_type: aggregate, result_type: Int32
+            ARGUMENTS
+              LIST id: 12, nodes: 1
+                COLUMN id: 13, column_name: x1, result_type: Int32, source_id: 5
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 15, column_name: x2, result_type: Int32, source_id: 5
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     1 + greatest(x1, 1),
     x2
@@ -156,7 +464,40 @@ FROM test
 GROUP BY
     1 + greatest(x1, 1),
     x2
-explain syntax select 1 + greatest(x1, 1), x2 from test group by -2, -1;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select 1 + greatest(x1, 1), x2 from test group by 1, 2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(1, greatest(x1, 1)) Int64
+    x2 Int32
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            CONSTANT id: 4, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 5, function_name: greatest, function_type: ordinary, result_type: Int32
+              ARGUMENTS
+                LIST id: 6, nodes: 2
+                  COLUMN id: 7, column_name: x1, result_type: Int32, source_id: 8
+                  CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+      COLUMN id: 10, column_name: x2, result_type: Int32, source_id: 8
+  JOIN TREE
+    TABLE id: 8, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 11, nodes: 2
+      FUNCTION id: 12, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 13, nodes: 2
+            CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 15, function_name: greatest, function_type: ordinary, result_type: Int32
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  COLUMN id: 17, column_name: x1, result_type: Int32, source_id: 8
+                  CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+      COLUMN id: 19, column_name: x2, result_type: Int32, source_id: 8
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select 1 + greatest(x1, 1), x2 from test group by -2, -1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     1 + greatest(x1, 1),
     x2
@@ -164,11 +505,44 @@ FROM test
 GROUP BY
     1 + greatest(x1, 1),
     x2
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select 1 + greatest(x1, 1), x2 from test group by -2, -1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(1, greatest(x1, 1)) Int64
+    x2 Int32
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            CONSTANT id: 4, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 5, function_name: greatest, function_type: ordinary, result_type: Int32
+              ARGUMENTS
+                LIST id: 6, nodes: 2
+                  COLUMN id: 7, column_name: x1, result_type: Int32, source_id: 8
+                  CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+      COLUMN id: 10, column_name: x2, result_type: Int32, source_id: 8
+  JOIN TREE
+    TABLE id: 8, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 11, nodes: 2
+      FUNCTION id: 12, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 13, nodes: 2
+            CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+            FUNCTION id: 15, function_name: greatest, function_type: ordinary, result_type: Int32
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  COLUMN id: 17, column_name: x1, result_type: Int32, source_id: 8
+                  CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+      COLUMN id: 19, column_name: x2, result_type: Int32, source_id: 8
+  SETTINGS allow_experimental_analyzer=1
 select max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
 select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
 select max(x1), x2 from test group by -2, -1; -- { serverError 43, 184 }
 select 1 + max(x1), x2 from test group by -2, -1; -- { serverError 43, 184 }
-explain syntax select x1 + x3, x3 from test group by 1, 2;
+explain syntax select x1 + x3, x3 from test group by 1, 2 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x1 + x3,
     x3
@@ -176,7 +550,32 @@ FROM test
 GROUP BY
     x1 + x3,
     x3
-explain syntax select x1 + x3, x3 from test group by -2, -1;
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x1 + x3, x3 from test group by 1, 2 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(x1, x3) Int64
+    x3 Int32
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: x1, result_type: Int32, source_id: 5
+            COLUMN id: 6, column_name: x3, result_type: Int32, source_id: 5
+      COLUMN id: 6, column_name: x3, result_type: Int32, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 7, nodes: 2
+      FUNCTION id: 8, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 9, nodes: 2
+            COLUMN id: 10, column_name: x1, result_type: Int32, source_id: 5
+            COLUMN id: 11, column_name: x3, result_type: Int32, source_id: 5
+      COLUMN id: 12, column_name: x3, result_type: Int32, source_id: 5
+  SETTINGS allow_experimental_analyzer=1
+explain syntax select x1 + x3, x3 from test group by -2, -1 SETTINGS allow_experimental_analyzer = 0;
 SELECT
     x1 + x3,
     x3
@@ -184,6 +583,31 @@ FROM test
 GROUP BY
     x1 + x3,
     x3
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select x1 + x3, x3 from test group by -2, -1 SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(x1, x3) Int64
+    x3 Int32
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: x1, result_type: Int32, source_id: 5
+            COLUMN id: 6, column_name: x3, result_type: Int32, source_id: 5
+      COLUMN id: 6, column_name: x3, result_type: Int32, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 7, nodes: 2
+      FUNCTION id: 8, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 9, nodes: 2
+            COLUMN id: 10, column_name: x1, result_type: Int32, source_id: 5
+            COLUMN id: 11, column_name: x3, result_type: Int32, source_id: 5
+      COLUMN id: 12, column_name: x3, result_type: Int32, source_id: 5
+  SETTINGS allow_experimental_analyzer=1
 create table test2(x1 Int, x2 Int, x3 Int) engine=Memory;
 insert into test2 values (1, 10, 100), (10, 1, 10), (100, 100, 1);
 select x1, x1 * 2, max(x2), max(x3) from test2 group by 2, 1, x1 order by 1, 2, 4 desc, 3 asc;
@@ -198,9 +622,35 @@ select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t grou
 44	88	13	14	15	16
 select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t group by 1,2,3,-3,-2,-1 order by a;
 44	88	13	14	15	16
-explain syntax select plus(1, 1) as a group by a;
+explain syntax select plus(1, 1) as a group by a SETTINGS allow_experimental_analyzer = 0;
 SELECT 1 + 1 AS a
 GROUP BY a
+SETTINGS allow_experimental_analyzer = 0
+explain query tree select plus(1, 1) as a group by a SETTINGS allow_experimental_analyzer = 1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt16
+  PROJECTION
+    LIST id: 1, nodes: 1
+      CONSTANT id: 2, constant_value: UInt64_2, constant_value_type: UInt16
+        EXPRESSION
+          FUNCTION id: 3, alias: a, function_name: plus, function_type: ordinary, result_type: UInt16
+            ARGUMENTS
+              LIST id: 4, nodes: 2
+                CONSTANT id: 5, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: system.one
+  GROUP BY
+    LIST id: 8, nodes: 1
+      CONSTANT id: 2, constant_value: UInt64_2, constant_value_type: UInt16
+        EXPRESSION
+          FUNCTION id: 3, alias: a, function_name: plus, function_type: ordinary, result_type: UInt16
+            ARGUMENTS
+              LIST id: 4, nodes: 2
+                CONSTANT id: 5, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+  SETTINGS allow_experimental_analyzer=1
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a order by a;
 aaaaaaa
 select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8) order by a;
