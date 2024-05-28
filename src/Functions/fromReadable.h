@@ -18,10 +18,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_TEXT;
     extern const int ILLEGAL_COLUMN;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 enum class ErrorHandling : uint8_t
