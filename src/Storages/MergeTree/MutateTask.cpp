@@ -1315,11 +1315,9 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             const auto & projection = *ctx->projections_to_build[i];
 
             Chunk planned_chunk;
-            {
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                Block block_to_squash = projection.calculate(cur_block, ctx->context);
-                planned_chunk = projection_squash_plannings[i]->add({block_to_squash.getColumns(), block_to_squash.rows()});
-            }
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+            Block block_to_squash = projection.calculate(cur_block, ctx->context);
+            planned_chunk = projection_squash_plannings[i]->add({block_to_squash.getColumns(), block_to_squash.rows()});
 
             if (planned_chunk.hasChunkInfo())
             {
@@ -1327,7 +1325,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                 ColumnsWithTypeAndName cols;
                 if (projection_chunk.hasColumns())
                     for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-                        cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+                        cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], block_to_squash.getDataTypes()[j], block_to_squash.getNames()[j]));
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
