@@ -48,7 +48,7 @@ using FunctionFromReadableDecimalSizeOrZero = FunctionFromReadable<NameFromReada
 
 
 FunctionDocumentation fromReadableDecimalSize_documentation {
-    .description = "Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes.",
+    .description = "Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes. If the function is unable to parse the input value, it throws an exception.",
     .syntax = "fromReadableDecimalSize(x)",
     .arguments = {{"x", "Readable size with decimal units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md))",
@@ -69,7 +69,7 @@ FunctionDocumentation fromReadableDecimalSize_documentation {
 };
 
 FunctionDocumentation fromReadableDecimalSizeOrNull_documentation {
-    .description = "Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes, or `NULL` if unable to parse the value.",
+    .description = "Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit, this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `NULL`",
     .syntax = "fromReadableDecimalSizeOrNull(x)",
     .arguments = {{"x", "Readable size with decimal units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md)))",
@@ -91,7 +91,7 @@ FunctionDocumentation fromReadableDecimalSizeOrNull_documentation {
 };
 
 FunctionDocumentation fromReadableDecimalSizeOrZero_documentation {
-    .description = "Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes, or 0 if unable to parse the value.",
+    .description = "Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit, this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`",
     .syntax = "formatReadableSizeOrZero(x)",
     .arguments = {{"x", "Readable size with decimal units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md))",

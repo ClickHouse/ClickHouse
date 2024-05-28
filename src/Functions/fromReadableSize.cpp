@@ -50,7 +50,7 @@ using FunctionFromReadableSizeOrNull = FunctionFromReadable<NameFromReadableSize
 using FunctionFromReadableSizeOrZero = FunctionFromReadable<NameFromReadableSizeOrZero, Impl, ErrorHandling::Zero>;
 
 FunctionDocumentation fromReadableSize_documentation {
-    .description = "Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes.",
+    .description = "Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it throws an exception.",
     .syntax = "fromReadableSize(x)",
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md))",
@@ -71,7 +71,7 @@ FunctionDocumentation fromReadableSize_documentation {
 };
 
 FunctionDocumentation fromReadableSizeOrNull_documentation {
-    .description = "Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes, or `NULL` if unable to parse the value.",
+    .description = "Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `NULL`",
     .syntax = "fromReadableSizeOrNull(x)",
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md)))",
@@ -93,7 +93,7 @@ FunctionDocumentation fromReadableSizeOrNull_documentation {
 };
 
 FunctionDocumentation fromReadableSizeOrZero_documentation {
-    .description = "Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes, or 0 if unable to parse the value.",
+    .description = "Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`",
     .syntax = "fromReadableSizeOrZero(x)",
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md))",
