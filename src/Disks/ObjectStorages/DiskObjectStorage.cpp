@@ -133,6 +133,14 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
+void DiskObjectStorage::truncateFile(const String & path, size_t size)
+{
+    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    auto transaction = createObjectStorageTransaction();
+    transaction->truncateFile(path, size);
+    transaction->commit();
+}
+
 void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
@@ -536,7 +544,7 @@ void DiskObjectStorage::applyNewSettings(
 {
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
     const auto config_prefix = "storage_configuration.disks." + name;
-    object_storage->applyNewSettings(config, config_prefix, context_);
+    object_storage->applyNewSettings(config, config_prefix, context_, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
 
     {
         std::unique_lock lock(resource_mutex);
