@@ -12,6 +12,11 @@
 SELECT count()
 FROM t_move_to_prewhere
 WHERE a AND b AND c AND (NOT ignore(fat_string))
+SETTINGS allow_experimental_analyzer = 0
+SELECT count() AS `count()`
+FROM default.t_move_to_prewhere AS __table1
+WHERE __table1.a AND __table1.b AND __table1.c AND (NOT ignore(__table1.fat_string))
+SETTINGS allow_experimental_analyzer = 1
       Filter
       Filter column: and(a, b, c, not(ignore(fat_string))) (removed)
         Prewhere info
