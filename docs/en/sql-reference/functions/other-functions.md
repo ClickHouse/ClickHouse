@@ -796,22 +796,27 @@ Result:
 
 ## fromReadableSize
 
-Given a string containing the readable representation of a byte size, this function returns the corresponding number of bytes.
- - Accepts up to the Exabyte (EB/EiB)  
+Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes.
+
+**Syntax**
+
+```sql
+fromReadableSize(x)
+```
 
 **Arguments**
 
-- `val` : readable size. [String](../data-types/string)
+- `x` : Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
-- Number of bytes represented by the readable size [Float64](../data-types/float.md).
+- Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
 
-Example:
+**Example**
 
 ```sql
 SELECT
-    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KB']) AS readable_sizes,
+    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB']) AS readable_sizes,
     fromReadableSize(readable_sizes) AS sizes
 ```
 
@@ -820,7 +825,79 @@ SELECT
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
 │ 3 MiB          │ 3145728 │
-│ 5.314 KB       │    5314 │
+│ 5.314 KiB      │    5442 │
+└────────────────┴─────────┘
+```
+
+## fromReadableSizeOrNull
+
+Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes, or `NULL` if unable to parse the value.
+
+**Syntax**
+
+```sql
+fromReadableSizeOrNull(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes,
+    fromReadableSizeOrNull(readable_sizes) AS sizes
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MiB          │ 3145728 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │    ᴺᵁᴸᴸ │
+└────────────────┴─────────┘
+```
+
+## fromReadableSizeOrZero
+
+Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes, or 0 if unable to parse the value.
+
+**Syntax**
+
+```sql
+fromReadableSizeOrZero(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes,
+    fromReadableSizeOrZero(readable_sizes) AS sizes
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MiB          │ 3145728 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │       0 │
 └────────────────┴─────────┘
 ```
 

@@ -56,8 +56,18 @@ FunctionDocumentation fromReadableSize_documentation {
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md))",
     .examples = {
-        {"example_integer", "SELECT fromReadableSize('1 KiB')", "1024"},
-        {"example_decimal", "SELECT fromReadableSize('1.1 KiB')", "1127"},
+        {
+            "basic",
+            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;",
+            R"(
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MiB          │ 3145728 │
+│ 5.314 KiB      │    5442 │
+└────────────────┴─────────┘
+)"
+        },
     },
     .categories = {"OtherFunctions"},
 };
@@ -68,9 +78,19 @@ FunctionDocumentation fromReadableSizeOrNull_documentation {
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md)))",
     .examples = {
-        {"example_integer", "SELECT fromReadableSizeOrNull('1 KiB')", "1024"},
-        {"example_decimal", "SELECT fromReadableSizeOrNull('1.1 KiB')", "1127"},
-        {"example_null", "SELECT fromReadableSizeOrNull('invalid')", "NULL"},
+        {
+            "basic", 
+            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;", 
+            R"(
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MiB          │ 3145728 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │    ᴺᵁᴸᴸ │
+└────────────────┴─────────┘
+)"
+        },
     },
     .categories = {"OtherFunctions"},
 };
@@ -81,9 +101,19 @@ FunctionDocumentation fromReadableSizeOrZero_documentation {
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md))"}},
     .returned_value = "Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md))",
     .examples = {
-        {"example_integer", "SELECT fromReadableSizeOrZero('1 KiB')", "1024"},
-        {"example_decimal", "SELECT fromReadableSizeOrZero('1.1 KiB')", "1127"},
-        {"example_null", "SELECT fromReadableSizeOrZero('invalid')", "0"},
+        {
+            "basic", 
+            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;", 
+            R"(
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MiB          │ 3145728 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │       0 │
+└────────────────┴─────────┘
+)",
+        },
     },
     .categories = {"OtherFunctions"},
 };
