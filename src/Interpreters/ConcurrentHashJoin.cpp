@@ -2,6 +2,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -41,7 +42,7 @@ namespace
 void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+        return;
 
     std::vector<size_t> sizes(hash_joins.size());
     for (size_t i = 0; i < hash_joins.size(); ++i)
@@ -106,7 +107,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     setThreadName("ConcurrentJoin");
 
                     size_t reserve_size = 0;
-                    if (auto hint = findSizeHint(stats_collecting_params, slots))
+                    if (auto hint = getSizeHint(stats_collecting_params, slots))
                         reserve_size = hint->median_size;
                     ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
 
@@ -341,13 +342,13 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression)
 {
     IQueryTreeNode::HashState hash;
+    chassert(right_table_expression);
     hash.update(right_table_expression->getTreeHash());
-    chassert(table_join->oneDisjunct());
-    for (const auto & name : table_join->getClauses().at(0).key_names_right)
+    chassert(table_join && table_join->oneDisjunct());
+    const auto keys
+        = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
+    for (const auto & name : keys)
         hash.update(name);
-    LOG_DEBUG(&Poco::Logger::get("debug"), "table_join->getClauses()={}", fmt::join(table_join->getClauses()[0].key_names_right, ", "));
-    LOG_DEBUG(&Poco::Logger::get("debug"), "right_table_expression->dumpTree()={}", right_table_expression->dumpTree());
-    LOG_DEBUG(&Poco::Logger::get("debug"), "hash.get64()={}", hash.get64());
     return hash.get64();
 }
 }

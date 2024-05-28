@@ -24,6 +24,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <base/sort.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -105,7 +106,7 @@ void initDataVariantsWithSizeHint(
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
-    if (auto hint = findSizeHint(stats_collecting_params, max_threads))
+    if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
         if (worthConvertToTwoLevel(
                 params.group_by_two_level_threshold,
@@ -114,19 +115,19 @@ void initDataVariantsWithSizeHint(
                 /*result_size_bytes*/ 0))
             method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
         result.init(method_chosen, hint->median_size);
-        ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
     }
     else
     {
         result.init(method_chosen);
     }
+    ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
 }
 
 /// Collection and use of the statistics should be enabled.
 void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+        return;
 
     std::vector<size_t> sizes(data_variants.size());
     for (size_t i = 0; i < data_variants.size(); ++i)
@@ -2634,8 +2635,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
 
     LOG_TRACE(log, "Merging aggregated data");
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled())
-        updateStatistics(data_variants, params.stats_collecting_params);
+    updateStatistics(data_variants, params.stats_collecting_params);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
