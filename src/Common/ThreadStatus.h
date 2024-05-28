@@ -187,7 +187,7 @@ public:
     /// For this purpose we dynamically change `untracked_memory_limit` after every tracking event using a simple formula:
     /// untracked_memory_limit = clamp(untracked_memory_ratio * cur_memory_bytes, min_untracked_memory, max_untracked_memory)
     /// Note that this values are updated when thread is attached to a group
-    Int64 min_untracked_memory = 4 * 1024;
+    Int64 min_untracked_memory = 4 * 1024 * 1024; // Default value is kept 4MB mostly for tests and client (should be changed to 4KB as default value a setting)
     Int64 max_untracked_memory = 4 * 1024 * 1024;
 
     /// Statistics of read and write rows/bytes
