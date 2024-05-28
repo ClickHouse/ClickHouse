@@ -78,7 +78,7 @@ FunctionDocumentation fromReadableSizeOrNull_documentation {
     .returned_value = "Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md)))",
     .examples = {
         {
-            "basic", 
+            "basic",
             "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;",
             R"(
 ┌─readable_sizes─┬───sizes─┐
@@ -100,7 +100,7 @@ FunctionDocumentation fromReadableSizeOrZero_documentation {
     .returned_value = "Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md))",
     .examples = {
         {
-            "basic", 
+            "basic",
             "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;",
             R"(
 ┌─readable_sizes─┬───sizes─┐
