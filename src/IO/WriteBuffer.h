@@ -122,7 +122,7 @@ public:
             return;
 
         if (canceled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancelation.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
 
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
