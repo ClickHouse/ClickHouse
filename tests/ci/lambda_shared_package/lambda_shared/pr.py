@@ -86,9 +86,7 @@ LABEL_CATEGORIES = {
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
-    "pr-critical-bugfix": [
-        "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"
-    ],
+    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
         "Build Improvement",
