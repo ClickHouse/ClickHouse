@@ -236,8 +236,7 @@ public:
         if (done)
             return;
 
-        data_out->next();
-        data_out_compressed->next();
+        data_out->finalize();
         data_out_compressed->finalize();
 
         /// Save the new indices.
@@ -497,8 +496,7 @@ void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writi
     for (size_t i = start; i != num_indices; ++i)
         indices.blocks[i].write(*index_out);
 
-    index_out->next();
-    index_out_compressed->next();
+    index_out->finalize();
     index_out_compressed->finalize();
 
     num_indices_saved = num_indices;

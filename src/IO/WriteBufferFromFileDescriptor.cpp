@@ -105,7 +105,8 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    finalize();
+    if (!canceled)
+        finalize();
 }
 
 void WriteBufferFromFileDescriptor::finalizeImpl()

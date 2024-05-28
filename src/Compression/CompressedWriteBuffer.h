@@ -21,8 +21,6 @@ public:
         CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    ~CompressedWriteBuffer() override;
-
     /// The amount of compressed data
     size_t getCompressedBytes()
     {
