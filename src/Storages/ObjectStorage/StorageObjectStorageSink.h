@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "StorageObjectStorageSink"; }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
     void onCancel() override;
 

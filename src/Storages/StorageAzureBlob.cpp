@@ -1,4 +1,4 @@
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Formats/FormatFactory.h>
