@@ -190,8 +190,13 @@
     \
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
+    M(PrimaryKeyNotUsed, "Check if primary key is used in this query.") \
+    M(TotalParts, "Total number of data parts in a MergeTree table.") \
+    M(PartitionParts, "Number of data parts selected by partition in a MergeTree table.") \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
+    M(TotalMarks, "Total number of marks (index granules) in a MergeTree table.") \
+    M(PrimaryKeyMarks, "Number of marks (index granules) selected by primary key from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \

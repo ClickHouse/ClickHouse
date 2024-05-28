@@ -117,8 +117,13 @@ bool restorePrewhereInputs(PrewhereInfo & info, const NameSet & inputs)
 
 namespace ProfileEvents
 {
+    extern const Event PrimaryKeyNotUsed;
+    extern const Event TotalParts;
+    extern const Event PartitionParts;
     extern const Event SelectedParts;
     extern const Event SelectedRanges;
+    extern const Event TotalMarks;
+    extern const Event PrimaryKeyMarks;
     extern const Event SelectedMarks;
 }
 
@@ -1617,11 +1622,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
-    if (settings.force_primary_key && indexes->key_condition.alwaysUnknownOrTrue())
+    if (indexes->key_condition.alwaysUnknownOrTrue())
     {
-        throw Exception(ErrorCodes::INDEX_NOT_USED,
-            "Primary key ({}) is not used and setting 'force_primary_key' is set",
-            fmt::join(primary_key_column_names, ", "));
+        ProfileEvents::increment(ProfileEvents::PrimaryKeyNotUsed, 1);
+        if (settings.force_primary_key)
+        {
+            throw Exception(ErrorCodes::INDEX_NOT_USED,
+                "Primary key ({}) is not used and setting 'force_primary_key' is set",
+                fmt::join(primary_key_column_names, ", "));
+        }
     }
 
     LOG_DEBUG(log, "Key condition: {}", indexes->key_condition.toString());
@@ -2002,8 +2011,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 Context::QualifiedProjectionName{.storage_id = data.getStorageID(), .projection_name = storage_snapshot->projection->name});
     }
 
+    ProfileEvents::increment(ProfileEvents::TotalParts, result.total_parts);
+    ProfileEvents::increment(ProfileEvents::PartitionParts, result.parts_before_pk);
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
+    ProfileEvents::increment(ProfileEvents::TotalMarks, result.total_marks_pk);
+    ProfileEvents::increment(ProfileEvents::PrimaryKeyMarks, result.selected_marks_pk);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);

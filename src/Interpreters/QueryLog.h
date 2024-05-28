@@ -67,6 +67,7 @@ struct QueryLogElement
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
+    std::set<String> query_columns_in_where;
     std::set<String> query_partitions;
     std::set<String> query_projections;
     std::set<String> query_views;

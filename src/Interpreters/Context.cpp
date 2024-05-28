@@ -1778,6 +1778,15 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
+void Context::addColumnInWhere(const String & column)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->columns_in_where.emplace(column);
+}
+
 Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
 {
     return query_factories_info;

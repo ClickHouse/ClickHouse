@@ -327,6 +327,7 @@ public:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
+            columns_in_where = rhs.columns_in_where;
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
@@ -347,6 +348,7 @@ public:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
+            std::swap(columns_in_where, rhs.columns_in_where);
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
@@ -357,6 +359,7 @@ public:
         std::set<std::string> databases TSA_GUARDED_BY(mutex){};
         std::set<std::string> tables TSA_GUARDED_BY(mutex){};
         std::set<std::string> columns TSA_GUARDED_BY(mutex){};
+        std::set<std::string> columns_in_where TSA_GUARDED_BY(mutex){};
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
@@ -710,6 +713,7 @@ public:
 
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
+    void addColumnInWhere(const String & column);
 
     struct QualifiedProjectionName
     {

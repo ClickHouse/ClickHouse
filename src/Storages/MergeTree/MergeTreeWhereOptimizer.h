@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Estimator.h>
@@ -43,7 +44,7 @@ public:
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
 
-    void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const;
+    void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context, const SelectQueryOptions & options) const;
 
     struct FilterActionsOptimizeResult
     {
@@ -100,6 +101,7 @@ private:
     struct WhereOptimizerContext
     {
         ContextPtr context;
+        SelectQueryOptions options;
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
@@ -125,7 +127,7 @@ private:
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
-    UInt64 getColumnsSize(const NameSet & columns) const;
+    UInt64 getColumnsSize(const NameSet & columns, const WhereOptimizerContext & where_optimizer_context) const;
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 

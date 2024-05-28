@@ -81,6 +81,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
         {"columns", array_low_cardinality_string, "Names of the columns present in the query."},
+        {"columns_in_where", array_low_cardinality_string, "Names of the columns present in the query where conditions."},
         {"partitions", array_low_cardinality_string, "Names of the partitions present in the query."},
         {"projections", array_low_cardinality_string, "Names of the projections used during the query execution."},
         {"views", array_low_cardinality_string, "Names of the (materialized or live) views present in the query."},
@@ -192,6 +193,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_columns_in_where = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -211,6 +213,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_databases, column_databases);
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
+        fill_column(query_columns_in_where, column_columns_in_where);
         fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);

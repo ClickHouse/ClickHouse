@@ -662,7 +662,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     supported_prewhere_columns,
                     log};
 
-                where_optimizer.optimize(current_info, context);
+                where_optimizer.optimize(current_info, context, options);
             }
         }
 

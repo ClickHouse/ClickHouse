@@ -76,7 +76,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     }
 }
 
-void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
+void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context, const SelectQueryOptions & options) const
 {
     auto & select = select_query_info.query->as<ASTSelectQuery &>();
     if (!select.where() || select.prewhere())
@@ -88,6 +88,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
 
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
+    where_optimizer_context.options = options;
     where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
@@ -258,7 +259,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool has_invalid_column = false;
         collectColumns(node, table_columns, cond.table_columns, has_invalid_column);
 
-        cond.columns_size = getColumnsSize(cond.table_columns);
+        cond.columns_size = getColumnsSize(cond.table_columns, where_optimizer_context);
 
         cond.viable =
             !has_invalid_column &&
@@ -420,13 +421,21 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
 }
 
 
-UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
+UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns, const WhereOptimizerContext & where_optimizer_context) const
 {
     UInt64 size = 0;
 
     for (const auto & column : columns)
+    {
         if (column_sizes.contains(column))
+        {
             size += column_sizes.at(column);
+            if (table_columns.contains(column) && !where_optimizer_context.options.is_internal)
+            {
+                where_optimizer_context.context->getQueryContext()->addColumnInWhere(column);
+            }
+        }
+    }
 
     return size;
 }
