@@ -499,7 +499,8 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
 
         row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
             getPort().getHeader(),
-            std::move(properties),
+            arrow_properties,
+            reader_properties,
             arrow_file,
             format_settings,
             row_group_batch.row_groups_idxs);
