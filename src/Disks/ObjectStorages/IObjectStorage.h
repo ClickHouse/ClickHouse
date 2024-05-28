@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class ReadBufferFromFileBase;
@@ -47,21 +48,28 @@ using ObjectAttributes = std::map<std::string, std::string>;
 struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
-    std::optional<Poco::Timestamp> last_modified;
-    std::optional<ObjectAttributes> attributes;
+    Poco::Timestamp last_modified;
+    ObjectAttributes attributes;
 };
 
 struct RelativePathWithMetadata
 {
     String relative_path;
-    ObjectMetadata metadata;
+    std::optional<ObjectMetadata> metadata;
 
     RelativePathWithMetadata() = default;
 
-    RelativePathWithMetadata(String relative_path_, ObjectMetadata metadata_)
+    explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
+
+    virtual ~RelativePathWithMetadata() = default;
+
+    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    virtual std::string getPath() const { return relative_path; }
+    virtual bool isArchive() const { return false; }
+    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
 };
 
 struct ObjectKeyWithMetadata
@@ -77,7 +85,8 @@ struct ObjectKeyWithMetadata
     {}
 };
 
-using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
+using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
+using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
 class IObjectStorageIterator;
@@ -111,9 +120,9 @@ public:
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
-    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const;
+    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
-    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
@@ -190,11 +199,15 @@ public:
     virtual void startup() = 0;
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
+    struct ApplyNewSettingsOptions
+    {
+        bool allow_client_change = true;
+    };
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration &,
+        const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /*config_prefix*/,
-        ContextPtr)
-    {}
+        ContextPtr /* context */,
+        const ApplyNewSettingsOptions & /* options */) {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.

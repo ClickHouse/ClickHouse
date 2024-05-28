@@ -135,7 +135,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     /// If the key is not found, skip the value.
                     NullOutput sink;
-                    readEscapedStringInto(sink, *in);
+                    readEscapedStringInto<NullOutput,false>(sink, *in);
                 }
                 else
                 {

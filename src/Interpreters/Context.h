@@ -689,6 +689,9 @@ public:
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
+    void updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
+    void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
@@ -862,6 +865,8 @@ public:
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
     void setMaxTableNumToWarn(size_t max_table_to_warn);
+    void setMaxViewNumToWarn(size_t max_view_to_warn);
+    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     /// The port that the server listens for executing SQL queries.
@@ -1249,7 +1254,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOURingReader() const;
+    IOUringReader & getIOUringReader() const;
 #endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
@@ -1391,11 +1396,6 @@ struct HTTPContext : public IHTTPContext
     uint64_t getMaxFieldValueSize() const override
     {
         return context->getSettingsRef().http_max_field_value_size;
-    }
-
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getSettingsRef().http_max_chunk_size;
     }
 
     Poco::Timespan getReceiveTimeout() const override

@@ -48,3 +48,5 @@ WITH id AS value SELECT value FROM test_table;
 SET prefer_column_name_to_alias = 0;
 
 DROP TABLE test_table;
+
+WITH path('clickhouse.com/a/b/c') AS x SELECT x AS path;

@@ -2,7 +2,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
@@ -398,7 +398,8 @@ void SerializationMap::enumerateStreams(
     auto next_data = SubstreamData(nested)
         .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
         .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+        .withSerializationInfo(data.serialization_info)
+        .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
 }
@@ -420,9 +421,10 @@ void SerializationMap::serializeBinaryBulkStateSuffix(
 
 void SerializationMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
-    nested->deserializeBinaryBulkStatePrefix(settings, state);
+    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
 }
 
 
