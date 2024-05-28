@@ -2,6 +2,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include "Common/Exception.h"
 #include <Common/TerminalSize.h>
 #include "ICommand.h"
 
@@ -15,9 +16,8 @@ public:
     {
         command_name = "read";
         description = "Read a file from `FROM_PATH` to `TO_PATH`";
-        options_description.add_options()(
-            "path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (mandatory, positional)")(
-            "path-to", po::value<String>(), "file to which we are writing");
+        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading (mandatory, positional)")(
+            "path-to", po::value<String>(), "file to which we are writing, , defaults to `stdout`");
         positional_options_description.add("path-from", 1);
     }
 
@@ -25,26 +25,24 @@ public:
     {
         auto disk = client.getCurrentDiskWithPath();
         String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
+        std::cerr << path_from << std::endl;
         std::optional<String> path_to = getValueFromCommandLineOptionsWithOptional<String>(options, "path-to");
-        if (path_to.has_value())
-        {
-            path_to = std::optional{disk.getRelativeFromRoot(path_to.value())};
-        }
 
         auto in = disk.getDisk()->readFile(path_from);
+        std::unique_ptr<WriteBufferFromFileBase> out = {};
         if (path_to.has_value())
         {
             String relative_path_to = disk.getRelativeFromRoot(path_to.value());
-
-            auto out = disk.getDisk()->writeFile(relative_path_to);
+            out = disk.getDisk()->writeFile(relative_path_to);
             copyData(*in, *out);
-            out->finalize();
         }
         else
         {
-            std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
             copyData(*in, *out);
+            out->write('\n');
         }
+        out->finalize();
     }
 };
 

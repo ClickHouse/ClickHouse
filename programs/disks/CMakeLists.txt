@@ -1,18 +1,18 @@
 set (CLICKHOUSE_DISKS_SOURCES
-    ICommand.cpp
-    DisksClient.cpp
     DisksApp.cpp
-    CommandCopy.cpp
-    CommandListDisks.cpp
-    CommandList.cpp
-    CommandLink.cpp
+    DisksClient.cpp
+    ICommand.cpp
     CommandChangeDirectory.cpp
+    CommandCopy.cpp
+    CommandLink.cpp
+    CommandList.cpp
+    CommandListDisks.cpp
     CommandMkDir.cpp
     CommandMove.cpp
     CommandRead.cpp
     CommandRemove.cpp
-    CommandWrite.cpp
-    CommandSwitchDisk.cpp)
+    CommandSwitchDisk.cpp
+    CommandWrite.cpp)
 
 if (CLICKHOUSE_CLOUD)
   set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)

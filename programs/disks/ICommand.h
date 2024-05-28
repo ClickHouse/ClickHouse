@@ -58,7 +58,7 @@ protected:
         }
         catch (...)
         {
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Argument {} has wrong type and can't be parsed", name);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' has wrong type and can't be parsed", name);
         }
     }
 
@@ -71,7 +71,7 @@ protected:
         }
         else
         {
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument {} is missing", name);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
         }
     }
 

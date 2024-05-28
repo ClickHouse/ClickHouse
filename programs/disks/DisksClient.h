@@ -252,7 +252,7 @@ public:
 
     DiskPtr getDisk(const String & disk) const { return getDiskWithPath(disk).getDisk(); }
 
-    bool switchToDisk(const String & disk_, const std::optional<String> & path_)
+    void switchToDisk(const String & disk_, const std::optional<String> & path_)
     {
         if (disks.contains(disk_))
         {
@@ -261,7 +261,6 @@ public:
                 disks.at(disk_).setPath(path_.value());
             }
             current_disk = disk_;
-            return true;
         }
         else
         {

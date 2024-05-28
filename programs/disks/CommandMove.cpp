@@ -25,9 +25,9 @@ public:
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
         if (disk.getDisk()->isFile(path_from))
-            disk.getDisk()->moveFile(path_from, path_from);
+            disk.getDisk()->moveFile(path_from, path_to);
         else
-            disk.getDisk()->moveDirectory(path_from, path_from);
+            disk.getDisk()->moveDirectory(path_from, path_to);
     }
 };
 

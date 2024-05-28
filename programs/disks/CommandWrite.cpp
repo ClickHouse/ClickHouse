@@ -21,15 +21,12 @@ public:
         positional_options_description.add("path-to", 1);
     }
 
+
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
         auto disk = client.getCurrentDiskWithPath();
 
         std::optional<String> path_from = getValueFromCommandLineOptionsWithOptional<String>(options, "path-from");
-        if (path_from.has_value())
-        {
-            path_from = std::optional{disk.getRelativeFromRoot(path_from.value())};
-        }
 
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 

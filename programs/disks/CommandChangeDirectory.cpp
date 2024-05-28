@@ -14,7 +14,7 @@ public:
     {
         command_name = "cd";
         description = "Change directory";
-        options_description.add_options()("path", po::value<String>(), "the path of listing  (mandatory, positional)")(
+        options_description.add_options()("path", po::value<String>(), "the path we want to get to (mandatory, positional)")(
             "disk", po::value<String>(), "A disk where the path is changed");
         positional_options_description.add("path", 1);
     }

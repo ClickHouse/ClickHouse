@@ -30,11 +30,7 @@ public:
         String disk = getValueFromCommandLineOptions<String>(options, "disk");
         std::optional<String> path = getValueFromCommandLineOptionsWithOptional<String>(options, "path");
 
-        if (!client.switchToDisk(disk, path))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Unable to switch to disk: {}, path: {}", disk, path.has_value() ? path.value() : "NO PATH");
-        }
+        client.switchToDisk(disk, path);
     }
 };
 
