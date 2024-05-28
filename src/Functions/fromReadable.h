@@ -3,13 +3,14 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
+#include <Common/Exception.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include "Common/Exception.h"
-#include "DataTypes/DataTypeNullable.h"
 #include <string_view>
 
 namespace DB
@@ -20,6 +21,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 enum class ErrorHandling : uint8_t
@@ -60,6 +62,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+
+        const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        if (!col_str)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first ('str') argument of function {}. Must be string.",
+                arguments[0].column->getName(),
+                getName());
+
         auto col_res = ColumnFloat64::create(input_rows_count);
 
         ColumnUInt8::MutablePtr col_null_map;
@@ -70,7 +81,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {   
-            std::string_view str = arguments[0].column->getDataAt(i).toView();
+            std::string_view str = col_str->getDataAt(i).toView();
             try
             {
                 auto num_bytes = parseReadableFormat(str);
