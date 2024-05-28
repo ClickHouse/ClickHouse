@@ -50,7 +50,7 @@ public:
             {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
-        DataTypePtr return_type = std::make_shared<DataTypeFloat64>();
+        DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
         if (error_handling == ErrorHandling::Null) {
             return std::make_shared<DataTypeNullable>(return_type);
         } else {
@@ -74,9 +74,9 @@ public:
             );
         }
         
-        std::unordered_map<std::string_view, Float64> scale_factors = Impl::getScaleFactors();
+        std::unordered_map<std::string_view, size_t> scale_factors = Impl::getScaleFactors();
 
-        auto col_res = ColumnFloat64::create(input_rows_count);
+        auto col_res = ColumnUInt64::create(input_rows_count);
 
         ColumnUInt8::MutablePtr col_null_map;
         if constexpr (error_handling == ErrorHandling::Null)
@@ -112,7 +112,7 @@ public:
 
 private:
 
-    Float64 parseReadableFormat(const std::unordered_map<std::string_view, Float64> & scale_factors, const std::string_view & str) const
+    UInt64 parseReadableFormat(const std::unordered_map<std::string_view, size_t> & scale_factors, const std::string_view & str) const
     {
         ReadBufferFromString buf(str);
         // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
@@ -135,6 +135,15 @@ private:
                 "Invalid expression for function {} - Unable to parse readable size numeric component (\"{}\")",
                 getName(),
                 str
+            );
+        }
+        else if (base < 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid expression for function {} - Negative sizes are not allowed (\"{}\")",
+                getName(),
+                base
             );
         }
 
@@ -162,7 +171,19 @@ private:
                 unit
             );
         }
-        return base * iter->second;
+        Float64 num_bytes_with_decimals = base * iter->second;
+        if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid expression for function {} - Result is too big for output type (\"{}\")",
+                getName(),
+                num_bytes_with_decimals
+            );
+        }
+        // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
+        // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
+        return static_cast<UInt64>(std::ceil(num_bytes_with_decimals));
     }
 };
 }

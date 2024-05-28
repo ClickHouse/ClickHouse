@@ -9,20 +9,20 @@ namespace
 {
 
 // ISO/IEC 80000-13 binary units
-const std::unordered_map<std::string_view, Float64> scale_factors =
+const std::unordered_map<std::string_view, size_t> scale_factors =
 {
-    {"b", 1.0},
-    {"kib", 1024.0},
-    {"mib", 1024.0 * 1024.0},
-    {"gib", 1024.0 * 1024.0 * 1024.0},
-    {"tib", 1024.0 * 1024.0 * 1024.0 * 1024.0},
-    {"pib", 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0},
-    {"eib", 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0},
+    {"b", 1L},
+    {"kib", 1024L},
+    {"mib", 1024L * 1024L},
+    {"gib", 1024L * 1024L * 1024L},
+    {"tib", 1024L * 1024L * 1024L * 1024L},
+    {"pib", 1024L * 1024L * 1024L * 1024L * 1024L},
+    {"eib", 1024L * 1024L * 1024L * 1024L * 1024L * 1024L},
 };
 
 struct Impl
 {
-    static const std::unordered_map<std::string_view, Float64> & getScaleFactors()
+    static const std::unordered_map<std::string_view, size_t> & getScaleFactors()
     {
         return scale_factors;
     }
