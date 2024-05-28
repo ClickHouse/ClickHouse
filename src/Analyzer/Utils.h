@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 namespace DB
 {
@@ -55,7 +56,12 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast,
+    const QueryTreeNodePtr & table_expression,
+    const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
+
+/// Add table expression modifiers to all table, table function and identifier nodes inside subquery
+void addTableExpressionModifiersToTablesInsideSubquery(const QueryTreeNodePtr & query_or_union_node, TableExpressionModifiers table_expression_modifiers);
 
 /** Extract all table nodes from the query tree.
   * If extract_table_function_nodes = true, then additionally extract all table functions nodes.

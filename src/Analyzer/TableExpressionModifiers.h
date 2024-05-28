@@ -82,6 +82,18 @@ public:
         sample_offset_ratio = value;
     }
 
+    void merge(const TableExpressionModifiers & other)
+    {
+        if (other.has_final)
+            has_final = true;
+
+        if (!sample_size_ratio && other.sample_size_ratio)
+            sample_size_ratio = other.sample_size_ratio;
+
+        if (!sample_offset_ratio && other.sample_offset_ratio)
+            sample_offset_ratio = other.sample_offset_ratio;
+    }
+
     /// Dump into buffer
     void dump(WriteBuffer & buffer) const;
 

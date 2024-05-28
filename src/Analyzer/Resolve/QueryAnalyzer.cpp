@@ -5709,12 +5709,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 if (resolved_identifier_query_node || resolved_identifier_union_node)
                 {
                     if (table_expression_modifiers.has_value())
-                    {
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "Table expression modifiers {} are not supported for subquery {}",
-                            table_expression_modifiers->formatForErrorMessage(),
-                            resolved_identifier->formatASTForErrorMessage());
-                    }
+                        addTableExpressionModifiersToTablesInsideSubquery(resolved_identifier, *table_expression_modifiers);
                 }
                 else if (auto * resolved_identifier_table_node = resolved_identifier->as<TableNode>())
                 {

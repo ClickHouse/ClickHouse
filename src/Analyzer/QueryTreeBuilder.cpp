@@ -837,29 +837,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 node->setOriginalAST(select_with_union_query);
 
                 if (table_expression_modifiers)
-                {
-                    table_expression_modifiers->setIsFromParentSubquery(true);
-
-                    auto table_or_table_function_nodes = extractAllTableReferences(node,
-                        true /*extract_table_function_nodes*/,
-                        true /*extract_identifier_nodes*/);
-
-                    for (auto & table_or_table_function_node : table_or_table_function_nodes)
-                    {
-                        auto * identifier_node = table_or_table_function_node->as<IdentifierNode>();
-                        auto * table_node = table_or_table_function_node->as<TableNode>();
-                        auto * table_function_node = table_or_table_function_node->as<TableFunctionNode>();
-
-                        if (identifier_node)
-                            identifier_node->setTableExpressionModifiers(*table_expression_modifiers);
-                        else if (table_node)
-                            table_node->setTableExpressionModifiers(*table_expression_modifiers);
-                        else if (table_function_node)
-                            table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
-                        else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table or table function node");
-                    }
-                }
+                    addTableExpressionModifiersToTablesInsideSubquery(node, *table_expression_modifiers);
 
                 table_expressions.push_back(std::move(node));
             }
