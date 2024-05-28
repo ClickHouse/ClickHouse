@@ -388,6 +388,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     chassert(cluster->getShardCount() == 1);
 
     std::vector<String> description;
+    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
+
     for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
         description.push_back(fmt::format("Replica: {}", pool->getHost()));
 

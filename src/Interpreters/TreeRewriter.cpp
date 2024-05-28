@@ -1188,6 +1188,33 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
     }
 
+    /// Check for dynamic subcolums in unknown required columns.
+    if (!unknown_required_source_columns.empty())
+    {
+        for (const NameAndTypePair & pair : source_columns_ordinary)
+        {
+            if (!pair.type->hasDynamicSubcolumns())
+                continue;
+
+            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+            {
+                auto [column_name, dynamic_subcolumn_name] = Nested::splitName(*it);
+
+                if (column_name == pair.name)
+                {
+                    if (auto dynamic_subcolumn_type = pair.type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                    {
+                        source_columns.emplace_back(*it, dynamic_subcolumn_type);
+                        it = unknown_required_source_columns.erase(it);
+                        continue;
+                    }
+                }
+
+                ++it;
+            }
+        }
+    }
+
     if (!unknown_required_source_columns.empty())
     {
         constexpr auto format_string = "Missing columns: {} while processing query: '{}', required columns:{}{}";
