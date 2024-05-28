@@ -428,8 +428,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         return nullptr;
 
     auto function_name = node_to_check->function->getName();
-    ActionsDAG::NodeRawConstPtrs temp_arguments;
-    const auto & arguments = getArguments(*node_to_check, result_dag, &temp_arguments);
+    ActionsDAG::NodeRawConstPtrs temp_ptrs_to_argument;
+    const auto & arguments = getArguments(*node_to_check, result_dag, &temp_ptrs_to_argument);
     size_t arguments_size = arguments.size();
 
     if (function_name == "not")

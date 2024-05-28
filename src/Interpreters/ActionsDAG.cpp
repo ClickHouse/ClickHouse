@@ -2894,6 +2894,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
                 FunctionOverloadResolverPtr function_overload_resolver;
 
+                String result_name;
                 if (node->function_base->getName() == "indexHint")
                 {
                     ActionsDAG::NodeRawConstPtrs children;
@@ -2914,6 +2915,11 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
                             function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function_clone));
+                            /// Keep the unique name like "indexHint(foo)" instead of replacing it
+                            /// with "indexHint()". Otherwise index analysis (which does look at
+                            /// indexHint arguments that we're hiding here) will get confused by the
+                            /// multiple substantially different nodes with the same result name.
+                            result_name = node->result_name;
                         }
                     }
                 }
@@ -2928,7 +2934,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     function_base,
                     std::move(function_children),
                     std::move(arguments),
-                    {},
+                    result_name,
                     node->result_type,
                     all_const);
                 break;
