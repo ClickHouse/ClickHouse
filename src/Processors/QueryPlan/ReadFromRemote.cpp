@@ -390,8 +390,18 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::vector<String> description;
     description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
 
-    for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
-        description.push_back(fmt::format("Replica: {}", pool->getHost()));
+    bool first_local = false;
+    for (const auto & addr : cluster->getShardsAddresses().front())
+    {
+        /// skip first local
+        if (exclude_local_replica && addr.is_local && !first_local)
+        {
+            first_local = true;
+            continue;
+        }
+
+        description.push_back(fmt::format("Replica: {}", addr.host_name));
+    }
 
     setStepDescription(boost::algorithm::join(description, ", "));
 }
@@ -414,9 +424,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
     const auto & shard = cluster->getShardsInfo().at(0);
     size_t all_replicas_count = current_settings.max_parallel_replicas;
-    if (exclude_local_replica)
-        --all_replicas_count;
-
     if (all_replicas_count > shard.getAllNodeCount())
     {
         LOG_INFO(
@@ -427,6 +434,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             shard.getAllNodeCount());
         all_replicas_count = shard.getAllNodeCount();
     }
+    if (exclude_local_replica)
+        --all_replicas_count;
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
     if (all_replicas_count < shard.getAllNodeCount())

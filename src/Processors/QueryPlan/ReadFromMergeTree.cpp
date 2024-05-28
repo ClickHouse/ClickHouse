@@ -273,8 +273,9 @@ ReadFromMergeTree::ReadFromMergeTree(
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading_,
-        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_)
+    std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
+    std::optional<MergeTreeReadTaskCallback> read_task_callback_,
+    std::optional<size_t> number_of_current_replica_)
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
         query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
@@ -295,18 +296,12 @@ ReadFromMergeTree::ReadFromMergeTree(
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
     , enable_remove_parts_from_snapshot_optimization(query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
+    , number_of_current_replica(number_of_current_replica_)
 {
     if (is_parallel_reading_from_replicas)
     {
-        if (all_ranges_callback_)
-            all_ranges_callback = all_ranges_callback_.value();
-        else
-            all_ranges_callback = context->getMergeTreeAllRangesCallback();
-
-        if (read_task_callback_)
-            read_task_callback = read_task_callback_.value();
-        else
-            read_task_callback = context->getMergeTreeReadTaskCallback();
+        all_ranges_callback = all_ranges_callback_.value_or(context->getMergeTreeAllRangesCallback());
+        read_task_callback = read_task_callback_.value_or(context->getMergeTreeReadTaskCallback());
     }
 
     const auto & settings = context->getSettingsRef();
@@ -344,7 +339,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     const ReadFromMergeTree * analyzed_merge_tree,
     bool enable_parallel_reading_,
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
-    std::optional<MergeTreeReadTaskCallback> read_task_callback_)
+    std::optional<MergeTreeReadTaskCallback> read_task_callback_,
+    std::optional<size_t> number_of_current_replica_)
 {
     return std::make_unique<ReadFromMergeTree>(
         prepared_parts,
@@ -361,7 +357,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         analyzed_merge_tree->analyzed_result_ptr,
         enable_parallel_reading_,
         all_ranges_callback_,
-        read_task_callback_);
+        read_task_callback_,
+        number_of_current_replica_);
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings)
@@ -372,9 +369,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     {
         .all_callback = all_ranges_callback.value(),
         .callback = read_task_callback.value(),
-        .count_participating_replicas = client_info.count_participating_replicas,
-        .number_of_current_replica = client_info.number_of_current_replica,
-        .columns_to_read = required_columns,
+        .number_of_current_replica = number_of_current_replica.value_or(client_info.number_of_current_replica),
     };
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
@@ -545,9 +540,7 @@ Pipe ReadFromMergeTree::readInOrder(
         {
             .all_callback = all_ranges_callback.value(),
             .callback = read_task_callback.value(),
-            .count_participating_replicas = client_info.count_participating_replicas,
             .number_of_current_replica = client_info.number_of_current_replica,
-            .columns_to_read = required_columns,
         };
 
         const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;

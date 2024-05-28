@@ -121,13 +121,15 @@ public:
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt);
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
+        std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         const ReadFromMergeTree * analyzed_merge_tree,
         bool enable_parallel_reading_,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_);
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_,
+        std::optional<size_t> number_of_current_replica_);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -192,6 +194,7 @@ public:
 
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
@@ -286,8 +289,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
-
     AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
@@ -296,6 +297,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
+    std::optional<size_t> number_of_current_replica;
 
     friend class ReadFromMergeTreeCoordinated;
 };
