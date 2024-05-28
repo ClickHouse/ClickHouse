@@ -1,13 +1,37 @@
 (0.1,0.2)
 SELECT CAST(\'(0.1, 0.2)\', \'Tuple(Decimal(75, 70), Decimal(75, 70))\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST((\'0.1\', \'0.2\'), \'Tuple(Decimal(75, 70), Decimal(75, 70))\') AS `CAST(\'(0.1, 0.2)\', \'Tuple(Decimal(75, 70), Decimal(75, 70))\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 0.1
 SELECT CAST(\'0.1\', \'Decimal(4, 4)\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST(\'0.1\', \'Decimal(4, 4)\') AS `CAST(\'0.1\', \'Decimal(4, 4)\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 [1,2,3]
 SELECT CAST(\'[1, 2, 3]\', \'Array(Int32)\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST([1, 2, 3], \'Array(Int32)\') AS `CAST(\'[1, 2, 3]\', \'Array(Int32)\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 [1,2]
 SELECT CAST([CAST(\'1\', \'UInt32\'), CAST(\'2\', \'UInt32\')], \'Array(UInt64)\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST([1, 2], \'Array(UInt64)\') AS `CAST([CAST(\'1\', \'UInt32\'), CAST(\'2\', \'UInt32\')], \'Array(UInt64)\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 [[1,2],[3]]
 SELECT CAST([CAST(\'[1, 2]\', \'Array(UInt32)\'), [3]], \'Array(Array(UInt64))\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST([[1, 2], [3]], \'Array(Array(UInt64))\') AS `CAST([CAST(\'[1, 2]\', \'Array(UInt32)\'), [3]], \'Array(Array(UInt64))\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 [[1,2],[3]]
 SELECT CAST([CAST([CAST(\'1\', \'UInt16\'), CAST(\'2\', \'UInt16\')], \'Array(UInt32)\'), [3]], \'Array(Array(UInt64))\')
+SETTINGS allow_experimental_analyzer = 0
+SELECT _CAST([[1, 2], [3]], \'Array(Array(UInt64))\') AS `CAST([CAST([CAST(\'1\', \'UInt16\'), CAST(\'2\', \'UInt16\')], \'Array(UInt32)\'), [3]], \'Array(Array(UInt64))\')`
+FROM system.one AS __table1
+SETTINGS allow_experimental_analyzer = 1
 [(1,'a'),(3,'b')]	Nested(u UInt8, s String)
