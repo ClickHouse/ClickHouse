@@ -64,6 +64,10 @@ bool isDeterministicConstant(const ConstantNode & root)
         const auto * node = nodes.top();
         nodes.pop();
 
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            /// Allow scalar subqueries and IN; we send them to all the shards.
+            continue;
+
         const auto * constant_node = node->as<ConstantNode>();
         const auto * function_node = node->as<FunctionNode>();
         if (constant_node)
