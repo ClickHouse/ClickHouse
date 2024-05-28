@@ -195,6 +195,18 @@ class _ServerRuntime:
             )
             request_handler.write_error(429, data)
 
+    class TotalQpsLimitExceededAction:
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>TotalQpsLimitExceeded</Code>"
+                "<Message>Please reduce your request rate.</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(429, data)
+
     class RedirectAction:
         def __init__(self, host="localhost", port=1):
             self.dst_host = _and_then(host, str)
@@ -267,6 +279,10 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.SlowDownAction(*self.action_args)
             elif self.action == "qps_limit_exceeded":
                 self.error_handler = _ServerRuntime.QpsLimitExceededAction(
+                    *self.action_args
+                )
+            elif self.action == "total_qps_limit_exceeded":
+                self.error_handler = _ServerRuntime.TotalQpsLimitExceededAction(
                     *self.action_args
                 )
             else:
