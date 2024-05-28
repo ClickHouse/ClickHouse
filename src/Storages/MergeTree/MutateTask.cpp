@@ -1282,8 +1282,6 @@ private:
 
 void PartMergerWriter::prepare()
 {
-    projection_squash_plannings.reserve(ctx->projections_to_build.size());
-    projection_squashes.reserve(ctx->projections_to_build.size());
     const auto & settings = ctx->context->getSettingsRef();
 
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
@@ -1327,8 +1325,9 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             {
                 Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
                 ColumnsWithTypeAndName cols;
-                for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-                    cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+                if (projection_chunk.hasColumns())
+                    for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
+                        cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
@@ -1354,8 +1353,9 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
             ColumnsWithTypeAndName cols;
-            for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-                cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+            if (projection_chunk.hasColumns())
+                for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
+                    cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
 
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
