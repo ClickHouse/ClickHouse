@@ -91,7 +91,7 @@ public:
             );
         }
 
-        std::unordered_map<std::string_view, size_t> scale_factors = Impl::getScaleFactors();
+        const std::unordered_map<std::string_view, size_t> & scale_factors = Impl::getScaleFactors();
 
         auto col_res = ColumnUInt64::create(input_rows_count);
 
