@@ -176,6 +176,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
+
     initSkipIndices();
     initStatistics();
 }

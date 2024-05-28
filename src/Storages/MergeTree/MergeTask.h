@@ -167,17 +167,13 @@ private:
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
-        Names gathering_column_names{};
-        Names merging_column_names{};
         NamesAndTypesList storage_columns{};
-        Names all_column_names{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
-        size_t gathering_column_names_size{0};
 
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
@@ -238,7 +234,6 @@ private:
 
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
-        size_t column_num_for_vertical_merge{0};
         bool need_sync{false};
     };
 
@@ -292,7 +287,6 @@ private:
         CompressionCodecPtr compression_codec;
         TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
-        size_t column_num_for_vertical_merge{0};
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
@@ -422,7 +416,7 @@ private:
         return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
     }
 
-    static void addStorageColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };
 
 /// FIXME
