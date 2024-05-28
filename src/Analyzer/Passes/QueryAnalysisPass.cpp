@@ -607,6 +607,10 @@ struct ScopeAliases
     std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
     std::vector<QueryTreeNodePtr> cloned_nodes_with_duplicated_aliases;
 
+    /// Names which are aliases from ARRAY JOIN.
+    /// This is needed to properly qualify columns from matchers and avoid name collision.
+    std::unordered_set<std::string> array_join_aliases;
+
     std::unordered_map<std::string, QueryTreeNodePtr> & getAliasMap(IdentifierLookupContext lookup_context)
     {
         switch (lookup_context)
@@ -1526,7 +1530,7 @@ private:
 
     ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
 
-    ProjectionNames resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
+    ProjectionNames resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias = false);
 
     ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
@@ -2858,7 +2862,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
 
 bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr || scope.aliases.array_join_aliases.contains(identifier_lookup.identifier.front());
 }
 
 /** Resolve identifier from scope aliases.
@@ -3889,12 +3893,39 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const Identifi
     {
         auto & array_join_column_expression_typed = array_join_column_expression->as<ColumnNode &>();
 
-        if (array_join_column_expression_typed.getAlias() == identifier_lookup.identifier.getFullName())
+        IdentifierView identifier_view(identifier_lookup.identifier);
+
+        if (identifier_view.isCompound() && from_array_join_node.hasAlias() && identifier_view.front() == from_array_join_node.getAlias())
+            identifier_view.popFirst();
+
+        const auto & alias_or_name = array_join_column_expression_typed.hasAlias()
+            ? array_join_column_expression_typed.getAlias()
+            : array_join_column_expression_typed.getColumnName();
+
+        if (identifier_view.front() == alias_or_name)
+            identifier_view.popFirst();
+        else if (identifier_view.getFullName() == alias_or_name)
+            identifier_view.popFirst(identifier_view.getPartsSize()); /// Clear
+        else
+            continue;
+
+        if (identifier_view.empty())
         {
             auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
                 array_join_column_expression_typed.getColumnSource());
             return array_join_column;
         }
+
+        auto compound_expr = tryResolveIdentifierFromCompoundExpression(
+            identifier_lookup.identifier,
+            identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize() /*identifier_bind_size*/,
+            array_join_column_expression,
+            {} /* compound_expression_source */,
+            scope,
+            true /* can_be_not_found */);
+
+        if (compound_expr)
+            return compound_expr;
     }
 
     if (!resolved_identifier)
@@ -6284,7 +6315,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
   *
   * 4. If node has alias, update its value in scope alias map. Deregister alias from expression_aliases_in_resolve_process.
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias)
 {
     checkStackSize();
 
@@ -6334,7 +6365,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
       * To support both (SELECT 1) AS expression in projection and (SELECT 1) as subquery in IN, do not use
       * alias table because in alias table subquery could be evaluated as scalar.
       */
-    bool use_alias_table = true;
+    bool use_alias_table = !ignore_alias;
     if (is_duplicated_alias || (allow_table_expression && isSubqueryNodeType(node->getNodeType())))
         use_alias_table = false;
 
@@ -6634,7 +6665,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
     if (is_duplicated_alias)
         scope.non_cached_identifier_lookups_during_expression_resolve.erase({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
 
-    resolved_expressions.emplace(node, result_projection_names);
+    if (!ignore_alias)
+        resolved_expressions.emplace(node, result_projection_names);
 
     scope.popExpressionNode();
     bool expression_was_root = scope.expressions_in_resolve_process_stack.empty();
@@ -7569,22 +7601,25 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
-        if (!array_join_expression_alias.empty() && scope.aliases.alias_name_to_expression_node->contains(array_join_expression_alias))
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "ARRAY JOIN expression {} with duplicate alias {}. In scope {}",
-                array_join_expression->formatASTForErrorMessage(),
-                array_join_expression_alias,
-                scope.scope_node->formatASTForErrorMessage());
 
-        /// Add array join expression into scope
-        expressions_visitor.visit(array_join_expression);
+        for (const auto & elem : array_join_nodes)
+        {
+            if (elem->hasAlias())
+                scope.aliases.array_join_aliases.insert(elem->getAlias());
+
+            for (auto & child : elem->getChildren())
+            {
+                if (child)
+                    expressions_visitor.visit(child);
+            }
+        }
 
         std::string identifier_full_name;
 
         if (auto * identifier_node = array_join_expression->as<IdentifierNode>())
             identifier_full_name = identifier_node->getIdentifier().getFullName();
 
-        resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*ignore_alias*/);
 
         auto process_array_join_expression = [&](QueryTreeNodePtr & expression)
         {
@@ -7651,27 +7686,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         }
     }
 
-    /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
-      * during resolution of ARRAY JOIN expression list we must use column type before ARRAY JOIN.
-      *
-      * Example: SELECT id, value_element FROM test_table ARRAY JOIN [[1,2,3]] AS value_element, value_element AS value
-      * It is expected that `value_element AS value` expression inside ARRAY JOIN expression list will be
-      * resolved as `value_element` expression with type before ARRAY JOIN.
-      * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
-      * with type after ARRAY JOIN.
-      */
     array_join_nodes = std::move(array_join_column_expressions);
-    for (auto & array_join_column_expression : array_join_nodes)
-    {
-        auto it = scope.aliases.alias_name_to_expression_node->find(array_join_column_expression->getAlias());
-        if (it != scope.aliases.alias_name_to_expression_node->end())
-        {
-            auto & array_join_column_expression_typed = array_join_column_expression->as<ColumnNode &>();
-            auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                array_join_column_expression_typed.getColumnSource());
-            it->second = std::move(array_join_column);
-        }
-    }
 }
 
 void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope)
