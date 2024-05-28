@@ -129,7 +129,7 @@ private:
 
     ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-    static String toString(ReadType type) { return String(magic_enum::enum_name(type)); }
+    static String toString(ReadType type);
 
     size_t first_offset = 0;
     String nextimpl_step_log_info;
