@@ -5,10 +5,10 @@ sidebar_label: JSON
 ---
 
 There are two sets of functions to parse JSON:
-   - [`simpleJSON*` (`visitParam*`)](#simplejsonhas) which is made for parsing a limited subset of JSON extremely fast.
-   - [`JSONExtract*`](#isvalidjson) which is made for parsing ordinary JSON.
+   - [`simpleJSON*` (`visitParam*`)](#simplejson--visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
+   - [`JSONExtract*`](#jsonextract-functions) which is made for parsing ordinary JSON.
 
-# simpleJSON / visitParam functions
+## simpleJSON / visitParam functions
 
 ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be. They try to do as little as possible to get the job done as quickly as possible.
 
@@ -19,7 +19,7 @@ The following assumptions are made:
 3.  Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
 4.  The JSON does not have space characters outside of string literals.
 
-## simpleJSONHas
+### simpleJSONHas
 
 Checks whether there is a field named `field_name`.  The result is `UInt8`.
 
@@ -63,7 +63,7 @@ Result:
 1
 0
 ```
-## simpleJSONExtractUInt
+### simpleJSONExtractUInt
 
 Parses `UInt64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
 
@@ -114,7 +114,7 @@ Result:
 5
 ```
 
-## simpleJSONExtractInt
+### simpleJSONExtractInt
 
 Parses `Int64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
 
@@ -165,7 +165,7 @@ Result:
 5
 ```
 
-## simpleJSONExtractFloat
+### simpleJSONExtractFloat
 
 Parses `Float64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
 
@@ -216,7 +216,7 @@ Result:
 5
 ```
 
-## simpleJSONExtractBool
+### simpleJSONExtractBool
 
 Parses a true/false value from the value of the field named `field_name`. The result is `UInt8`.
 
@@ -267,7 +267,7 @@ Result:
 0
 ```
 
-## simpleJSONExtractRaw
+### simpleJSONExtractRaw
 
 Returns the value of the field named `field_name` as a `String`, including separators.
 
@@ -318,7 +318,7 @@ Result:
 {"def":[1,2,3]}
 ```
 
-## simpleJSONExtractString
+### simpleJSONExtractString
 
 Parses `String` in double quotes from the value of the field named `field_name`.
 
@@ -371,11 +371,11 @@ Result:
 
 ```
 
-# JSONExtract functions
+## JSONExtract functions
 
 The following functions are based on [simdjson](https://github.com/lemire/simdjson), and designed for more complex JSON parsing requirements.
 
-## isValidJSON
+### isValidJSON
 
 Checks that passed string is valid JSON.
 
@@ -392,7 +392,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas
+### JSONHas
 
 If the value exists in the JSON document, `1` will be returned. If the value does not exist, `0` will be returned.
 
@@ -435,7 +435,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength
+### JSONLength
 
 Return the length of a JSON array or a JSON object. If the value does not exist or has the wrong type, `0` will be returned.
 
@@ -466,7 +466,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType
+### JSONType
 
 Return the type of a JSON value. If the value does not exist, `Null` will be returned.
 
@@ -498,7 +498,7 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt
+### JSONExtractUInt
 
 Parses JSON and extracts a value of UInt type.
 
@@ -538,7 +538,7 @@ Result:
 └─────┴───────────────┘
 ```
 
-## JSONExtractInt
+### JSONExtractInt
 
 Parses JSON and extracts a value of Int type.
 
@@ -578,7 +578,7 @@ Result:
 └─────┴───────────────┘
 ```
 
-## JSONExtractFloat
+### JSONExtractFloat
 
 Parses JSON and extracts a value of Int type.
 
@@ -618,7 +618,7 @@ Result:
 └─────┴───────────────┘
 ```
 
-## JSONExtractBool
+### JSONExtractBool
 
 Parses JSON and extracts a boolean value. If the value does not exist or has a wrong type, `0` will be returned.
 
@@ -658,7 +658,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## JSONExtractString
+### JSONExtractString
 
 Parses JSON and extracts a string. This function is similar to [`visitParamExtractString`](#simplejsonextractstring) functions. If the value does not exist or has a wrong type, an empty string will be returned.
 
@@ -692,7 +692,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract
+### JSONExtract
 
 Parses JSON and extracts a value of the given ClickHouse data type. This function is a generalized version of the previous `JSONExtract<type>` functions. Meaning:
 
@@ -733,7 +733,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues
+### JSONExtractKeysAndValues
 
 Parses key-value pairs from JSON where the values are of the given ClickHouse data type.
 
@@ -764,7 +764,7 @@ JSONExtractKeysAndValues(json [, indices_or_keys...], value_type)
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractKeys
+### JSONExtractKeys
 
 Parses a JSON string and extracts the keys.
 
@@ -800,7 +800,7 @@ text
 └────────────────────────────────────────────────────────────┘
 ```
 
-## JSONExtractRaw
+### JSONExtractRaw
 
 Returns part of the JSON as an unparsed string. If the part does not exist or has the wrong type, an empty string will be returned.
 
@@ -830,7 +830,7 @@ JSONExtractRaw(json [, indices_or_keys]...)
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw
+### JSONExtractArrayRaw
 
 Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn’t array, an empty array will be returned.
 
@@ -860,7 +860,7 @@ JSONExtractArrayRaw(json [, indices_or_keys...])
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"'];
 ```
 
-## JSONExtractKeysAndValuesRaw
+### JSONExtractKeysAndValuesRaw
 
 Extracts raw data from a JSON object.
 
@@ -924,7 +924,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## JSON_EXISTS
+### JSON_EXISTS
 
 If the value exists in the JSON document, `1` will be returned. If the value does not exist, `0` will be returned.
 
@@ -956,7 +956,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
-## JSON_QUERY
+### JSON_QUERY
 
 Parses a JSON and extract a value as a JSON array or JSON object. If the value does not exist, an empty string will be returned.
 
@@ -999,7 +999,7 @@ Result:
 String
 ```
 
-## JSON_VALUE
+### JSON_VALUE
 
 Parses a JSON and extract a value as a JSON scalar. If the value does not exist, an empty string will be returned by default.
 
@@ -1049,7 +1049,7 @@ world
 String
 ```
 
-## toJSONString
+### toJSONString
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
 64-bit [integers](../data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
@@ -1095,7 +1095,7 @@ Result:
 - [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
 
 
-## JSONArrayLength
+### JSONArrayLength
 
 Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
 
@@ -1128,7 +1128,7 @@ SELECT
 ```
 
 
-## jsonMergePatch
+### jsonMergePatch
 
 Returns the merged JSON object string which is formed by merging multiple JSON objects.
 
