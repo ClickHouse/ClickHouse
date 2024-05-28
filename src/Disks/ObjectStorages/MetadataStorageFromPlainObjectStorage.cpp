@@ -105,7 +105,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::getDirectChildre
     std::unordered_set<std::string> duplicates_filter;
     for (const auto & elem : remote_paths)
     {
-        const auto & path = elem.relative_path;
+        const auto & path = elem->relative_path;
         chassert(path.find(storage_key) == 0);
         const auto child_pos = storage_key.size();
         /// string::npos is ok.
