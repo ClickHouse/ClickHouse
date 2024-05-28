@@ -84,10 +84,7 @@ def test_dynamic_query_handler():
             headers={"XXX": "xxx"},
         )
         assert 200 == res_custom_ct.status_code
-        assert (
-            "application/whatever; charset=cp1337"
-            == res_custom_ct.headers["content-type"]
-        )
+        assert "application/whatever; charset=cp1337" == res_custom_ct.headers["content-type"]
         assert "it works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Works"]
         assert "also works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
 
