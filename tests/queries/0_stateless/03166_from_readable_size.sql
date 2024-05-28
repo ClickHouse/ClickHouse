@@ -14,9 +14,6 @@ SELECT formatReadableSize(fromReadableSize('1 mIb'));
 SELECT fromReadableSize('1.00 KiB');    -- 1024
 SELECT fromReadableSize('3.00 KiB');    -- 3072
 
--- Should be able to parse negative numbers
-SELECT fromReadableSize('-1.00 KiB');    -- 1024
-
 -- Infix whitespace is ignored
 SELECT fromReadableSize('1    KiB');
 SELECT fromReadableSize('1KiB');
@@ -50,6 +47,10 @@ SELECT fromReadableSize(' 1 B'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_F
 SELECT fromReadableSize('1 B leftovers'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
 -- Invalid input - Decimal size unit is not accepted
 SELECT fromReadableSize('1 KB'); -- { serverError CANNOT_PARSE_TEXT }
+-- Invalid input - Negative sizes are not allowed
+SELECT fromReadableSize('-1 KiB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Input too large to fit in UInt64
+SELECT fromReadableSize('1000 EiB'); -- { serverError BAD_ARGUMENTS }
 
 
 -- OR NULL

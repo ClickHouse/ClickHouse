@@ -14,9 +14,6 @@ SELECT formatReadableDecimalSize(fromReadableDecimalSize('1 mb'));
 SELECT fromReadableDecimalSize('1.00 KB');    -- 1024
 SELECT fromReadableDecimalSize('3.00 KB');    -- 3072
 
--- Should be able to parse negative numbers
-SELECT fromReadableDecimalSize('-1.00 KB');    -- 1024
-
 -- Infix whitespace is ignored
 SELECT fromReadableDecimalSize('1    KB');
 SELECT fromReadableDecimalSize('1KB');
@@ -50,6 +47,10 @@ SELECT fromReadableDecimalSize(' 1 B'); -- { serverError CANNOT_PARSE_INPUT_ASSE
 SELECT fromReadableDecimalSize('1 B leftovers'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
 -- Invalid input - Binary size unit is not accepted
 SELECT fromReadableDecimalSize('1 KiB'); -- { serverError CANNOT_PARSE_TEXT }
+-- Invalid input - Negative sizes are not allowed
+SELECT fromReadableDecimalSize('-1 KB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Input too large to fit in UInt64
+SELECT fromReadableDecimalSize('1000 EB'); -- { serverError BAD_ARGUMENTS }
 
 
 -- OR NULL
