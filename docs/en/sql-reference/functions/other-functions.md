@@ -735,6 +735,8 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
+The opposite operations of this function are [fromReadableDecimalSize](#fromReadableDecimalSize), [fromReadableDecimalSizeOrZero](#fromReadableDecimalSizeOrZero), and [fromReadableDecimalSizeOrNull](#fromReadableDecimalSizeOrNull).
+
 **Syntax**
 
 ```sql
@@ -765,6 +767,8 @@ Result:
 ## formatReadableSize
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
+
+The opposite operations of this function are [fromReadableSize](#fromReadableSize), [fromReadableSizeOrZero](#fromReadableSizeOrZero), and [fromReadableSizeOrNull](#fromReadableSizeOrNull).
 
 **Syntax**
 
@@ -892,7 +896,10 @@ SELECT
 
 ## fromReadableSize
 
-Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes.
+Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it throws an exception.
+
+The opposite operation of this function is [formatReadableSize](#fromReadableSize).
 
 **Syntax**
 
@@ -927,7 +934,10 @@ SELECT
 
 ## fromReadableSizeOrNull
 
-Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes, or `NULL` if unable to parse the value.
+Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it returns `NULL`.
+
+The opposite operation of this function is [formatReadableSize](#fromReadableSize).
 
 **Syntax**
 
@@ -963,7 +973,10 @@ SELECT
 
 ## fromReadableSizeOrZero
 
-Given a string containing the readable representation of a byte size with ISO/IEC 80000-13 units this function returns the corresponding number of bytes, or 0 if unable to parse the value.
+Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it returns `0`.
+
+The opposite operation of this function is [formatReadableSize](#fromReadableSize).
 
 **Syntax**
 
@@ -999,7 +1012,10 @@ SELECT
 
 ## fromReadableDecimalSize
 
-Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes.
+Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it throws an exception.
+
+The opposite operation of this function is [formatReadableDecimalSize](#formatReadableDecimalSize).
 
 **Syntax**
 
@@ -1034,7 +1050,10 @@ SELECT
 
 ## fromReadableDecimalSizeOrNull
 
-Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes, or `NULL` if unable to parse the value.
+Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it returns `NULL`.
+
+The opposite operation of this function is [formatReadableDecimalSize](#formatReadableDecimalSize).
 
 **Syntax**
 
@@ -1070,7 +1089,10 @@ SELECT
 
 ## fromReadableDecimalSizeOrZero
 
-Given a string containing the readable representation of a byte size with decimal units this function returns the corresponding number of bytes, or 0 if unable to parse the value.
+Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes.
+If the function is unable to parse the input value, it returns `0`.
+
+The opposite operation of this function is [formatReadableDecimalSize](#formatReadableDecimalSize).
 
 **Syntax**
 
