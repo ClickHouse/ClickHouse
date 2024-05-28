@@ -479,6 +479,13 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         column_indices.push_back(index);
     }
 
+    int num_row_groups = metadata->num_row_groups();
+
+    if (num_row_groups == 0)
+    {
+        return;
+    }
+
     auto parquet_reader = parquet::ParquetFileReader::Open(
         arrow_file,
         parquet::default_reader_properties(),
@@ -489,7 +496,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         ? make_bloom_filter_condition(bf_reader, getPort().getHeader(), column_name_to_index, filter_dag, ctx)
         : nullptr;
 
-    int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
 
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
