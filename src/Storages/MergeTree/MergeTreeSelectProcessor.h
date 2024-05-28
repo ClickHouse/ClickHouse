@@ -41,7 +41,6 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
-        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
@@ -71,7 +70,6 @@ private:
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
-    const StorageSnapshotPtr storage_snapshot;
 
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;

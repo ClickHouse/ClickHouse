@@ -296,7 +296,7 @@ class FloatRoundingComputation : public BaseFloatRoundingComputation<T>
     using Base = BaseFloatRoundingComputation<T>;
 
 public:
-    static inline void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
+    static void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
     {
         auto val = Base::load(in);
 
