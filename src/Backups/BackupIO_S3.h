@@ -9,7 +9,7 @@
 #include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 namespace DB
 {

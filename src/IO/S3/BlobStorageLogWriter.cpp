@@ -1,4 +1,4 @@
-#include <Interpreters/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 #if USE_AWS_S3
 
@@ -20,6 +20,9 @@ void BlobStorageLogWriter::addEvent(
     const Aws::S3::S3Error * error,
     BlobStorageLogElement::EvenTime time_now)
 {
+/// Keeper standalone build doesn't build BlobStorageLog
+/// But BlobStorageLogWriterPtr is used in IO, so we need to provide a stub implementation
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     if (!log)
         return;
 
@@ -52,6 +55,7 @@ void BlobStorageLogWriter::addEvent(
     element.event_time = time_now;
 
     log->add(element);
+#endif
 }
 
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)

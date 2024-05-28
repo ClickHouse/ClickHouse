@@ -4,7 +4,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>

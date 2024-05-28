@@ -6,7 +6,7 @@
 
 #include <Storages/StorageS3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Interpreters/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
