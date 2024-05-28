@@ -5,8 +5,8 @@ sidebar_label: JSON
 ---
 
 There are two sets of functions to parse JSON:
-   - `simpleJSON*` (`visitParam*`) which is made for parsing a limited subset of JSON, but to do so extremely fast.
-   - `JSONExtract*` which is made for parsing normal JSON.
+   - [`simpleJSON*` (`visitParam*`)](#simplejsonhas) which is made for parsing a limited subset of JSON extremely fast.
+   - [`JSONExtract*`](#isvalidjson) which is made for parsing ordinary JSON.
 
 # simpleJSON / visitParam functions
 
@@ -33,8 +33,8 @@ Alias: `visitParamHas`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -77,8 +77,8 @@ Alias: `visitParamExtractUInt`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -128,8 +128,8 @@ Alias: `visitParamExtractInt`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -179,8 +179,8 @@ Alias: `visitParamExtractFloat`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -230,8 +230,8 @@ Alias: `visitParamExtractBool`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -281,8 +281,8 @@ Alias: `visitParamExtractRaw`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -332,8 +332,8 @@ Alias: `visitParamExtractString`.
 
 **Parameters**
 
-- `json`: The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -375,9 +375,15 @@ Result:
 
 The following functions are based on [simdjson](https://github.com/lemire/simdjson), and designed for more complex JSON parsing requirements.
 
-## isValidJSON(json)
+## isValidJSON
 
 Checks that passed string is valid JSON.
+
+**Syntax**
+
+```sql
+isValidJSON(json)
+```
 
 Examples:
 
@@ -398,8 +404,8 @@ JSONHas(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -441,8 +447,8 @@ JSONLength(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -472,8 +478,8 @@ JSONType(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -504,8 +510,8 @@ JSONExtractUInt(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -544,8 +550,8 @@ JSONExtractInt(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -584,8 +590,8 @@ JSONExtractFloat(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -624,8 +630,8 @@ JSONExtractBool(json\[, indices_or_keys\]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -634,7 +640,7 @@ JSONExtractBool(json\[, indices_or_keys\]...)
 
 **Returned value**
 
-- Returns a Boolean value if it exists, otherwise it returns `0`. [Float64](../data-types/boolean.md).
+- Returns a Boolean value if it exists, otherwise it returns `0`. [Bool](../data-types/boolean.md).
 
 **Example**
 
@@ -664,8 +670,8 @@ JSONExtractString(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -686,16 +692,35 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices_or_keys...\], Return_type)
+## JSONExtract
 
-Parses a JSON and extract a value of the given ClickHouse data type.
+Parses JSON and extracts a value of the given ClickHouse data type. This function is a generalized version of the previous `JSONExtract<type>` functions. Meaning:
 
-This is a generalization of the previous `JSONExtract<type>` functions.
-This means
 `JSONExtract(..., 'String')` returns exactly the same as `JSONExtractString()`,
 `JSONExtract(..., 'Float64')` returns exactly the same as `JSONExtractFloat()`.
 
-Examples:
+**Syntax**
+
+```sql
+JSONExtract(json [, indices_or_keys...], return_type)
+```
+
+**Parameters**
+
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `return_type` — A string specifying the type of the value to extract. [String](../data-types/string.md). 
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns a value if it exists of the specified return type, otherwise it returns `0`, `Null`, or an empty-string depending on the specified return type. [UInt64](../data-types/int-uint.md), [Int64](../data-types/int-uint.md), [Float64](../data-types/float.md), [Bool](../data-types/boolean.md) or [String](../data-types/string.md).
+
+**Examples**
 
 ``` sql
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
@@ -708,11 +733,32 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys...\], Value_type)
+## JSONExtractKeysAndValues
 
-Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
+Parses key-value pairs from JSON where the values are of the given ClickHouse data type.
 
-Example:
+**Syntax**
+
+```sql
+JSONExtractKeysAndValues(json [, indices_or_keys...], value_type)
+```
+
+**Parameters**
+
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `value_type` — A string specifying the type of the value to extract. [String](../data-types/string.md). 
+
+`indices_or_keys` type:
+- String = access object member by key.
+- Positive integer = access the n-th member/key from the beginning.
+- Negative integer = access the n-th member/key from the end.
+
+**Returned value**
+
+- Returns an array of parsed key-value pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)(`value_type`)). 
+
+**Example**
 
 ``` sql
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
@@ -735,7 +781,7 @@ JSONExtractKeys(json[, a, b, c...])
 
 **Returned value**
 
-Array with the keys of the JSON. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- Returns an array with the keys of the JSON. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Example**
 
@@ -766,8 +812,8 @@ JSONExtractRaw(json [, indices_or_keys]...)
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -784,7 +830,7 @@ JSONExtractRaw(json [, indices_or_keys]...)
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw(json [, indices_or_keys...])
+## JSONExtractArrayRaw
 
 Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn’t array, an empty array will be returned.
 
@@ -796,8 +842,8 @@ JSONExtractArrayRaw(json [, indices_or_keys...])
 
 **Parameters**
 
-- `json`: JSON string to parse. [String](../data-types/string.md).
-- `indices_or_keys` : A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
+- `json` — JSON string to parse. [String](../data-types/string.md).
+- `indices_or_keys` — A list of zero or more arguments each of them can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
 - String = access object member by key.
@@ -890,8 +936,8 @@ JSON_EXISTS(json, path)
 
 **Parameters**
 
-- `json`: A string with valid JSON. [String](../data-types/string.md). 
-- `path`: A string representing the path. [String](../data-types/string.md).
+- `json` — A string with valid JSON. [String](../data-types/string.md). 
+- `path` — A string representing the path. [String](../data-types/string.md).
 
 :::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
@@ -922,8 +968,8 @@ JSON_QUERY(json, path)
 
 **Parameters**
 
-- `json`: A string with valid JSON. [String](../data-types/string.md). 
-- `path`: A string representing the path. [String](../data-types/string.md).
+- `json` — A string with valid JSON. [String](../data-types/string.md). 
+- `path` — A string representing the path. [String](../data-types/string.md).
 
 :::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
@@ -970,8 +1016,8 @@ JSON_VALUE(json, path)
 
 **Parameters**
 
-- `json`: A string with valid JSON. [String](../data-types/string.md). 
-- `path`: A string representing the path. [String](../data-types/string.md).
+- `json` — A string with valid JSON. [String](../data-types/string.md). 
+- `path` — A string representing the path. [String](../data-types/string.md).
 
 :::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
