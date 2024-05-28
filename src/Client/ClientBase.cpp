@@ -2150,7 +2150,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             }
             // Handle the case when comments followed by semicolon
             // insert into xx values xx; -- {serverError xx}
-            // So if we use this error hint, the next query should not be placed 
+            // So if we use this error hint, the next query should not be placed
             // on the same line
             this_query_end = insert_ast->data + data_in.count();
             const auto * newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
