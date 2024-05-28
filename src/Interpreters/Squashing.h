@@ -32,10 +32,10 @@ public:
     explicit ApplySquashing(Block header_);
 
     Chunk add(Chunk && input_chunk);
+    const Block header;
 
 private:
     Chunk accumulated_chunk;
-    const Block header;
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 

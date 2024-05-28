@@ -1353,7 +1353,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             ColumnsWithTypeAndName cols;
             if (projection_chunk.hasColumns())
                 for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-                    cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], ctx->updated_header.getDataTypes()[j], ctx->updated_header.getNames()[j]));
+                    cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], projection_squashes[i].header.getDataTypes()[j], projection_squashes[i].header.getNames()[j]));
 
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
