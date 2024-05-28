@@ -31,10 +31,7 @@ def test_distributed_table_with_alias(start_cluster):
     )
     try:
         # Attempt to execute the query
-        node.query(
-            "WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;"
-        )
+        node.query("WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;")
     except QueryRuntimeException as e:
         # If an exception occurs, fail the test
         pytest.fail(f"Query raised an exception: {e}")
-
