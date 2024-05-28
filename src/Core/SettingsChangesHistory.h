@@ -85,7 +85,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.6", {{"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
+    {"24.6", {{"input_format_parquet_use_native_reader", false, false, "When reading Parquet files, to use native reader instead of arrow reader."},
+              {"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
               {"azure_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
               {"s3_validate_request_settings", true, true, "Allow to disable S3 request settings validation"},
               {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
@@ -101,7 +102,6 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"cross_join_min_bytes_to_compress", 0, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached."},
               {"http_max_chunk_size", 0, 0, "Internal limitation"},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
-              {"input_format_parquet_use_native_reader", false, false, "When reading Parquet files, to use native reader instead of arrow reader."},
               {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
               {"cast_string_to_dynamic_use_inference", false, false, "Add setting to allow converting String to Dynamic through parsing"},
               {"allow_experimental_dynamic_type", false, false, "Add new experimental Dynamic type"},
