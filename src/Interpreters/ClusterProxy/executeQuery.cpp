@@ -530,7 +530,8 @@ void executeQueryWithParallelReplicas(
         auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
         query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
-    else {
+    else
+    {
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
             new_cluster,
