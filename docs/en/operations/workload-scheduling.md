@@ -156,6 +156,6 @@ Example:
 ## See also
  - [system.scheduler](/docs/en/operations/system-tables/scheduler.md)
  - [merge_workload](/docs/en/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/docs/en/operations/server-configuration-parametes/settings.md#merge_workload) global server setting
+ - [merge_workload](/docs/en/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
  - [mutation_workload](/docs/en/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/docs/en/operations/server-configuration-parametes/settings.md#mutation_workload) global server setting
+ - [mutation_workload](/docs/en/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
