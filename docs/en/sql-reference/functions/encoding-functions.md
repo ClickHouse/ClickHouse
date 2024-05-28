@@ -827,7 +827,7 @@ If a single argument is provided with a tuple specifying bit shifts, the functio
 Query:
 
 ```sql
-SELECT mortonEncode(tuple(2), 128);
+SELECT hilbertEncode(tuple(2), 128);
 ```
 
 Result:
@@ -851,14 +851,14 @@ create table hilbert_numbers(
 )
 Engine=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-insert into morton_numbers (*) values(1,2);
+insert into hilbert_numbers (*) values(1,2);
 ```
 Use column names instead of constants as function arguments to `hilbertEncode`
 
 Query:
 
 ```sql
-SELECT hilbertEncode(n1, n2) FROM morton_numbers;
+SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
 ```
 
 Result:
@@ -869,7 +869,7 @@ Result:
 
 **implementation details**
 
-Please note that you can fit only so many bits of information into Morton code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each. All overflow will be clamped to zero.
+Please note that you can fit only so many bits of information into Hilbert code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each. All overflow will be clamped to zero.
 
 ## hilbertDecode
 
@@ -945,7 +945,7 @@ A single argument with a tuple specifying bit shifts will be right-shifted accor
 Query:
 
 ```sql
-SELECT mortonDecode(tuple(2), 32768);
+SELECT hilbertDecode(tuple(2), 32768);
 ```
 
 Result:
@@ -962,20 +962,20 @@ First create the table and insert some data.
 
 Query:
 ```sql
-create table morton_numbers(
+create table hilbert_numbers(
     n1 UInt32,
     n2 UInt32
 )
 Engine=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-insert into morton_numbers (*) values(1,2);
+insert into hilbert_numbers (*) values(1,2);
 ```
 Use column names instead of constants as function arguments to `hilbertDecode`
 
 Query:
 
 ```sql
-select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from morton_numbers;
+select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from hilbert_numbers;
 ```
 
 Result:
