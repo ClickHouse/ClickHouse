@@ -141,7 +141,7 @@ private:
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Invalid expression for function {} - Negative sizes are not allowed (\"{}\")",
+                "Invalid expression for function {} - Negative sizes are not allowed ({})",
                 getName(),
                 base
             );
