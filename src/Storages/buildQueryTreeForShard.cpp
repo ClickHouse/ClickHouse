@@ -320,6 +320,9 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
+    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+    std::unordered_set<const IQueryTreeNode *> created_temporary_tables;
+
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
@@ -364,15 +367,24 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            auto subquery_to_execute = in_function_subquery_node;
-            if (subquery_to_execute->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
+            if (created_temporary_tables.contains(in_function_subquery_node.get()))
+                continue;
 
-            auto temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
+            auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
+            if (!temporary_table_expression_node)
+            {
+                auto subquery_to_execute = in_function_subquery_node;
+                if (subquery_to_execute->as<TableNode>())
+                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
-            in_function_subquery_node = std::move(temporary_table_expression_node);
+                temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
+
+                created_temporary_tables.insert(temporary_table_expression_node.get());
+            }
+
+            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
         }
         else
         {

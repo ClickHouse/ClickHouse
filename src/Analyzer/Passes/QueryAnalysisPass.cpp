@@ -1070,8 +1070,20 @@ public:
         updateAliasesIfNeeded(node, false /*is_lambda_node*/);
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
     {
+        if (auto * function_node = parent->as<FunctionNode>())
+        {
+            if (functionIsInOrGlobalInOperator(function_node->getFunctionName()))
+            {
+                auto & children = function_node->getArguments().getChildren();
+                if (!children.empty())
+                {
+                    visit(children.front());
+                    return false;
+                }
+            }
+        }
         if (auto * lambda_node = child->as<LambdaNode>())
         {
             updateAliasesIfNeeded(child, true /*is_lambda_node*/);
@@ -6566,7 +6578,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                     scope.scope_node->formatASTForErrorMessage());
 
             auto & table_node = node->as<TableNode &>();
-            result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
+            if (result_projection_names.empty())
+                result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
 
             break;
         }
