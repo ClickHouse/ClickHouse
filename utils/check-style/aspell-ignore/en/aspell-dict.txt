@@ -1619,7 +1619,6 @@ generateRandom
 generateRandomStructure
 generateSeries
 generateSnowflakeID
-generateSnowflakeIDThreadMonotonic
 generateULID
 generateUUIDv
 geoDistance
