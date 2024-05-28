@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <Functions/hilbertDecode.h>
-#include <Functions/hilbertEncode.h>
+#include <Functions/hilbertDecode.cpp>
+#include <Functions/hilbertEncode.cpp>
 #include "base/types.h"
 
 

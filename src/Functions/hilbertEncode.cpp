@@ -232,7 +232,7 @@ REGISTER_FUNCTION(HilbertEncode)
 {
     factory.registerFunction<FunctionHilbertEncode>(FunctionDocumentation{
         .description=R"(
-Calculates code for Hilbert Curve for a list of unsigned integers
+Calculates code for Hilbert Curve for a list of unsigned integers.
 
 The function has two modes of operation:
 - Simple

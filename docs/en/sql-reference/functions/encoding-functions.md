@@ -171,7 +171,7 @@ Performs the opposite operation of [hex](#hex). It interprets each pair of hexad
 
 If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
-:::note    
+:::note
 If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
 :::
 
@@ -330,11 +330,11 @@ Alias: `UNBIN`.
 
 For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
 
-:::note    
+:::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
 :::
 
-Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). 
+Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown).
 
 **Arguments**
 
@@ -496,7 +496,7 @@ mortonEncode(range_mask, args)
 - `range_mask`: 1-8.
 - `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
 
-Note: when using columns for `args` the provided `range_mask` tuple should still be a constant. 
+Note: when using columns for `args` the provided `range_mask` tuple should still be a constant.
 
 **Returned value**
 
@@ -644,7 +644,7 @@ Result:
 Accepts a range mask (tuple) as a first argument and the code as the second argument.
 Each number in the mask configures the amount of range shrink:<br/>
 1 - no shrink<br/>
-2 - 2x shrink<br/> 
+2 - 2x shrink<br/>
 3 - 3x shrink<br/>
 ...<br/>
 Up to 8x shrink.<br/>
@@ -719,6 +719,267 @@ Result:
 1	2	3	4	5	6	7	8
 ```
 
+## hilbertEncode
+
+Calculates code for Hilbert Curve for a list of unsigned integers.
+
+The function has two modes of operation:
+- Simple
+- Expanded
+
+### Simple mode
+
+Simple: accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
+
+**Syntax**
+
+```sql
+hilbertEncode(args)
+```
+
+**Parameters**
+
+- `args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+
+**Returned value**
+
+- A UInt64 code
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+SELECT hilbertEncode(3, 4);
+```
+Result:
+
+```response
+31
+```
+
+### Expanded mode
+
+Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
+
+Each number in the mask configures the number of bits by which the corresponding argument will be shifted left, effectively scaling the argument within its range.
+
+**Syntax**
+
+```sql
+hilbertEncode(range_mask, args)
+```
+
+**Parameters**
+- `range_mask`: ([tuple](../../sql-reference/data-types/tuple.md))
+- `args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+
+Note: when using columns for `args` the provided `range_mask` tuple should still be a constant.
+
+**Returned value**
+
+- A UInt64 code
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md)
 
 
+**Example**
 
+Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
+For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
+
+Query:
+
+```sql
+SELECT hilbertEncode((10,6), 1024, 16);
+```
+
+Result:
+
+```response
+4031541586602
+```
+
+Note: tuple size must be equal to the number of the other arguments.
+
+**Example**
+
+For a single argument without a tuple, the function returns the argument itself as the Hilbert index, since no dimensional mapping is needed.
+
+Query:
+
+```sql
+SELECT hilbertEncode(1);
+```
+
+Result:
+
+```response
+1
+```
+
+**Example**
+
+If a single argument is provided with a tuple specifying bit shifts, the function shifts the argument left by the specified number of bits.
+
+Query:
+
+```sql
+SELECT mortonEncode(tuple(2), 128);
+```
+
+Result:
+
+```response
+512
+```
+
+**Example**
+
+The function also accepts columns as arguments:
+
+Query:
+
+First create the table and insert some data.
+
+```sql
+create table hilbert_numbers(
+    n1 UInt32,
+    n2 UInt32
+)
+Engine=MergeTree()
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+insert into morton_numbers (*) values(1,2);
+```
+Use column names instead of constants as function arguments to `hilbertEncode`
+
+Query:
+
+```sql
+SELECT hilbertEncode(n1, n2) FROM morton_numbers;
+```
+
+Result:
+
+```response
+13
+```
+
+**implementation details**
+
+Please note that you can fit only so many bits of information into Morton code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each. All overflow will be clamped to zero.
+
+## hilbertDecode
+
+Decodes a Hilbert curve index back into a tuple of unsigned integers, representing coordinates in multi-dimensional space.
+
+As with the `hilbertEncode` function, this function has two modes of operation:
+- Simple
+- Expanded
+
+### Simple mode
+
+Accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
+
+**Syntax**
+
+```sql
+hilbertDecode(tuple_size, code)
+```
+
+**Parameters**
+- `tuple_size`: integer value no more than 2.
+- `code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
+
+**Returned value**
+
+- [tuple](../../sql-reference/data-types/tuple.md) of the specified size.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+SELECT hilbertDecode(2, 31);
+```
+
+Result:
+
+```response
+["3", "4"]
+```
+
+### Expanded mode
+
+Accepts a range mask (tuple) as a first argument and up to 2 unsigned integers as other arguments.
+Each number in the mask configures the number of bits by which the corresponding argument will be shifted left, effectively scaling the argument within its range.
+
+Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
+For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
+As with the encode function, this is limited to 8 numbers at most.
+
+**Example**
+
+Hilbert code for one argument is always the argument itself (as a tuple).
+
+Query:
+
+```sql
+SELECT hilbertDecode(1, 1);
+```
+
+Result:
+
+```response
+["1"]
+```
+
+**Example**
+
+A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
+
+Query:
+
+```sql
+SELECT mortonDecode(tuple(2), 32768);
+```
+
+Result:
+
+```response
+["128"]
+```
+
+**Example**
+
+The function accepts a column of codes as a second argument:
+
+First create the table and insert some data.
+
+Query:
+```sql
+create table morton_numbers(
+    n1 UInt32,
+    n2 UInt32
+)
+Engine=MergeTree()
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+insert into morton_numbers (*) values(1,2);
+```
+Use column names instead of constants as function arguments to `hilbertDecode`
+
+Query:
+
+```sql
+select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from morton_numbers;
+```
+
+Result:
+
+```response
+1	2
+```
