@@ -91,11 +91,13 @@ public:
             }
             catch (...)
             {
-                if constexpr (error_handling == ErrorHandling::Exception)
-                    throw;
-                res_data[i] = 0;
-                if constexpr (error_handling == ErrorHandling::Null)
-                    col_null_map->getData()[i] = 1;
+                if constexpr (error_handling == ErrorHandling::Exception) { throw; }
+                else
+                {
+                    res_data[i] = 0;
+                    if constexpr (error_handling == ErrorHandling::Null)
+                        col_null_map->getData()[i] = 1;
+                }
             }
         }
         if constexpr (error_handling == ErrorHandling::Null)
