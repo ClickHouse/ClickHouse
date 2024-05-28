@@ -10,7 +10,7 @@
 #include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Interpreters/BlobStorageLogWriter.h>
 #include <Storages/StorageFactory.h>
 
 

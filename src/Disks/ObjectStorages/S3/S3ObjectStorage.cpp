@@ -15,7 +15,7 @@
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/Context.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Interpreters/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
