@@ -65,11 +65,14 @@ public:
 
         const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col_str)
+        {
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first ('str') argument of function {}. Must be string.",
                 arguments[0].column->getName(),
-                getName());
+                getName()
+            );
+        }
         
         std::unordered_map<std::string_view, Float64> scale_factors = Impl::getScaleFactors();
 
