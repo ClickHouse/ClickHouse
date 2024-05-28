@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long, no-debug, no-tsan, no-msan, no-ubsan, no-asan, no-random-settings, no-random-merge-tree-settings
 
-# shellcheck disable=SC2154
+# shellcheck disable=SC2154,SC2162
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

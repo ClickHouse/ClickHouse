@@ -3,7 +3,7 @@
 
 # These tests don't use `current_database = currentDatabase()` condition, because database name isn't propagated during remote queries.
 
-# shellcheck disable=SC2154
+# shellcheck disable=SC2154,SC2162
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
