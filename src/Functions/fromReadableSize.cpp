@@ -65,8 +65,7 @@ FunctionDocumentation fromReadableSize_documentation {
 │ 1 KiB          │    1024 │
 │ 3 MiB          │ 3145728 │
 │ 5.314 KiB      │    5442 │
-└────────────────┴─────────┘
-)"
+└────────────────┴─────────┘)"
         },
     },
     .categories = {"OtherFunctions"},
@@ -80,7 +79,7 @@ FunctionDocumentation fromReadableSizeOrNull_documentation {
     .examples = {
         {
             "basic", 
-            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;", 
+            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;",
             R"(
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
@@ -88,8 +87,7 @@ FunctionDocumentation fromReadableSizeOrNull_documentation {
 │ 3 MiB          │ 3145728 │
 │ 5.314 KiB      │    5442 │
 │ invalid        │    ᴺᵁᴸᴸ │
-└────────────────┴─────────┘
-)"
+└────────────────┴─────────┘)"
         },
     },
     .categories = {"OtherFunctions"},
@@ -103,7 +101,7 @@ FunctionDocumentation fromReadableSizeOrZero_documentation {
     .examples = {
         {
             "basic", 
-            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;", 
+            "SELECT arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes, fromReadableSize(readable_sizes) AS sizes;",
             R"(
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
@@ -111,8 +109,7 @@ FunctionDocumentation fromReadableSizeOrZero_documentation {
 │ 3 MiB          │ 3145728 │
 │ 5.314 KiB      │    5442 │
 │ invalid        │       0 │
-└────────────────┴─────────┘
-)",
+└────────────────┴─────────┘)",
         },
     },
     .categories = {"OtherFunctions"},

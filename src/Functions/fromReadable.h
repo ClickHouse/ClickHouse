@@ -55,12 +55,10 @@ public:
         };
         validateFunctionArgumentTypes(*this, arguments, args);
         DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
-        if (error_handling == ErrorHandling::Null) {
+        if (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(return_type);
-        } else {
+        else
             return return_type;
-        }
-        
     }
     
 
