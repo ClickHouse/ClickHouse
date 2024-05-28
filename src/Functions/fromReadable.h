@@ -1,3 +1,5 @@
+#pragma once
+
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
