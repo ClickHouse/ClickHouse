@@ -109,29 +109,45 @@ public:
 
 private:
 
-    template <typename Arg>
-    void throwException(const int code, const String & msg, Arg arg) const
-    {
-        throw Exception(code, "Invalid expression for function {} - {} (\"{}\")", getName(), msg, arg);
-    }
-
     Float64 parseReadableFormat(const std::unordered_map<std::string_view, Float64> & scale_factors, const std::string_view & str) const
     {
         ReadBufferFromString buf(str);
         // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
         skipWhitespaceIfAny(buf);
         if (buf.getPosition() > 0)
-            throwException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Leading whitespace is not allowed", str);
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                "Invalid expression for function {} - Leading whitespace is not allowed (\"{}\")",
+                getName(),
+                str
+            );
+        }
 
         Float64 base = 0;
         if (!tryReadFloatTextPrecise(base, buf))    // If we use the default (fast) tryReadFloatText this returns True on garbage input
-            throwException(ErrorCodes::CANNOT_PARSE_NUMBER, "Unable to parse readable size numeric component", str);
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER,
+                "Invalid expression for function {} - Unable to parse readable size numeric component (\"{}\")",
+                getName(),
+                str
+            );
+        }
+
         skipWhitespaceIfAny(buf);
 
         String unit;
         readStringUntilWhitespace(unit, buf);
         if (!buf.eof())
-            throwException(ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE, "Found trailing characters after readable size string", str);
+        {
+            throw Exception(
+                ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                "Invalid expression for function {} - Found trailing characters after readable size string (\"{}\")",
+                getName(),
+                str
+            );
+        }
         boost::algorithm::to_lower(unit);
         auto iter = scale_factors.find(unit);
         if (iter == scale_factors.end())
