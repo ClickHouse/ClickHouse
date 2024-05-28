@@ -16,11 +16,17 @@
 #include <Parsers/parseQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/WeakHash.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+
+namespace ProfileEvents
+{
+extern const Event HashJoinPreallocatedElementsInHashTables;
+}
 
 namespace CurrentMetrics
 {
@@ -102,6 +108,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     size_t reserve_size = 0;
                     if (auto hint = findSizeHint(stats_collecting_params, slots))
                         reserve_size = hint->median_size;
+                    ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
 
                     auto inner_hash_join = std::make_shared<InternalHashJoin>();
                     inner_hash_join->data = std::make_unique<HashJoin>(
