@@ -71,40 +71,6 @@ save_settings_clean 'old_settings.native'
 # available for dump via clickhouse-local
 configure
 
-function remove_keeper_config()
-{
-  sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
-}
-
-# async_replication setting doesn't exist on some older versions
-remove_keeper_config "async_replication" "1"
-
-# create_if_not_exists feature flag doesn't exist on some older versions
-remove_keeper_config "create_if_not_exists" "[01]"
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
-
-# latest_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
-
-# commit_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
-
-# it contains some new settings, but we can safely remove it
-rm /etc/clickhouse-server/config.d/merge_tree.xml
-rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
-rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
-rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
-rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
-rm /etc/clickhouse-server/config.d/handlers.yaml
-rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
-rm /etc/clickhouse-server/users.d/s3_cache_new.xml
-rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
-
 start
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
@@ -116,43 +82,10 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
-# force_sync=false doesn't work correctly on some older versions
-sudo sed -i "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" /etc/clickhouse-server/config.d/keeper_port.xml
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
-
-# async_replication setting doesn't exist on some older versions
-remove_keeper_config "async_replication" "1"
-
-# create_if_not_exists feature flag doesn't exist on some older versions
-remove_keeper_config "create_if_not_exists" "[01]"
-
-# latest_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
-
-# commit_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
-
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-
-# it contains some new settings, but we can safely remove it
-rm /etc/clickhouse-server/config.d/merge_tree.xml
-rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
-rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
-rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
-rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
-rm /etc/clickhouse-server/config.d/handlers.yaml
-rm /etc/clickhouse-server/config.d/block_number.xml
-rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
-rm /etc/clickhouse-server/users.d/s3_cache_new.xml
-rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
 
 start
 
