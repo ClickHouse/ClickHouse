@@ -48,6 +48,8 @@ SELECT fromReadableSize('12.3 rb'); -- { serverError CANNOT_PARSE_TEXT }
 SELECT fromReadableSize(' 1 B'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 -- Invalid input - Trailing characters
 SELECT fromReadableSize('1 B leftovers'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
+-- Invalid input - Decimal size unit is not accepted
+SELECT fromReadableSize('1 KB'); -- { serverError CANNOT_PARSE_TEXT }
 
 
 -- OR NULL
@@ -58,7 +60,7 @@ SELECT
 
 -- Returns NULL on invalid values
 SELECT
-    arrayJoin(['invalid', '1 Joe', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
+    arrayJoin(['invalid', '1 Joe', '1KB', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
     fromReadableSizeOrNull(readable_sizes) AS filesize;
 
 
@@ -70,6 +72,6 @@ SELECT
 
 -- Returns NULL on invalid values
 SELECT
-    arrayJoin(['invalid', '1 Joe', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
+    arrayJoin(['invalid', '1 Joe', '1KB', ' 1 GiB', '1 TiB with fries']) AS readable_sizes,
     fromReadableSizeOrZero(readable_sizes) AS filesize;
 
