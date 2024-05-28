@@ -14,7 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
 std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts)
@@ -28,7 +28,12 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     auto & response_body_stream = session->receiveResponse(response);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver returned not OK status: {}", response.getReason());
+        throw HTTPException(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            endpoint.toString(),
+            response.getStatus(),
+            response.getReason(),
+            "");
 
     std::string proxy_host;
     Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
