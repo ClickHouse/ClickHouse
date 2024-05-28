@@ -1,3 +1,5 @@
+-- Should be kept in sync with 03166_fromReadableSize.sql
+
 -- Should be the inverse of formatReadableDecimalSize
 SELECT formatReadableDecimalSize(fromReadableDecimalSize('1 B'));
 SELECT formatReadableDecimalSize(fromReadableDecimalSize('1 KB'));
