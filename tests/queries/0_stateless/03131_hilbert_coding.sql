@@ -44,5 +44,12 @@ except
 );
 drop table if exists hilbert_numbers_1_03131;
 
+select '----- ERRORS -----';TOO_FEW_ARGUMENTS_FOR_FUNCTION
+select hilbertEncode(); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
+select hilbertDecode(); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
+select hilbertEncode('text'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select hilbertDecode('text'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select hilbertEncode((1, 2), 3); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 SELECT '----- END -----';
 drop table if exists hilbert_numbers_03131;
