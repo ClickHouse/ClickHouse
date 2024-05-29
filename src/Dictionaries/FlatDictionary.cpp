@@ -91,7 +91,7 @@ ColumnPtr FlatDictionary::getColumn(
 
         if (is_short_circuit)
         {
-            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get(); /// <<<<<<<<<<
+            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
