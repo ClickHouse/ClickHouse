@@ -434,9 +434,12 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsLightweightDelete() const override;
+
+    bool hasProjection() const override;
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
