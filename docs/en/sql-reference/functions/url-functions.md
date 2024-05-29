@@ -7,13 +7,11 @@ sidebar_label: URLs
 # Functions for Working with URLs
 
 :::note
-The functions mentioned in this section for the most part do not follow the RFC-3986 convention as they are maximally simplified for improved performance. Functions following the RFC-3986 convention have `RFC` appended to the function name and are generally less performant.
-
-- When should I pick the non-`RFC` variant?
-— Pick the non-`RFC` variant when working with domains which are allowed to be publicly registered and when user info and the `@` symbol does not appear in the URL.
+The functions mentioned in this section are optimized for maximum performance and for the most part do not follow the RFC-3986 standard. Functions which implement RFC-3986 have `RFC` appended to their function name and are generally slower.
 :::
 
-The table below details which symbols are restricted (`✗`) and which are available (`✔`) for use in the whole URL between the two variants.
+You can generally use the non-`RFC` function variants when working with publicly registered domains that contain neither user strings nor `@` symbols.
+Below table below details which symbols in an URL can (`✔`) or cannot (`✗`) be parsed by the respective `RFC` and non-`RFC` variants:
 
 |Symbol | non-`RFC`| `RFC` |
 |-------|----------|-------|
@@ -34,7 +32,7 @@ The table below details which symbols are restricted (`✗`) and which are avail
 |  =    | ✗        |✔*     |
 |  &    | ✗        |✔*     |
 
-The symbols above marked `*` are sub-delimiters in the RFC 3986 convention and are allowed for user info following the `@` symbol.
+symbols marked `*` are sub-delimiters in RFC 3986 and allowed for user info following the `@` symbol.
 
 ## Functions that Extract Parts of a URL
 
