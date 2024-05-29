@@ -513,6 +513,7 @@ class ClickHouseCluster:
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
+        self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
 
         self.spark_session = None
 
