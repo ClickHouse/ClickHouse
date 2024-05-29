@@ -1455,14 +1455,24 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             getHintsErrorMessageSuffix(hints));
     }
 
-    QueryTreeNodePtr get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
-    auto & get_subcolumn_function_arguments_nodes = get_subcolumn_function->as<FunctionNode>()->getArguments().getNodes();
+    auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+    auto & get_subcolumn_function_arguments_nodes = get_subcolumn_function->getArguments().getNodes();
+    auto constant_node = std::make_shared<ConstantNode>(nested_path.getFullName());
 
     get_subcolumn_function_arguments_nodes.reserve(2);
     get_subcolumn_function_arguments_nodes.push_back(compound_expression);
-    get_subcolumn_function_arguments_nodes.push_back(std::make_shared<ConstantNode>(nested_path.getFullName()));
+    get_subcolumn_function_arguments_nodes.push_back(constant_node);
 
-    resolveFunction(get_subcolumn_function, scope);
+    //resolveFunction(get_subcolumn_function, scope);
+
+    ColumnsWithTypeAndName argument_columns;
+    argument_columns.push_back({nullptr, expression_type, {}});
+    argument_columns.push_back({constant_node->getResultType()->createColumnConst(1, constant_node->getValue()), constant_node->getResultType(), {}});
+
+    auto function = FunctionFactory::instance().tryGet(get_subcolumn_function->getFunctionName(), scope.context);
+    auto function_base = function->build(argument_columns);
+    get_subcolumn_function->resolveAsFunction(std::move(function_base));
+
     return get_subcolumn_function;
 }
 
@@ -1766,7 +1776,7 @@ bool QueryAnalyzer::tryBindIdentifierToTableExpressions(const IdentifierLookup &
     return can_bind_identifier_to_table_expression;
 }
 
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
+QueryAnalyzer::QueryTreeNodeWithName QueryAnalyzer::tryResolveIdentifierFromStorage(
     const Identifier & identifier,
     const QueryTreeNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
@@ -1932,12 +1942,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
     }
 
     auto qualified_identifier_full_name = qualified_identifier.getFullName();
-    node_to_projection_name.emplace(result_expression, std::move(qualified_identifier_full_name));
+    //node_to_projection_name.emplace(result_expression, std::move(qualified_identifier_full_name));
 
-    return result_expression;
+    return {std::move(result_expression), std::move(qualified_identifier_full_name)};
 }
 
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
+QueryAnalyzer::QueryTreeNodeWithName QueryAnalyzer::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
@@ -1970,9 +1980,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
         const auto & database_name = table_expression_data.database_name;
 
         if (parts_size == 1 && path_start == table_name)
-            return table_expression_node;
+            return {table_expression_node, {}};
         else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
-            return table_expression_node;
+            return {table_expression_node, {}};
         else
             return {};
     }
@@ -1996,7 +2006,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
         auto resolved_identifier = tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
-        if (resolved_identifier)
+        if (resolved_identifier.node)
             return resolved_identifier;
     }
 
@@ -2617,7 +2627,10 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const Ident
             if (scope.table_expressions_in_resolve_process.contains(join_tree_node.get()))
                 return {};
 
-            return tryResolveIdentifierFromTableExpression(identifier_lookup, join_tree_node, scope);
+            auto [node, name] = tryResolveIdentifierFromTableExpression(identifier_lookup, join_tree_node, scope);
+            if (node)
+                node_to_projection_name.emplace(node, std::move(name));
+            return node;
         }
         default:
         {
@@ -3464,7 +3477,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             for (auto && left_table_column_with_name : left_table_expression_columns)
             {
-                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
+                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.name))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
@@ -3472,7 +3485,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             for (auto && right_table_column_with_name : right_table_expression_columns)
             {
-                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
+                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.name))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));

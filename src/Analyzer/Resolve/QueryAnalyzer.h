@@ -212,9 +212,17 @@ private:
 
     /// Resolve identifier functions
 
+    struct QueryTreeNodeWithName
+    {
+        QueryTreeNodePtr node;
+        std::string name;
+    };
+
+    using QueryTreeNodesWithNames = std::vector<QueryTreeNodeWithName>;
+
     static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
 
-    QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
+    static QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
         size_t identifier_bind_size,
         const QueryTreeNodePtr & compound_expression,
         String compound_expression_source,
@@ -239,7 +247,7 @@ private:
         const QueryTreeNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
+    QueryTreeNodeWithName tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
@@ -274,7 +282,7 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveSettings identifier_resolve_settings = {});
 
-    QueryTreeNodePtr tryResolveIdentifierFromStorage(
+    static QueryTreeNodeWithName tryResolveIdentifierFromStorage(
         const Identifier & identifier,
         const QueryTreeNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
@@ -289,8 +297,6 @@ private:
         const IdentifierResolveScope & scope);
 
     static GetColumnsOptions buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context);
-
-    using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
     QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
         const QueryTreeNodePtr & table_expression_node,
