@@ -28,7 +28,7 @@ Instead create a Git submodule to pull third-party code from an external upstrea
 
 All submodules used by ClickHouse are listed in the `.gitmodule` file.
 If the library can be used as-is (the default case), you can reference the upstream repository directly.
-If the library needs patching, create a fork of the upstream repository in the [ClickHouse organization in GitHub](https://github.com/ClickHouse).
+If the library needs patching, create a fork of the upstream repository in the [ClickHouse organization on GitHub](https://github.com/ClickHouse).
 
 In the latter case, we aim to isolate custom patches as much as possible from upstream commits.
 To that end, create a branch with prefix `clickhouse/` from the branch or tag you want to integrate, e.g. `clickhouse/master` (for branch `master`) or `clickhouse/release/vX.Y.Z` (for tag `release/vX.Y.Z`.
