@@ -7,8 +7,34 @@ sidebar_label: URLs
 # Functions for Working with URLs
 
 :::note
-The functions mentioned in this section for the most part do not follow the RFC convention as they are maximally simplified for improved performance. Functions following a specific RFC convention have `RFC` appended to the function name and are generally less performant.
+The functions mentioned in this section for the most part do not follow the RFC-3986 convention as they are maximally simplified for improved performance. Functions following the RFC-3986 convention have `RFC` appended to the function name and are generally less performant. 
+
+- When should I pick the non-`RFC` variant? 
+— Pick the non-`RFC` variant when working with domains which are allowed to be publically registered and when userinfo and the `@` symbol does not appear in the URL.
 :::
+
+The table belows details which symbols are restricted (`✗`) and which are available (`✔`) for use in the whole URL between the two variants. 
+
+|Symbol | non-`RFC`| `RFC` |
+|-------|----------|-------|
+| ' '   | ✗        |✗      |                                                                             
+|  \t   | ✗        |✗      |                                                                              
+|  <    | ✗        |✗      |                                                                             
+|  >    | ✗        |✗      |                                                                             
+|  %    | ✗        |✔*     |                                                                                 
+|  {    | ✗        |✗      |                                                                              
+|  }    | ✗        |✗      |                                                                                 
+|  \|   | ✗        |✗      |                                                                                
+|  \\\  | ✗        |✗      |                                                                                
+|  ^    | ✗        |✗      |                                                                                 
+|  ~    | ✗        |✔*     |                                                                                  
+|  [    | ✗        |✗      |                                                                                
+|  ]    | ✗        |✔      |                                                                                
+|  ;    | ✗        |✔*     |                                                                                  
+|  =    | ✗        |✔*     |                                                                                  
+|  &    | ✗        |✔*     |
+
+The symbols above marked `*` are sub-delimiters in the RFC 3986 convention and are allowed for userinfo following the `@` symbol.
 
 ## Functions that Extract Parts of a URL
 
@@ -18,7 +44,7 @@ If the relevant part isn’t present in a URL, an empty string is returned.
 
 Extracts the protocol from a URL.
 
-Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
+Examples of typical returned values: http, https, ftp, mailto, tel, magnet…
 
 ### domain
 
@@ -32,7 +58,7 @@ domain(URL)
 
 **Arguments**
 
-- `url` — URL. [String](../data-types/string.md).
+- `URL` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a protocol. Examples:
 
@@ -114,7 +140,7 @@ topLevelDomain(URL)
 
 **Arguments**
 
-- `url` — URL. [String](../data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
 
 :::note
 The URL can be specified with or without a protocol. Examples:
@@ -128,7 +154,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../data-types/string.md).
+- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -156,7 +182,7 @@ topLevelDomainRFC(URL)
 
 **Arguments**
 
-- `url` — URL. [String](../data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
 
 :::note
 The URL can be specified with or without a protocol. Examples:
@@ -170,7 +196,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../data-types/string.md).
+- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -425,17 +451,17 @@ This can be useful if you need a fresh TLD list or if you have a custom list.
 **Syntax**
 
 ``` sql
-cutToFirstSignificantSubdomainCustom(URL, TLD)
+cutToFirstSignificantSubdomain(URL, TLD)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -505,12 +531,14 @@ cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 
 **Arguments**
 
-- `URL` — URL. [String](../data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -580,12 +608,14 @@ firstSignificantSubdomainCustom(URL, TLD)
 
 **Arguments**
 
-- `URL` — URL. [String](../data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- First significant subdomain. [String](../data-types/string.md).
+- First significant subdomain.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -825,11 +855,13 @@ netloc(URL)
 
 **Arguments**
 
-- `url` — URL. [String](../data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- `username:password@host:port`. [String](../data-types/string.md).
+- `username:password@host:port`.
+
+Type: `String`.
 
 **Example**
 
@@ -879,12 +911,14 @@ cutURLParameter(URL, name)
 
 **Arguments**
 
-- `URL` — URL. [String](../data-types/string.md).
-- `name` — name of URL parameter. [String](../data-types/string.md) or [Array](../data-types/array.md) of Strings.
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
 
 **Returned value**
 
-- URL with `name` URL parameter removed. [String](../data-types/string.md).
+- URL with `name` URL parameter removed.
+
+Type: `String`.
 
 **Example**
 
