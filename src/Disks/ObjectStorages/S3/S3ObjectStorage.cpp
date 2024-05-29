@@ -574,7 +574,7 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto settings_from_config = getSettings(config, config_prefix, context, uri.endpoint, for_disk_s3, context->getSettingsRef().s3_validate_request_settings);
+    auto settings_from_config = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef().s3_validate_request_settings);
     auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
@@ -598,7 +598,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     const std::string & config_prefix,
     ContextPtr context)
 {
-    auto new_s3_settings = getSettings(config, config_prefix, context, uri.endpoint, for_disk_s3, true);
+    const auto & settings = context->getSettingsRef();
+    auto new_s3_settings = getSettings(config, config_prefix, context, uri.uri_str, settings.s3_validate_request_settings);
     auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
 
     auto new_uri{uri};

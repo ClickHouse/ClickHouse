@@ -75,7 +75,8 @@ namespace S3
 {
 /// We use s3 settings for DiskS3, StorageS3 (StorageS3Cluster, S3Queue, etc), BackupIO_S3, etc.
 /// 1. For DiskS3 we usually have configuration in disk section in configuration file.
-///    All s3 related settings start with "s3_" prefix there.
+///    REQUEST_SETTINGS, PART_UPLOAD_SETTINGS start with "s3_" prefix there, while AUTH_SETTINGS and CLIENT_SETTINGS do not
+///    (does not make sense, but it happened this way).
 ///    If some setting is absent from disk configuration, we look up for it in the "s3." server config section,
 ///    where s3 settings no longer have "s3_" prefix like in disk configuration section.
 ///    If the settings is absent there as well, we look up for it in Users config (where query/session settings are also updated).
@@ -143,8 +144,8 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
     AuthSettings(
         const Poco::Util::AbstractConfiguration & config,
         const DB::Settings & settings,
-        bool for_disk_s3,
-        const std::string & disk_config_prefix = "");
+        const std::string & config_prefix,
+        const std::string & fallback_config_prefix = "");
 
     AuthSettings(const DB::Settings & settings);
 
@@ -168,9 +169,8 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
     RequestSettings(
         const Poco::Util::AbstractConfiguration & config,
         const DB::Settings & settings,
-        bool for_disk_s3,
-        bool validate_settings = true,
-        const std::string & disk_config_path = "");
+        const std::string & config_prefix,
+        bool validate_settings = true);
 
     /// Create request settings from DB::Settings.
     explicit RequestSettings(const DB::Settings & settings, bool validate_settings = true);
@@ -190,6 +190,14 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
 private:
+    RequestSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const DB::Settings & settings,
+        const std::string & config_prefix,
+        bool validate_settings,
+        const std::string & setting_name_prefix,
+        const std::string & fallback_config_prefix,
+        const std::string & fallback_setting_name_prefix);
     void finishInit(const DB::Settings & settings, bool validate_settings);
     void normalizeSettings();
 };

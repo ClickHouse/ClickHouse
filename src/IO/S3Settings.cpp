@@ -28,8 +28,8 @@ void S3SettingsByEndpoint::loadFromConfig(
         if (config.has(endpoint_path))
         {
             auto endpoint = config.getString(endpoint_path);
-            auto auth_settings = S3::AuthSettings(config, settings, /* for_disk_s3 */false, config_prefix);
-            auto request_settings = S3::RequestSettings(config, settings, /* for_disk_s3 */false, settings.s3_validate_request_settings, config_prefix);
+            auto auth_settings = S3::AuthSettings(config, settings, config_prefix);
+            auto request_settings = S3::RequestSettings(config, settings, config_prefix, settings.s3_validate_request_settings);
             s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), std::move(request_settings)});
         }
     }

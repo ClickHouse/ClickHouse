@@ -37,7 +37,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class BlobStorageLog;
 class IOUringReader;
-class StorageS3Settings;
+class S3SettingsByEndpoint;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -163,7 +163,7 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    const StorageS3Settings & getStorageS3Settings() const;
+    const S3SettingsByEndpoint & getStorageS3Settings() const;
 
     const String & getUserName() const { static std::string user; return user; }
 
