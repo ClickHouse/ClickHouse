@@ -1161,7 +1161,7 @@ public:
 
     void appendDefaultRow();
 
-    void applyLazyDefaults(int col_index = -1);
+    void applyLazyDefaults();
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
@@ -1248,27 +1248,6 @@ private:
     }
 };
 
-template<>
-void AddedColumns<false>::applyLazyDefaults(int)
-{
-    if (lazy_defaults_count)
-    {
-        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
-            JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
-        lazy_defaults_count = 0;
-    }
-}
-
-template<>
-void AddedColumns<true>::applyLazyDefaults(int col_index)
-{
-    if (col_index >= 0 && lazy_defaults_count > 0)
-    {
-        JoinCommon::addDefaultValues(*columns[col_index], type_name[col_index].type, lazy_defaults_count);
-        lazy_defaults_count = 0;
-    }
-}
-
 template<> void AddedColumns<false>::buildOutputFromRowRef() {}
 template<> void AddedColumns<false>::buildOutputFromRowRefList() {}
 template<> void AddedColumns<false>::buildJoinGetOutput() {}
@@ -1277,19 +1256,18 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
 {
     for (size_t i = 0; i < this->size(); ++i)
     {
+        auto & col = columns[i];
         for (auto row_ref_i : lazy_output.row_refs)
         {
             if (!row_ref_i)
             {
-                lazy_defaults_count++;
+                type_name[i].type->insertDefaultInto(*col);
                 continue;
             }
-            applyLazyDefaults(static_cast<int>(i));
             const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-            const auto & src = row_ref->block->getByPosition(right_indexes[i]);
-            columns[i]->insertFrom(*src.column, row_ref->row_num);
+            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
+            col->insertFrom(*column_from_block.column, row_ref->row_num);
         }
-        applyLazyDefaults(static_cast<int>(i));
     }
 }
 
@@ -1302,18 +1280,16 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
         {
             if (!row_ref_i)
             {
-                lazy_defaults_count++;
+                type_name[i].type->insertDefaultInto(*col);
                 continue;
             }
-            applyLazyDefaults(static_cast<int>(i));
             const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
             for (auto it = row_ref_list->begin(); it.ok(); ++it)
             {
-                const auto & src = it->block->getByPosition(right_indexes[i]);
-                col->insertFrom(*src.column, it->row_num);
+                const auto & column_from_block = it->block->getByPosition(right_indexes[i]);
+                col->insertFrom(*column_from_block.column, it->row_num);
             }
         }
-        applyLazyDefaults(static_cast<int>(i));
     }
 }
 
@@ -1321,24 +1297,37 @@ template<> void AddedColumns<true>::buildJoinGetOutput()
 {
     for (size_t i = 0; i < this->size(); ++i)
     {
+        auto & col = columns[i];
         for (auto row_ref_i : lazy_output.row_refs)
         {
             if (!row_ref_i)
             {
-                lazy_defaults_count++;
+                type_name[i].type->insertDefaultInto(*col);
                 continue;
             }
-            applyLazyDefaults(static_cast<int>(i));
             const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-            const auto & src = row_ref->block->getByPosition(right_indexes[i]);
-            if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[i].get()); nullable_col && !src.column->isNullable())
-                nullable_col->insertFromNotNullable(*src.column, row_ref->row_num);
+            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
+            if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block.column->isNullable())
+                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
             else
-                columns[i]->insertFrom(*src.column, row_ref->row_num);
+                col->insertFrom(*column_from_block.column, row_ref->row_num);
         }
-        applyLazyDefaults(static_cast<int>(i));
     }
 }
+
+template<>
+void AddedColumns<false>::applyLazyDefaults()
+{
+    if (lazy_defaults_count)
+    {
+        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
+        lazy_defaults_count = 0;
+    }
+}
+
+template<>
+void AddedColumns<true>::applyLazyDefaults() {}
 
 template <>
 void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
