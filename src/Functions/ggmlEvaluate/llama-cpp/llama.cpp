@@ -86,6 +86,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <pcg-random/pcg_random.hpp>
 
 // NOLINTBEGIN
 #pragma clang diagnostic push
@@ -2453,7 +2454,7 @@ struct llama_context
     // key + value cache for the self attention
     struct llama_kv_cache kv_self;
 
-    Poco::Random rng;
+    pcg64_fast rng;
 
     bool has_evaluated_once = false;
 
@@ -17573,7 +17574,7 @@ llama_token llama_sample_token_greedy(struct llama_context * ctx, llama_token_da
     return result;
 }
 
-llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, Poco::Random & rng)
+llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, pcg64_fast & rng)
 {
     GGML_ASSERT(ctx);
 
@@ -19683,7 +19684,7 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
     ctx->abort_callback = params.abort_callback;
     ctx->abort_callback_data = params.abort_callback_data;
 
-    ctx->rng = Poco::Random();
+    ctx->rng = pcg64_fast();
     ctx->rng.seed(params.seed);
     ctx->logits_all = params.logits_all;
 
@@ -20494,36 +20495,6 @@ void llama_kv_cache_update(struct llama_context * ctx)
 {
     llama_kv_cache_update_internal(*ctx);
 }
-    const auto & cparams = ctx->cparams;
-    const auto & hparams = ctx->model.hparams;
-
-    const size_t s_rng_size = sizeof(size_t);
-    const size_t s_rng = LLAMA_MAX_RNG_STATE;
-    const size_t s_n_outputs = sizeof(size_t);
-    // assume worst case for outputs although only currently set ones are serialized
-    const size_t s_output_pos = ctx->cparams.n_batch * sizeof(int32_t);
-    const size_t s_logits_size = sizeof(size_t);
-    const size_t s_logits = ctx->logits_size ? cparams.n_batch * hparams.n_vocab * sizeof(float) : 0;
-    const size_t s_embedding_size = sizeof(size_t);
-    const size_t s_embedding = ctx->embd_size ? cparams.n_batch * hparams.n_embd * sizeof(float) : 0;
-    const size_t s_kv_buf_size = sizeof(size_t);
-    const size_t s_kv_head = sizeof(uint32_t);
-    const size_t s_kv_size = sizeof(uint32_t);
-    const size_t s_kv_used = sizeof(uint32_t);
-    const size_t s_v_trans = sizeof(uint32_t);
-    const size_t s_kv = ctx->kv_self.total_size();
-    const size_t s_kv_cell = sizeof(llama_pos) + sizeof(size_t) + cparams.n_seq_max * sizeof(llama_seq_id);
-    const size_t s_kv_cells = ctx->kv_self.size * s_kv_cell;
-
-    const size_t s_total
-        = (+s_rng_size + s_rng + s_n_outputs + s_output_pos + s_logits_size + s_logits + s_embedding_size + s_embedding + s_kv_buf_size
-           + s_kv_head + s_kv_size + s_kv_used + s_v_trans + s_kv + s_kv_cells);
-
-    // on session change it is very likely that the state size has changed - so we need to update this function
-    static_assert(
-        LLAMA_SESSION_VERSION == 6, "So you just bumped the session version - good. But did you remember to update llama_state_get_size?");
-
-    return s_total;
 
 // llama_context_data
 struct llama_data_context

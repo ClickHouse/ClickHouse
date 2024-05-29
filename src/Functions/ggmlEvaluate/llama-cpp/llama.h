@@ -13,7 +13,7 @@
 #    include <stdint.h>
 #    include <stdio.h>
 
-#    include <Poco/Random.h>
+#    include <pcg-random/pcg_random.hpp>
 
 #    ifdef LLAMA_SHARED
 #        if defined(_WIN32) && !defined(__MINGW32__)
@@ -968,7 +968,7 @@ std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(const std::stri
 
 // Randomly selects a token from the candidates based on their probabilities using given rng.
 // This is a temporary workaround in order to fix race conditions when sampling with multiple sequences.
-llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, Poco::Random & rng);
+llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, pcg64_fast & rng);
 
 #    endif // LLAMA_API_INTERNAL
 

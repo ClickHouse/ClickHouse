@@ -89,7 +89,7 @@ struct llama_sampling_context
     std::vector<llama_token_data> cur;
     size_t n_valid; // Number of correct top tokens with correct probabilities.
 
-    Poco::Random rng;
+    pcg64_fast rng;
 };
 
 // Create a new sampling context instance.
