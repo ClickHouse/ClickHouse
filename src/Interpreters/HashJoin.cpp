@@ -1161,7 +1161,7 @@ public:
 
     void appendDefaultRow();
 
-    void applyLazyDefaults(bool to_apply, const size_t col_index);
+    void applyLazyDefaults(int col_index = -1);
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
@@ -1176,7 +1176,6 @@ public:
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
-    size_t output_row_list_number = 0;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -1250,7 +1249,7 @@ private:
 };
 
 template<>
-void AddedColumns<false>::applyLazyDefaults(bool, const size_t)
+void AddedColumns<false>::applyLazyDefaults(int)
 {
     if (lazy_defaults_count)
     {
@@ -1261,9 +1260,9 @@ void AddedColumns<false>::applyLazyDefaults(bool, const size_t)
 }
 
 template<>
-void AddedColumns<true>::applyLazyDefaults(bool to_apply, const size_t col_index)
+void AddedColumns<true>::applyLazyDefaults(int col_index)
 {
-    if (to_apply && lazy_defaults_count > 0)
+    if (col_index >= 0 && lazy_defaults_count > 0)
     {
         JoinCommon::addDefaultValues(*columns[col_index], type_name[col_index].type, lazy_defaults_count);
         lazy_defaults_count = 0;
@@ -1285,76 +1284,36 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
                 lazy_defaults_count++;
                 continue;
             }
-            applyLazyDefaults(true, i);
+            applyLazyDefaults(static_cast<int>(i));
             const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
             const auto & src = row_ref->block->getByPosition(right_indexes[i]);
             columns[i]->insertFrom(*src.column, row_ref->row_num);
         }
-        applyLazyDefaults(true, i);
+        applyLazyDefaults(static_cast<int>(i));
     }
 }
 
 template<> void AddedColumns<true>::buildOutputFromRowRefList()
 {
-    if (output_row_list_number == lazy_output.row_refs.size())
+    for (size_t i = 0; i < this->size(); ++i)
     {
-        PaddedPODArray<const Block *> blocks;
-        PaddedPODArray<UInt32> row_nums;
-        blocks.reserve(lazy_output.row_refs.size());
-        row_nums.reserve(lazy_output.row_refs.size());
+        auto & col = columns[i];
         for (auto row_ref_i : lazy_output.row_refs)
         {
-            const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
             if (!row_ref_i)
             {
-                blocks.emplace_back(nullptr);
-                row_nums.emplace_back(0);
+                lazy_defaults_count++;
+                continue;
             }
-            else
+            applyLazyDefaults(static_cast<int>(i));
+            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+            for (auto it = row_ref_list->begin(); it.ok(); ++it)
             {
-                blocks.emplace_back(row_ref->block);
-                row_nums.emplace_back(row_ref->row_num);
+                const auto & src = it->block->getByPosition(right_indexes[i]);
+                col->insertFrom(*src.column, it->row_num);
             }
         }
-        for (size_t i = 0; i < this->size(); ++i)
-        {
-            auto & col = columns[i];
-            for (size_t j = 0; j < blocks.size(); j++)
-            {
-                if (!blocks[j])
-                {
-                    lazy_defaults_count++;
-                    continue;
-                }
-                applyLazyDefaults(true, i);
-                const auto & src = blocks[j]->getByPosition(right_indexes[i]);
-                col->insertFrom(*src.column, row_nums[j]);
-            }
-            applyLazyDefaults(true, i);
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < this->size(); ++i)
-        {
-            auto & col = columns[i];
-            for (auto row_ref_i : lazy_output.row_refs)
-            {
-                if (!row_ref_i)
-                {
-                    lazy_defaults_count++;
-                    continue;
-                }
-                applyLazyDefaults(true, i);
-                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                {
-                    const auto & src = it->block->getByPosition(right_indexes[i]);
-                    col->insertFrom(*src.column, it->row_num);
-                }
-            }
-            applyLazyDefaults(true, i);
-        }
+        applyLazyDefaults(static_cast<int>(i));
     }
 }
 
@@ -1369,7 +1328,7 @@ template<> void AddedColumns<true>::buildJoinGetOutput()
                 lazy_defaults_count++;
                 continue;
             }
-            applyLazyDefaults(true, i);
+            applyLazyDefaults(static_cast<int>(i));
             const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
             const auto & src = row_ref->block->getByPosition(right_indexes[i]);
             if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[i].get()); nullable_col && !src.column->isNullable())
@@ -1377,7 +1336,7 @@ template<> void AddedColumns<true>::buildJoinGetOutput()
             else
                 columns[i]->insertFrom(*src.column, row_ref->row_num);
         }
-        applyLazyDefaults(true, i);
+        applyLazyDefaults(static_cast<int>(i));
     }
 }
 
@@ -1385,7 +1344,7 @@ template <>
 void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
 {
     if (has_defaults)
-        applyLazyDefaults(false, 0);
+        applyLazyDefaults();
 
 #ifndef NDEBUG
     checkBlock(*row_ref->block);
@@ -1545,7 +1504,7 @@ void addFoundRowAll(
     JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]])
 {
     if constexpr (add_missing)
-        added.applyLazyDefaults(false, 0);
+        added.applyLazyDefaults();
 
     if constexpr (flag_per_row)
     {
@@ -1579,7 +1538,6 @@ void addFoundRowAll(
     {
         added.appendFromBlock(&mapped, false);
         current_offset += mapped.rows;
-        added.output_row_list_number = current_offset;
     }
     else
     {
@@ -1875,7 +1833,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 if (need_filter)
                     setUsed<true>(added_columns.filter, left_start_row + i - 1);
                 if (add_missing)
-                    added_columns.applyLazyDefaults(false, 0);
+                    added_columns.applyLazyDefaults();
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
@@ -1921,7 +1879,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
         added_columns.filter.resize_assume_reserved(left_row_iter);
     }
-    added_columns.applyLazyDefaults(false, 0);
+    added_columns.applyLazyDefaults();
     return left_row_iter;
 }
 
@@ -2062,7 +2020,7 @@ NO_INLINE size_t joinRightColumns(
         }
     }
 
-    added_columns.applyLazyDefaults(false, 0);
+    added_columns.applyLazyDefaults();
     return i;
 }
 
