@@ -273,7 +273,14 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     }
 
     chassert(reading);
-    const auto * analyzed_merge_tree = typeid_cast<const ReadFromMergeTree *>(read_from_merge_tree.get());
+    if (!read_from_merge_tree)
+        read_from_merge_tree = std::move(node->step);
+
+    auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(read_from_merge_tree.get());
+    /// if no analysis is done yet, let's do it (happens with JOINs)
+    if (!analyzed_merge_tree->hasAnalyzedResult())
+        analyzed_merge_tree->setAnalyzedResult(analyzed_merge_tree->selectRangesToRead());
+
     chassert(analyzed_merge_tree->hasAnalyzedResult());
 
     CoordinationMode mode = CoordinationMode::Default;

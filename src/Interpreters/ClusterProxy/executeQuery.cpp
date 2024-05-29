@@ -405,7 +405,7 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree)
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
@@ -519,7 +519,7 @@ void executeQueryWithParallelReplicas(
             new_context,
             processed_stage,
             coordinator,
-            std::move(read_from_merge_tree),
+            std::move(analyzed_read_from_merge_tree),
             /*has_missing_objects=*/false);
 
         DataStreams input_streams;
@@ -563,7 +563,7 @@ void executeQueryWithParallelReplicas(
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree)
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
@@ -574,7 +574,7 @@ void executeQueryWithParallelReplicas(
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
-        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(read_from_merge_tree));
+        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(
