@@ -9,6 +9,7 @@ NAMED_COLLECTIONS_CONFIG = os.path.join(
     SCRIPT_DIR, "./configs/config.d/named_collections.xml"
 )
 
+ZK_PATH = "/named_collections_path"
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -23,6 +24,17 @@ def cluster():
                 "configs/users.d/users.xml",
             ],
             stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_with_keeper",
+            main_configs=[
+                "configs/config.d/named_collections_with_zookeeper.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users.xml",
+            ],
+            stay_alive=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
             "node_only_named_collection_control",
@@ -52,7 +64,6 @@ def cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
 
 def replace_in_server_config(node, old, new):
     node.replace_in_config(
@@ -447,8 +458,16 @@ def test_config_reload(cluster):
     )
 
 
-def test_sql_commands(cluster):
-    node = cluster.instances["node"]
+@pytest.mark.parametrize("with_keeper", [False, True])
+def test_sql_commands(cluster, with_keeper):
+    zk = None
+    node = None
+    if with_keeper:
+        node = cluster.instances["node_with_keeper"]
+        zk = cluster.get_kazoo_client("zoo1")
+    else:
+        node = cluster.instances["node"]
+
     assert "1" == node.query("select count() from system.named_collections").strip()
 
     node.query("CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'")
@@ -479,6 +498,14 @@ def test_sql_commands(cluster):
                 "select collection['key2'] from system.named_collections where name = 'collection2'"
             ).strip()
         )
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 1, key2 = 'value2'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
 
     check_created()
     node.restart_clickhouse()
@@ -508,6 +535,15 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 4, key2 = 'value2', key3 = 'value3'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
+
     check_altered()
     node.restart_clickhouse()
     check_altered()
@@ -521,6 +557,15 @@ def test_sql_commands(cluster):
                 "select mapKeys(collection) from system.named_collections where name = 'collection2'"
             ).strip()
         )
+
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key1 = 4, key3 = 'value3'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
 
     check_deleted()
     node.restart_clickhouse()
@@ -552,6 +597,15 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 1 == len(children)
+            assert "collection2.sql" in children
+            assert (
+                b"CREATE NAMED COLLECTION collection2 AS key3 = 3, key4 = 'value4'"
+                in zk.get(ZK_PATH + "/collection2.sql")[0]
+            )
+
     check_altered_and_deleted()
     node.restart_clickhouse()
     check_altered_and_deleted()
@@ -564,6 +618,9 @@ def test_sql_commands(cluster):
             "collection1"
             == node.query("select name from system.named_collections").strip()
         )
+        if zk is not None:
+            children = zk.get_children(ZK_PATH)
+            assert 0 == len(children)
 
     check_dropped()
     node.restart_clickhouse()
