@@ -680,7 +680,7 @@ JSONExtractString(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns an unescapated string from `json`. If unescaping failed, if the value does not exist or if it has a wrong type then it returns an empty string. [String](../data-types/string.md).
+- Returns an unescaped string from `json`. If unescaping failed, if the value does not exist or if it has a wrong type then it returns an empty string. [String](../data-types/string.md).
 
 **Examples**
 
