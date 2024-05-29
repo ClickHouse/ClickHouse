@@ -14,8 +14,8 @@ struct ParallelReplicasCustomKeyFilter
 {
     ParallelReplicasCustomKeyFilterType filter_type;
     UInt64 range_lower;
-    UInt64 range_upper;    
-}; 
+    UInt64 range_upper;
+};
 
 /// Get AST for filter created from custom_key
 /// replica_num is the number of the replica for which we are generating filter starting from 0

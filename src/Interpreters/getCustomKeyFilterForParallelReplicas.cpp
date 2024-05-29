@@ -47,7 +47,6 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
-    // get 
     RelativeSize range_upper = RelativeSize(filter.range_upper) + RelativeSize(1);
     RelativeSize range_lower = RelativeSize(filter.range_lower);
     DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
@@ -71,12 +70,12 @@ ASTPtr getCustomKeyFilterForParallelReplica(
             custom_key_column_type->getName());
 
     if (range_lower < 0)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid custom key filter range: Range Min must be a postive");
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid custom key filter range: Range lower bound must be a positive");
 
     if (range_lower > range_upper)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid custom key filter range: Range max {} must be larger than range min {}",
+            "Invalid custom key filter range: Range upper bound {} must be larger than range lower bound {}",
             range_lower,
             range_upper);
 

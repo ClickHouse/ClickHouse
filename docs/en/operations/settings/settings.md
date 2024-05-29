@@ -1596,7 +1596,7 @@ Allows the filter type `range` to split the work evenly between replicas based t
 
 When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`. 
 
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` when parallelizing the query. 
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing. 
 
 ## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
 
@@ -1605,7 +1605,7 @@ Allows the filter type `range` to split the work evenly between replicas based t
 
 When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`. 
 
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` when parallelizing the query. 
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing. 
 
 ## allow_experimental_parallel_reading_from_replicas
 
