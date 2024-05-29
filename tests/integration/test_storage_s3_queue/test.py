@@ -711,10 +711,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             table_name,
             mode,
             files_path,
-            additional_settings={
-                "keeper_path": keeper_path,
-                "s3queue_buckets": 2
-            },
+            additional_settings={"keeper_path": keeper_path, "s3queue_buckets": 2},
         )
 
     for instance in [node, node_2]:
@@ -1033,12 +1030,17 @@ def test_s3_client_reused(started_cluster):
 
 
 def get_processed_files(node, table_name):
-    return node.query(
-        f"""
+    return (
+        node.query(
+            f"""
 select splitByChar('/', file_name)[-1] as file
 from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' order by file
         """
-    ).strip().split("\n")
+        )
+        .strip()
+        .split("\n")
+    )
+
 
 def get_unprocessed_files(node, table_name):
     return node.query(
@@ -1048,6 +1050,7 @@ def get_unprocessed_files(node, table_name):
         in (select splitByChar('/', file_name)[-1] from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed')
         """
     )
+
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_processing_threads(started_cluster, mode):
@@ -1087,7 +1090,9 @@ def test_processing_threads(started_cluster, mode):
     if get_count(dst_table_name) != files_to_generate:
         processed_files = get_processed_files(node, table_name)
         unprocessed_files = get_unprocessed_files(node, table_name)
-        logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}, unprocessed files: {unprocessed_files}, count: {get_count(dst_table_name)}")
+        logging.debug(
+            f"Processed files: {len(processed_files)}/{files_to_generate}, unprocessed files: {unprocessed_files}, count: {get_count(dst_table_name)}"
+        )
         assert False
 
     res = [
