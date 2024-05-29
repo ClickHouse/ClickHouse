@@ -912,9 +912,9 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     if (planned_chunk.hasChunkInfo())
         result_chunk = apply_squashing.add(std::move(planned_chunk));
     ColumnsWithTypeAndName cols;
-    if (result_chunk.hasColumns() && apply_squashing.header)
+    if (result_chunk.hasColumns() && apply_squashing.getHeader())
         for (size_t j = 0; j < result_chunk.getNumColumns(); ++ j)
-            cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], apply_squashing.header.getDataTypes()[j], apply_squashing.header.getNames()[j]));
+            cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], apply_squashing.getHeader().getDataTypes()[j], apply_squashing.getHeader().getNames()[j]));
     auto result = Block(cols);
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
