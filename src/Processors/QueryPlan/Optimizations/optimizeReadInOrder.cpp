@@ -915,18 +915,30 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         auto & union_node = node.children.front();
 
+        const SortDescription * best_sort_descr = nullptr;
+        StepStack best_steps_to_update;
+        bool use_buffering = false;
+
         std::vector<InputOrderInfoPtr> infos;
-        const SortDescription * max_sort_descr = nullptr;
         infos.reserve(node.children.size());
+
         for (auto * child : union_node->children)
         {
             infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
 
-            if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
-                max_sort_descr = &infos.back()->sort_description_for_merging;
+            if (infos.back())
+            {
+                if (!best_sort_descr || best_sort_descr->size() < infos.back()->sort_description_for_merging.size())
+                {
+                    best_sort_descr = &infos.back()->sort_description_for_merging;
+                    best_steps_to_update = steps_to_update;
+                }
+
+                use_buffering |= infos.back()->limit == 0;
+            }
         }
 
-        if (!max_sort_descr || max_sort_descr->empty())
+        if (!best_sort_descr || best_sort_descr->empty())
             return;
 
         for (size_t i = 0; i < infos.size(); ++i)
@@ -941,7 +953,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                 auto limit = sorting->getLimit();
                 /// If we have limit, it's better to sort up to full description and apply limit.
                 /// We cannot sort up to partial read-in-order description with limit cause result set can be wrong.
-                const auto & descr = limit ? sorting->getSortDescription() : *max_sort_descr;
+                const auto & descr = limit ? sorting->getSortDescription() : *best_sort_descr;
                 additional_sorting = std::make_unique<SortingStep>(
                     child->step->getOutputStream(),
                     descr,
@@ -949,12 +961,12 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                     sorting->getSettings(),
                     false);
             }
-            else if (info->sort_description_for_merging.size() < max_sort_descr->size())
+            else if (info->sort_description_for_merging.size() < best_sort_descr->size())
             {
                 additional_sorting = std::make_unique<SortingStep>(
                     child->step->getOutputStream(),
                     info->sort_description_for_merging,
-                    *max_sort_descr,
+                    *best_sort_descr,
                     sorting->getSettings().max_block_size,
                     0); /// TODO: support limit with ties
             }
@@ -968,12 +980,14 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*max_sort_descr);
+        sorting->convertToFinishSorting(*best_sort_descr, use_buffering);
+        updateStepsDataStreams(best_steps_to_update);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
-        /// update data stream's sorting properties
+        /// Use buffering only if have filter or don't have limit.
+        bool use_buffering = order_info->limit == 0;
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
         updateStepsDataStreams(steps_to_update);
     }
 }
@@ -1087,7 +1101,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
     }
 
     return 0;
