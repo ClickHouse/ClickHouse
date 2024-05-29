@@ -1420,6 +1420,11 @@ class CheckDescription:
 
 CHECK_DESCRIPTIONS = [
     CheckDescription(
+        StatusNames.SYNC,
+        "A status of the workflow running in the cloud repository against the sync PR",
+        lambda x: x == StatusNames.SYNC,
+    ),
+    CheckDescription(
         "AST fuzzer",
         "Runs randomly generated queries to catch program errors. "
         "The build type is optionally given in parenthesis. "
