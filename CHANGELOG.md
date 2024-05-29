@@ -10,8 +10,6 @@
 
 ### <a id="245"></a> ClickHouse release 24.5, 2024-05-30
 
-### ClickHouse release master (09d68968703) FIXME as compared to v24.4.1.2088-stable (6d4b31322d1)
-
 #### Backward Incompatible Change
 * Renamed "inverted indexes" to "full-text indexes" which is a less technical / more user-friendly name. This also changes internal table metadata and breaks tables with existing (experimental) inverted indexes. Please make to drop such indexes before upgrade and re-create them after upgrade. [#62884](https://github.com/ClickHouse/ClickHouse/pull/62884) ([Robert Schulze](https://github.com/rschu1ze)).
 * Usage of functions `neighbor`, `runningAccumulate`, `runningDifferenceStartingWithFirstValue`, `runningDifference` deprecated (because it is error-prone). Proper window functions should be used instead. To enable them back, set `allow_deprecated_functions = 1` or set `compatibility = '24.4'` or lower. [#63132](https://github.com/ClickHouse/ClickHouse/pull/63132) ([Nikita Taranov](https://github.com/nickitat)).
