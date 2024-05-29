@@ -315,7 +315,7 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC
-SETTINGS allow_deprecated_functions = 1"
+SETTINGS allow_deprecated_error_prone_window_functions = 1"
 run_query "$query"
 
 echo "-- non-stateful function does _not_ prevent removing inner ORDER BY"
