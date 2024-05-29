@@ -63,10 +63,7 @@ elseif (ARCH_AMD64)
 elseif (ARCH_PPC64LE)
     # PowerPC64LE CPU architecture (ClickHouse supports little-endian ppc64 only)
 
-    list(APPEND GGML_ARCH_FLAGS -mcpu=powerpc64le)
-    if (POWER9)
-        list(APPEND GGML_ARCH_FLAGS -mpower9-vector)
-    endif()
+    list(APPEND GGML_ARCH_FLAGS -mcpu=powerpc64le -mpower9-vector -maltivec)
 endif()
 
 #
