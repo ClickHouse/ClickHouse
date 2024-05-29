@@ -111,10 +111,10 @@ clickhouse-client # or "clickhouse-client --password" if you've set up a passwor
 ```
 
 <details>
-<summary>Migration Method for installing the deb-packages</summary>
+<summary>Old distributions method for installing the deb-packages</summary>
 
 ```bash
-sudo apt-key del E0C56BD4
+sudo apt-get install apt-transport-https ca-certificates dirmngr
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
 echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
