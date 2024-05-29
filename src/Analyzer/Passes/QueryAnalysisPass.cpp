@@ -4323,19 +4323,36 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
         column_qualified_identifier_parts = Identifier(column_name).getParts();
 
-        /// Iterate over additional column qualifications and apply them if needed
-        for (size_t i = 0; i < additional_column_qualification_parts_size; ++i)
+        bool not_enough_qualified_identifier_parts = false;
+        bool qualified_once = false;
+        auto should_qualify = [&]()
         {
             auto identifier_to_check = Identifier(column_qualified_identifier_parts);
             IdentifierLookup identifier_lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
-            bool need_to_qualify = table_expression_data.should_qualify_columns;
+            bool need_to_qualify = !qualified_once && table_expression_data.should_qualify_columns;
+            // std::cerr << ".. to check " << identifier_lookup.dump() << ' ' << need_to_qualify << std::endl;
             if (need_to_qualify)
+            {
                 need_to_qualify = tryBindIdentifierToTableExpressions(identifier_lookup, table_expression_node, scope);
+                // std::cerr << ".. to check " << identifier_lookup.dump() << " bind expr " << need_to_qualify << std::endl;
+            }
 
             if (tryBindIdentifierToAliases(identifier_lookup, scope))
+            {
+                // std::cerr << ".. to check " << identifier_lookup.dump() << " bind alais" << std::endl;
+                need_to_qualify = true;
+            }
+
+            if (!need_to_qualify && not_enough_qualified_identifier_parts && tryBindIdentifierToTableExpression(identifier_lookup, table_expression_node, scope))
                 need_to_qualify = true;
 
-            if (need_to_qualify)
+            qualified_once = qualified_once || need_to_qualify;
+            return need_to_qualify;
+        };
+
+        for (size_t i = 0; should_qualify(); ++i)
+        {
+            if (i < additional_column_qualification_parts_size)
             {
                 /** Add last qualification part that was not used into column qualified identifier.
                   * If additional column qualification parts consists from [database_name, table_name].
@@ -4348,11 +4365,16 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             }
             else
             {
-                break;
+                column_qualified_identifier_parts = {"_unqualified_" + Identifier(std::move(column_qualified_identifier_parts)).getFullName()};
+                not_enough_qualified_identifier_parts = true;
             }
         }
 
         auto qualified_node_name = Identifier(column_qualified_identifier_parts).getFullName();
+        // std::cerr << "-> " << qualified_node_name << std::endl;
+        if (not_enough_qualified_identifier_parts)
+            column_node->setAlias(qualified_node_name);
+
         node_to_projection_name.emplace(column_node, qualified_node_name);
     }
 }
