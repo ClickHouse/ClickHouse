@@ -1,3 +1,4 @@
+#include <utility>
 #include <Interpreters/SquashingTransform.h>
 
 #include <Common/logger_useful.h>
@@ -82,9 +83,8 @@ void SquashingTransform::append(Block && input_block)
     {
         for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
         {
-            const auto source_column = input_block.getByPosition(i).column;
-
-            const auto acc_column = accumulated_block.getByPosition(i).column;
+            const auto source_column = std::move(input_block.getByPosition(i).column);
+            auto acc_column = std::move(accumulated_block.getByPosition(i).column);
 
             LOG_DEBUG(getLogger("SquashingTransform"),
               "column {} {}, acc rows {}, size {}, allocated {}, input rows {} size {} allocated {}",
@@ -93,7 +93,7 @@ void SquashingTransform::append(Block && input_block)
                 source_column->size(), source_column->byteSize(), source_column->allocatedBytes());
 
 
-            auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
+            auto mutable_column = IColumn::mutate(std::move(acc_column));
             mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
             accumulated_block.getByPosition(i).column = std::move(mutable_column);
         }

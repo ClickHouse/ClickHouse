@@ -31,8 +31,6 @@ protected:
 
     virtual void transform(Chunk & input_chunk, Chunk & output_chunk)
     {
-        LOG_DEBUG(getLogger("ISimpleTransform"),
-              "transform {}", input_chunk.getNumRows());
         transform(input_chunk);
         output_chunk.swap(input_chunk);
     }

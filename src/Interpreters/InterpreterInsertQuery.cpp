@@ -574,6 +574,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         return counting;
     });
 
+    size_t num_select_threads = pipeline.getNumThreads();
+
     pipeline.resize(1);
 
     if (shouldAddSquashingFroStorage(table))
@@ -616,7 +618,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     ///    Otherwise ResizeProcessor them down to 1 stream.
 
     size_t presink_streams_size = std::max<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
+
     size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings.max_insert_threads) : 1;
+
+    if (!settings.parallel_view_processing)
+    {
+        auto table_id = table->getStorageID();
+        auto views = DatabaseCatalog::instance().getDependentViews(table_id);
+
+        if (table->isView() || !views.empty())
+            sink_streams_size = 1;
+    }
 
     auto [presink_chains, sink_chains] = buildPreAndSyncChains(
         presink_streams_size, sink_streams_size,
@@ -636,7 +648,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     if (!settings.parallel_view_processing)
     {
-        size_t num_select_threads = pipeline.getNumThreads();
         /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
         if (pipeline.getNumThreads() > num_select_threads)
             pipeline.setMaxThreads(num_select_threads);

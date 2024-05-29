@@ -3,6 +3,7 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include "IO/Progress.h"
 
 
 namespace ProfileEvents
@@ -18,7 +19,7 @@ namespace DB
 void CountingTransform::onConsume(Chunk chunk)
 {
     LOG_DEBUG(getLogger("CountingTransform"),
-              "onConsume {}", chunk.getNumRows());
+              "onConsume rows {} bytes {}, progress rows {} bytes {}", chunk.getNumRows(), chunk.bytes(), progress.written_rows, progress.written_bytes);
 
     if (quota)
         quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes());

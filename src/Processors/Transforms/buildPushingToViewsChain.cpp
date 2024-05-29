@@ -24,6 +24,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include "Core/Field.h"
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/NumberBlocksTransform.h>
 
@@ -223,6 +224,7 @@ std::optional<Chain> generateViewChain(
     if (disable_deduplication_for_children)
     {
         insert_context->setSetting("insert_deduplicate", Field{false});
+        insert_context->setSetting("insert_deduplication_token", Field{""});
     }
 
     // Processing of blocks for MVs is done block by block, and there will
@@ -731,8 +733,8 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data, chunk.getChunkInfos(), disable_deduplication_for_children));
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    state.emplace(process(std::move(block), view, *views_data, std::move(chunk.getChunkInfos()), disable_deduplication_for_children));
 }
 
 

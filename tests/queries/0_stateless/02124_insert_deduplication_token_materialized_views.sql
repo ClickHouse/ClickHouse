@@ -1,6 +1,6 @@
 -- Tags: long
 
-select 'deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = no, results inconsitent';
+select 'deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = no, results: test_mv_a and test_mv_c have all data, test_mv_b has data obly with max_partitions_per_insert_block=0';
 
 drop table if exists test  sync;
 drop table if exists test_mv_a sync;
@@ -35,7 +35,7 @@ select
   (select sum(c) from test_mv_c where test='case1');
 
 
-select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = no, results inconsitent';
+select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = no, results: all tables have deduplicated data';
 
 set deduplicate_blocks_in_dependent_materialized_views=1;
 
@@ -53,7 +53,7 @@ select
   (select sum(c) from test_mv_c where test='case2');
 
 
-select 'deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = yes, results inconsitent';
+select 'deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = yes, results: test_mv_a and test_mv_c have all data, test_mv_b has data obly with max_partitions_per_insert_block=0';
 
 set deduplicate_blocks_in_dependent_materialized_views=0;
 
@@ -70,7 +70,7 @@ select
   (select sum(c) from test_mv_b where test='case3'),
   (select sum(c) from test_mv_c where test='case3');
 
-select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = yes, results consitent';
+select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = yes, results: all tables have deduplicated data';
 
 set deduplicate_blocks_in_dependent_materialized_views=1;
 

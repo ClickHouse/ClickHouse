@@ -304,9 +304,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
 
         if (!token_info->tokenInitialized() && !context->getSettingsRef().insert_deduplication_token.value.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "TokenInfo has to be initialized with user token for table: {}",
-                storage.getStorageID().getNameForLogs());
-
+                "TokenInfo has to be initialized with user token for table: {} user dedup token {}",
+                storage.getStorageID().getNameForLogs(),
+                context->getSettingsRef().insert_deduplication_token.value);
 
         if (token_info->tokenInitialized())
         {
