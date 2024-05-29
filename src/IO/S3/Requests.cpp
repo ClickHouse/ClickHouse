@@ -52,6 +52,14 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     return headers;
 }
 
+void HeadObjectRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
+{
+    // S3's HeadObject doesn't support `x-amz-server-side-encryption` headers so we skip adding them
+    // Docs: https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html
+    if (headerName != "x-amz-server-side-encryption")
+        Model::HeadObjectRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
+}
+
 void CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's CompleteMultipartUpload doesn't support metadata headers so we skip adding them
