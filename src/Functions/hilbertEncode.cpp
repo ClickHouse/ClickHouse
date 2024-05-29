@@ -29,6 +29,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+        
         size_t num_dimensions = arguments.size();
         size_t vector_start_index = 0;
         const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
