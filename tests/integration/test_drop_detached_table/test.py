@@ -106,7 +106,9 @@ def test_drop_s3_table(start_cluster):
     )
 
     node_s3.query("DETACH TABLE test_s3_table PERMANENTLY;")
-    node_s3.query("SET allow_experimental_drop_detached_table=1; DROP TABLE test_s3_table SYNC;")
+    node_s3.query(
+        "SET allow_experimental_drop_detached_table=1; DROP TABLE test_s3_table SYNC;"
+    )
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)

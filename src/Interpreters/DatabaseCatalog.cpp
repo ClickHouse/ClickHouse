@@ -1067,11 +1067,6 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
     return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
-bool isTableDetached(const ContextPtr & context_, const DatabasePtr & database, const String & table_name)
-{
-    return !database->isTableExist(table_name, context_) && fs::exists(database->getObjectMetadataPath(table_name));
-}
-
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
 {
     assert(table_id.hasUUID());
