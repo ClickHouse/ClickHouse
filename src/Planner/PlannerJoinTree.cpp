@@ -879,7 +879,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     return true;
                 };
 
-                if (parallel_replicas_enabled_for_storage(storage, settings) && query_context->canUseParallelReplicasOnInitiator())
+                /// query_plan can be empty if there is nothing to read
+                if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings) && query_context->canUseParallelReplicasOnInitiator())
                 {
                     // (1) find read step
                     QueryPlan::Node * node = query_plan.getRootNode();
@@ -898,10 +899,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
                         else
                         {
-                            if (prev_node->step)
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Step is expected to be ReadFromMergeTree but it's {}", prev_node->step->getName());
-                            else
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Step is expected to be ReadFromMergeTree, and wtf - last node with empty step");
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Step is expected to be ReadFromMergeTree but it's {}",
+                                prev_node->step->getName());
                         }
                     }
 
