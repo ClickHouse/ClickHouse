@@ -76,7 +76,7 @@ clickhouse.com
 
 **Returned values**
 
-- Host name if ClickHouse can parse the input string as a URL, otherwise an empty string. [String](../data-types/string.md).
+- Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -106,7 +106,7 @@ domainRFC(url)
 
 **Returned values**
 
-- Host name if ClickHouse can parse the input string as a URL, otherwise an empty string. [String](../data-types/string.md).
+- Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
 
 Type: `String`.
 
@@ -126,7 +126,7 @@ SELECT
 
 ### domainWithoutWWW
 
-Returns the domain and removes no more than one ‘www.’ from the beginning of it, if present.
+Returns the domain without leading `www.` if present.
 
 ### topLevelDomain
 
@@ -152,7 +152,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
+- Domain name if the input string can be parsed as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -172,7 +172,8 @@ Result:
 
 ### topLevelDomainRFC
 
-Extracts the the top-level domain from a URL. It is similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
+Extracts the the top-level domain from a URL.
+Similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
 
 ``` sql
 topLevelDomainRFC(url)
@@ -194,7 +195,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
-- Domain name if ClickHouse can parse the input string as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
+- Domain name if the input string can be parsed as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -214,12 +215,15 @@ Result:
 
 ### firstSignificantSubdomain
 
-Returns the “first significant subdomain”. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
+Returns the “first significant subdomain”.
+The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
+For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`.
+The list of "insignificant" second-level domains and other implementation details may change in the future.
 
 **Syntax**
 
 ```sql
-firstSignificantSubdomain(URL)
+firstSignificantSubdomain(url)
 ```
 
 **Arguments**
@@ -248,7 +252,11 @@ Result:
 
 ### firstSignificantSubdomainRFC
 
-Returns the “first significant subdomain”. Similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but according to RFC 1034.
+Returns the “first significant subdomain”.
+The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
+For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`.
+The list of "insignificant" second-level domains and other implementation details may change in the future.
+Similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but conforms to RFC 1034.
 
 **Syntax**
 
@@ -321,7 +329,8 @@ Result:
 
 ### cutToFirstSignificantSubdomainRFC
 
-Returns the part of the domain that includes top-level subdomains up to the [“first significant subdomain”](#firstsignificantsubdomain). It is similar to [cutToFirstSignificantSubdomain](#cuttofirstsignificantsubdomain) but follows stricter rules to be compatible with RFC 3986 and is less performant.
+Returns the part of the domain that includes top-level subdomains up to the [“first significant subdomain”](#firstsignificantsubdomain).
+Similar to [cutToFirstSignificantSubdomain](#cuttofirstsignificantsubdomain) but conforms to RFC 3986.
 
 **Syntax**
 
@@ -358,7 +367,7 @@ Result:
 
 ### cutToFirstSignificantSubdomainWithWWW
 
-Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
+Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping `www`.
 
 **Syntax**
 
@@ -372,7 +381,7 @@ cutToFirstSignificantSubdomainWithWWW(url)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain (with `www`) if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -395,7 +404,8 @@ Result:
 
 ### cutToFirstSignificantSubdomainWithWWWRFC
 
-Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www". Similar to [cutToFirstSignificantSubdomainWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but follows stricter rules to be compatible with RFC 3986 and is less performant.
+Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping `www`.
+Similar to [cutToFirstSignificantSubdomainWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but conforms to RFC 3986.
 
 **Syntax**
 
@@ -431,9 +441,9 @@ Result:
 
 ### cutToFirstSignificantSubdomainCustom
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
-
-This can be useful if you need a fresh TLD list or if you have a custom list.
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
+Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
+This function can be useful if you need a fresh TLD list or if you have a custom list.
 
 **Configuration example**
 
@@ -483,7 +493,10 @@ Result:
 
 ### cutToFirstSignificantSubdomainCustomRFC
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name. It is similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomaincustom) but follows stricter rules according to RFC 3986 and is generally less performant as a result.
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
+Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
+This function can be useful if you need a fresh TLD list or if you have a custom list.
+Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomaincustom) but conforms to RFC 3986.
 
 **Syntax**
 
@@ -506,8 +519,8 @@ cutToFirstSignificantSubdomainRFC(url, tld)
 
 ### cutToFirstSignificantSubdomainCustomWithWWW
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name.
-
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
+Accepts custom TLD list name.
 It can be useful if you need a fresh TLD list or if you have a custom list.
 
 **Configuration example**
@@ -560,7 +573,10 @@ Result:
 
 ### cutToFirstSignificantSubdomainCustomWithWWWRFC
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name. It is similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but follows stricter rules according to RFC 3986 and is generally less performant as a result.
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
+Accepts custom TLD list name.
+It can be useful if you need a fresh TLD list or if you have a custom list.
+Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but conforms to RFC 3986.
 
 **Syntax**
 
@@ -583,8 +599,8 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 
 ### firstSignificantSubdomainCustom
 
-Returns the first significant subdomain. Accepts customs TLD list name.
-
+Returns the first significant subdomain.
+Accepts customs TLD list name.
 Can be useful if you need fresh TLD list or you have custom.
 
 Configuration example:
@@ -637,7 +653,10 @@ Result:
 
 ### firstSignificantSubdomainCustomRFC
 
-Returns the first significant subdomain. Accepts customs TLD list name. Similar to [firstSignificantSubdomainCustom](#firstsignificantsubdomaincustom) but follows stricter rules according to RFC 3986 and is generally less performant as a result.
+Returns the first significant subdomain.
+Accepts customs TLD list name.
+Can be useful if you need fresh TLD list or you have custom.
+Similar to [firstSignificantSubdomainCustom](#firstsignificantsubdomaincustom) but conforms to RFC 3986.
 
 **Syntax**
 
@@ -662,7 +681,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 ### port
 
-Returns the port or `default_port` if there is no port in the `url` (or in case of validation error).
+Returns the port or `default_port` if the URL contains no port or cannot be parsed.
 
 **Syntax**
 
@@ -695,10 +714,10 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-
 ### portRFC
 
-Returns the port or `default_port` if there is no port in the `url` (or in case of validation error). Similar to [port](#port), but RFC 3986 conformant.
+Returns the port or `default_port` if the URL contains no port or cannot be parsed.
+Similar to [port](#port), but RFC 3986 conformant.
 
 **Syntax**
 
@@ -735,39 +754,53 @@ Result:
 
 ### path
 
-Returns the path. Example: `/top/news.html` The path does not include the query string.
+Returns the path without query string.
+
+Example: `/top/news.html`.
 
 ### pathFull
 
-The same as above, but including query string and fragment. Example: /top/news.html?page=2#comments
+The same as above, but including query string and fragment.
+
+Example: `/top/news.html?page=2#comments`.
 
 ### queryString
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as # and everything after #.
+Returns the query string without the initial question mark, `#` and everything after `#`.
+
+Example: `page=1&lr=213`.
 
 ### fragment
 
-Returns the fragment identifier. fragment does not include the initial hash symbol.
+Returns the fragment identifier without the initial hash symbol.
 
 ### queryStringAndFragment
 
-Returns the query string and fragment identifier. Example: page=1#29390.
+Returns the query string and fragment identifier.
+
+Example: `page=1#29390`.
 
 ### extractURLParameter(url, name)
 
-Returns the value of the ‘name’ parameter in the URL, if present. Otherwise, an empty string. If there are many parameters with this name, it returns the first occurrence. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
+Returns the value of the `name` parameter in the URL, if present, otherwise an empty string is returned.
+If there are multiple parameters with this name, the first occurrence is returned.
+The function assumes that the parameter in the `url` parameter is encoded in the same way as in the `name` argument.
 
 ### extractURLParameters(url)
 
-Returns an array of name=value strings corresponding to the URL parameters. The values are not decoded in any way.
+Returns an array of `name=value` strings corresponding to the URL parameters.
+The values are not decoded.
 
 ### extractURLParameterNames(url)
 
-Returns an array of name strings corresponding to the names of URL parameters. The values are not decoded in any way.
+Returns an array of name strings corresponding to the names of URL parameters.
+The values are not decoded.
 
 ### URLHierarchy(url)
 
-Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters.
+Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string.
+Consecutive separator characters are counted as one.
+The cut is made in the position after all the consecutive separator characters.
 
 ### URLPathHierarchy(url)
 
@@ -784,6 +817,7 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 ### encodeURLComponent(url)
 
 Returns the encoded URL.
+
 Example:
 
 ``` sql
@@ -799,6 +833,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 ### decodeURLComponent(url)
 
 Returns the decoded URL.
+
 Example:
 
 ``` sql
@@ -814,6 +849,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ### encodeURLFormComponent(url)
 
 Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
+
 Example:
 
 ``` sql
@@ -829,6 +865,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 ### decodeURLFormComponent(url)
 
 Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(` `).
+
 Example:
 
 ``` sql
@@ -877,29 +914,30 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## Functions that Remove Part of a URL
+## Functions that remove part of a URL
 
 If the URL does not have anything similar, the URL remains unchanged.
 
 ### cutWWW
 
-Removes no more than one ‘www.’ from the beginning of the URL’s domain, if present.
+Removes leading `www.` (if present) from the URL’s domain.
 
 ### cutQueryString
 
-Removes query string. The question mark is also removed.
+Removes query string, including the question mark.
 
 ### cutFragment
 
-Removes the fragment identifier. The number sign is also removed.
+Removes the fragment identifier, including the number sign.
 
 ### cutQueryStringAndFragment
 
-Removes the query string and fragment identifier. The question mark and number sign are also removed.
+Removes the query string and fragment identifier, including the question mark and number sign.
 
 ### cutURLParameter(url, name)
 
-Removes the `name` parameter from URL, if present. This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
+Removes the `name` parameter from a URL, if present.
+This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
 
 **Syntax**
 
