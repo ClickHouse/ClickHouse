@@ -47,25 +47,24 @@ def test_big_family(client: KeeperClient):
 
     assert response == TSV(
         [
-            ["/test_big_family", "11"],
-            ["/test_big_family/1", "6"],
-            ["/test_big_family/2", "4"],
-            ["/test_big_family/2/3", "1"],
-            ["/test_big_family/2/2", "1"],
-            ["/test_big_family/2/1", "1"],
-            ["/test_big_family/1/5", "1"],
-            ["/test_big_family/1/4", "1"],
-            ["/test_big_family/1/3", "1"],
-            ["/test_big_family/1/2", "1"],
+            ["/test_big_family/1", "5"],
+            ["/test_big_family/2", "3"],
+            ["/test_big_family/2/3", "0"],
+            ["/test_big_family/2/2", "0"],
+            ["/test_big_family/2/1", "0"],
+            ["/test_big_family/1/5", "0"],
+            ["/test_big_family/1/4", "0"],
+            ["/test_big_family/1/3", "0"],
+            ["/test_big_family/1/2", "0"],
+            ["/test_big_family/1/1", "0"],
         ]
     )
 
-    response = client.find_big_family("/test_big_family", 2)
+    response = client.find_big_family("/test_big_family", 1)
 
     assert response == TSV(
         [
-            ["/test_big_family", "11"],
-            ["/test_big_family/1", "6"],
+            ["/test_big_family/1", "5"],
         ]
     )
 

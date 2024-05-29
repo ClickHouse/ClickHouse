@@ -29,9 +29,7 @@ public:
         const SelectQueryOptions & select_query_options_,
         const Names & column_names = {});
 
-    /** Initialize interpreter with query tree.
-      * No query tree passes are applied.
-      */
+    /// Initialize interpreter with query tree
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);

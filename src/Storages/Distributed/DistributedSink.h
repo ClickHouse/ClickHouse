@@ -113,8 +113,6 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
 
-    std::mutex execution_mutex;
-
     struct JobReplica
     {
         JobReplica() = default;

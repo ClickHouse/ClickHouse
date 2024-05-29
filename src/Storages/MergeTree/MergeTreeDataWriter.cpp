@@ -422,11 +422,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     for (auto & column : columns)
-        if (column.type->hasDynamicSubcolumnsDeprecated())
+        if (column.type->hasDynamicSubcolumns())
             column.type = block.getByName(column.name).type;
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
     MergeTreePartition partition(block_with_partition.partition);
 
@@ -600,7 +600,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
         compression_codec,
-        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        context->getCurrentTransaction(),
         false,
         false,
         context->getWriteSettings());
@@ -618,8 +618,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         if (projection_block.rows())
         {
-            auto proj_temp_part
-                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get());
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
@@ -648,8 +647,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const MergeTreeData & data,
     LoggerPtr log,
     Block block,
-    const ProjectionDescription & projection,
-    bool merge_is_needed)
+    const ProjectionDescription & projection)
 {
     TemporaryPart temp_part;
     const auto & metadata_snapshot = projection.metadata;
@@ -658,7 +656,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
-    MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
+    data.reserveSpace(expected_size, parent_part->getDataPartStorage());
     part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
@@ -718,7 +716,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)
+    if (projection.type == ProjectionDescription::Type::Aggregate)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
 
@@ -738,7 +736,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         MergeTreeIndices{},
         Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
         compression_codec,
-        Tx::PrehistoricTID,
+        NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
@@ -758,11 +756,16 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
-    IMergeTreeDataPart * parent_part,
-    bool merge_is_needed)
+    IMergeTreeDataPart * parent_part)
 {
     return writeProjectionPartImpl(
-        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, merge_is_needed);
+        projection.name,
+        false /* is_temp */,
+        parent_part,
+        data,
+        log,
+        std::move(block),
+        projection);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -777,7 +780,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
 {
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     return writeProjectionPartImpl(
-        part_name, true /* is_temp */, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
+        part_name,
+        true /* is_temp */,
+        parent_part,
+        data,
+        log,
+        std::move(block),
+        projection);
 }
 
 }

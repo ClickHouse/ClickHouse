@@ -51,10 +51,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!db.second->canContainMergeTreeTables())
                 continue;
 
-            // Note that in case `async_load_databases = true` we do not want replica status handler to be hanging
-            // and waiting (in getTablesIterator() call) for every table to be load, so we just skip not-yet-loaded tables.
-            // If they have some lag it will be reflected as soon as they are load.
-            for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 const auto & table = iterator->table();
                 if (!table)

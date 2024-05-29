@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames, StatusNames
+from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -34,6 +34,7 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
     set_status_comment,
+    update_mergeable_check,
 )
 from digest_helper import DockerDigester, JobDigester
 from env_helper import (
@@ -44,17 +45,14 @@ from env_helper import (
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
-    GITHUB_RUN_ID,
-    GITHUB_REPOSITORY,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
-from github_helper import GitHub
+from github import Github
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, PENDING
+from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
-from ci_metadata import CiMetadata
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -69,12 +67,12 @@ class PendingState:
 class CiCache:
     """
     CI cache is a bunch of records. Record is a file stored under special location on s3.
-    The file name has a format:
+    The file name has following format
 
         <RECORD_TYPE>_[<ATTRIBUTES>]--<JOB_NAME>_<JOB_DIGEST>_<BATCH>_<NUM_BATCHES>.ci
 
     RECORD_TYPE:
-        SUCCESSFUL - for successful jobs
+        SUCCESSFUL - for successfuly finished jobs
         PENDING - for pending jobs
 
     ATTRIBUTES:
@@ -320,7 +318,7 @@ class CiCache:
             self.update()
 
         if self.cache_data_fetched:
-            # there are no records without fetched data - no need to fetch
+            # there are no record w/o underling data - no need to fetch
             return self
 
         # clean up
@@ -506,7 +504,7 @@ class CiCache:
         self, job: str, batch: int, num_batches: int, release_branch: bool
     ) -> bool:
         """
-        checks if a given job have already been done successfully
+        checks if a given job have already been done successfuly
         """
         return self.exist(
             self.RecordType.SUCCESSFUL, job, batch, num_batches, release_branch
@@ -747,7 +745,7 @@ class CiOptions:
     # list of specified jobs to run
     ci_jobs: Optional[List[str]] = None
 
-    # batches to run for all multi-batch jobs
+    # btaches to run for all multi-batch jobs
     job_batches: Optional[List[int]] = None
 
     do_not_test: bool = False
@@ -772,10 +770,9 @@ class CiOptions:
         res = CiOptions()
         pr_info = PRInfo()
         if (
-            not pr_info.is_pr and not debug_message
+            not pr_info.is_pr() and not debug_message
         ):  # if commit_message is provided it's test/debug scenario - do not return
             # CI options can be configured in PRs only
-            # if debug_message is provided - it's a test
             return res
         message = debug_message or GitRunner(set_cwd_to_git_root=True).run(
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
@@ -793,16 +790,16 @@ class CiOptions:
             print(f"CI tags from PR body: [{matches_pr}]")
             matches = list(set(matches + matches_pr))
 
-            if "do not test" in pr_info.labels:
-                # do_not_test could be set in GH labels
-                res.do_not_test = True
+        if "do not test" in pr_info.labels:
+            # do_not_test could be set in GH labels
+            res.do_not_test = True
 
         for match in matches:
             if match.startswith("job_"):
                 if not res.ci_jobs:
                     res.ci_jobs = []
-                res.ci_jobs.append(match.removeprefix("job_"))
-            elif match.startswith("ci_set_") and match in CILabels:
+                res.ci_jobs.append(match)
+            elif match.startswith("ci_set_") and match in Labels:
                 if not res.ci_sets:
                     res.ci_sets = []
                 res.ci_sets.append(match)
@@ -818,12 +815,12 @@ class CiOptions:
                 res.exclude_keywords.append(
                     normalize_check_name(match.removeprefix("ci_exclude_"))
                 )
-            elif match == CILabels.NO_CI_CACHE:
+            elif match == Labels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
-            elif match == CILabels.DO_NOT_TEST_LABEL:
+            elif match == Labels.DO_NOT_TEST_LABEL:
                 res.do_not_test = True
-            elif match == CILabels.NO_MERGE_COMMIT:
+            elif match == Labels.NO_MERGE_COMMIT:
                 res.no_merge_commit = True
                 print("NOTE: Merge Commit will be disabled")
             elif match.startswith("batch_"):
@@ -851,7 +848,6 @@ class CiOptions:
         jobs_to_do: List[str],
         jobs_to_skip: List[str],
         jobs_params: Dict[str, Dict[str, Any]],
-        pr_info: PRInfo,
     ) -> Tuple[List[str], List[str], Dict[str, Dict[str, Any]]]:
         """
         Applies specified options on CI Run Config
@@ -889,9 +885,9 @@ class CiOptions:
                     for job in job_with_parents:
                         if job in jobs_to_do and job not in jobs_to_do_requested:
                             jobs_to_do_requested.append(job)
-            print(
-                f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
-            )
+            assert (
+                jobs_to_do_requested
+            ), "Include tags are set but now job configured - Invalid tags, probably [{self.include_keywords}]"
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
@@ -901,7 +897,7 @@ class CiOptions:
         if self.ci_sets:
             for tag in self.ci_sets:
                 label_config = CI_CONFIG.get_label_config(tag)
-                assert label_config, f"Unknown tag [{tag}]"
+                assert label_config, f"Unknonwn tag [{tag}]"
                 print(
                     f"NOTE: CI Set's tag: [{tag}], add jobs: [{label_config.run_jobs}]"
                 )
@@ -910,10 +906,10 @@ class CiOptions:
         # FIXME: to be removed in favor of include/exclude
         # 2. Handle "job_" tags if any
         if self.ci_jobs:
-            for job in self.ci_jobs:
+            for tag in self.ci_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
                 print(
-                    f"NOTE: CI Job's tag: [#job_{job}], add jobs: [{job_with_parents}]"
+                    f"NOTE: CI Job's tag: [#job_{tag}], add jobs: [{job_with_parents}]"
                 )
                 # always add requested job itself, even if it could be skipped
                 jobs_to_do_requested.append(job_with_parents[0])
@@ -923,7 +919,7 @@ class CiOptions:
 
         # 3. Handle "do not test"
         if self.do_not_test:
-            label_config = CI_CONFIG.get_label_config(CILabels.DO_NOT_TEST_LABEL)
+            label_config = CI_CONFIG.get_label_config(Labels.DO_NOT_TEST_LABEL)
             assert label_config
             print(
                 f"NOTE: CI 'do not test' setting applied, set jobs: [{label_config.run_jobs}]"
@@ -946,13 +942,10 @@ class CiOptions:
             #   we need to add params - otherwise it won't run as "batches" list will be empty
             for job in jobs_to_do:
                 if job not in jobs_params:
-                    job_config = CI_CONFIG.get_job_config(job)
-                    num_batches = job_config.num_batches
+                    num_batches = CI_CONFIG.get_job_config(job).num_batches
                     jobs_params[job] = {
                         "batches": list(range(num_batches)),
                         "num_batches": num_batches,
-                        "run_by_ci_option": job_config.run_by_ci_option
-                        and pr_info.is_pr,
                     }
 
         # 4. Handle "batch_" tags
@@ -963,15 +956,6 @@ class CiOptions:
             for job, params in jobs_params.items():
                 if params["num_batches"] > 1:
                     params["batches"] = self.job_batches
-
-        for job in jobs_to_do[:]:
-            job_param = jobs_params[job]
-            if job_param["run_by_ci_option"] and job not in jobs_to_do_requested:
-                print(
-                    f"Erasing job '{job}' from list because it's not in included set, but will run only by include"
-                )
-                jobs_to_skip.append(job)
-                jobs_to_do.remove(job)
 
         return jobs_to_do, jobs_to_skip, jobs_params
 
@@ -991,16 +975,7 @@ def normalize_check_name(check_name: str) -> str:
 
 
 def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
-    parser.add_argument(
-        "--cancel-previous-run",
-        action="store_true",
-        help="Action that cancels previous running PR workflow if PR added into the Merge Queue",
-    )
-    parser.add_argument(
-        "--set-pending-status",
-        action="store_true",
-        help="Action to set needed pending statuses in the beginning of CI workflow, e.g. for Sync wf",
-    )
+    # FIXME: consider switching to sub_parser for configure, pre, run, post actions
     parser.add_argument(
         "--configure",
         action="store_true",
@@ -1009,19 +984,17 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     parser.add_argument(
         "--update-gh-statuses",
         action="store_true",
-        help="Action that recreate success GH statuses for jobs that finished successfully in past and will be "
-        "skipped this time",
+        help="Action that recreate success GH statuses for jobs that finished successfully in past and will be skipped this time",
     )
     parser.add_argument(
         "--pre",
         action="store_true",
-        help="Action that executes prerequisites for the job provided in --job-name",
+        help="Action that executes prerequesetes for the job provided in --job-name",
     )
     parser.add_argument(
         "--run",
         action="store_true",
-        help="Action that executes run action for specified --job-name. run_command must be configured for a given "
-        "job name.",
+        help="Action that executes run action for specified --job-name. run_command must be configured for a given job name.",
     )
     parser.add_argument(
         "--post",
@@ -1086,7 +1059,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--skip-jobs",
         action="store_true",
         default=False,
-        help="skip fetching data about job runs, used in --configure action (for debugging and nightly ci)",
+        help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
     parser.add_argument(
         "--force",
@@ -1099,8 +1072,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--rebuild-all-binaries",
         action="store_true",
         default=False,
-        help="[DEPRECATED. to be removed, once no wf use it] will create run config without skipping build jobs in "
-        "any case, used in --configure action (for release branches)",
+        help="[DEPRECATED. to be removed, once no wf use it] will create run config without skipping build jobs in any case, used in --configure action (for release branches)",
     )
     parser.add_argument(
         "--commit-message",
@@ -1245,19 +1217,19 @@ def _mark_success_action(
     if job_config.run_always or job_config.run_by_label:
         print(f"Job [{job}] runs always or by label in CI - do not cache")
     else:
-        if pr_info.is_master:
+        if pr_info.is_master():
             pass
             # delete method is disabled for ci_cache. need it?
             # pending enabled for master branch jobs only
             # ci_cache.delete_pending(job, batch, num_batches, release_branch=True)
         if job_status and job_status.is_ok():
             ci_cache.push_successful(
-                job, batch, num_batches, job_status, pr_info.is_release_branch
+                job, batch, num_batches, job_status, pr_info.is_release_branch()
             )
             print(f"Job [{job}] is ok")
         elif job_status and not job_status.is_ok():
             ci_cache.push_failed(
-                job, batch, num_batches, job_status, pr_info.is_release_branch
+                job, batch, num_batches, job_status, pr_info.is_release_branch()
             )
             print(f"Job [{job}] is failed with status [{job_status.status}]")
         else:
@@ -1265,7 +1237,7 @@ def _mark_success_action(
                 description="dummy description", status=ERROR, report_url="dummy url"
             )
             ci_cache.push_failed(
-                job, batch, num_batches, job_status, pr_info.is_release_branch
+                job, batch, num_batches, job_status, pr_info.is_release_branch()
             )
             print(f"No CommitStatusData for [{job}], push dummy failure to ci_cache")
 
@@ -1288,6 +1260,18 @@ def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) ->
             raise AssertionError(f"Unexpected type for 'res': {type(result)}")
 
 
+def _update_config_for_docs_only(jobs_data: dict) -> None:
+    DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
+    print(f"NOTE: Will keep only docs related jobs: [{DOCS_CHECK_JOBS}]")
+    jobs_to_do = jobs_data.get("jobs_to_do", [])
+    jobs_data["jobs_to_do"] = [job for job in jobs_to_do if job in DOCS_CHECK_JOBS]
+    jobs_data["jobs_to_wait"] = {
+        job: params
+        for job, params in jobs_data["jobs_to_wait"].items()
+        if job in DOCS_CHECK_JOBS
+    }
+
+
 def _configure_docker_jobs(docker_digest_or_latest: bool) -> Dict:
     print("::group::Docker images check")
     # generate docker jobs data
@@ -1305,7 +1289,7 @@ def _configure_docker_jobs(docker_digest_or_latest: bool) -> Dict:
     missing_amd64 = []
     missing_aarch64 = []
     if not docker_digest_or_latest:
-        # look for missing arm and amd images only among missing multi-arch manifests @missing_multi_dict
+        # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
         # to avoid extra dockerhub api calls
         missing_amd64 = list(
             check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
@@ -1347,31 +1331,8 @@ def _configure_jobs(
     jobs_to_skip: List[str] = []
     digests: Dict[str, str] = {}
 
-    # FIXME: find better place for these config variables
-    DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
-    MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
-    # Must always calculate digest for these jobs for CI Cache to function (they define s3 paths where records are stored)
-    REQUIRED_DIGESTS = [JobNames.DOCS_CHECK, Build.PACKAGE_RELEASE]
-    if pr_info.has_changes_in_documentation_only():
-        print(f"WARNING: Only docs are changed - will run only [{DOCS_CHECK_JOBS}]")
-    if pr_info.is_merge_queue:
-        print(f"WARNING: It's a MQ run - will run only [{MQ_JOBS}]")
-
     print("::group::Job Digests")
     for job in CI_CONFIG.job_generator(pr_info.head_ref if CI else "dummy_branch_name"):
-        if (
-            pr_info.is_merge_queue
-            and job not in MQ_JOBS
-            and job not in REQUIRED_DIGESTS
-        ):
-            # We still need digest for JobNames.DOCS_CHECK since CiCache depends on it (FIXME)
-            continue
-        if (
-            pr_info.has_changes_in_documentation_only()
-            and job not in DOCS_CHECK_JOBS
-            and job not in REQUIRED_DIGESTS
-        ):
-            continue
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
         print(f"    job [{job.rjust(50)}] has digest [{digest}]")
@@ -1392,18 +1353,12 @@ def _configure_jobs(
         batches_to_do: List[int] = []
         add_to_skip = False
 
-        if pr_info.is_merge_queue and job not in MQ_JOBS:
+        if job_config.pr_only and pr_info.is_release_branch():
             continue
-        if job_config.pr_only and pr_info.is_release_branch:
-            continue
-        if (
-            job_config.release_only
-            and not job_config.run_by_ci_option
-            and not pr_info.is_release_branch
-        ):
+        if job_config.release_only and not pr_info.is_release_branch():
             continue
 
-        # fill job randomization buckets (for jobs with configured @random_bucket property)
+        # fill job randomization buckets (for jobs with configured @random_bucket property))
         if job_config.random_bucket:
             if not job_config.random_bucket in randomization_buckets:
                 randomization_buckets[job_config.random_bucket] = set()
@@ -1423,7 +1378,7 @@ def _configure_jobs(
                 job,
                 batch,
                 num_batches,
-                release_branch=pr_info.is_release_branch
+                release_branch=pr_info.is_release_branch()
                 and job_config.required_on_release_branch,
             ):
                 # ci cache is enabled and job is not in the cache - add
@@ -1434,7 +1389,7 @@ def _configure_jobs(
                     job,
                     batch,
                     num_batches,
-                    release_branch=pr_info.is_release_branch
+                    release_branch=pr_info.is_release_branch()
                     and job_config.required_on_release_branch,
                 ):
                     if job in jobs_to_wait:
@@ -1452,13 +1407,12 @@ def _configure_jobs(
             jobs_params[job] = {
                 "batches": batches_to_do,
                 "num_batches": num_batches,
-                "run_by_ci_option": job_config.run_by_ci_option and pr_info.is_pr,
             }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
 
-    if not pr_info.is_release_branch:
+    if not pr_info.is_release_branch():
         # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
         for _, jobs in randomization_buckets.items():
             jobs_to_remove_randomization = set()
@@ -1477,8 +1431,14 @@ def _configure_jobs(
                 ]
 
     jobs_to_do, jobs_to_skip, jobs_params = ci_options.apply(
-        jobs_to_do, jobs_to_skip, jobs_params, pr_info
+        jobs_to_do, jobs_to_skip, jobs_params
     )
+
+    if pr_info.is_merge_queue():
+        # FIXME: Quick support for MQ workflow which is only StyleCheck for now
+        jobs_to_do = [JobNames.STYLE_CHECK]
+        jobs_to_skip = []
+        print(f"NOTE: This is Merge Queue CI: set jobs to do: [{jobs_to_do}]")
 
     return {
         "digests": digests,
@@ -1496,8 +1456,8 @@ def _configure_jobs(
 def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     populates GH Actions' workflow with real jobs
-    "Builds_1": [{"job_name": NAME, "runner_type": RUNNER_TYPE}]
-    "Tests_1": [{"job_name": NAME, "runner_type": RUNNER_TYPE}]
+    "Builds_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    "Tests_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
     ...
     """
     result = {}  # type: Dict[str, Any]
@@ -1543,7 +1503,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 
     # create GH status
     pr_info = PRInfo()
-    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
+    commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
 
     def _concurrent_create_status(job: str, batch: int, num_batches: int) -> None:
         job_status = ci_cache.get_successful(job, batch, num_batches)
@@ -1586,20 +1546,18 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
     res = [
         match
         for match in matches
-        if match in CILabels or match.startswith("job_") or match.startswith("batch_")
+        if match in Labels or match.startswith("job_") or match.startswith("batch_")
     ]
-    print(f"CI modifiers from commit message: [{res}]")
+    print(f"CI modifyers from commit message: [{res}]")
     res_2 = []
-    if pr_info.is_pr:
+    if pr_info.is_pr():
         matches = [match[-1] for match in re.findall(pattern, pr_info.body)]
         res_2 = [
             match
             for match in matches
-            if match in CILabels
-            or match.startswith("job_")
-            or match.startswith("batch_")
+            if match in Labels or match.startswith("job_") or match.startswith("batch_")
         ]
-        print(f"CI modifiers from PR body: [{res_2}]")
+        print(f"CI modifyers from PR body: [{res_2}]")
     return list(set(res + res_2))
 
 
@@ -1665,9 +1623,9 @@ def _upload_build_artifacts(
     report_url = ci_cache.upload_build_report(build_result)
     print(f"Report file has been uploaded to [{report_url}]")
 
-    # Upload master head's binaries
+    # Upload head master binaries
     static_bin_name = CI_CONFIG.build_config[build_name].static_binary_name
-    if pr_info.is_master and static_bin_name:
+    if pr_info.is_master() and static_bin_name:
         # Full binary with debug info:
         s3_path_full = "/".join((pr_info.base_ref, static_bin_name, "clickhouse-full"))
         binary_full = Path(job_report.build_dir_for_upload) / "clickhouse"
@@ -1753,10 +1711,7 @@ def _upload_build_profile_data(
         profile_data_file = Path(TEMP_PATH) / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
             for profile_source in profiles_dir.iterdir():
-                if profile_source.name not in (
-                    "binary_sizes.txt",
-                    "binary_symbols.txt",
-                ):
+                if profile_source.name != "binary_sizes.txt":
                     with open(profiles_dir / profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
 
@@ -1798,68 +1753,7 @@ def _upload_build_profile_data(
         try:
             ch_helper.insert_file(url, auth, query, binary_sizes_file)
         except InsertException:
-            logging.error("Failed to insert binary_sizes_file for the build, continue")
-
-        query = f"""INSERT INTO binary_symbols
-            (
-                pull_request_number,
-                commit_sha,
-                check_start_time,
-                check_name,
-                instance_type,
-                instance_id,
-                file,
-                address,
-                size,
-                type,
-                symbol
-            )
-            SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}',
-                file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol
-            FROM input('file String, address String, size String, type String, symbol String')
-            SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
-            FORMAT Regexp"""
-
-        binary_symbols_file = profiles_dir / "binary_symbols.txt"
-
-        print(
-            "::notice ::Log Uploading binary symbols data, path: %s, size: %s, query: %s",
-            binary_symbols_file,
-            binary_symbols_file.stat().st_size,
-            query,
-        )
-        try:
-            ch_helper.insert_file(url, auth, query, binary_symbols_file)
-        except InsertException:
-            logging.error(
-                "Failed to insert binary_symbols_file for the build, continue"
-            )
-
-
-def _add_build_to_version_history(
-    pr_info: PRInfo,
-    job_report: JobReport,
-    version: str,
-    docker_tag: str,
-    ch_helper: ClickHouseHelper,
-) -> None:
-    # with some probability we will not silently break this logic
-    assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
-
-    data = {
-        "check_start_time": job_report.start_time,
-        "pull_request_number": pr_info.number,
-        "pull_request_url": pr_info.pr_html_url,
-        "commit_sha": pr_info.sha,
-        "commit_url": pr_info.commit_html_url,
-        "version": version,
-        "docker_tag": docker_tag,
-        "git_ref": pr_info.head_ref,
-    }
-
-    print(f"::notice ::Log Adding record to versions history: {data}")
-
-    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+            logging.error("Failed to insert binary_size_file for the build, continue")
 
 
 def _run_test(job_name: str, run_command: str) -> int:
@@ -1913,42 +1807,6 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
-    wf_data = CiMetadata(s3, pr_number).fetch_meta()
-    if not cancel_sync:
-        if not wf_data.run_id:
-            print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
-        else:
-            print(
-                f"Canceling PR workflow run_id: [{wf_data.run_id}], pr: [{pr_number}]"
-            )
-            GitHub.cancel_wf(GITHUB_REPOSITORY, wf_data.run_id, get_best_robot_token())
-    else:
-        if not wf_data.sync_pr_run_id:
-            print("WARNING: Sync PR run id has not been found")
-        else:
-            print(f"Canceling sync PR workflow run_id: [{wf_data.sync_pr_run_id}]")
-            GitHub.cancel_wf(
-                "ClickHouse/clickhouse-private",
-                wf_data.sync_pr_run_id,
-                get_best_robot_token(),
-            )
-
-
-def _set_pending_statuses(pr_info: PRInfo) -> None:
-    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
-    try:
-        print("Set SYNC status to pending")
-        commit.create_status(
-            state=PENDING,
-            target_url="",
-            description="",
-            context=StatusNames.SYNC,
-        )
-    except Exception as ex:
-        print(f"ERROR: failed to set GH commit status, ex: {ex}")
-
-
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
     exit_code = 0
@@ -1977,12 +1835,6 @@ def main() -> int:
 
     ### CONFIGURE action: start
     if args.configure:
-        if CI and pr_info.is_pr:
-            # store meta on s3 (now we need it only for PRs)
-            meta = CiMetadata(s3, pr_info.number, pr_info.head_ref)
-            meta.run_id = int(GITHUB_RUN_ID)
-            meta.push_meta()
-
         ci_options = CiOptions.create_from_pr_message(
             args.commit_message or None, update_from_api=True
         )
@@ -2023,14 +1875,17 @@ def main() -> int:
             else {}
         )
 
+        if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
+            _update_config_for_docs_only(jobs_data)
+
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if pr_info.is_master:
+            if pr_info.is_master():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
-                    jobs_data.get("jobs_to_wait", {}), pr_info.is_release_branch
+                    jobs_data.get("jobs_to_wait", {}), pr_info.is_release_branch()
                 )
                 jobs_to_do = jobs_data["jobs_to_do"]
                 jobs_to_skip = jobs_data["jobs_to_skip"]
@@ -2046,7 +1901,8 @@ def main() -> int:
                         jobs_to_skip.append(job)
                         del jobs_params[job]
 
-                # set planned jobs as in-progress in CI cache
+            # set planned jobs as pending in the CI cache if on the master
+            if pr_info.is_master():
                 for job in jobs_data["jobs_to_do"]:
                     config = CI_CONFIG.get_job_config(job)
                     if config.run_always or config.run_by_label:
@@ -2056,7 +1912,7 @@ def main() -> int:
                         job,
                         job_params["batches"],
                         config.num_batches,
-                        release_branch=pr_info.is_release_branch,
+                        release_branch=pr_info.is_release_branch(),
                     )
 
             if "jobs_to_wait" in jobs_data:
@@ -2111,7 +1967,7 @@ def main() -> int:
         else:
             # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
-                GitHub(get_best_robot_token(), per_page=100), pr_info.sha
+                Github(get_best_robot_token(), per_page=100), pr_info.sha
             )
 
             # rerun helper check
@@ -2199,7 +2055,6 @@ def main() -> int:
                 check_url = log_url
             else:
                 # test job
-                gh = GitHub(get_best_robot_token(), per_page=100)
                 additional_urls = []
                 s3_path_prefix = "/".join(
                     (
@@ -2227,7 +2082,9 @@ def main() -> int:
                         job_report.check_name or _get_ext_check_name(args.job_name),
                         additional_urls=additional_urls or None,
                     )
-                commit = get_commit(gh, pr_info.sha)
+                commit = get_commit(
+                    Github(get_best_robot_token(), per_page=100), pr_info.sha
+                )
                 post_commit_status(
                     commit,
                     job_report.status,
@@ -2236,6 +2093,11 @@ def main() -> int:
                     job_report.check_name or _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
+                )
+                update_mergeable_check(
+                    commit,
+                    pr_info,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
                 )
 
             print(f"Job report url: [{check_url}]")
@@ -2251,15 +2113,6 @@ def main() -> int:
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events
             )
-
-            if "DockerServerImage" in args.job_name and indata is not None:
-                _add_build_to_version_history(
-                    pr_info,
-                    job_report,
-                    indata["version"],
-                    indata["build"],
-                    ch_helper,
-                )
         else:
             # no job report
             print(f"No job report for {[args.job_name]} - do nothing")
@@ -2274,22 +2127,6 @@ def main() -> int:
     elif args.update_gh_statuses:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
-
-    ### CANCEL PREVIOUS WORKFLOW RUN
-    elif args.cancel_previous_run:
-        if pr_info.is_merge_queue:
-            _cancel_pr_wf(s3, pr_info.merged_pr)
-        elif pr_info.is_pr:
-            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
-        else:
-            assert False, "BUG! Not supported scenario"
-
-    ### SET PENDING STATUS
-    elif args.set_pending_status:
-        if pr_info.is_pr:
-            _set_pending_statuses(pr_info)
-        else:
-            assert False, "BUG! Not supported scenario"
 
     ### print results
     _print_results(result, args.outfile, args.pretty)

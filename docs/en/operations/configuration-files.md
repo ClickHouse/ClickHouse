@@ -67,8 +67,6 @@ generates merged configuration file:
 </clickhouse>
 ```
 
-### Using from_env and from_zk
-
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
 Example with `$MAX_QUERY_SIZE = 150000`:
@@ -84,59 +82,6 @@ Example with `$MAX_QUERY_SIZE = 150000`:
 ```
 
 which is equal to
-
-``` xml
-<clickhouse>
-    <profiles>
-        <default>
-            <max_query_size>150000</max_query_size>
-        </default>
-    </profiles>
-</clickhouse>
-```
-
-The same is possible using `from_zk`:
-
-``` xml
-<clickhouse>
-    <postgresql_port from_zk="/zk_configs/postgresql_port"/>
-</clickhouse>
-```
-
-```
-# clickhouse-keeper-client
-/ :) touch /zk_configs
-/ :) create /zk_configs/postgresql_port "9005"
-/ :) get /zk_configs/postgresql_port
-9005
-```
-
-which is equal to
-
-
-``` xml
-<clickhouse>
-    <postgresql_port>9005</postgresql_port>
-</clickhouse>
-```
-
-#### Default values for from_env and from_zk attributes
-
-It's possible to set the default value and substitute it only if the environment variable or zookeeper node is set using `replace="1"`.
-
-With previous example, but `MAX_QUERY_SIZE` is unset:
-
-``` xml
-<clickhouse>
-    <profiles>
-        <default>
-            <max_query_size from_env="MAX_QUERY_SIZE" replace="1">150000</max_query_size>
-        </default>
-    </profiles>
-</clickhouse>
-```
-
-will take the default value
 
 ``` xml
 <clickhouse>

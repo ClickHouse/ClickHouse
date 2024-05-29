@@ -148,9 +148,6 @@ public:
     size_t sizeOfValueIfFixed() const override { return values->sizeOfValueIfFixed() + values->sizeOfValueIfFixed(); }
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
-    bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-
     size_t getNumberOfTrailingDefaults() const
     {
         return offsets->empty() ? _size : _size - getOffsetsData().back() - 1;

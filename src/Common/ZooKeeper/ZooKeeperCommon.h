@@ -625,7 +625,7 @@ private:
     ZooKeeperRequestFactory();
 };
 
-enum class PathMatchResult : uint8_t
+enum class PathMatchResult
 {
     NOT_MATCH,
     EXACT,

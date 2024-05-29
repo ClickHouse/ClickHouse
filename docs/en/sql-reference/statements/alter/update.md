@@ -4,7 +4,7 @@ sidebar_position: 40
 sidebar_label: UPDATE
 ---
 
-# ALTER TABLE ... UPDATE Statements
+# ALTER TABLE … UPDATE Statements
 
 ``` sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
