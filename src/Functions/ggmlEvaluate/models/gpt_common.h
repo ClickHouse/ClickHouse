@@ -25,7 +25,7 @@ struct GptVocab
 struct GptParams
 {
     int32_t seed = -1; // random_number_generator seed
-    int32_t n_threads = 1; // std::min(4, static_cast<int32_t>(std::thread::hardware_concurrency()));
+    int32_t n_threads = 4; // std::min(4, static_cast<int32_t>(std::thread::hardware_concurrency()));
     int32_t n_predict = 200; // new tokens to predict
     int32_t n_parallel = 1; // number of parallel streams
     int32_t n_batch = 8; // batch size for prompt processing

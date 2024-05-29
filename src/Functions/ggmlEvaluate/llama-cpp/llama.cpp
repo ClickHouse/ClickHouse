@@ -8,7 +8,7 @@
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 #include "ggml.h"
-#define GGML_COMMON_DECL_C
+// #define GGML_COMMON_DECL_C
 #include "ggml-common.h"
 
 #ifdef GGML_USE_RPC

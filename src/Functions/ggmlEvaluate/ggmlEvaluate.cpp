@@ -166,12 +166,14 @@ private:
         if (!getContext()->getConfigRef().has(ggmlConfigSection))
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key '{}' in config", ggmlConfigSection);
          ConfigPtr ggml_config{getContext()->getConfigRef().createView(ggmlConfigSection)};
-         if (!ggml_config->has(model_name))
-             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key '{}' set in ggml config", model_name);
-         ConfigPtr model_config{ggml_config->createView(model_name)};
-
-         auto & storage = getContext()->getGgmlModelStorage();
-         auto model = storage.get(model_name, "llama-gguf");  // llama-gguf is default for now
+        if (!ggml_config->has(model_name))
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key '{}' set in ggml config", model_name);
+        ConfigPtr model_config{ggml_config->createView(model_name)};
+        if (!model_config->has("builder"))
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'builder' set in model '{}' config", model_name);
+        auto builder = model_config->getRawString("builder");
+        auto & storage = getContext()->getGgmlModelStorage();
+        auto model = storage.get(model_name, builder);  // llama-gguf is defult for now
 
         LOG_DEBUG(log, "Start loading model");
         model->load(model_config);
