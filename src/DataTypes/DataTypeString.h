@@ -39,6 +39,8 @@ public:
     bool canBeInsideLowCardinality() const override { return true; }
 
     SerializationPtr doGetDefaultSerialization() const override;
+
+    bool use_fsst_optimization{false};
 };
 
 }

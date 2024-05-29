@@ -90,6 +90,9 @@ public:
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */) {}
 
     CompressionCodecPtr codec;
+
+protected:
+    bool fsst_compression_used{false};
 };
 
 }

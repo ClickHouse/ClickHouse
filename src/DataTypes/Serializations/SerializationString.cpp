@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFSST.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -214,6 +215,12 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
 void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
+    if (!istr.eof() && istr.readAllDataIfCompressed()) {
+        ColumnFSST & column_fsst = typeid_cast<ColumnFSST &>(column);
+        column_fsst.doPrepare(istr);
+        return;
+    }
+
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();

@@ -3,6 +3,9 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include "Columns/ColumnFSST.h"
+#include "Core/Types_fwd.h"
+#include "DataTypes/DataTypeString.h"
 
 namespace DB
 {
@@ -219,8 +222,13 @@ void MergeTreeReaderCompact::createColumnsForReading(Columns & res_columns) cons
 {
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
-        if (column_positions[i] && res_columns[i] == nullptr)
+        if (column_positions[i] && res_columns[i] == nullptr) {
+            if (columns_to_read[i].type->getColumnType() == TypeIndex::String && typeid_cast<const DataTypeString &>(*columns_to_read[i].type).use_fsst_optimization) {
+                res_columns[i] = ColumnFSST::create();
+                continue;
+            }
             res_columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
+        }
     }
 }
 

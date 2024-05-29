@@ -1,4 +1,7 @@
+#include <climits>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFSST.h>
+
 #include <Core/Field.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -7,6 +10,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -28,7 +32,6 @@ MutableColumnPtr DataTypeString::createColumn() const
     return ColumnString::create();
 }
 
-
 bool DataTypeString::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this);
@@ -41,6 +44,8 @@ SerializationPtr DataTypeString::doGetDefaultSerialization() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
+    auto data_type = std::make_shared<DataTypeString>();
+
     if (arguments && !arguments->children.empty())
     {
         if (arguments->children.size() > 1)
@@ -50,9 +55,14 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
         if (!argument || argument->value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "String data type family may have only a number (positive integer) as its argument");
+
+        UInt64 optimization;
+        if(argument->value.tryGet(optimization) && optimization == 99) {
+            data_type->use_fsst_optimization = true;
+        }
     }
 
-    return std::make_shared<DataTypeString>();
+    return data_type;
 }
 
 

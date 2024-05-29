@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFSST.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
@@ -226,6 +227,7 @@ public:
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
         const ColumnFixedString * col_haystack_vector_fixed = checkAndGetColumn<ColumnFixedString>(&*column_haystack);
         const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
+        const ColumnFSST * col_haystack_vector_fsst = checkAndGetColumn<ColumnFSST>(&*column_haystack);
 
         if (col_haystack_vector && col_needle_vector)
             Impl::vectorVector(
@@ -268,6 +270,15 @@ public:
                 column_start_pos,
                 vec_res,
                 null_map.get());
+        else if (col_haystack_vector_fsst && col_needle_const) {
+            Impl::vectorConstant(
+                col_haystack_vector_fsst->getChars(),
+                col_haystack_vector_fsst->getOffsets(),
+                col_haystack_vector_fsst->encode(col_needle_const->getValue<String>()),
+                column_start_pos,
+                vec_res,
+                null_map.get());
+        }
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
