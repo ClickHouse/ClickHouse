@@ -57,8 +57,8 @@ private:
             return;
 
         const auto & node_alias = node->getAlias();
-        auto [it, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(node_alias, node);
-        if (!inserted && node != it->second)
+        auto [_, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(node_alias, node);
+        if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "Multiple table expressions with same alias {}. In scope {}",
                 node_alias,
