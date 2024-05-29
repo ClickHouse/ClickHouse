@@ -106,12 +106,12 @@ int32_t cpu_get_num_physical_cores()
 #elif defined(__APPLE__) && defined(__MACH__)
     int32_t num_physical_cores;
     size_t len = sizeof(num_physical_cores);
-    int result = sysctlbyname("hw.perflevel0.physicalcpu", &num_physical_cores, &len, NULL, 0);
+    int result = sysctlbyname("hw.perflevel0.physicalcpu", &num_physical_cores, &len, nullptr, 0);
     if (result == 0)
     {
         return num_physical_cores;
     }
-    result = sysctlbyname("hw.physicalcpu", &num_physical_cores, &len, NULL, 0);
+    result = sysctlbyname("hw.physicalcpu", &num_physical_cores, &len, nullptr, 0);
     if (result == 0)
     {
         return num_physical_cores;
@@ -435,7 +435,7 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
         model = llama_load_model_from_file(params.model.c_str(), mparams);
     }
 
-    if (model == NULL)
+    if (model == nullptr)
     {
         fprintf(stderr, "%s: error: failed to load model '%s'\n", __func__, params.model.c_str());
         return std::make_tuple(nullptr, nullptr);
@@ -444,7 +444,7 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
     auto cparams = llama_context_params_from_gpt_params(params);
 
     llama_context * lctx = llama_new_context_with_model(model, cparams);
-    if (lctx == NULL)
+    if (lctx == nullptr)
     {
         fprintf(stderr, "%s: error: failed to create context with model '%s'\n", __func__, params.model.c_str());
         llama_free_model(model);
@@ -484,7 +484,7 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
             model,
             lora_adapter.c_str(),
             lora_scale,
-            ((i > 0) || params.lora_base.empty()) ? NULL : params.lora_base.c_str(),
+            ((i > 0) || params.lora_base.empty()) ? nullptr : params.lora_base.c_str(),
             params.n_threads);
         if (err != 0)
         {
@@ -534,7 +534,7 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     mparams.check_tensors = params.check_tensors;
     if (params.kv_overrides.empty())
     {
-        mparams.kv_overrides = NULL;
+        mparams.kv_overrides = nullptr;
     }
     else
     {
@@ -876,12 +876,12 @@ struct llama_model * llama_load_model_from_url(const char * model_url, const cha
     if (!model_url || strlen(model_url) == 0)
     {
         fprintf(stderr, "%s: invalid model_url\n", __func__);
-        return NULL;
+        return nullptr;
     }
 
     if (!llama_download_file(model_url, path_model))
     {
-        return NULL;
+        return nullptr;
     }
 
     // check for additional GGUFs split to download
@@ -889,13 +889,13 @@ struct llama_model * llama_load_model_from_url(const char * model_url, const cha
     {
         struct gguf_init_params gguf_params = {
             /*.no_alloc = */ true,
-            /*.ctx      = */ NULL,
+            /*.ctx      = */ nullptr,
         };
         auto * ctx_gguf = gguf_init_from_file(path_model, gguf_params);
         if (!ctx_gguf)
         {
             fprintf(stderr, "\n%s:  failed to load input GGUF from %s\n", __func__, path_model);
-            return NULL;
+            return nullptr;
         }
 
         auto key_n_split = gguf_find_key(ctx_gguf, LLM_KV_SPLIT_COUNT);
@@ -924,7 +924,7 @@ struct llama_model * llama_load_model_from_url(const char * model_url, const cha
                     __func__,
                     path_model,
                     n_split);
-                return NULL;
+                return nullptr;
             }
 
             if (!llama_split_prefix(split_url_prefix, sizeof(split_url_prefix), model_url, 0, n_split))
@@ -936,7 +936,7 @@ struct llama_model * llama_load_model_from_url(const char * model_url, const cha
                     __func__,
                     model_url,
                     n_split);
-                return NULL;
+                return nullptr;
             }
         }
 
@@ -964,7 +964,7 @@ struct llama_model * llama_load_model_from_url(const char * model_url, const cha
         {
             if (!f.get())
             {
-                return NULL;
+                return nullptr;
             }
         }
     }

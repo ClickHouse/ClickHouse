@@ -207,7 +207,7 @@ static std::string format(const char * fmt, ...)
     va_list ap2;
     va_start(ap, fmt);
     va_copy(ap2, ap);
-    int size = vsnprintf(NULL, 0, fmt, ap);
+    int size = vsnprintf(nullptr, 0, fmt, ap);
     GGML_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
     std::vector<char> buf(size + 1);
     int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
@@ -1284,12 +1284,12 @@ static std::string llama_format_win_err(DWORD err)
     LPSTR buf;
     size_t size = FormatMessageA(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
+        nullptr,
         err,
         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
         (LPSTR)&buf,
         0,
-        NULL);
+        nullptr);
     if (!size)
     {
         return "FormatMessageA failed";
@@ -1316,7 +1316,7 @@ struct llama_file
     llama_file(const char * fname, const char * mode)
     {
         fp = ggml_fopen(fname, mode);
-        if (fp == NULL)
+        if (fp == nullptr)
         {
             throw std::runtime_error(format("failed to open %s: %s", fname, strerror(errno)));
         }
@@ -1431,7 +1431,7 @@ struct llama_mmap
             flags |= MAP_POPULATE;
         }
 #    endif
-        addr = mmap(NULL, file->size, PROT_READ, flags, fd, 0);
+        addr = mmap(nullptr, file->size, PROT_READ, flags, fd, 0);
         if (addr == MAP_FAILED)
         { // NOLINT
             throw std::runtime_error(format("mmap failed: %s", strerror(errno)));
@@ -1555,9 +1555,9 @@ struct llama_mmap
 
         HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file->fp));
 
-        HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+        HANDLE hMapping = CreateFileMappingA(hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
 
-        if (hMapping == NULL)
+        if (hMapping == nullptr)
         {
             DWORD error = GetLastError();
             throw std::runtime_error(format("CreateFileMappingA failed: %s", llama_format_win_err(error).c_str()));
@@ -1567,7 +1567,7 @@ struct llama_mmap
         DWORD error = GetLastError();
         CloseHandle(hMapping);
 
-        if (addr == NULL)
+        if (addr == nullptr)
         {
             throw std::runtime_error(format("MapViewOfFile failed: %s", llama_format_win_err(error).c_str()));
         }
@@ -1640,7 +1640,7 @@ using llama_mmaps = std::vector<std::unique_ptr<llama_mmap>>;
 // will automatically unlock on destruction.
 struct llama_mlock
 {
-    void * addr = NULL;
+    void * addr = nullptr;
     size_t size = 0;
 
     bool failed_already = false;
@@ -1658,7 +1658,7 @@ struct llama_mlock
 
     void init(void * ptr)
     {
-        GGML_ASSERT(addr == NULL && size == 0); // NOLINT
+        GGML_ASSERT(addr == nullptr && size == 0); // NOLINT
         addr = ptr;
     }
 
@@ -2619,7 +2619,7 @@ static bool validate_fp16(ggml_fp16_t f, size_t i)
     }
 
 // static void ggml_set_op_params(struct ggml_tensor * tensor, const void * params, size_t params_size) {
-//     GGML_ASSERT(tensor != NULL); // silence -Warray-bounds warnings
+//     GGML_ASSERT(tensor != nullptr); // silence -Warray-bounds warnings
 //     assert(params_size <= GGML_MAX_OP_PARAMS);
 //     memcpy(tensor->op_params, params, params_size);
 // }
@@ -2675,7 +2675,7 @@ static bool validate_fp16(ggml_fp16_t f, size_t i)
 //     ggml_set_op_params(result, params, sizeof(params));
 
 //     result->op   = GGML_OP_ROPE;
-//     result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
+//     result->grad = is_node ? ggml_dup_tensor(ctx, result) : nullptr;
 //     result->src[0] = a;
 //     result->src[1] = b;
 //     result->src[2] = c;
@@ -2691,7 +2691,7 @@ static bool validate_fp16(ggml_fp16_t f, size_t i)
 //         int                   mode,
 //         int                   n_ctx) {
 //     return ggml_rope_impl(
-//         ctx, a, b, NULL, n_dims, mode, n_ctx, 0, 10000.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, false, false
+//         ctx, a, b, nullptr, n_dims, mode, n_ctx, 0, 10000.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, false, false
 //     );
 // }
 
@@ -2703,7 +2703,7 @@ static bool validate_fp16(ggml_fp16_t f, size_t i)
 //         int                   mode,
 //         int                   n_ctx) {
 //     return ggml_rope_impl(
-//         ctx, a, b, NULL, n_dims, mode, n_ctx, 0, 10000.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, false, true
+//         ctx, a, b, nullptr, n_dims, mode, n_ctx, 0, 10000.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, false, true
 //     );
 // }
 
@@ -2764,7 +2764,7 @@ static bool validate_fp16(ggml_fp16_t f, size_t i)
 //         float                 beta_fast,
 //         float                 beta_slow) {
 //     return ggml_rope_impl(
-//         ctx, a, b, NULL, n_dims, mode, n_ctx, n_orig_ctx, freq_base, freq_scale,
+//         ctx, a, b, nullptr, n_dims, mode, n_ctx, n_orig_ctx, freq_base, freq_scale,
 //         ext_factor, attn_factor, beta_fast, beta_slow, 0.0f, false, false
 //     );
 // }
@@ -2784,7 +2784,7 @@ static bool validate_fp16(ggml_fp16_t f, size_t i)
 //         float                 beta_fast,
 //         float                 beta_slow) {
 //     return ggml_rope_impl(
-//         ctx, a, b, NULL, n_dims, mode, n_ctx, n_orig_ctx, freq_base, freq_scale,
+//         ctx, a, b, nullptr, n_dims, mode, n_ctx, n_orig_ctx, freq_base, freq_scale,
 //         ext_factor, attn_factor, beta_fast, beta_slow, 0.0f, false, true
 //     );
 // }
@@ -2935,7 +2935,7 @@ static bool llama_kv_cache_init(
         int n_layers = it.second;
         struct ggml_init_params params = {
             /*.mem_size   =*/2u * n_layers * ggml_tensor_overhead(),
-            /*.mem_buffer =*/NULL,
+            /*.mem_buffer =*/nullptr,
             /*.no_alloc   =*/true,
         };
         ggml_context * ctx = ggml_init(params);
@@ -3738,7 +3738,7 @@ struct llama_model_loader
 
     std::unordered_map<std::string, struct llama_model_kv_override> kv_overrides;
 
-    struct gguf_context * meta = NULL;
+    struct gguf_context * meta = nullptr;
     std::vector<ggml_context *> contexts;
 
     std::string arch_name;
@@ -3761,7 +3761,7 @@ struct llama_model_loader
             }
         }
 
-        struct ggml_context * ctx = NULL;
+        struct ggml_context * ctx = nullptr;
         struct gguf_init_params params = {
             /*.no_alloc = */ true,
             /*.ctx      = */ &ctx,
@@ -4214,11 +4214,11 @@ struct llama_model_loader
     {
         const struct ggml_tensor * cur = get_tensor_meta(name.c_str());
 
-        if (cur == NULL)
+        if (cur == nullptr)
         {
             if (!required)
             {
-                return NULL;
+                return nullptr;
             }
             throw std::runtime_error(format("%s: tensor '%s' not found", __func__, name.c_str()));
         }
@@ -4254,9 +4254,9 @@ struct llama_model_loader
     {
         const struct ggml_tensor * cur = check_tensor_dims(name, ne, !(flags & TENSOR_NOT_REQUIRED));
 
-        if (cur == NULL)
+        if (cur == nullptr)
         {
-            return NULL;
+            return nullptr;
         }
 
         return create_tensor_for(ctx, cur, flags & TENSOR_DUPLICATED);
@@ -4272,9 +4272,9 @@ struct llama_model_loader
     {
         const struct ggml_tensor * cur = check_tensor_dims(name, ne, required);
 
-        if (cur == NULL)
+        if (cur == nullptr)
         {
-            return NULL;
+            return nullptr;
         }
 
         if (cur->type != base->type)
@@ -4418,7 +4418,7 @@ struct llama_model_loader
         std::vector<no_init<uint8_t>> read_buf;
         std::vector<std::future<std::pair<ggml_tensor *, bool>>> validation_result;
 
-        for (struct ggml_tensor * cur = ggml_get_first_tensor(ctx); cur != NULL; cur = ggml_get_next_tensor(ctx, cur))
+        for (struct ggml_tensor * cur = ggml_get_first_tensor(ctx); cur != nullptr; cur = ggml_get_next_tensor(ctx, cur))
         {
             const auto * weight = get_weight(ggml_get_name(cur));
             if (weight == nullptr)
@@ -6360,7 +6360,7 @@ static bool llm_load_tensors(
     {
         struct ggml_init_params params = {
             /*.mem_size   =*/ctx_size,
-            /*.mem_buffer =*/NULL,
+            /*.mem_buffer =*/nullptr,
             /*.no_alloc   =*/true,
         };
         ggml_context * ctx = ggml_init(params);
@@ -6416,8 +6416,8 @@ static bool llm_load_tensors(
                     {
                         model.output = ml.create_tensor(
                             ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                        // if output is NULL, init from the input tok embed
-                        if (model.output == NULL)
+                        // if output is nullptr, init from the input tok embed
+                        if (model.output == nullptr)
                         {
                             model.output = ml.create_tensor(
                                 ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
@@ -6531,8 +6531,8 @@ static bool llm_load_tensors(
                     model.output_norm = ml.create_tensor(ctx_output, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd});
                     model.output = ml.create_tensor(
                         ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                    // if output is NULL, init from the input tok embed
-                    if (model.output == NULL)
+                    // if output is nullptr, init from the input tok embed
+                    if (model.output == nullptr)
                     {
                         model.output = ml.create_tensor(
                             ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
@@ -7085,8 +7085,8 @@ static bool llm_load_tensors(
                     model.output_norm = ml.create_tensor(ctx_output, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd});
                     model.output = ml.create_tensor(
                         ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                    // if output is NULL, init from the input tok embed
-                    if (model.output == NULL)
+                    // if output is nullptr, init from the input tok embed
+                    if (model.output == nullptr)
                     {
                         model.output = ml.create_tensor(
                             ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
@@ -7478,8 +7478,8 @@ static bool llm_load_tensors(
 
                     model.output = ml.create_tensor(
                         ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                    // if output is NULL, init from the input tok embed
-                    if (model.output == NULL)
+                    // if output is nullptr, init from the input tok embed
+                    if (model.output == nullptr)
                     {
                         model.output = ml.create_tensor(
                             ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
@@ -7534,8 +7534,8 @@ static bool llm_load_tensors(
 
                     model.output = ml.create_tensor(
                         ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                    // if output is NULL, init from the input tok embed, duplicated to allow offloading
-                    if (model.output == NULL)
+                    // if output is nullptr, init from the input tok embed, duplicated to allow offloading
+                    if (model.output == nullptr)
                     {
                         model.output = ml.create_tensor(
                             ctx_output_split,
@@ -7644,8 +7644,8 @@ static bool llm_load_tensors(
                 {
                     model.output = ml.create_tensor(
                         ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                    // if output is NULL, init from the input tok embed
-                    if (model.output == NULL)
+                    // if output is nullptr, init from the input tok embed
+                    if (model.output == nullptr)
                     {
                         model.output = ml.create_tensor(
                             ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
@@ -7714,8 +7714,8 @@ static bool llm_load_tensors(
                     model.output_norm = ml.create_tensor(ctx_output, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd});
                     model.output = ml.create_tensor(
                         ctx_output_split, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
-                    // if output is NULL, init from the input tok embed
-                    if (model.output == NULL)
+                    // if output is nullptr, init from the input tok embed
+                    if (model.output == nullptr)
                     {
                         model.output = ml.create_tensor(
                             ctx_output, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
@@ -7895,7 +7895,7 @@ static bool llm_load_tensors(
     // populate tensors_by_name
     for (ggml_context * ctx : model.ctxs)
     {
-        for (auto * cur = ggml_get_first_tensor(ctx); cur != NULL; cur = ggml_get_next_tensor(ctx, cur))
+        for (auto * cur = ggml_get_first_tensor(ctx); cur != nullptr; cur = ggml_get_next_tensor(ctx, cur))
         {
             model.tensors_by_name.emplace_back(ggml_get_name(cur), cur);
         }
@@ -7906,7 +7906,7 @@ static bool llm_load_tensors(
     {
         ggml_context * ctx = it.first;
         auto & bufs = it.second;
-        if (!ml.load_all_data(ctx, bufs, use_mlock ? &model.mlock_mmaps : NULL, progress_callback, progress_callback_user_data))
+        if (!ml.load_all_data(ctx, bufs, use_mlock ? &model.mlock_mmaps : nullptr, progress_callback, progress_callback_user_data))
         {
             return false;
         }
@@ -8231,7 +8231,7 @@ static struct ggml_tensor * llm_build_ffn(
         case LLM_FFN_GELU: {
             cur = ggml_gelu(ctx, cur);
             cb(cur, "ffn_gelu", il);
-            if (act_scales != NULL)
+            if (act_scales != nullptr)
             {
                 cur = ggml_div(ctx, cur, act_scales);
                 cb(cur, "ffn_act", il);
@@ -8943,7 +8943,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -9043,19 +9043,19 @@ struct llm_build_context
             // feed-forward network
             if (model.layers[il].ffn_gate_inp == nullptr)
             {
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_ffn(
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -9065,7 +9065,7 @@ struct llm_build_context
             else
             {
                 // MoE branch
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_moe_ffn(
@@ -9100,7 +9100,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -9135,7 +9135,7 @@ struct llm_build_context
         {
             struct ggml_tensor * inpSA = inpL;
 
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -9201,7 +9201,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -9227,19 +9227,19 @@ struct llm_build_context
 
             // feed-forward network
             {
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_ffn(
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -9256,7 +9256,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -9291,7 +9291,7 @@ struct llm_build_context
         {
             struct ggml_tensor * inpSA = inpL;
 
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -9346,7 +9346,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -9372,19 +9372,19 @@ struct llm_build_context
 
             // feed-forward network
             {
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_ffn(
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -9401,7 +9401,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -9514,7 +9514,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -9544,12 +9544,12 @@ struct llm_build_context
                     ctx0,
                     attn_norm, // !! use the attn norm, not the result
                     model.layers[il].ffn_up,
-                    NULL,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -9611,7 +9611,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
 
@@ -9710,7 +9710,7 @@ struct llm_build_context
             // if attn_out_norm is present then apply it before adding the input
             if (model.layers[il].attn_out_norm)
             {
-                cur = llm_build_norm(ctx0, cur, hparams, model.layers[il].attn_out_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, cur, hparams, model.layers[il].attn_out_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "attn_out_norm", il);
             }
 
@@ -9719,7 +9719,7 @@ struct llm_build_context
 
             // feed-forward network
             // MoE branch
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             cur = llm_build_moe_ffn(
@@ -9742,7 +9742,7 @@ struct llm_build_context
             // Idea: maybe ffn_out_norm is a better name
             if (model.layers[il].layer_out_norm)
             {
-                cur = llm_build_norm(ctx0, cur, hparams, model.layers[il].layer_out_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, cur, hparams, model.layers[il].layer_out_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "layer_out_norm", il);
             }
 
@@ -9762,7 +9762,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -9808,7 +9808,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -9874,7 +9874,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -9901,7 +9901,7 @@ struct llm_build_context
 
             // feed-forward network
             // MoE branch
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].attn_out_norm, NULL, LLM_NORM, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].attn_out_norm, nullptr, LLM_NORM, cb, il);
             cb(cur, "attn_out_norm", il);
 
             cur = llm_build_moe_ffn(
@@ -9935,7 +9935,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -10042,11 +10042,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -10088,7 +10088,7 @@ struct llm_build_context
         {
             struct ggml_tensor * inpSA = inpL;
 
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -10116,7 +10116,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -10142,19 +10142,19 @@ struct llm_build_context
 
             // feed-forward network
             {
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_ffn(
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -10171,7 +10171,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -10367,11 +10367,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -10383,12 +10383,12 @@ struct llm_build_context
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_PAR,
                     cb,
@@ -10400,12 +10400,12 @@ struct llm_build_context
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -10543,11 +10543,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -10716,8 +10716,8 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
                     model.layers[il].ffn_act,
@@ -10808,12 +10808,12 @@ struct llm_build_context
 
                 if (model.layers[il].attn_q_norm)
                 {
-                    Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, NULL, LLM_NORM, cb, il);
+                    Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, nullptr, LLM_NORM, cb, il);
                     cb(Qcur, "Qcur", il);
                 }
                 if (model.layers[il].attn_k_norm)
                 {
-                    Kcur = llm_build_norm(ctx0, Kcur, hparams, model.layers[il].attn_k_norm, NULL, LLM_NORM, cb, il);
+                    Kcur = llm_build_norm(ctx0, Kcur, hparams, model.layers[il].attn_k_norm, nullptr, LLM_NORM, cb, il);
                     cb(Kcur, "Kcur", il);
                 }
 
@@ -10860,7 +10860,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -10901,12 +10901,12 @@ struct llm_build_context
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -10957,7 +10957,7 @@ struct llm_build_context
         {
             struct ggml_tensor * inpSA = inpL;
 
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -11025,7 +11025,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -11051,19 +11051,19 @@ struct llm_build_context
 
             // feed-forward forward
             {
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_ffn(
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -11080,7 +11080,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -11116,7 +11116,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -11204,19 +11204,19 @@ struct llm_build_context
             cb(ffn_inp, "ffn_inp", il);
 
             // feed-forward network
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             cur = llm_build_ffn(
                 ctx0,
                 cur,
                 model.layers[il].ffn_up,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_gate,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_down,
-                NULL,
-                NULL,
+                nullptr,
+                nullptr,
                 LLM_FFN_SILU,
                 LLM_FFN_PAR,
                 cb,
@@ -11232,7 +11232,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -11271,7 +11271,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self_attention
@@ -11360,7 +11360,7 @@ struct llm_build_context
             cb(ffn_inp, "ffn_inp", il);
 
             // MoE branch
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             ggml_tensor * moe_out = llm_build_moe_ffn(
@@ -11391,12 +11391,12 @@ struct llm_build_context
                     ctx0,
                     cur,
                     model.layers[il].ffn_up_shexp,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate_shexp,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down_shexp,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -11421,7 +11421,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -11569,11 +11569,11 @@ struct llm_build_context
                     attn_norm_output,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -11631,7 +11631,7 @@ struct llm_build_context
                 struct ggml_tensor * rope_factors = build_rope_factors(il);
 
                 struct ggml_tensor * attn_norm_output
-                    = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+                    = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(attn_norm_output, "attn_norm", il);
 
                 struct ggml_tensor * Qcur = nullptr;
@@ -11731,7 +11731,7 @@ struct llm_build_context
             cur = ggml_add(ctx0, cur, residual);
             residual = cur;
 
-            cur = llm_build_norm(ctx0, cur, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, cur, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             // FF
@@ -11761,7 +11761,7 @@ struct llm_build_context
             inpL = cur;
         }
 
-        cur = llm_build_norm(ctx0, inpL, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, inpL, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         cur = ggml_mul_mat(ctx0, model.output, cur);
@@ -11795,7 +11795,7 @@ struct llm_build_context
         for (int il = 0; il < n_layer; ++il)
         {
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             struct ggml_tensor * attention_norm = cur;
@@ -11854,7 +11854,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -11885,12 +11885,12 @@ struct llm_build_context
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -11910,7 +11910,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -12017,11 +12017,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -12165,11 +12165,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -12285,7 +12285,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -12317,12 +12317,12 @@ struct llm_build_context
                 ctx0,
                 cur,
                 model.layers[il].ffn_up,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_gate,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_down,
-                NULL,
-                NULL,
+                nullptr,
+                nullptr,
                 LLM_FFN_SILU,
                 LLM_FFN_PAR,
                 cb,
@@ -12374,7 +12374,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -12471,19 +12471,19 @@ struct llm_build_context
             cb(ffn_inp, "ffn_inp", il);
 
             // feed-forward network
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             cur = llm_build_ffn(
                 ctx0,
                 cur,
                 model.layers[il].ffn_up,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_gate,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_down,
-                NULL,
-                NULL,
+                nullptr,
+                nullptr,
                 LLM_FFN_SILU,
                 LLM_FFN_PAR,
                 cb,
@@ -12499,7 +12499,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -12548,7 +12548,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -12651,19 +12651,19 @@ struct llm_build_context
 
             // feed-forward network
             {
-                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+                cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
                 cb(cur, "ffn_norm", il);
 
                 cur = llm_build_ffn(
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -12684,7 +12684,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head scaling
@@ -12724,7 +12724,7 @@ struct llm_build_context
         for (int il = 0; il < n_layer; ++il)
         {
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -12784,7 +12784,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -12808,7 +12808,7 @@ struct llm_build_context
             struct ggml_tensor * sa_out = ggml_add(ctx0, cur, inpL);
             cb(sa_out, "sa_out", il);
 
-            cur = llm_build_norm(ctx0, sa_out, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, sa_out, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             // feed-forward network
@@ -12817,12 +12817,12 @@ struct llm_build_context
                     ctx0,
                     cur,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_PAR,
                     cb,
@@ -12839,7 +12839,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -12981,11 +12981,11 @@ struct llm_build_context
                 cur,
                 model.layers[il].ffn_up,
                 model.layers[il].ffn_up_b,
-                NULL,
-                NULL,
+                nullptr,
+                nullptr,
                 model.layers[il].ffn_down,
                 model.layers[il].ffn_down_b,
-                NULL,
+                nullptr,
                 LLM_FFN_GELU,
                 LLM_FFN_SEQ,
                 cb,
@@ -13054,7 +13054,7 @@ struct llm_build_context
             ssm_states = ggml_reshape_3d(ctx0, ssm_states, d_state, d_inner, n_kv);
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // {n_embd, 2*d_inner} * {n_embd, n_tokens} => {2*d_inner, n_tokens}
@@ -13164,7 +13164,7 @@ struct llm_build_context
         }
 
         // final rmsnorm
-        cur = llm_build_norm(ctx0, inpL, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, inpL, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -13198,7 +13198,7 @@ struct llm_build_context
         for (int il = 0; il < n_layer; ++il)
         {
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM, cb, il);
             cb(cur, "attn_norm", il);
             struct ggml_tensor * ffn_inp = cur;
 
@@ -13252,10 +13252,10 @@ struct llm_build_context
                         0);
                     cb(Kcur, "Kcur", il);
 
-                    Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, NULL, LLM_NORM, cb, il);
+                    Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, nullptr, LLM_NORM, cb, il);
                     cb(Qcur, "Qcur", il);
 
-                    Kcur = llm_build_norm(ctx0, Kcur, hparams, model.layers[il].attn_k_norm, NULL, LLM_NORM, cb, il);
+                    Kcur = llm_build_norm(ctx0, Kcur, hparams, model.layers[il].attn_k_norm, nullptr, LLM_NORM, cb, il);
                     cb(Kcur, "Kcur", il);
                 }
 
@@ -13331,12 +13331,12 @@ struct llm_build_context
                     ctx0,
                     ffn_inp,
                     model.layers[il].ffn_up,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_gate,
-                    NULL,
+                    nullptr,
                     model.layers[il].ffn_down,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     LLM_FFN_SILU,
                     LLM_FFN_PAR,
                     cb,
@@ -13355,7 +13355,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -13406,7 +13406,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, NULL, NULL, LLM_NORM, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, nullptr, nullptr, LLM_NORM, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -13504,19 +13504,19 @@ struct llm_build_context
             cb(ffn_inp, "ffn_inp", il);
 
             // feed-forward network
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, NULL, NULL, LLM_NORM, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, nullptr, nullptr, LLM_NORM, cb, il);
             cb(cur, "ffn_norm", il);
 
             cur = llm_build_ffn(
                 ctx0,
                 cur,
                 model.layers[il].ffn_up,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_gate,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_down,
-                NULL,
-                NULL,
+                nullptr,
+                nullptr,
                 LLM_FFN_SILU,
                 LLM_FFN_PAR,
                 cb,
@@ -13539,7 +13539,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, NULL, NULL, LLM_NORM, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, nullptr, nullptr, LLM_NORM, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -13673,11 +13673,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -13707,11 +13707,11 @@ struct llm_build_context
                     cur,
                     model.layers[il].ffn_up,
                     model.layers[il].ffn_up_b,
-                    NULL,
-                    NULL,
+                    nullptr,
+                    nullptr,
                     model.layers[il].ffn_down,
                     model.layers[il].ffn_down_b,
-                    NULL,
+                    nullptr,
                     LLM_FFN_GELU,
                     LLM_FFN_SEQ,
                     cb,
@@ -13761,7 +13761,7 @@ struct llm_build_context
             struct ggml_tensor * inpSA = inpL;
 
             // norm
-            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpL, hparams, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "attn_norm", il);
 
             // self-attention
@@ -13818,7 +13818,7 @@ struct llm_build_context
                     kv_self,
                     gf,
                     model.layers[il].wo,
-                    NULL,
+                    nullptr,
                     Kcur,
                     Vcur,
                     Qcur,
@@ -13844,19 +13844,19 @@ struct llm_build_context
             cb(ffn_inp, "ffn_inp", il);
 
             // feed-forward network
-            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm", il);
 
             cur = llm_build_ffn(
                 ctx0,
                 cur,
                 model.layers[il].ffn_up,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_gate,
-                NULL,
+                nullptr,
                 model.layers[il].ffn_down,
-                NULL,
-                NULL,
+                nullptr,
+                nullptr,
                 LLM_FFN_SILU,
                 LLM_FFN_PAR,
                 cb,
@@ -13867,7 +13867,7 @@ struct llm_build_context
             cb(ffn_out, "ffn_out", il);
 
             // MoE
-            cur = llm_build_norm(ctx0, inpSA, hparams, model.layers[il].ffn_norm_exps, NULL, LLM_NORM_RMS, cb, il);
+            cur = llm_build_norm(ctx0, inpSA, hparams, model.layers[il].ffn_norm_exps, nullptr, LLM_NORM_RMS, cb, il);
             cb(cur, "ffn_norm_exps", il);
 
             cur = llm_build_moe_ffn(
@@ -13901,7 +13901,7 @@ struct llm_build_context
 
         cur = inpL;
 
-        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1);
+        cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, nullptr, LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
         // lm_head
@@ -14012,7 +14012,7 @@ static struct ggml_cgraph * llama_build_graph(llama_context & lctx, const llama_
         }
     };
 
-    struct ggml_cgraph * result = NULL;
+    struct ggml_cgraph * result = nullptr;
 
     struct llm_build_context llm(lctx, batch, cb, worst_case);
 
@@ -14866,7 +14866,7 @@ static int llama_decode_internal(llama_context & lctx, llama_batch batch_all)
 
         // plot the computation graph in dot format (for debugging purposes)
         //if (n_past%100 == 0) {
-        //    ggml_graph_dump_dot(gf, NULL, "llama.dot");
+        //    ggml_graph_dump_dot(gf, nullptr, "llama.dot");
         //}
 
         // extract logits
@@ -15340,7 +15340,7 @@ static uint8_t llama_token_to_byte(const llama_vocab & vocab, llama_token id)
     {
         case LLAMA_VOCAB_TYPE_SPM: {
             auto buf = token_data.text.substr(3, 2);
-            return strtol(buf.c_str(), NULL, 16);
+            return strtol(buf.c_str(), nullptr, 16);
         }
         case LLAMA_VOCAB_TYPE_BPE: {
             GGML_ASSERT(false);
@@ -16909,7 +16909,7 @@ void llama_set_rng_seed(struct llama_context * ctx, uint32_t seed)
 {
     if (seed == LLAMA_DEFAULT_SEED)
     {
-        seed = time(NULL);
+        seed = time(nullptr);
     }
     ctx->rng.seed(seed);
 }
@@ -18046,7 +18046,7 @@ static void llama_tensor_dequantize_internal(
     if (ggml_is_quantized(tensor->type))
     {
         qtype = ggml_internal_get_type_traits(tensor->type);
-        if (qtype.to_float == NULL)
+        if (qtype.to_float == nullptr)
         {
             throw std::runtime_error(
                 format("type %s unsupported for integer quantization: no dequantization available", ggml_type_name(tensor->type)));
@@ -18831,7 +18831,7 @@ llama_model_quantize_internal(const std::string & fname_inp, const std::string &
             n_split = std::max(uint16_t(ml.get_weight(i)->idx + 1), n_split);
         }
     }
-    std::vector<gguf_context *> ctx_outs(n_split, NULL);
+    std::vector<gguf_context *> ctx_outs(n_split, nullptr);
     ctx_outs[0] = ctx_out;
 
     // populate the original tensors so we get an initial meta data
@@ -18840,7 +18840,7 @@ llama_model_quantize_internal(const std::string & fname_inp, const std::string &
         auto weight = ml.get_weight(i);
         uint16_t i_split = params->keep_split ? weight->idx : 0;
         struct ggml_tensor * tensor = weight->tensor;
-        if (ctx_outs[i_split] == NULL)
+        if (ctx_outs[i_split] == nullptr)
         {
             ctx_outs[i_split] = gguf_init_empty();
         }
@@ -19556,7 +19556,7 @@ void llama_backend_init(void)
 
     // needed to initialize f16 tables
     {
-        struct ggml_init_params params = {0, NULL, false};
+        struct ggml_init_params params = {0, nullptr, false};
         struct ggml_context * ctx = ggml_init(params);
         ggml_free(ctx);
     }
@@ -19587,7 +19587,7 @@ struct llama_model * llama_load_model_from_file(const char * path_model, struct 
     llama_model * model = new llama_model;
 
     unsigned cur_percentage = 0;
-    if (params.progress_callback == NULL)
+    if (params.progress_callback == nullptr)
     {
         params.progress_callback_user_data = &cur_percentage;
         params.progress_callback = [](float progress, void * ctx)
@@ -19647,7 +19647,7 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
 {
     if (!model)
     {
-        LLAMA_LOG_ERROR("%s: model cannot be NULL\n", __func__);
+        LLAMA_LOG_ERROR("%s: model cannot be nullptr\n", __func__);
         return nullptr;
     }
 
@@ -19748,7 +19748,7 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
 
     if (params.seed == LLAMA_DEFAULT_SEED)
     {
-        params.seed = time(NULL);
+        params.seed = time(nullptr);
     }
 
     LLAMA_LOG_INFO("%s: n_ctx      = %u\n", __func__, cparams.n_ctx);
@@ -20303,7 +20303,7 @@ static bool llama_control_vector_init(struct llama_control_vector & cvec, const 
         int n_layers = it.second;
         struct ggml_init_params params = {
             /*.mem_size   =*/n_layers * ggml_tensor_overhead(),
-            /*.mem_buffer =*/NULL,
+            /*.mem_buffer =*/nullptr,
             /*.no_alloc   =*/true,
         };
         ggml_context * ctx = ggml_init(params);

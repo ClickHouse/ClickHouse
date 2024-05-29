@@ -197,8 +197,8 @@ typedef bool (*llama_progress_callback)(float progress, void * user_data);
 // A llama_batch object can contain input about one or many sequences
 // The provided arrays (i.e. token, embd, pos, etc.) must have size of n_tokens
 //
-// - token  : the token ids of the input (used when embd is NULL)
-// - embd   : token embeddings (i.e. float vector of size n_embd) (used when token is NULL)
+// - token  : the token ids of the input (used when embd is nullptr)
+// - embd   : token embeddings (i.e. float vector of size n_embd) (used when token is nullptr)
 // - pos    : the positions of the respective token in the sequence
 // - seq_id : the sequence to which the respective token belongs
 // - logits : if zero, the logits (and/or the embeddings) for the respective token will not be output
@@ -219,9 +219,9 @@ typedef struct llama_batch
     //
     // pos[i] = all_pos_0 + i*all_pos_1
     //
-    llama_pos all_pos_0; // used if pos == NULL
-    llama_pos all_pos_1; // used if pos == NULL
-    llama_seq_id all_seq_id; // used if seq_id == NULL
+    llama_pos all_pos_0; // used if pos == nullptr
+    llama_pos all_pos_1; // used if pos == nullptr
+    llama_seq_id all_seq_id; // used if seq_id == nullptr
 } llama_batch;
 
 enum llama_model_kv_override_type
@@ -264,7 +264,7 @@ struct llama_model_params
     // comma separated list of RPC servers to use for offloading
     const char * rpc_servers;
 
-    // Called with a progress value between 0.0 and 1.0. Pass NULL to disable.
+    // Called with a progress value between 0.0 and 1.0. Pass nullptr to disable.
     // If the provided progress_callback returns true, model loading continues.
     // If it returns false, model loading is immediately aborted.
     llama_progress_callback progress_callback;
@@ -488,14 +488,14 @@ LLAMA_API uint32_t llama_model_quantize(const char * fname_inp, const char * fna
 
 // Apply a LoRA adapter to a loaded model
 // path_base_model is the path to a higher quality model to use as a base for
-// the layers modified by the adapter. Can be NULL to use the current loaded model.
+// the layers modified by the adapter. Can be nullptr to use the current loaded model.
 // The model needs to be reloaded before applying a new adapter, otherwise the adapter
 // will be applied on top of the previous one
 // Returns 0 on success
 LLAMA_API int32_t llama_model_apply_lora_from_file(
     const struct llama_model * model, const char * path_lora, float scale, const char * path_base_model, int32_t n_threads);
 
-// Apply a loaded control vector to a llama_context, or if data is NULL, clear
+// Apply a loaded control vector to a llama_context, or if data is nullptr, clear
 // the currently loaded vector.
 // n_embd should be the size of a single layer's control, and data should point
 // to an n_embd x n_layers buffer starting from layer 1.
@@ -735,7 +735,7 @@ LLAMA_API float * llama_get_logits(struct llama_context * ctx);
 // Logits for the ith token. For positive indices, Equivalent to:
 // llama_get_logits(ctx) + ctx->output_ids[i]*n_vocab
 // Negative indicies can be used to access logits in reverse order, -1 is the last logit.
-// returns NULL for invalid ids.
+// returns nullptr for invalid ids.
 LLAMA_API float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
 
 // Get all output token embeddings.
@@ -743,18 +743,18 @@ LLAMA_API float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
 // the embeddings for which llama_batch.logits[i] != 0 are stored contiguously
 // in the order they have appeared in the batch.
 // shape: [n_outputs*n_embd]
-// Otherwise, returns NULL.
+// Otherwise, returns nullptr.
 LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
 
 // Get the embeddings for the ith token. For positive indices, Equivalent to:
 // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
 // Negative indicies can be used to access embeddings in reverse order, -1 is the last embedding.
 // shape: [n_embd] (1-dimensional)
-// returns NULL for invalid ids.
+// returns nullptr for invalid ids.
 LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
 
 // Get the embeddings for a sequence id
-// Returns NULL if pooling_type is LLAMA_POOLING_TYPE_NONE
+// Returns nullptr if pooling_type is LLAMA_POOLING_TYPE_NONE
 // shape: [n_embd] (1-dimensional)
 LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
 
@@ -992,7 +992,7 @@ LLAMA_API void llama_reset_timings(struct llama_context * ctx);
 LLAMA_API const char * llama_print_system_info(void);
 
 // Set callback for all future logging events.
-// If this is not called, or NULL is supplied, everything is output on stderr.
+// If this is not called, or nullptr is supplied, everything is output on stderr.
 LLAMA_API void llama_log_set(ggml_log_callback log_callback, void * user_data);
 
 LLAMA_API void llama_dump_timing_info_yaml(FILE * stream, const struct llama_context * ctx);
