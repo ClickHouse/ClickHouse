@@ -12,22 +12,24 @@
 // space ::= [ \t\n]*
 
 #pragma once
-#include "llama.h"
-#include <vector>
-#include <map>
 #include <cstdint>
+#include <map>
 #include <string>
+#include <vector>
+#include "llama.h"
 
-namespace grammar_parser {
-    struct parse_state {
-        std::map<std::string, uint32_t>                 symbol_ids;
-        std::vector<std::vector<llama_grammar_element>> rules;
+namespace grammar_parser
+{
+struct parse_state
+{
+    std::map<std::string, uint32_t> symbol_ids;
+    std::vector<std::vector<llama_grammar_element>> rules;
 
-        std::vector<const llama_grammar_element *> c_rules();
-    };
+    std::vector<const llama_grammar_element *> c_rules();
+};
 
-    parse_state parse(const char * src);
-    void print_grammar(FILE * file, const parse_state & state);
+parse_state parse(const char * src);
+void print_grammar(FILE * file, const parse_state & state);
 }
 
 // NOLINTEND

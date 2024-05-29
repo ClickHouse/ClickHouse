@@ -1,11 +1,12 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
-struct range_nfd {  // NOLINT
+struct range_nfd
+{ // NOLINT
     uint32_t first;
     uint32_t last;
     uint32_t nfd;
