@@ -512,6 +512,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     else
         dst_disk->createDirectories(to);
 
+    /// freezeRemote() using copy instead of hardlinks for all files
+    /// In this case, files_to_copy_intead_of_hardlinks is set by empty
     Backup(
         src_disk,
         dst_disk,
@@ -522,7 +524,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         params.make_source_readonly,
         /* max_level= */ {},
         true,
-        {},
+        /* files_to_copy_intead_of_hardlinks= */ {},
         params.external_transaction);
 
     /// The save_metadata_callback function acts on the target dist.
