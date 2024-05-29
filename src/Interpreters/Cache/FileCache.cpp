@@ -28,6 +28,8 @@ namespace ProfileEvents
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
+    extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
+    extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
 }
 
 namespace DB
@@ -86,6 +88,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
+    , keep_current_size_to_max_ratio(1 - settings.keep_free_space_size_ratio)
+    , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
+    , keep_up_free_space_remove_batch(settings.keep_free_space_remove_batch)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads, write_cache_per_user_directory)
 {
@@ -191,6 +196,12 @@ void FileCache::initialize()
     }
 
     metadata.startup();
+
+    if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
+    {
+        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
+        keep_up_free_space_ratio_task->schedule();
+    }
 
     is_initialized = true;
 }
@@ -946,9 +957,124 @@ bool FileCache::tryReserve(
     return true;
 }
 
+void FileCache::freeSpaceRatioKeepingThreadFunc()
+{
+    static constexpr auto lock_failed_reschedule_ms = 1000;
+    static constexpr auto space_ratio_satisfied_reschedule_ms = 5000;
+    static constexpr auto general_reschedule_ms = 5000;
+
+    if (shutdown)
+        return;
+
+    Stopwatch watch;
+
+    auto lock = tryLockCache();
+
+    /// To avoid deteriorating contention on cache,
+    /// proceed only if cache is not heavily used.
+    if (!lock)
+    {
+        keep_up_free_space_ratio_task->scheduleAfter(lock_failed_reschedule_ms);
+        return;
+    }
+
+    const size_t size_limit = main_priority->getSizeLimit(lock);
+    const size_t elements_limit = main_priority->getElementsLimit(lock);
+
+    const size_t desired_size = std::lround(keep_current_size_to_max_ratio * size_limit);
+    const size_t desired_elements_num = std::lround(keep_current_elements_to_max_ratio * elements_limit);
+
+    if ((size_limit == 0 || main_priority->getSize(lock) <= desired_size)
+        && (elements_limit == 0 || main_priority->getElementsCount(lock) <= desired_elements_num))
+    {
+        /// Nothing to free - all limits are satisfied.
+        keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
+
+    FileCacheReserveStat stat;
+    EvictionCandidates eviction_candidates;
+
+    bool limits_satisfied = true;
+    try
+    {
+        /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
+        /// (we use batches to make sure we do not block cache for too long,
+        /// by default the batch size is quite small).
+        limits_satisfied = main_priority->collectCandidatesForEviction(
+            desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+        /// Let's make sure that we correctly processed the limits.
+        if (limits_satisfied && eviction_candidates.size() < keep_up_free_space_remove_batch)
+        {
+            const auto current_size = main_priority->getSize(lock);
+            chassert(current_size >= stat.total_stat.releasable_size);
+            chassert(!size_limit
+                     || current_size - stat.total_stat.releasable_size <= desired_size);
+
+            const auto current_elements_count = main_priority->getElementsCount(lock);
+            chassert(current_elements_count >= stat.total_stat.releasable_count);
+            chassert(!elements_limit
+                     || current_elements_count - stat.total_stat.releasable_count <= desired_elements_num);
+        }
+#endif
+
+        if (shutdown)
+            return;
+
+        if (eviction_candidates.size() > 0)
+        {
+            LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
+                    "(trying to keep size ration at {} and elements ratio at {}). "
+                    "Collected {} eviction candidates, "
+                    "skipped {} candidates while iterating",
+                    main_priority->getSize(lock), size_limit,
+                    main_priority->getElementsCount(lock), elements_limit,
+                    desired_size, desired_elements_num,
+                    eviction_candidates.size(), stat.total_stat.non_releasable_count);
+
+            lock.unlock();
+
+            /// Remove files from filesystem.
+            eviction_candidates.evict();
+
+            /// Take lock again to finalize eviction,
+            /// e.g. to update the in-memory state.
+            lock.lock();
+            eviction_candidates.finalize(nullptr, lock);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        if (eviction_candidates.size() > 0)
+            eviction_candidates.finalize(nullptr, lockCache());
+
+        /// Let's catch such cases in ci,
+        /// in general there should not be exceptions.
+        chassert(false);
+    }
+
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
+
+    LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms", watch.elapsedMilliseconds());
+
+    [[maybe_unused]] bool scheduled = false;
+    if (limits_satisfied)
+        scheduled = keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
+    else
+        scheduled = keep_up_free_space_ratio_task->schedule();
+    chassert(scheduled);
+}
+
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
 {
-    return metadata.iterate([&](const LockedKey & locked_key)
+    metadata.iterate([&](const LockedKey & locked_key)
     {
         for (const auto & file_segment_metadata : locked_key)
             func(FileSegment::getInfo(file_segment_metadata.second->file_segment));
@@ -1275,6 +1401,8 @@ void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
     metadata.shutdown();
+    if (keep_up_free_space_ratio_task)
+        keep_up_free_space_ratio_task->deactivate();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)

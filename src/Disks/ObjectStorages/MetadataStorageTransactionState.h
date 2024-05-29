@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class MetadataStorageTransactionState
+enum class MetadataStorageTransactionState : uint8_t
 {
     PREPARING,
     FAILED,

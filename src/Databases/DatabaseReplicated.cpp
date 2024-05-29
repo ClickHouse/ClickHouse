@@ -929,12 +929,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
+        query_context->setSetting("allow_experimental_dynamic_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
         query_context->setSetting("allow_experimental_map_type", 1);
+        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
         query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
         query_context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -943,6 +945,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_hyperscan", 1);
         query_context->setSetting("allow_simdjson", 1);
         query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
+        query_context->setSetting("allow_suspicious_primary_key", 1);
+        query_context->setSetting("allow_suspicious_ttl_expressions", 1);
+        query_context->setSetting("allow_suspicious_variant_types", 1);
+        query_context->setSetting("enable_deflate_qpl_codec", 1);
+        query_context->setSetting("enable_zstd_qat_codec", 1);
+        query_context->setSetting("allow_create_index_without_type", 1);
+        query_context->setSetting("allow_experimental_s3queue", 1);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
