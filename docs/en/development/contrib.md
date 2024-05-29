@@ -31,7 +31,7 @@ If the library can be used as-is (the default case), you can reference the upstr
 If the library needs patching, create a fork of the upstream repository in the [ClickHouse organization on GitHub](https://github.com/ClickHouse).
 
 In the latter case, we aim to isolate custom patches as much as possible from upstream commits.
-To that end, create a branch with prefix `clickhouse/` from the branch or tag you want to integrate, e.g. `clickhouse/master` (for branch `master`) or `clickhouse/release/vX.Y.Z` (for tag `release/vX.Y.Z`.
+To that end, create a branch with prefix `clickhouse/` from the branch or tag you want to integrate, e.g. `clickhouse/master` (for branch `master`) or `clickhouse/release/vX.Y.Z` (for tag `release/vX.Y.Z`).
 This ensures that pulls from the upstream repository into the fork will leave custom `clickhouse/` branches unaffected.
 Submodules in `contrib/` must only track `clickhouse/` branches of forked third-party repositories.
 
