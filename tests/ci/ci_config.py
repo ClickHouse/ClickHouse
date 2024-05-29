@@ -1425,7 +1425,7 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         StatusNames.SYNC,
         "If it fails, ask a maintainer for help",
-        lambda x: "Sync" in x,
+        lambda x: x == StatusNames.SYNC,
     ),
     CheckDescription(
         "AST fuzzer",
