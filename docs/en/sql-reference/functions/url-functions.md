@@ -11,7 +11,7 @@ The functions mentioned in this section are optimized for maximum performance an
 :::
 
 You can generally use the non-`RFC` function variants when working with publicly registered domains that contain neither user strings nor `@` symbols.
-Below table below details which symbols in an URL can (`✔`) or cannot (`✗`) be parsed by the respective `RFC` and non-`RFC` variants:
+The table below details which symbols in a URL can (`✔`) or cannot (`✗`) be parsed by the respective `RFC` and non-`RFC` variants:
 
 |Symbol | non-`RFC`| `RFC` |
 |-------|----------|-------|
@@ -56,7 +56,7 @@ domain(url)
 
 **Arguments**
 
-- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a protocol. Examples:
 
@@ -102,13 +102,11 @@ domainRFC(url)
 
 **Arguments**
 
-- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 **Returned values**
 
 - Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
-
-Type: `String`.
 
 **Example**
 
@@ -127,6 +125,68 @@ SELECT
 ### domainWithoutWWW
 
 Returns the domain without leading `www.` if present.
+
+**Syntax**
+
+```sql
+domainWithoutWWW(url)
+```
+
+**Arguments**
+
+- `url` — URL. [String](../data-types/string.md).
+
+**Returned values**
+
+- Domain name if the input string can be parsed as a URL (without leading `www.`), otherwise an empty string. [String](../data-types/string.md).
+
+**Example**
+
+``` sql
+SELECT domainWithoutWWW('http://paul@www.example.com:80/');
+```
+
+``` text
+┌─domainWithoutWWW('http://paul@www.example.com:80/')─┐
+│ example.com                                         │
+└─────────────────────────────────────────────────────┘
+```
+
+### domainWithoutWWWRFC
+
+Returns the domain without leading `www.` if present. Similar to [domainWithoutWWW](#domainwithoutwww) but conforms to RFC 3986.
+
+**Syntax**
+
+```sql
+domainWithoutWWWRFC(url)
+```
+
+**Arguments**
+
+- `url` — URL. [String](../data-types/string.md).
+
+**Returned values**
+
+- Domain name if the input string can be parsed as a URL (without leading `www.`), otherwise an empty string. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    domainWithoutWWW('http://user:password@www.example.com:8080/path?query=value#fragment'),
+    domainWithoutWWWRFC('http://user:password@www.example.com:8080/path?query=value#fragment');
+```
+
+Result:
+
+```response
+┌─domainWithoutWWW('http://user:password@www.example.com:8080/path?query=value#fragment')─┬─domainWithoutWWWRFC('http://user:password@www.example.com:8080/path?query=value#fragment')─┐
+│                                                                                         │ example.com                                                                                │
+└─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### topLevelDomain
 
@@ -547,9 +607,7 @@ cutToFirstSignificantSubdomainCustomWithWWW(url, tld)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../data-types/string.md).
 
 **Example**
 
@@ -627,9 +685,7 @@ firstSignificantSubdomainCustom(url, tld)
 
 **Returned value**
 
-- First significant subdomain.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- First significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -671,9 +727,7 @@ firstSignificantSubdomainCustomRFC(url, tld)
 
 **Returned value**
 
-- First significant subdomain.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- First significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **See Also**
 
@@ -894,9 +948,7 @@ netloc(url)
 
 **Returned value**
 
-- `username:password@host:port`.
-
-Type: `String`.
+- `username:password@host:port`. [String](../data-types/string.md).
 
 **Example**
 
@@ -952,9 +1004,7 @@ cutURLParameter(url, name)
 
 **Returned value**
 
-- url with `name` URL parameter removed.
-
-Type: `String`.
+- url with `name` URL parameter removed. [String](../data-types/string.md).
 
 **Example**
 
