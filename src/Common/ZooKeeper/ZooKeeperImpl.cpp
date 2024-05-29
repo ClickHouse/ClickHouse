@@ -334,6 +334,12 @@ ZooKeeper::~ZooKeeper()
     {
         tryLogCurrentException(log);
     }
+
+    if (compressed_out)
+        compressed_out->cancel();
+
+    if (out)
+        out->cancel();
 }
 
 

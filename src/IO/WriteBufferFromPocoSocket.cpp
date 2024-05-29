@@ -193,16 +193,16 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     write_event = write_event_;
 }
 
-WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+// WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
+// {
+//     // try
+//     // {
+//     //     finalize();
+//     // }
+//     // catch (...)
+//     // {
+//     //     tryLogCurrentException(__PRETTY_FUNCTION__);
+//     // }
+// }
 
 }

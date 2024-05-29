@@ -20,6 +20,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
+#include "Core/Types.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
@@ -121,6 +122,11 @@ struct QueryState
 
     void reset()
     {
+        if (maybe_compressed_out && maybe_compressed_out.unique())
+        {
+                maybe_compressed_out->cancel();
+        }
+
         *this = QueryState();
     }
 
