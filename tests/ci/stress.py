@@ -75,12 +75,6 @@ def get_options(i: int, upgrade_check: bool) -> str:
     if not upgrade_check:
         client_options.append("ignore_drop_queries_probability=0.5")
 
-    if random.random() < 0.2:
-        client_options.append("allow_experimental_parallel_reading_from_replicas=1")
-        client_options.append("max_parallel_replicas=3")
-        client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
-        client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
-
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 

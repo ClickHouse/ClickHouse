@@ -7,7 +7,7 @@ namespace DB
 /// Kind of a temporal interval.
 struct IntervalKind
 {
-    enum class Kind : uint8_t
+    enum class Kind
     {
         Nanosecond,
         Microsecond,

@@ -4,7 +4,6 @@
 
 import unittest
 from ci import CiOptions
-from pr_info import PRInfo
 
 _TEST_BODY_1 = """
 #### Run only:
@@ -30,7 +29,6 @@ _TEST_BODY_1 = """
 _TEST_BODY_2 = """
 - [x] <!---ci_include_integration--> MUST include integration tests
 - [x] <!---ci_include_stateless--> MUST include stateless tests
-- [x] <!---ci_include_azure--> MUST include azure
 - [x] <!---ci_include_foo_Bar--> no action must be applied
 - [ ] <!---ci_include_bar--> no action must be applied
 - [x] <!---ci_exclude_tsan--> MUST exclude tsan
@@ -44,10 +42,6 @@ _TEST_BODY_2 = """
 _TEST_BODY_3 = """
 - [x] <!---ci_include_analyzer--> Must include all tests for analyzer
 """
-
-_TEST_BODY_4 = """
-"""
-
 
 _TEST_JOB_LIST = [
     "Style check",
@@ -70,7 +64,6 @@ _TEST_JOB_LIST = [
     "Stateless tests (debug, s3 storage)",
     "Stateless tests (tsan, s3 storage)",
     "Stateless tests flaky check (asan)",
-    "Stateless tests (azure, asan)",
     "Stateful tests (debug)",
     "Stateful tests (release)",
     "Stateful tests (coverage)",
@@ -148,8 +141,7 @@ class TestCIOptions(unittest.TestCase):
             _TEST_BODY_2, update_from_api=False
         )
         self.assertCountEqual(
-            ci_options.include_keywords,
-            ["integration", "foo_bar", "stateless", "azure"],
+            ci_options.include_keywords, ["integration", "foo_bar", "stateless"]
         )
         self.assertCountEqual(
             ci_options.exclude_keywords,
@@ -157,15 +149,9 @@ class TestCIOptions(unittest.TestCase):
         )
         jobs_to_do = list(_TEST_JOB_LIST)
         jobs_to_skip = []
-        job_params = {
-            "Stateless tests (azure, asan)": {
-                "batches": list(range(3)),
-                "num_batches": 3,
-                "run_by_ci_option": True,
-            }
-        }
+        job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params, PRInfo()
+            jobs_to_do, jobs_to_skip, job_params
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -174,7 +160,6 @@ class TestCIOptions(unittest.TestCase):
                 "package_release",
                 "package_asan",
                 "Stateless tests (asan)",
-                "Stateless tests (azure, asan)",
                 "Stateless tests flaky check (asan)",
                 "Stateless tests (msan)",
                 "Stateless tests (ubsan)",
@@ -197,7 +182,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params, PRInfo()
+            jobs_to_do, jobs_to_skip, job_params
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -208,33 +193,4 @@ class TestCIOptions(unittest.TestCase):
                 "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
                 "package_asan",
             ],
-        )
-
-    def test_options_applied_3(self):
-        self.maxDiff = None
-        ci_options = CiOptions.create_from_pr_message(
-            _TEST_BODY_4, update_from_api=False
-        )
-        self.assertIsNone(ci_options.include_keywords, None)
-        self.assertIsNone(ci_options.exclude_keywords, None)
-        jobs_to_do = list(_TEST_JOB_LIST)
-        jobs_to_skip = []
-        job_params = {}
-
-        for job in _TEST_JOB_LIST:
-            if "Stateless" in job:
-                job_params[job] = {
-                    "batches": list(range(3)),
-                    "num_batches": 3,
-                    "run_by_ci_option": "azure" in job,
-                }
-            else:
-                job_params[job] = {"run_by_ci_option": False}
-
-        jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params, PRInfo()
-        )
-        self.assertNotIn(
-            "Stateless tests (azure, asan)",
-            jobs_to_do,
         )

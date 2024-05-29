@@ -76,7 +76,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto<NullOutput,false>(out, buf);
+            readEscapedStringInto(out, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
             readQuotedFieldInto(out, buf);

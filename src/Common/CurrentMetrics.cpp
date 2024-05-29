@@ -168,9 +168,6 @@
     M(ObjectStorageS3Threads, "Number of threads in the S3ObjectStorage thread pool.") \
     M(ObjectStorageS3ThreadsActive, "Number of threads in the S3ObjectStorage thread pool running a task.") \
     M(ObjectStorageS3ThreadsScheduled, "Number of queued or active jobs in the S3ObjectStorage thread pool.") \
-    M(StorageObjectStorageThreads, "Number of threads in the remote table engines thread pools.") \
-    M(StorageObjectStorageThreadsActive, "Number of threads in the remote table engines thread pool running a task.") \
-    M(StorageObjectStorageThreadsScheduled, "Number of queued or active jobs in remote table engines thread pool.") \
     M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
     M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(ObjectStorageAzureThreadsScheduled, "Number of queued or active jobs in the AzureObjectStorage thread pool.") \
@@ -227,8 +224,6 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
     M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
-    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
-    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -293,10 +288,7 @@
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
     \
     M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
-    M(AddressesBanned, "Total count of addresses which are banned as faulty for creation connections with connection pools")   \
-    \
-    M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
-    M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

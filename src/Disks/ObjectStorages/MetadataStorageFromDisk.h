@@ -129,8 +129,6 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
-
 };
 
 

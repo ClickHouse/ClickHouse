@@ -116,7 +116,7 @@ public:
 private:
 
     template <typename ExtractorType, typename StringColumnType, typename ResultStringColumnType>
-    void executeImpl(
+    inline void executeImpl(
         const ExtractorType & extractor,
         StringColumnType & input_data_column,
         ResultStringColumnType & result_data_column,

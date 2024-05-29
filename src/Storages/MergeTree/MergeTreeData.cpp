@@ -14,7 +14,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -25,7 +25,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -189,7 +188,6 @@ namespace ErrorCodes
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
-    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -3188,16 +3186,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_inverted_index)
+    if (AlterCommands::hasInvertedIndex(new_metadata) && !settings.allow_experimental_inverted_index)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+                "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
 
     for (const auto & disk : getDisks())
-        if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "ALTER TABLE commands are not supported on immutable disk '{}', except for setting and comment alteration",
-                disk->getName());
+        if (!disk->supportsHardLinks())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE is not supported for immutable disk '{}'", disk->getName());
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
@@ -3875,7 +3870,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);
-        if (!storage_column.type->hasDynamicSubcolumnsDeprecated())
+        if (!storage_column.type->hasDynamicSubcolumns())
             continue;
 
         auto concrete_storage_column = object_columns.getPhysical(part_column.name);
@@ -5128,7 +5123,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 
     auto volume = getStoragePolicy()->getVolumeByName(name);
     if (!volume)
-        throw Exception(ErrorCodes::UNKNOWN_DISK, "Volume {} does not exist on policy {}", name, getStoragePolicy()->getName());
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "Volume {} does not exists on policy {}", name, getStoragePolicy()->getName());
 
     if (parts.empty())
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Nothing to move (check that the partition exists).");
@@ -5568,7 +5563,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
-    std::erase(part_names, "mutations");
+    boost::remove_erase(part_names, "mutations");
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
@@ -6133,21 +6128,6 @@ bool MergeTreeData::supportsLightweightDelete() const
             return false;
     }
     return true;
-}
-
-bool MergeTreeData::hasProjection() const
-{
-    auto lock = lockParts();
-    for (const auto & part : data_parts_by_info)
-    {
-        if (part->getState() == MergeTreeDataPartState::Outdated
-            || part->getState() == MergeTreeDataPartState::Deleting)
-            continue;
-
-        if (part->hasProjection())
-            return true;
-    }
-    return false;
 }
 
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
@@ -7399,19 +7379,10 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
+    else if (data_part->getState() == MergeTreeDataPartState::Active)
+        broken_part_callback(data_part->name);
     else
-    {
-        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
-        {
-            auto lock = lockParts();
-            state = data_part->getState();
-        }
-
-        if (state == MergeTreeDataPartState::Active)
-            broken_part_callback(data_part->name);
-        else
-            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
-    }
+        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -8492,7 +8463,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         Statistics{},
-        compression_codec, txn ? txn->tid : Tx::PrehistoricTID);
+        compression_codec, txn);
 
     bool sync_on_insert = settings->fsync_after_insert;
 
@@ -8552,16 +8523,6 @@ void MergeTreeData::unloadPrimaryKeys()
     for (auto & part : getAllDataPartsVector())
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
-    }
-}
-
-void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
-{
-    /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
-    for (const auto & data_type : sorting_key.data_types)
-    {
-        if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
 }
 

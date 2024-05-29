@@ -51,7 +51,7 @@ class ActionsDAG
 {
 public:
 
-    enum class ActionType : uint8_t
+    enum class ActionType
     {
         /// Column which must be in input.
         INPUT,
@@ -272,7 +272,7 @@ public:
     ///
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(const Block & header) const;
+    Block updateHeader(Block header) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -288,7 +288,7 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
-    enum class MatchColumnsMode : uint8_t
+    enum class MatchColumnsMode
     {
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,

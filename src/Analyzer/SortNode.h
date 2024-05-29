@@ -15,7 +15,7 @@ namespace DB
 class SortNode;
 using SortNodePtr = std::shared_ptr<SortNode>;
 
-enum class SortDirection : uint8_t
+enum class SortDirection
 {
     ASCENDING = 0,
     DESCENDING = 1

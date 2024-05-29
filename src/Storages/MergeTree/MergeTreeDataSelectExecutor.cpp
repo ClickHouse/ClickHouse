@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -53,8 +53,6 @@ namespace CurrentMetrics
     extern const Metric MergeTreeDataSelectExecutorThreads;
     extern const Metric MergeTreeDataSelectExecutorThreadsActive;
     extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
-    extern const Metric FilteringMarksWithPrimaryKey;
-    extern const Metric FilteringMarksWithSecondaryKeys;
 }
 
 namespace DB
@@ -666,21 +664,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
 
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
-            {
-                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, part_offset_condition, settings, log);
-            }
             else if (total_marks_count)
-            {
                 ranges.ranges = MarkRanges{{MarkRange{0, total_marks_count}}};
-            }
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
-
-            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
             for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
             {
@@ -742,8 +733,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             num_threads = std::min<size_t>(num_streams, settings.max_threads_for_indexes);
         }
 
-        LOG_TRACE(log, "Filtering marks by primary and secondary keys");
-
         if (num_threads <= 1)
         {
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -751,7 +740,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
-            /// Parallel loading and filtering of data parts.
+            /// Parallel loading of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
@@ -759,11 +748,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
-            {
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
-                    setThreadName("MergeTreeIndex");
-
                     SCOPE_EXIT_SAFE(
                         if (thread_group)
                             CurrentThread::detachFromGroupIfNotDetached();
@@ -773,7 +759,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     process_part(part_index);
                 });
-            }
 
             pool.wait();
         }
@@ -1311,7 +1296,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t last_index_mark = 0;
 
     PostingsCacheForStore cache_in_store;
-    if (dynamic_cast<const MergeTreeIndexFullText *>(index_helper.get()))
+
+    if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -1329,12 +1315,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
             {
-                /// An array of indices of useful ranges.
+                // vector of indexes of useful ranges
                 auto result = ann_condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
-                    /// The range for the corresponding index.
+                    // range for corresponding index
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * index_granularity + range),
                         std::min(ranges[i].end, index_mark * index_granularity + range + 1));
@@ -1348,7 +1334,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             }
 
             bool result = false;
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else
@@ -1358,8 +1344,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
 
             MarkRange data_range(
-                std::max(ranges[i].begin, index_mark * index_granularity),
-                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                 res.push_back(data_range);

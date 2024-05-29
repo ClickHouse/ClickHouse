@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 #include <bit>
@@ -576,7 +577,7 @@ void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, I
         return;
     }
 
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
 void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -589,7 +590,7 @@ void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction
 void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int null_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(
@@ -798,15 +799,6 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
     size_t current_offset = it - offsets_data.begin();
     return Iterator(offsets_data, _size, current_offset, n);
-}
-
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
-{
-    Columns values_source_columns;
-    values_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

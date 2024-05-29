@@ -11,13 +11,10 @@ from commit_status_helper import (
     post_commit_status,
     set_mergeable_check,
     trigger_mergeable_check,
-    update_upstream_sync_status,
 )
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import PENDING
-from synchronizer_utils import SYNC_BRANCH_PREFIX
-from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
+from report import PENDING, SUCCESS
 
 
 def main():
@@ -43,21 +40,7 @@ def main():
             set_mergeable_check(commit, "workflow passed", "success")
     else:
         statuses = get_commit_filtered_statuses(commit)
-        state = trigger_mergeable_check(commit, statuses, set_if_green=True)
-
-        # Process upstream StatusNames.SYNC
-        if (
-            pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-            and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-        ):
-            upstream_pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-            update_upstream_sync_status(
-                upstream_pr_number,
-                pr_info.number,
-                gh,
-                state,
-                can_set_green_mergeable_status=True,
-            )
+        trigger_mergeable_check(commit, statuses)
 
         statuses = [s for s in statuses if s.context == StatusNames.CI]
         if not statuses:
@@ -67,7 +50,7 @@ def main():
         if status.state == PENDING:
             post_commit_status(
                 commit,
-                state,  # map Mergeable Check status to CI Running
+                SUCCESS,
                 status.target_url,
                 "All checks finished",
                 StatusNames.CI,

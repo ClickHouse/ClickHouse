@@ -93,11 +93,3 @@ SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda2(tuple(x), x + 1), 1
 
 DROP TABLE test_table_tuple;
 DROP TABLE test_table;
-
-WITH x -> (lambda(x) + 1) AS lambda
-SELECT lambda(1); -- {serverError UNSUPPORTED_METHOD }
-
-WITH
-    x -> (lambda1(x) + 1) AS lambda,
-    lambda AS lambda1
-SELECT lambda(1); -- {serverError UNSUPPORTED_METHOD }

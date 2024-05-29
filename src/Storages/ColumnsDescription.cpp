@@ -547,19 +547,7 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 
 bool ColumnsDescription::hasSubcolumn(const String & column_name) const
 {
-    if (subcolumns.get<0>().count(column_name))
-        return true;
-
-    /// Check for dynamic subcolumns
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-            return true;
-    }
-
-    return false;
+    return subcolumns.get<0>().count(column_name);
 }
 
 const ColumnDescription & ColumnsDescription::get(const String & column_name) const
@@ -656,15 +644,6 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
             return *jt;
     }
 
-    /// Check for dynamic subcolumns.
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-            return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
-    }
-
     return {};
 }
 
@@ -751,19 +730,9 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
-        return true;
-
-    /// Check for dynamic subcolumns.
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto dynamic_subcolumn_type = it->type->hasSubcolumn(dynamic_subcolumn_name))
-            return true;
-    }
-
-    return false;
+    return (it != columns.get<1>().end()
+        && (defaultKindToGetKind(it->default_desc.kind) & kind))
+            || hasSubcolumn(column_name);
 }
 
 bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const

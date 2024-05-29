@@ -41,13 +41,13 @@ namespace ErrorCodes
 namespace
 {
 
-enum class SequenceDirection : uint8_t
+enum class SequenceDirection
 {
     Forward,
     Backward,
 };
 
-enum SequenceBase : uint8_t
+enum SequenceBase
 {
     Head,
     Tail,
@@ -341,7 +341,7 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    std::optional<size_t> getBaseIndex(Data & data) const
+    inline std::optional<size_t> getBaseIndex(Data & data) const
     {
         if (data.value.size() == 0)
             return {};

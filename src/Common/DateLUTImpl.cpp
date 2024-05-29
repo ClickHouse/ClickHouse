@@ -253,7 +253,8 @@ namespace cctz_extension
 
             size_t Read(void * buf, size_t bytes) override
             {
-                bytes = std::min(bytes, size);
+                if (bytes > size)
+                    bytes = size;
                 memcpy(buf, data, bytes);
                 data += bytes;
                 size -= bytes;

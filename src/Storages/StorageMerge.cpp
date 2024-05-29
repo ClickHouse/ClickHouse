@@ -472,7 +472,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
-            tables_count,
+            static_cast<size_t>(tables_count),
             std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
         size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
 
@@ -519,7 +519,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(static_cast<size_t>(tables_count), std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
     size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
@@ -1622,7 +1622,7 @@ void ReadFromMerge::applyFilters(const QueryPlan & plan, const ActionDAGNodes & 
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(added_filter_nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
 
     filterTablesAndCreateChildrenPlans();
 

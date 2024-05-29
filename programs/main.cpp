@@ -15,7 +15,7 @@
 
 #include "config_tools.h"
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
@@ -119,7 +119,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 };
 
 
-enum class InstructionFail : uint8_t
+enum class InstructionFail
 {
     NONE = 0,
     SSE3 = 1,
@@ -491,13 +491,9 @@ int main(int argc_, char ** argv_)
     ///     clickhouse -q 'select 1' # use local
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
-    ///     clickhouse "select ..." # spawn local
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
-        || std::string_view(argv[1]).contains(' ')))
-    {
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
         main_func = mainEntryClickHouseLocal;
-    }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 

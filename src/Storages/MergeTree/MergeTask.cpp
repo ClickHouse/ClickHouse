@@ -9,7 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Compression/CompressedWriteBuffer.h>
+
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/IReadableWriteBuffer.h>
@@ -34,7 +34,6 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -379,7 +378,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         MergeTreeStatisticsFactory::instance().getMany(global_ctx->metadata_snapshot->getColumns()),
         ctx->compression_codec,
-        global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
+        global_ctx->txn,
         /*reset_columns=*/ true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings());
@@ -544,7 +543,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     }
     /// Move ownership from std::unique_ptr<ReadBuffer> to std::unique_ptr<ReadBufferFromFile> for CompressedReadBufferFromFile.
     /// First, release ownership from unique_ptr to base type.
-    reread_buf.release(); /// NOLINT(bugprone-unused-return-value,hicpp-ignored-remove-result): we already have the pointer value in `reread_buffer_raw`
+    reread_buf.release(); /// NOLINT(bugprone-unused-return-value): we already have the pointer value in `reread_buffer_raw`
     /// Then, move ownership to unique_ptr to concrete type.
     std::unique_ptr<ReadBufferFromFile> reread_buffer_from_file(reread_buffer_raw);
     /// CompressedReadBufferFromFile expects std::unique_ptr<ReadBufferFromFile> as argument.
@@ -597,9 +596,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         pipes.emplace_back(std::move(pipe));
     }
 
-    bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
-
     auto pipe = Pipe::unitePipes(std::move(pipes));
+
     ctx->rows_sources_read_buf->seek(0, 0);
 
     const auto data_settings = global_ctx->data->getSettings();
@@ -608,8 +606,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         pipe.numOutputPorts(),
         *ctx->rows_sources_read_buf,
         data_settings->merge_max_block_size,
-        data_settings->merge_max_block_size_bytes,
-        is_result_sparse);
+        data_settings->merge_max_block_size_bytes);
 
     pipe.addTransform(std::move(transform));
 
