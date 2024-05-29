@@ -616,67 +616,6 @@ LLAMA_API void llama_kv_cache_defrag(struct llama_context * ctx);
 LLAMA_API void llama_kv_cache_update(struct llama_context * ctx);
 
 //
-// State / sessions
-//
-
-// Returns the maximum size in bytes of the state (rng, logits, embedding
-// and kv_cache) - will often be smaller after compacting tokens
-LLAMA_API size_t llama_state_get_size(const struct llama_context * ctx);
-LLAMA_API DEPRECATED(size_t llama_get_state_size(const struct llama_context * ctx), "use llama_state_get_size instead");
-
-// Copies the state to the specified destination address.
-// Destination needs to have allocated enough memory.
-// Returns the number of bytes copied
-LLAMA_API size_t llama_state_get_data(struct llama_context * ctx, uint8_t * dst);
-LLAMA_API DEPRECATED(size_t llama_copy_state_data(struct llama_context * ctx, uint8_t * dst), "use llama_state_get_data instead");
-
-// Set the state reading from the specified address
-// Returns the number of bytes read
-LLAMA_API size_t llama_state_set_data(struct llama_context * ctx, const uint8_t * src);
-LLAMA_API DEPRECATED(size_t llama_set_state_data(struct llama_context * ctx, const uint8_t * src), "use llama_state_set_data instead");
-
-// Save/load session file
-LLAMA_API bool llama_state_load_file(
-    struct llama_context * ctx, const char * path_session, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out);
-LLAMA_API DEPRECATED(
-    bool llama_load_session_file(
-        struct llama_context * ctx,
-        const char * path_session,
-        llama_token * tokens_out,
-        size_t n_token_capacity,
-        size_t * n_token_count_out),
-    "use llama_state_load_file instead");
-
-LLAMA_API bool
-llama_state_save_file(struct llama_context * ctx, const char * path_session, const llama_token * tokens, size_t n_token_count);
-LLAMA_API DEPRECATED(
-    bool llama_save_session_file(struct llama_context * ctx, const char * path_session, const llama_token * tokens, size_t n_token_count),
-    "use llama_state_save_file instead");
-
-// Get the exact size needed to copy the KV cache of a single sequence
-LLAMA_API size_t llama_state_seq_get_size(struct llama_context * ctx, llama_seq_id seq_id);
-
-// Copy the KV cache of a single sequence into the specified buffer
-LLAMA_API size_t llama_state_seq_get_data(struct llama_context * ctx, uint8_t * dst, llama_seq_id seq_id);
-
-// Copy the sequence data (originally copied with `llama_state_seq_get_data`) into the specified sequence
-// Returns:
-//  - Positive: Ok
-//  - Zero: Failed to load
-LLAMA_API size_t llama_state_seq_set_data(struct llama_context * ctx, const uint8_t * src, llama_seq_id dest_seq_id);
-
-LLAMA_API size_t llama_state_seq_save_file(
-    struct llama_context * ctx, const char * filepath, llama_seq_id seq_id, const llama_token * tokens, size_t n_token_count);
-
-LLAMA_API size_t llama_state_seq_load_file(
-    struct llama_context * ctx,
-    const char * filepath,
-    llama_seq_id dest_seq_id,
-    llama_token * tokens_out,
-    size_t n_token_capacity,
-    size_t * n_token_count_out);
-
-//
 // Decoding
 //
 
@@ -820,25 +759,6 @@ LLAMA_API int32_t llama_tokenize(
 // User code is responsible to remove the leading whitespace of the first non-BOS token when decoding multiple tokens.
 // @param special If true, special tokens are rendered in the output.
 LLAMA_API int32_t llama_token_to_piece(const struct llama_model * model, llama_token token, char * buf, int32_t length, bool special);
-
-/// Apply chat template. Inspired by hf apply_chat_template() on python.
-/// Both "model" and "custom_template" are optional, but at least one is required. "custom_template" has higher precedence than "model"
-/// NOTE: This function does not use a jinja parser. It only support a pre-defined list of template. See more: https://github.com/ggerganov/llama.cpp/wiki/Templates-supported-by-llama_chat_apply_template
-/// @param tmpl A Jinja template to use for this chat. If this is nullptr, the model’s default chat template will be used instead.
-/// @param chat Pointer to a list of multiple llama_chat_message
-/// @param n_msg Number of llama_chat_message in this chat
-/// @param add_ass Whether to end the prompt with the token(s) that indicate the start of an assistant message.
-/// @param buf A buffer to hold the output formatted prompt. The recommended alloc size is 2 * (total number of characters of all messages)
-/// @param length The size of the allocated buffer
-/// @return The total number of bytes of the formatted prompt. If is it larger than the size of buffer, you may need to re-alloc it and then re-apply the template.
-LLAMA_API int32_t llama_chat_apply_template(
-    const struct llama_model * model,
-    const char * tmpl,
-    const struct llama_chat_message * chat,
-    size_t n_msg,
-    bool add_ass,
-    char * buf,
-    int32_t length);
 
 //
 // Grammar

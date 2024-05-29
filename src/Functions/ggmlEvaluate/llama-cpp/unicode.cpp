@@ -774,7 +774,6 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
             continue;
         }
 
-        // fallback to general-purpose std::regex / std::wregex
         try
         {
             // if a unicode category is used in the regex, we use the collapsed text and replace the unicode category

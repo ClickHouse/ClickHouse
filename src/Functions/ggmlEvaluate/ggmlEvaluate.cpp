@@ -171,7 +171,7 @@ private:
          ConfigPtr model_config{ggml_config->createView(model_name)};
 
          auto & storage = getContext()->getGgmlModelStorage();
-         auto model = storage.get(model_name, "llama-gguf");  // llama-gguf is defult for now
+         auto model = storage.get(model_name, "llama-gguf");  // llama-gguf is default for now
 
         LOG_DEBUG(log, "Start loading model");
         model->load(model_config);

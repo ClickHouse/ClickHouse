@@ -45,12 +45,6 @@
 #    include <sys/ioctl.h>
 #    include <sys/stat.h>
 #endif
-#if defined(LLAMA_USE_CURL)
-#    include <future>
-#    include <thread>
-#    include <curl/curl.h>
-#    include <curl/easy.h>
-#endif
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4244 4267) // possible loss of data
@@ -63,19 +57,6 @@
 #if (defined(GGML_USE_CUDA) || defined(GGML_USE_SYCL)) || defined(GGML_USE_VULKAN)
 #    define GGML_USE_CUDA_SYCL_VULKAN
 #endif
-
-#if defined(LLAMA_USE_CURL)
-#    ifdef __linux__
-#        include <linux/limits.h>
-#    elif defined(_WIN32)
-#        define PATH_MAX MAX_PATH
-#    else
-#        include <sys/syslimits.h>
-#    endif
-#    define LLAMA_CURL_MAX_URL_LENGTH 2084 // Maximum URL Length in Chrome: 2083
-#endif // LLAMA_USE_CURL
-
-// using json = nlohmann::ordered_json;
 
 //
 // CPU utils
@@ -209,210 +190,6 @@ int32_t cpu_get_num_math()
 }
 
 //
-// String utils
-//
-
-std::vector<std::string> string_split(std::string input, char separator)
-{
-    std::vector<std::string> parts;
-    size_t separator_pos = input.find(separator);
-    while (separator_pos != std::string::npos)
-    {
-        std::string part = input.substr(0, separator_pos);
-        parts.emplace_back(part);
-        input = input.substr(separator_pos + 1);
-        separator_pos = input.find(separator);
-    }
-    parts.emplace_back(input);
-    return parts;
-}
-
-std::string string_strip(const std::string & str)
-{
-    size_t start = 0;
-    size_t end = str.size();
-    while (start < end && std::isspace(str[start]))
-    {
-        start++;
-    }
-    while (end > start && std::isspace(str[end - 1]))
-    {
-        end--;
-    }
-    return str.substr(start, end - start);
-}
-
-std::string string_get_sortable_timestamp()
-{
-    using clock = std::chrono::system_clock;
-
-    const clock::time_point current_time = clock::now();
-    const time_t as_time_t = clock::to_time_t(current_time);
-    char timestamp_no_ns[100];
-    std::strftime(timestamp_no_ns, 100, "%Y_%m_%d-%H_%M_%S", std::localtime(&as_time_t));
-
-    const int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(current_time.time_since_epoch() % 1000000000).count();
-    char timestamp_ns[11];
-    snprintf(timestamp_ns, 11, "%09" PRId64, ns);
-
-    return std::string(timestamp_no_ns) + "." + std::string(timestamp_ns);
-}
-
-std::string string_random_prompt(std::mt19937 & rng)
-{
-    const int r = rng() % 10;
-    switch (r)
-    {
-        case 0:
-            return "So";
-        case 1:
-            return "Once upon a time";
-        case 2:
-            return "When";
-        case 3:
-            return "The";
-        case 4:
-            return "After";
-        case 5:
-            return "If";
-        case 6:
-            return "import";
-        case 7:
-            return "He";
-        case 8:
-            return "She";
-        case 9:
-            return "They";
-    }
-
-    GGML_UNREACHABLE();
-}
-
-void string_process_escapes(std::string & input)
-{
-    std::size_t input_len = input.length();
-    std::size_t output_idx = 0;
-
-    for (std::size_t input_idx = 0; input_idx < input_len; ++input_idx)
-    {
-        if (input[input_idx] == '\\' && input_idx + 1 < input_len)
-        {
-            switch (input[++input_idx])
-            {
-                case 'n':
-                    input[output_idx++] = '\n';
-                    break;
-                case 'r':
-                    input[output_idx++] = '\r';
-                    break;
-                case 't':
-                    input[output_idx++] = '\t';
-                    break;
-                case '\'':
-                    input[output_idx++] = '\'';
-                    break;
-                case '\"':
-                    input[output_idx++] = '\"';
-                    break;
-                case '\\':
-                    input[output_idx++] = '\\';
-                    break;
-                case 'x':
-                    // Handle \x12, etc
-                    if (input_idx + 2 < input_len)
-                    {
-                        const char x[3] = {input[input_idx + 1], input[input_idx + 2], 0};
-                        char * err_p = nullptr;
-                        const long val = std::strtol(x, &err_p, 16);
-                        if (err_p == x + 2)
-                        {
-                            input_idx += 2;
-                            input[output_idx++] = char(val);
-                            break;
-                        }
-                    }
-                    input[output_idx++] = '\\';
-                    input[output_idx++] = input[input_idx];
-                    break;
-                default:
-                    input[output_idx++] = '\\';
-                    input[output_idx++] = input[input_idx];
-                    break;
-            }
-        }
-        else
-        {
-            input[output_idx++] = input[input_idx];
-        }
-    }
-
-    input.resize(output_idx);
-}
-
-bool string_parse_kv_override(const char * data, std::vector<llama_model_kv_override> & overrides)
-{
-    const char * sep = strchr(data, '=');
-    if (sep == nullptr || sep - data >= 128)
-    {
-        fprintf(stderr, "%s: malformed KV override '%s'\n", __func__, data);
-        return false;
-    }
-    llama_model_kv_override kvo;
-    std::strncpy(kvo.key, data, sep - data);
-    kvo.key[sep - data] = 0;
-    sep++;
-    if (strncmp(sep, "int:", 4) == 0)
-    {
-        sep += 4;
-        kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
-        kvo.val_i64 = std::atol(sep);
-    }
-    else if (strncmp(sep, "float:", 6) == 0)
-    {
-        sep += 6;
-        kvo.tag = LLAMA_KV_OVERRIDE_TYPE_FLOAT;
-        kvo.val_f64 = std::atof(sep);
-    }
-    else if (strncmp(sep, "bool:", 5) == 0)
-    {
-        sep += 5;
-        kvo.tag = LLAMA_KV_OVERRIDE_TYPE_BOOL;
-        if (std::strcmp(sep, "true") == 0)
-        {
-            kvo.val_bool = true;
-        }
-        else if (std::strcmp(sep, "false") == 0)
-        {
-            kvo.val_bool = false;
-        }
-        else
-        {
-            fprintf(stderr, "%s: invalid boolean value for KV override '%s'\n", __func__, data);
-            return false;
-        }
-    }
-    else if (strncmp(sep, "str:", 4) == 0)
-    {
-        sep += 4;
-        kvo.tag = LLAMA_KV_OVERRIDE_TYPE_STR;
-        if (strlen(sep) > 127)
-        {
-            fprintf(stderr, "%s: malformed KV override '%s', value cannot exceed 127 chars\n", __func__, data);
-            return false;
-        }
-        strncpy(kvo.val_str, sep, 127);
-        kvo.val_str[127] = '\0';
-    }
-    else
-    {
-        fprintf(stderr, "%s: invalid type for KV override '%s'\n", __func__, data);
-        return false;
-    }
-    overrides.emplace_back(std::move(kvo));
-    return true;
-}
-
-//
 // Model utils
 //
 
@@ -420,24 +197,11 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
 {
     auto mparams = llama_model_params_from_gpt_params(params);
 
-    llama_model * model = nullptr;
-
-    if (!params.hf_repo.empty() && !params.hf_file.empty())
-    {
-        model = llama_load_model_from_hf(params.hf_repo.c_str(), params.hf_file.c_str(), params.model.c_str(), mparams);
-    }
-    else if (!params.model_url.empty())
-    {
-        model = llama_load_model_from_url(params.model_url.c_str(), params.model.c_str(), mparams);
-    }
-    else
-    {
-        model = llama_load_model_from_file(params.model.c_str(), mparams);
-    }
+    llama_model * model = llama_load_model_from_file(params.model.c_str(), mparams);
 
     if (model == nullptr)
     {
-        fprintf(stderr, "%s: error: failed to load model '%s'\n", __func__, params.model.c_str());
+        // fprintf(stderr, "%s: error: failed to load model '%s'\n", __func__, params.model.c_str());
         return std::make_tuple(nullptr, nullptr);
     }
 
@@ -446,7 +210,7 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
     llama_context * lctx = llama_new_context_with_model(model, cparams);
     if (lctx == nullptr)
     {
-        fprintf(stderr, "%s: error: failed to create context with model '%s'\n", __func__, params.model.c_str());
+        // fprintf(stderr, "%s: error: failed to create context with model '%s'\n", __func__, params.model.c_str());
         llama_free_model(model);
         return std::make_tuple(nullptr, nullptr);
     }
@@ -538,7 +302,7 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     }
     else
     {
-        GGML_ASSERT(params.kv_overrides.back().key[0] == 0 && "KV overrides not terminated with empty key");
+        // GGML_ASSERT(params.kv_overrides.back().key[0] == 0 && "KV overrides not terminated with empty key");
         mparams.kv_overrides = params.kv_overrides.data();
     }
 
@@ -615,20 +379,6 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     cparams.type_v = kv_cache_type_from_str(params.cache_type_v);
 
     return cparams;
-}
-
-struct llama_model *
-llama_load_model_from_url(const char * /*model_url*/, const char * /*path_model*/, const struct llama_model_params & /*params*/)
-{
-    fprintf(stderr, "%s: llama.cpp built without libcurl, downloading from an url not supported.\n", __func__);
-    return nullptr;
-}
-
-struct llama_model * llama_load_model_from_hf(
-    const char * /*repo*/, const char * /*model*/, const char * /*path_model*/, const struct llama_model_params & /*params*/)
-{
-    fprintf(stderr, "%s: llama.cpp built without libcurl, downloading from Hugging Face not supported.\n", __func__);
-    return nullptr;
 }
 
 //

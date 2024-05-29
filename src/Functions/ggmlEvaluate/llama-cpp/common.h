@@ -63,10 +63,6 @@ struct llama_control_vector_load_info;
 int32_t cpu_get_num_physical_cores();
 int32_t cpu_get_num_math();
 
-//
-// CLI argument parsing
-//
-
 struct gpt_params
 {
     uint32_t seed = LLAMA_DEFAULT_SEED; // RNG seed
@@ -118,9 +114,9 @@ struct gpt_params
     std::string model = ""; // model path
     std::string model_draft = ""; // draft model for speculative decoding
     std::string model_alias = "unknown"; // model alias
-    std::string model_url = ""; // model url to download
-    std::string hf_repo = ""; // HF repo
-    std::string hf_file = ""; // HF file
+    // std::string model_url = ""; // model url to download
+    // std::string hf_repo = ""; // HF repo
+    // std::string hf_file = ""; // HF file
     std::string prompt = "";
     std::string prompt_file = ""; // store the external prompt file name
     std::string path_prompt_cache = ""; // path to file for saving/loading prompt eval state
@@ -199,19 +195,6 @@ struct gpt_params
 };
 
 //
-// String utils
-//
-
-std::vector<std::string> string_split(std::string input, char separator);
-
-std::string string_strip(const std::string & str);
-std::string string_get_sortable_timestamp();
-std::string string_random_prompt(std::mt19937 & rng);
-
-bool string_parse_kv_override(const char * data, std::vector<llama_model_kv_override> & overrides);
-void string_process_escapes(std::string & input);
-
-//
 // Model utils
 //
 
@@ -220,10 +203,6 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
 
 struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & params);
 struct llama_context_params llama_context_params_from_gpt_params(const gpt_params & params);
-
-struct llama_model * llama_load_model_from_url(const char * model_url, const char * path_model, const struct llama_model_params & params);
-struct llama_model *
-llama_load_model_from_hf(const char * repo, const char * file, const char * path_model, const struct llama_model_params & params);
 
 // Batch utils
 
