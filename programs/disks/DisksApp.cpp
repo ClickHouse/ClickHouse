@@ -44,7 +44,7 @@ CommandPtr DisksApp::getCommandByName(String command) const
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The command {} is unknown", command);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The command `{}` is unknown", command);
     }
 }
 
@@ -199,6 +199,10 @@ bool DisksApp::processQueryText(String text)
                 std::cerr << "COMMAND: " << command->command_name << "\n";
                 std::cerr << command->options_description << "\n";
             }
+            else
+            {
+                printAvailableCommandsHelpMessage();
+            }
         }
         else
         {
@@ -282,34 +286,70 @@ void DisksApp::processOptions()
         config().setString("log-level", options["log-level"].as<String>());
 }
 
-void DisksApp::printHelpMessage(const ProgramOptionsDescription &)
+
+void DisksApp::printEntryHelpMessage()
 {
-    std::optional<ProgramOptionsDescription> help_description
-        = createOptionsDescription("Help Message for clickhouse-disks", getTerminalWidth());
-
-    help_description->add(options_description);
-
     std::cout << "ClickHouse disk management tool\n";
-    std::cout << "Usage: ./clickhouse-disks [OPTION]\n";
-    std::cout << "clickhouse-disks\n\n";
+    std::cout << options_description << '\n';
+}
 
+size_t DisksApp::getMagicConstant()
+{
+    size_t magic_constant = 0;
     for (const auto & [current_command, _] : command_descriptions)
     {
-        std::cout << command_descriptions[current_command]->command_name;
+        std::string command_string{};
+        command_string += command_descriptions[current_command]->command_name;
         bool was = false;
         for (const auto & [alias_name, alias_command_name] : aliases)
         {
             if (alias_command_name == current_command)
             {
                 if (was)
-                    std::cout << ",";
+                    command_string += ",";
                 else
-                    std::cout << "(";
-                std::cout << alias_name;
+                    command_string += "(";
+                command_string += alias_name;
                 was = true;
             }
         }
-        std::cout << (was ? ")" : "") << " \t" << command_descriptions[current_command]->description << "\n\n";
+        command_string += (was ? ")" : "");
+
+        magic_constant = std::max(magic_constant, command_string.size());
+    }
+    return magic_constant + 2;
+}
+
+void DisksApp::printAvailableCommandsHelpMessage()
+{
+    size_t magic_constant = getMagicConstant();
+
+    std::cout << "\x1b[1;33mAvailable commands:\x1b[0m\n";
+    for (const auto & [current_command, _] : command_descriptions)
+    {
+        std::string command_string{};
+        command_string += command_descriptions[current_command]->command_name;
+        bool was = false;
+        for (const auto & [alias_name, alias_command_name] : aliases)
+        {
+            if (alias_command_name == current_command)
+            {
+                if (was)
+                    command_string += ",";
+                else
+                    command_string += "(";
+                command_string += alias_name;
+                was = true;
+            }
+        }
+        command_string += (was ? ")" : "");
+        std::cout << "\x1b[1;32m" << command_string << "\x1b[0m";
+        for (size_t i = command_string.size(); i < magic_constant; ++i)
+        {
+            std::cout << " ";
+        }
+
+        std::cout << command_descriptions[current_command]->description << "\n";
     }
 }
 
@@ -347,7 +387,8 @@ void DisksApp::init(const std::vector<String> & common_arguments)
 
     if (options.count("help"))
     {
-        printHelpMessage(options_description);
+        printEntryHelpMessage();
+        printAvailableCommandsHelpMessage();
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
@@ -373,6 +414,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     }
     else
     {
+        printEntryHelpMessage();
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No config-file specified");
     }
 

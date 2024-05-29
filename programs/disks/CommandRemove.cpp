@@ -10,8 +10,7 @@ public:
     CommandRemove()
     {
         command_name = "remove";
-        description = "Remove file or directory with all children. Throws exception if file doesn't exists.\nPath should be in format './' "
-                      "or './path' or 'path'";
+        description = "Remove file or directory with all children. Throws exception if file doesn't exists";
         options_description.add_options()("path", po::value<String>(), "path from which we copy (mandatory, positional)");
         positional_options_description.add("path", 1);
     }

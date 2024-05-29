@@ -7,18 +7,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-};
-
 class CommandSwitchDisk final : public ICommand
 {
 public:
     explicit CommandSwitchDisk() : ICommand()
     {
         command_name = "switch-disk";
-        description = "Change disk";
+        description = "Switch disk";
         options_description.add_options()("disk", po::value<String>(), "the disk to switch to (mandatory, positional)")(
             "path", po::value<String>(), "the path to switch on the disk");
         positional_options_description.add("disk", 1);

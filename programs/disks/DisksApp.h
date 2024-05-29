@@ -38,11 +38,14 @@ public:
     static void parseAndCheckOptions(
         const std::vector<String> & arguments, const ProgramOptionsDescription & options_description, CommandLineOptions & options);
 
-    void printHelpMessage(const ProgramOptionsDescription &);
+    void printEntryHelpMessage();
+    void printAvailableCommandsHelpMessage();
 
     std::vector<String> getCompletions(const String & prefix) const;
 
     std::vector<String> getEmptyCompletion(CommandPtr command_) const;
+
+    size_t getMagicConstant();
 
     ~DisksApp() override;
 
