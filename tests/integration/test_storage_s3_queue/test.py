@@ -713,6 +713,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             files_path,
             additional_settings={
                 "keeper_path": keeper_path,
+                "s3queue_buckets": 2
             },
         )
 
@@ -1031,6 +1032,23 @@ def test_s3_client_reused(started_cluster):
         assert s3_clients_before == s3_clients_after
 
 
+def get_processed_files(node, table_name):
+    return node.query(
+        f"""
+select splitByChar('/', file_name)[-1] as file
+from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' order by file
+        """
+    ).strip().split("\n")
+
+def get_unprocessed_files(node, table_name):
+    return node.query(
+        f"""
+        select concat('test_',  toString(number), '.csv') as file from numbers(300)
+        where file not
+        in (select splitByChar('/', file_name)[-1] from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed')
+        """
+    )
+
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_processing_threads(started_cluster, mode):
     node = started_cluster.instances["instance"]
@@ -1061,12 +1079,16 @@ def test_processing_threads(started_cluster, mode):
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(30):
+    for _ in range(50):
         if (get_count(f"{dst_table_name}")) == files_to_generate:
             break
         time.sleep(1)
 
-    assert get_count(dst_table_name) == files_to_generate
+    if get_count(dst_table_name) != files_to_generate:
+        processed_files = get_processed_files(node, table_name)
+        unprocessed_files = get_unprocessed_files(node, table_name)
+        logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}, unprocessed files: {unprocessed_files}, count: {get_count(dst_table_name)}")
+        assert False
 
     res = [
         list(map(int, l.split()))
@@ -1078,6 +1100,8 @@ def test_processing_threads(started_cluster, mode):
 
     if mode == "ordered":
         zk = started_cluster.get_kazoo_client("zoo1")
+        nodes = zk.get_children(f"{keeper_path}")
+        print(f"Metadata nodes: {nodes}")
         processed_nodes = zk.get_children(f"{keeper_path}/buckets/")
         assert len(processed_nodes) == processing_threads
 
@@ -1430,7 +1454,7 @@ def test_processed_file_setting(started_cluster, processing_threads):
     node = started_cluster.instances["instance"]
     table_name = f"test_processed_file_setting_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{processing_threads}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 

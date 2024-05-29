@@ -6,8 +6,10 @@
 #include <Core/SettingsEnums.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include "S3QueueIFileMetadata.h"
 #include "S3QueueOrderedFileMetadata.h"
+#include "S3QueueSettings.h"
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
@@ -16,6 +18,8 @@ namespace DB
 {
 struct S3QueueSettings;
 class StorageS3Queue;
+struct StorageInMemoryMetadata;
+using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
  * A class for managing S3Queue metadata in zookeeper, e.g.
@@ -39,19 +43,21 @@ class StorageS3Queue;
  * In case of Unordered mode - if files TTL is enabled or maximum tracked files limit is set
  * starts a background cleanup thread which is responsible for maintaining them.
  */
-class S3QueueFilesMetadata
+class S3QueueMetadata
 {
 public:
-    using FileStatus = IFileMetadata::FileStatus;
-    using FileMetadataPtr = std::shared_ptr<IFileMetadata>;
+    using FileStatus = S3QueueIFileMetadata::FileStatus;
+    using FileMetadataPtr = std::shared_ptr<S3QueueIFileMetadata>;
     using FileStatusPtr = std::shared_ptr<FileStatus>;
     using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
     using Bucket = size_t;
     using Processor = std::string;
 
-    S3QueueFilesMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
+    S3QueueMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
 
-    ~S3QueueFilesMetadata();
+    ~S3QueueMetadata();
+
+    void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata);
 
     FileMetadataPtr getFileMetadata(const std::string & path);
 
@@ -59,7 +65,7 @@ public:
 
     FileStatuses getFileStateses() const { return local_file_statuses.getAll(); }
 
-    bool checkSettings(const S3QueueSettings & settings) const;
+    void checkSettings(const S3QueueSettings & settings) const;
 
     void shutdown();
 
@@ -68,25 +74,21 @@ public:
     /// The file will be processed by a thread related to this processing id.
     Bucket getBucketForPath(const std::string & path) const;
 
-    OrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
+    S3QueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
 private:
-    const S3QueueMode mode;
-    const UInt64 max_set_size;
-    const UInt64 max_set_age_sec;
-    const UInt64 max_loading_retries;
-    const size_t min_cleanup_interval_ms;
-    const size_t max_cleanup_interval_ms;
-    const size_t buckets_num;
-    const fs::path zookeeper_path;
+    void cleanupThreadFunc();
+    void cleanupThreadFuncImpl();
 
+    const S3QueueSettings settings;
+    const fs::path zookeeper_path;
+    const size_t buckets_num;
+
+    bool initialized = false;
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
     BackgroundSchedulePool::TaskHolder task;
-
-    void cleanupThreadFunc();
-    void cleanupThreadFuncImpl();
 
     struct LocalFileStatuses
     {

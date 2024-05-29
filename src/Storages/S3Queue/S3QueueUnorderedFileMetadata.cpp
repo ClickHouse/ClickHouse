@@ -18,13 +18,13 @@ namespace
     }
 }
 
-UnorderedFileMetadata::UnorderedFileMetadata(
+S3QueueUnorderedFileMetadata::S3QueueUnorderedFileMetadata(
     const std::filesystem::path & zk_path,
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
     LoggerPtr log_)
-    : IFileMetadata(
+    : S3QueueIFileMetadata(
         path_,
         /* processing_node_path */zk_path / "processing" / getNodeName(path_),
         /* processed_node_path */zk_path / "processed" / getNodeName(path_),
@@ -35,7 +35,7 @@ UnorderedFileMetadata::UnorderedFileMetadata(
 {
 }
 
-std::pair<bool, IFileMetadata::FileStatus::State> UnorderedFileMetadata::setProcessingImpl()
+std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueUnorderedFileMetadata::setProcessingImpl()
 {
     /// In one zookeeper transaction do the following:
     enum RequestType
@@ -46,10 +46,13 @@ std::pair<bool, IFileMetadata::FileStatus::State> UnorderedFileMetadata::setProc
         FAILED_PATH_DOESNT_EXIST = 2,
         /// node_name ephemeral processing node was successfully created
         CREATED_PROCESSING_PATH = 4,
+        /// update processing id
+        SET_PROCESSING_ID = 6,
     };
 
     const auto zk_client = getZooKeeper();
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
+    auto processor_info = getProcessorInfo(processing_id.value());
 
     Coordination::Requests requests;
     requests.push_back(zkutil::makeCreateRequest(processed_node_path, "", zkutil::CreateMode::Persistent));
@@ -58,12 +61,21 @@ std::pair<bool, IFileMetadata::FileStatus::State> UnorderedFileMetadata::setProc
     requests.push_back(zkutil::makeRemoveRequest(failed_node_path, -1));
     requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
 
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processing_node_id_path, processor_info, zkutil::CreateMode::Persistent, /* ignore_if_exists */true));
+    requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
+
     Coordination::Responses responses;
     const auto code = zk_client->tryMulti(requests, responses);
     auto is_request_failed = [&](RequestType type) { return responses[type]->error != Coordination::Error::ZOK; };
 
     if (code == Coordination::Error::ZOK)
+    {
+        const auto * set_response = dynamic_cast<const Coordination::SetResponse *>(responses[SET_PROCESSING_ID].get());
+        processing_id_version = set_response->stat.version;
         return std::pair{true, FileStatus::State::None};
+    }
 
     if (is_request_failed(PROCESSED_PATH_DOESNT_EXIST))
         return {false, FileStatus::State::Processed};
@@ -77,18 +89,43 @@ std::pair<bool, IFileMetadata::FileStatus::State> UnorderedFileMetadata::setProc
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", magic_enum::enum_name(code));
 }
 
-void UnorderedFileMetadata::setProcessedImpl()
+void S3QueueUnorderedFileMetadata::setProcessedAtStartRequests(
+    Coordination::Requests & requests,
+    const zkutil::ZooKeeperPtr &)
 {
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+}
+
+void S3QueueUnorderedFileMetadata::setProcessedImpl()
+{
+    /// In one zookeeper transaction do the following:
+    enum RequestType
+    {
+        SET_MAX_PROCESSED_PATH = 0,
+        CHECK_PROCESSING_ID_PATH = 1, /// Optional.
+        REMOVE_PROCESSING_ID_PATH = 2, /// Optional.
+        REMOVE_PROCESSING_PATH = 3, /// Optional.
+    };
+
     const auto zk_client = getZooKeeper();
-    const auto node_metadata_str = node_metadata.toString();
 
     Coordination::Requests requests;
-    requests.push_back(zkutil::makeCreateRequest(processed_node_path, node_metadata_str, zkutil::CreateMode::Persistent));
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 
-    if (processing_id.has_value())
+    if (processing_id_version.has_value())
+    {
+        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
+        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+    }
 
     Coordination::Responses responses;
+    auto is_request_failed = [&](RequestType type) { return responses[type]->error != Coordination::Error::ZOK; };
+
     const auto code = zk_client->tryMulti(requests, responses);
     if (code == Coordination::Error::ZOK)
     {
@@ -99,16 +136,32 @@ void UnorderedFileMetadata::setProcessedImpl()
         return;
     }
 
-    if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
+    if (Coordination::isHardwareError(code))
+    {
+        LOG_WARNING(log, "Cannot set file {} as processed. Lost connection to keeper: {}", path, code);
+        return;
+    }
+
+    if (is_request_failed(SET_MAX_PROCESSED_PATH))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot create a persistent node in /processed since it already exists");
     }
 
-    LOG_WARNING(log,
-                "Cannot set file ({}) as processed since ephemeral node in /processing (code: {})"
-                "does not exist with expected id, "
-                "this could be a result of expired zookeeper session", path, responses[1]->error);
+    if (is_request_failed(CHECK_PROCESSING_ID_PATH))
+    {
+        LOG_WARNING(log, "Cannot set file as processed. "
+                    "Version of processing id node changed: {}", code);
+        return;
+    }
+
+    if (is_request_failed(REMOVE_PROCESSING_PATH))
+    {
+        LOG_WARNING(log, "Failed to remove processing path: {}", code);
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 }
 
 }

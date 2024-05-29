@@ -11,7 +11,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#include <Storages/S3Queue/S3QueueMetadata.h>
 #include <Storages/S3Queue/S3QueueMetadataFactory.h>
 #include <Storages/S3Queue/StorageS3Queue.h>
 #include <Disks/IDisk.h>

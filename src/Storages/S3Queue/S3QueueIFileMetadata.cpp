@@ -1,6 +1,7 @@
 #include "S3QueueIFileMetadata.h"
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/JSON.h>
@@ -34,19 +35,19 @@ namespace
     }
 }
 
-void IFileMetadata::FileStatus::onProcessing()
+void S3QueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
     processing_start_time = now();
 }
 
-void IFileMetadata::FileStatus::onProcessed()
+void S3QueueIFileMetadata::FileStatus::onProcessed()
 {
     state = FileStatus::State::Processed;
     processing_end_time = now();
 }
 
-void IFileMetadata::FileStatus::onFailed(const std::string & exception)
+void S3QueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
     state = FileStatus::State::Failed;
     processing_end_time = now();
@@ -54,13 +55,13 @@ void IFileMetadata::FileStatus::onFailed(const std::string & exception)
     last_exception = exception;
 }
 
-std::string IFileMetadata::FileStatus::getException() const
+std::string S3QueueIFileMetadata::FileStatus::getException() const
 {
     std::lock_guard lock(last_exception_mutex);
     return last_exception;
 }
 
-std::string IFileMetadata::NodeMetadata::toString() const
+std::string S3QueueIFileMetadata::NodeMetadata::toString() const
 {
     Poco::JSON::Object json;
     json.set("file_path", file_path);
@@ -75,7 +76,7 @@ std::string IFileMetadata::NodeMetadata::toString() const
     return oss.str();
 }
 
-IFileMetadata::NodeMetadata IFileMetadata::NodeMetadata::fromString(const std::string & metadata_str)
+S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::NodeMetadata::fromString(const std::string & metadata_str)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
@@ -89,7 +90,7 @@ IFileMetadata::NodeMetadata IFileMetadata::NodeMetadata::fromString(const std::s
     return metadata;
 }
 
-IFileMetadata::IFileMetadata(
+S3QueueIFileMetadata::S3QueueIFileMetadata(
     const std::string & path_,
     const std::string & processing_node_path_,
     const std::string & processed_node_path_,
@@ -106,24 +107,38 @@ IFileMetadata::IFileMetadata(
     , failed_node_path(failed_node_path_)
     , node_metadata(createNodeMetadata(path))
     , log(log_)
+    , processing_node_id_path(processing_node_path + "_processing_id")
 {
-    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}"
+    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
              "processed_path: {}, processing_path: {}, failed_path: {}",
              path, node_name, max_loading_retries,
              processed_node_path, processing_node_path, failed_node_path);
 }
 
-IFileMetadata::~IFileMetadata()
+S3QueueIFileMetadata::~S3QueueIFileMetadata()
 {
-    if (file_status->state == FileStatus::State::Processing)
+    if (processing_id_version.has_value())
     {
-        /// State will still be `processing` here if we called setProcessing,
-        /// but did not call setFailed or setProcessed.
-
         file_status->onFailed("Uncaught exception");
+        LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
         try
         {
-            getZooKeeper()->tryRemove(processing_node_path);
+            auto zk_client = getZooKeeper();
+
+            Coordination::Requests requests;
+            requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
+            requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+            Coordination::Responses responses;
+            const auto code = zk_client->tryMulti(requests, responses);
+            if (code != Coordination::Error::ZOK
+                && !Coordination::isHardwareError(code)
+                && code != Coordination::Error::ZBADVERSION
+                && code != Coordination::Error::ZNONODE)
+            {
+                LOG_WARNING(log, "Unexpected error while removing procesing node: {}", code);
+                chassert(false);
+            }
         }
         catch (...)
         {
@@ -132,7 +147,7 @@ IFileMetadata::~IFileMetadata()
     }
 }
 
-std::string IFileMetadata::getNodeName(const std::string & path)
+std::string S3QueueIFileMetadata::getNodeName(const std::string & path)
 {
     /// Since with are dealing with paths in s3 which can have "/",
     /// we cannot create a zookeeper node with the name equal to path.
@@ -143,7 +158,7 @@ std::string IFileMetadata::getNodeName(const std::string & path)
     return toString(path_hash.get64());
 }
 
-IFileMetadata::NodeMetadata IFileMetadata::createNodeMetadata(
+S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::createNodeMetadata(
     const std::string & path,
     const std::string & exception,
     size_t retries)
@@ -163,7 +178,21 @@ IFileMetadata::NodeMetadata IFileMetadata::createNodeMetadata(
     return metadata;
 }
 
-bool IFileMetadata::setProcessing()
+std::string S3QueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
+{
+    /// Add information which will be useful for debugging just in case.
+    /// TODO: add it for Unordered mode as well.
+    Poco::JSON::Object json;
+    json.set("hostname", DNSResolver::instance().getHostName());
+    json.set("processor_id", processor_id);
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+bool S3QueueIFileMetadata::setProcessing()
 {
     auto state = file_status->state.load();
     if (state == FileStatus::State::Processing
@@ -185,18 +214,24 @@ bool IFileMetadata::setProcessing()
     else
         file_status->updateState(file_state);
 
-    LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
+    LOG_TEST(log, "File {} has state `{}`: will {}process (processing id version: {})",
+             path, file_state, success ? "" : "not ",
+             processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
+
     return success;
 }
 
-void IFileMetadata::setProcessed()
+void S3QueueIFileMetadata::setProcessed()
 {
     ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
     file_status->onProcessed();
     setProcessedImpl();
+
+    processing_id.reset();
+    processing_id_version.reset();
 }
 
-void IFileMetadata::setFailed(const std::string & exception)
+void S3QueueIFileMetadata::setFailed(const std::string & exception)
 {
     ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
     file_status->onFailed(exception);
@@ -208,9 +243,12 @@ void IFileMetadata::setFailed(const std::string & exception)
         setFailedNonRetriable();
     else
         setFailedRetriable();
+
+    processing_id.reset();
+    processing_id_version.reset();
 }
 
-void IFileMetadata::setFailedNonRetriable()
+void S3QueueIFileMetadata::setFailedNonRetriable()
 {
     auto zk_client = getZooKeeper();
     Coordination::Requests requests;
@@ -236,7 +274,7 @@ void IFileMetadata::setFailedNonRetriable()
                 "this could be a result of expired zookeeper session", path);
 }
 
-void IFileMetadata::setFailedRetriable()
+void S3QueueIFileMetadata::setFailedRetriable()
 {
     /// Instead of creating a persistent /failed/node_hash node
     /// we create a persistent /failed/node_hash.retriable node.

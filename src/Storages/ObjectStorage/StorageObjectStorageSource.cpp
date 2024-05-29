@@ -156,20 +156,20 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     return iterator;
 }
 
-void StorageObjectStorageSource::lazyInitialize()
+void StorageObjectStorageSource::lazyInitialize(size_t processor)
 {
     if (initialized)
         return;
 
-    reader = createReader();
+    reader = createReader(processor);
     if (reader)
-        reader_future = createReaderAsync();
+        reader_future = createReaderAsync(processor);
     initialized = true;
 }
 
 Chunk StorageObjectStorageSource::generate()
 {
-    lazyInitialize();
+    lazyInitialize(0);
 
     while (true)
     {
@@ -251,14 +251,14 @@ std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const O
     return schema_cache.tryGetNumRows(cache_key, get_last_mod_time);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(size_t processor)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(getContext());
 
     do
     {
-        object_info = file_iterator->next();
+        object_info = file_iterator->next(processor);
 
         if (!object_info || object_info->getFileName().empty())
             return {};
@@ -354,9 +354,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
 }
 
-std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
+std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync(size_t processor)
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(processor); }, Priority{});
 }
 
 std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const ObjectInfo & object_info)
@@ -402,9 +402,9 @@ StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name
 {
 }
 
-StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::IIterator::next()
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::IIterator::next(size_t processor)
 {
-    auto object_info = nextImpl();
+    auto object_info = nextImpl(processor);
 
     if (object_info)
     {
@@ -475,10 +475,10 @@ size_t StorageObjectStorageSource::GlobIterator::estimatedKeysCount()
     return object_infos.size();
 }
 
-StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl()
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t processor)
 {
     std::lock_guard lock(next_mutex);
-    auto object_info = nextImplUnlocked();
+    auto object_info = nextImplUnlocked(processor);
     if (first_iteration && !object_info && throw_on_zero_files_match)
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
@@ -489,7 +489,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     return object_info;
 }
 
-StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked()
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked(size_t /* processor */)
 {
     bool current_batch_processed = object_infos.empty() || index >= object_infos.size();
     if (is_finished && current_batch_processed)
@@ -580,7 +580,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     }
 }
 
-StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::nextImpl()
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::nextImpl(size_t /* processor */)
 {
     while (true)
     {
@@ -661,7 +661,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     }
 }
 
-StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::nextImpl()
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::nextImpl(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
@@ -723,7 +723,8 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* archive_size */size);
 }
 
-StorageObjectStorageSource::ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::nextImpl()
+StorageObjectStorageSource::ObjectInfoPtr
+StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
 {
     std::unique_lock lock{next_mutex};
     while (true)
@@ -732,7 +733,7 @@ StorageObjectStorageSource::ObjectInfoPtr StorageObjectStorageSource::ArchiveIte
         {
             if (!file_enumerator)
             {
-                archive_object = archives_iterator->next();
+                archive_object = archives_iterator->next(processor);
                 if (!archive_object)
                     return {};
 
@@ -753,7 +754,7 @@ StorageObjectStorageSource::ObjectInfoPtr StorageObjectStorageSource::ArchiveIte
         }
         else
         {
-            archive_object = archives_iterator->next();
+            archive_object = archives_iterator->next(processor);
             if (!archive_object)
                 return {};
 

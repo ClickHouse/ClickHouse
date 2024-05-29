@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class IFileMetadata
+class S3QueueIFileMetadata
 {
 public:
     struct FileStatus
@@ -41,7 +41,7 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
-    explicit IFileMetadata(
+    explicit S3QueueIFileMetadata(
         const std::string & path_,
         const std::string & processing_node_path_,
         const std::string & processed_node_path_,
@@ -50,11 +50,15 @@ public:
         size_t max_loading_retries_,
         LoggerPtr log_);
 
-    virtual ~IFileMetadata();
+    virtual ~S3QueueIFileMetadata();
 
     bool setProcessing();
     void setProcessed();
     void setFailed(const std::string & exception);
+
+    virtual void setProcessedAtStartRequests(
+        Coordination::Requests & requests,
+        const zkutil::ZooKeeperPtr & zk_client) = 0;
 
     FileStatusPtr getFileStatus() { return file_status; }
 
@@ -86,11 +90,16 @@ protected:
 
     NodeMetadata node_metadata;
     LoggerPtr log;
+
+    const std::string processing_node_id_path;
     std::optional<std::string> processing_id;
+    std::optional<int> processing_id_version;
 
     static std::string getNodeName(const std::string & path);
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
+
+    static std::string getProcessorInfo(const std::string & processor_id);
 };
 
 }

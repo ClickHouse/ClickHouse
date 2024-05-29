@@ -38,15 +38,11 @@ S3QueueTableMetadata::S3QueueTableMetadata(
     const StorageInMemoryMetadata & storage_metadata)
 {
     format_name = configuration.format;
-    LOG_TEST(getLogger("KSSENII"), "KSSENII SEEEE: {}", engine_settings.after_processing.value);
     after_processing = engine_settings.after_processing.toString();
-    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE 2: {}", after_processing);
     mode = engine_settings.mode.toString();
-    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE 2: {}", mode);
     s3queue_tracked_files_limit = engine_settings.s3queue_tracked_files_limit;
     s3queue_tracked_file_ttl_sec = engine_settings.s3queue_tracked_file_ttl_sec;
     s3queue_buckets = engine_settings.s3queue_buckets;
-    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE 2: {}", s3queue_buckets);
     s3queue_processing_threads_num = engine_settings.s3queue_processing_threads_num;
     columns = storage_metadata.getColumns().toString();
 }
@@ -159,6 +155,72 @@ void S3QueueTableMetadata::checkImmutableFieldsEquals(const S3QueueTableMetadata
                 "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. "
                 "Stored in ZooKeeper: {}, local: {}",
                 from_zk.s3queue_buckets, s3queue_buckets);
+        }
+        /// TODO: if buckets <= 1, we need to check that processing_threads setting equals.
+        /// TODO: add last_processed_path
+    }
+}
+
+void S3QueueTableMetadata::checkEquals(const S3QueueSettings & current, const S3QueueSettings & expected)
+{
+    if (current.after_processing != expected.after_processing)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs "
+            "in action after processing. Stored in ZooKeeper: {}, local: {}",
+            expected.after_processing.toString(),
+            current.after_processing.toString());
+
+    if (current.mode != expected.mode)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in engine mode. "
+            "Stored in ZooKeeper: {}, local: {}",
+            expected.mode.toString(),
+            current.mode.toString());
+
+    if (current.s3queue_tracked_files_limit != expected.s3queue_tracked_files_limit)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in max set size. "
+            "Stored in ZooKeeper: {}, local: {}",
+            expected.s3queue_tracked_files_limit,
+            current.s3queue_tracked_files_limit);
+
+    if (current.s3queue_tracked_file_ttl_sec != expected.s3queue_tracked_file_ttl_sec)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in max set age. "
+            "Stored in ZooKeeper: {}, local: {}",
+            expected.s3queue_tracked_file_ttl_sec,
+            current.s3queue_tracked_file_ttl_sec);
+
+    if (current.s3queue_last_processed_path.value != expected.s3queue_last_processed_path.value)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in last_processed_path. "
+            "Stored in ZooKeeper: {}, local: {}",
+            expected.s3queue_last_processed_path.value,
+            current.s3queue_last_processed_path.value);
+
+    if (current.mode == S3QueueMode::ORDERED)
+    {
+        if (current.s3queue_processing_threads_num != expected.s3queue_processing_threads_num)
+        {
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in s3queue_processing_threads_num setting. "
+                "Stored in ZooKeeper: {}, local: {}",
+                expected.s3queue_processing_threads_num,
+                current.s3queue_processing_threads_num);
+        }
+        if (current.s3queue_buckets != expected.s3queue_buckets)
+        {
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. "
+                "Stored in ZooKeeper: {}, local: {}",
+                expected.s3queue_buckets, current.s3queue_buckets);
         }
     }
 }

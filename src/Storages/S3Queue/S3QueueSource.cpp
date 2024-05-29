@@ -41,212 +41,31 @@ StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
 }
 
 StorageS3QueueSource::FileIterator::FileIterator(
-    std::shared_ptr<S3QueueFilesMetadata> metadata_,
+    std::shared_ptr<S3QueueMetadata> metadata_,
     std::unique_ptr<GlobIterator> glob_iterator_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
     : StorageObjectStorageSource::IIterator("S3QueueIterator")
     , metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
-    , current_processor(getRandomASCIIString(10)) /// TODO: add server uuid?
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
 }
 
-StorageS3QueueSource::FileIterator::~FileIterator()
+size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
 {
-    releaseAndResetCurrentBucket();
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
 }
 
-void StorageS3QueueSource::FileIterator::releaseAndResetCurrentBucket()
-{
-    try
-    {
-        if (current_bucket.has_value())
-        {
-            /// TODO: release the bucket via release() method instead - to make it throw exceptions.
-            bucket_holder.reset(); /// Release the bucket.
-            current_bucket.reset();
-        }
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
-        {
-            LOG_TRACE(log, "Session expired while releasing bucket");
-        }
-        if (e.code == Coordination::Error::ZNONODE)
-        {
-            LOG_TRACE(log, "Bucket {} does not exist. "
-                      "This could happen because of an exprired session",
-                      current_bucket.value());
-        }
-        else
-        {
-            LOG_ERROR(log, "Got unexpected exception while releasing bucket: {}",
-                      getCurrentExceptionMessage(true));
-            chassert(false);
-        }
-        current_bucket.reset();
-    }
-}
-
-StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket()
-{
-    /// We need this lock to maintain consistency between listing s3 directory
-    /// and getting/putting result into listed_keys_cache.
-    std::lock_guard lock(buckets_mutex);
-
-    while (true)
-    {
-        /// Each processing thread gets next path from glob_iterator->next()
-        /// and checks if corresponding bucket is already acquired by someone.
-        /// In case it is already acquired, they put the key into listed_keys_cache,
-        /// so that the thread who acquired the bucket will be able to see
-        /// those keys without the need to list s3 directory once again.
-        if (current_bucket.has_value())
-        {
-            auto it = listed_keys_cache.find(current_bucket.value());
-            if (it != listed_keys_cache.end())
-            {
-                /// `bucket_keys` -- keys we iterated so far and which were not taken for processing.
-                /// `processor` -- processor id of the thread which has acquired the bucket.
-                auto & [bucket_keys, processor] = it->second;
-
-                /// Check correctness just in case.
-                if (!processor.has_value() || processor.value() != current_processor)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Expected current processor {} to be equal to bucket's {} processor, "
-                        "but have {}", current_processor, current_bucket.value(),
-                        processor.has_value() ? processor.value() : Processor{});
-                }
-
-                /// Take next key to process
-                if (!bucket_keys.empty())
-                {
-                    /// Take the key from the front, the order is important.
-                    auto object_info = bucket_keys.front();
-                    bucket_keys.pop_front();
-                    return object_info;
-                }
-
-                /// No more keys in bucket, remove it from cache.
-                listed_keys_cache.erase(it);
-            }
-
-            if (iterator_finished)
-            {
-                /// Bucket is fully processed - release the bucket.
-                releaseAndResetCurrentBucket();
-            }
-        }
-        /// If processing thread has already acquired some bucket
-        /// and while listing s3 directory gets a key which is in a different bucket,
-        /// it puts the key into listed_keys_cache to allow others to process it,
-        /// because one processing thread can acquire only one bucket at a time.
-        /// Once a thread is finished with its acquired bucket, it checks listed_keys_cache
-        /// to see if there are keys from buckets not acquired by anyone.
-        if (!current_bucket.has_value())
-        {
-            for (auto it = listed_keys_cache.begin(); it != listed_keys_cache.end();)
-            {
-                auto & [bucket, bucket_info] = *it;
-                auto & [bucket_keys, processor] = bucket_info;
-
-                if (processor.has_value())
-                {
-                    LOG_TEST(log, "Bucket {} is already locked for processing by {} (keys: {})",
-                             bucket, processor.value(), bucket_keys.size());
-                    ++it;
-                    continue;
-                }
-
-                if (bucket_keys.empty())
-                {
-                    /// No more keys in bucket, remove it from cache.
-                    /// We still might add new keys to this bucket if !iterator_finished.
-                    it = listed_keys_cache.erase(it);
-                    continue;
-                }
-
-                bucket_holder = metadata->tryAcquireBucket(bucket, current_processor);
-                if (!bucket)
-                {
-                    LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
-                             bucket, bucket_keys.size());
-                    ++it;
-                    continue;
-                }
-
-                current_bucket = bucket;
-                processor = current_processor;
-
-                /// Take the key from the front, the order is important.
-                auto object_info = bucket_keys.front();
-                bucket_keys.pop_front();
-                return object_info;
-            }
-        }
-
-        if (iterator_finished)
-        {
-            LOG_TEST(log, "Reached the end of file iterator and nothing left in keys cache");
-            return {};
-        }
-
-        auto object_info = glob_iterator->next();
-        if (object_info)
-        {
-            const auto bucket = metadata->getBucketForPath(object_info->relative_path);
-
-            LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}",
-                     object_info->getFileName(), bucket,
-                     current_bucket.has_value() ? toString(current_bucket.value()) : "None");
-
-            if (current_bucket.has_value())
-            {
-                if (current_bucket.value() != bucket)
-                {
-                    listed_keys_cache[bucket].keys.emplace_back(object_info);
-                    continue;
-                }
-                return object_info;
-            }
-            else
-            {
-                if (!metadata->tryAcquireBucket(bucket, current_processor))
-                {
-                    LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
-                    continue;
-                }
-
-                current_bucket = bucket;
-                return object_info;
-            }
-        }
-        else
-        {
-            releaseAndResetCurrentBucket();
-
-            LOG_TEST(log, "Reached the end of file iterator");
-            iterator_finished = true;
-
-            if (listed_keys_cache.empty())
-                return {};
-            else
-                continue;
-        }
-    }
-}
-
-StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl()
+StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl(size_t processor)
 {
     while (!shutdown_called)
     {
-        auto val = metadata->useBucketsForProcessing() ? getNextKeyFromAcquiredBucket() : glob_iterator->next();
+        auto val = metadata->useBucketsForProcessing()
+            ? getNextKeyFromAcquiredBucket(processor)
+            : glob_iterator->next(processor);
+
         if (!val)
             return {};
 
@@ -263,16 +82,196 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
     return {};
 }
 
-size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
+StorageS3QueueSource::ObjectInfoPtr
+StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
+    /// We need this lock to maintain consistency between listing s3 directory
+    /// and getting/putting result into listed_keys_cache.
+    std::lock_guard lock(buckets_mutex);
+
+    auto bucket_holder_it = bucket_holders.emplace(processor, nullptr).first;
+    auto current_processor = toString(processor);
+
+    LOG_TEST(
+        log, "Current processor: {}, acquired bucket: {}",
+        processor, bucket_holder_it->second ? toString(bucket_holder_it->second->getBucket()) : "None");
+
+    while (true)
+    {
+        /// Each processing thread gets next path from glob_iterator->next()
+        /// and checks if corresponding bucket is already acquired by someone.
+        /// In case it is already acquired, they put the key into listed_keys_cache,
+        /// so that the thread who acquired the bucket will be able to see
+        /// those keys without the need to list s3 directory once again.
+        if (bucket_holder_it->second)
+        {
+            const auto bucket = bucket_holder_it->second->getBucket();
+            auto it = listed_keys_cache.find(bucket);
+            if (it != listed_keys_cache.end())
+            {
+                /// `bucket_keys` -- keys we iterated so far and which were not taken for processing.
+                /// `bucket_processor` -- processor id of the thread which has acquired the bucket.
+                auto & [bucket_keys, bucket_processor] = it->second;
+
+                /// Check correctness just in case.
+                if (!bucket_processor.has_value())
+                {
+                    bucket_processor = current_processor;
+                }
+                else if (bucket_processor.value() != current_processor)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected current processor {} to be equal to {} for bucket {}",
+                        current_processor,
+                        bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
+                        bucket);
+                }
+
+                /// Take next key to process
+                if (!bucket_keys.empty())
+                {
+                    /// Take the key from the front, the order is important.
+                    auto object_info = bucket_keys.front();
+                    bucket_keys.pop_front();
+
+                    LOG_TEST(log, "Current bucket: {}, will process file: {}",
+                             bucket, object_info->getFileName());
+
+                    return object_info;
+                }
+
+                LOG_TEST(log, "Cache of bucket {} is empty", bucket);
+
+                /// No more keys in bucket, remove it from cache.
+                listed_keys_cache.erase(it);
+            }
+            else
+            {
+                LOG_TEST(log, "Cache of bucket {} is empty", bucket);
+            }
+
+            if (iterator_finished)
+            {
+                /// Bucket is fully processed - release the bucket.
+                bucket_holder_it->second->release();
+                bucket_holder_it->second.reset();
+            }
+        }
+        /// If processing thread has already acquired some bucket
+        /// and while listing s3 directory gets a key which is in a different bucket,
+        /// it puts the key into listed_keys_cache to allow others to process it,
+        /// because one processing thread can acquire only one bucket at a time.
+        /// Once a thread is finished with its acquired bucket, it checks listed_keys_cache
+        /// to see if there are keys from buckets not acquired by anyone.
+        if (!bucket_holder_it->second)
+        {
+            for (auto it = listed_keys_cache.begin(); it != listed_keys_cache.end();)
+            {
+                auto & [bucket, bucket_info] = *it;
+                auto & [bucket_keys, bucket_processor] = bucket_info;
+
+                LOG_TEST(log, "Bucket: {}, cached keys: {}, processor: {}",
+                         bucket, bucket_keys.size(), bucket_processor.has_value() ? toString(bucket_processor.value()) : "None");
+
+                if (bucket_processor.has_value())
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing by {} (keys: {})",
+                             bucket, bucket_processor.value(), bucket_keys.size());
+                    ++it;
+                    continue;
+                }
+
+                if (bucket_keys.empty())
+                {
+                    /// No more keys in bucket, remove it from cache.
+                    /// We still might add new keys to this bucket if !iterator_finished.
+                    it = listed_keys_cache.erase(it);
+                    continue;
+                }
+
+                bucket_holder_it->second = metadata->tryAcquireBucket(bucket, current_processor);
+                if (!bucket_holder_it->second)
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
+                             bucket, bucket_keys.size());
+                    ++it;
+                    continue;
+                }
+
+                bucket_processor = current_processor;
+
+                /// Take the key from the front, the order is important.
+                auto object_info = bucket_keys.front();
+                bucket_keys.pop_front();
+
+                LOG_TEST(log, "Acquired bucket: {}, will process file: {}",
+                         bucket, object_info->getFileName());
+
+                return object_info;
+            }
+        }
+
+        if (iterator_finished)
+        {
+            LOG_TEST(log, "Reached the end of file iterator and nothing left in keys cache");
+            return {};
+        }
+
+        auto object_info = glob_iterator->next(processor);
+        if (object_info)
+        {
+            const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+
+            LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}",
+                     object_info->getFileName(), bucket,
+                     bucket_holder_it->second ? toString(bucket_holder_it->second->getBucket()) : "None");
+
+            if (bucket_holder_it->second)
+            {
+                if (bucket_holder_it->second->getBucket() != bucket)
+                {
+                    listed_keys_cache[bucket].keys.emplace_back(object_info);
+                    continue;
+                }
+            }
+            else
+            {
+                bucket_holder_it->second = metadata->tryAcquireBucket(bucket, current_processor);
+                if (!bucket_holder_it->second)
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
+                    listed_keys_cache[bucket].keys.emplace_back(object_info);
+                    continue;
+                }
+            }
+            return object_info;
+        }
+        else
+        {
+            if (bucket_holder_it->second)
+            {
+                bucket_holder_it->second->release();
+                bucket_holder_it->second.reset();
+            }
+
+            LOG_TEST(log, "Reached the end of file iterator");
+            iterator_finished = true;
+
+            if (listed_keys_cache.empty())
+                return {};
+            else
+                continue;
+        }
+    }
 }
 
 StorageS3QueueSource::StorageS3QueueSource(
     String name_,
+    size_t processor_id_,
     const Block & header_,
     std::unique_ptr<StorageObjectStorageSource> internal_source_,
-    std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
+    std::shared_ptr<S3QueueMetadata> files_metadata_,
     const S3QueueAction & action_,
     RemoveFileFunc remove_file_func_,
     const NamesAndTypesList & requested_virtual_columns_,
@@ -285,6 +284,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))
+    , processor_id(processor_id_)
     , action(action_)
     , files_metadata(files_metadata_)
     , internal_source(std::move(internal_source_))
@@ -303,12 +303,12 @@ String StorageS3QueueSource::getName() const
     return name;
 }
 
-void StorageS3QueueSource::lazyInitialize()
+void StorageS3QueueSource::lazyInitialize(size_t processor)
 {
     if (initialized)
         return;
 
-    internal_source->lazyInitialize();
+    internal_source->lazyInitialize(processor);
     reader = std::move(internal_source->reader);
     if (reader)
         reader_future = std::move(internal_source->reader_future);
@@ -317,7 +317,7 @@ void StorageS3QueueSource::lazyInitialize()
 
 Chunk StorageS3QueueSource::generate()
 {
-    lazyInitialize();
+    lazyInitialize(processor_id);
 
     while (true)
     {
@@ -440,7 +440,7 @@ Chunk StorageS3QueueSource::generate()
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
         internal_source->create_reader_pool->wait();
-        reader_future = internal_source->createReaderAsync();
+        reader_future = internal_source->createReaderAsync(processor_id);
     }
 
     return {};
@@ -463,7 +463,7 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
 
 void StorageS3QueueSource::appendLogElement(
     const std::string & filename,
-    S3QueueFilesMetadata::FileStatus & file_status_,
+    S3QueueMetadata::FileStatus & file_status_,
     size_t processed_rows,
     bool processed)
 {
