@@ -22,7 +22,7 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        updateAliasesIfNeeded(node, scope);
+        updateAliasesIfNeeded(node);
     }
 
     static bool needChildVisit(const QueryTreeNodePtr & node, const QueryTreeNodePtr & child)
@@ -50,7 +50,8 @@ public:
         return false;
     }
 
-    static void updateAliasesIfNeeded(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+private:
+    void updateAliasesIfNeeded(const QueryTreeNodePtr & node)
     {
         if (!node->hasAlias())
             return;
@@ -64,7 +65,6 @@ public:
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-private:
     IdentifierResolveScope & scope;
 };
 

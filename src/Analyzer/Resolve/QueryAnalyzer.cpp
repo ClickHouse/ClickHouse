@@ -163,7 +163,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -3973,7 +3973,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor visitor(scope);
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Replace lambda arguments with new arguments.
@@ -5249,7 +5249,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                     scope.scope_node->formatASTForErrorMessage());
 
             auto & table_node = node->as<TableNode &>();
-            result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
+            if (result_projection_names.empty())
+                result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
 
             break;
         }
@@ -5883,7 +5884,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
-            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope);
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
             visitor.visit(alias_column_to_resolve->getExpression());
 
             resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -6697,7 +6698,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
     /// Initialize aliases in query node scope
-    QueryExpressionsAliasVisitor visitor(scope);
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
 
     if (query_node_typed.hasWith())
         visitor.visit(query_node_typed.getWithNode());
@@ -6815,12 +6816,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
         initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
-
-        std::unordered_map<std::string, QueryTreeNodePtr> tmp;
-        tmp.swap(scope.aliases.alias_name_to_table_expression_node);
+        scope.aliases.alias_name_to_table_expression_node.clear();
 
         resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
-        tmp.swap(scope.aliases.alias_name_to_table_expression_node);
     }
 
     if (!scope.group_by_use_nulls)
@@ -6950,7 +6948,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         /// Add current alias to non cached set, because in case of cyclic alias identifier should not be substituted from cache.
         /// See 02896_cyclic_aliases_crash.
-        resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;
 

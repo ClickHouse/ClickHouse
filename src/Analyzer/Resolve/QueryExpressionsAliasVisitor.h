@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
+#include <Analyzer/Resolve/ScopeAliases.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -36,8 +34,8 @@ namespace DB
 class QueryExpressionsAliasVisitor : public InDepthQueryTreeVisitor<QueryExpressionsAliasVisitor>
 {
 public:
-    explicit QueryExpressionsAliasVisitor(IdentifierResolveScope & scope_)
-        : scope(scope_), aliases(scope.aliases)
+    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_)
+        : aliases(aliases_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -45,22 +43,8 @@ public:
         updateAliasesIfNeeded(node, false /*is_lambda_node*/);
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        if (auto * function_node = parent->as<FunctionNode>())
-        {
-            if (isNameOfInFunction(function_node->getFunctionName()))
-            {
-                auto & children = function_node->getArguments().getChildren();
-                if (!children.empty())
-                    visit(children.front());
-
-                if (children.size() > 1)
-                    TableExpressionsAliasVisitor::updateAliasesIfNeeded(children[1], scope);
-
-                return false;
-            }
-        }
         if (auto * lambda_node = child->as<LambdaNode>())
         {
             updateAliasesIfNeeded(child, true /*is_lambda_node*/);
@@ -129,7 +113,6 @@ private:
             aliases.transitive_aliases.insert(std::make_pair(alias, identifier->getIdentifier()));
     }
 
-    IdentifierResolveScope & scope;
     ScopeAliases & aliases;
 };
 
