@@ -11,6 +11,7 @@ NAMED_COLLECTIONS_CONFIG = os.path.join(
 
 ZK_PATH = "/named_collections_path"
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -64,6 +65,7 @@ def cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def replace_in_server_config(node, old, new):
     node.replace_in_config(
