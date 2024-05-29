@@ -40,7 +40,7 @@ For that, push the patch as a branch with `clickhouse/`, e.g. `clickhouse/fix-so
 Then create a PR from the new branch against the custom tracking branch with `clickhouse/` prefix, (e.g. `clickhouse/master` or `clickhouse/release/vX.Y.Z`) and merge the patch.
 
 Create patches of third-party libraries with the official repository in mind and consider contributing the patch back to the upstream repository.
-This makes sure, that others will also benefit from it and the patch will not be a maintenance burden on the ClickHouse team.
+This makes sure that others will also benefit from the patch and it will not be a maintenance burden for the ClickHouse team.
 
 To pull upstream changes into the submodule, you can use two methods:
 - (less work but less clean): merge upstream `master` into the corresponding `clickhouse/` tracking branch in the forked repository. You will need to resolve merge conflicts with previous custom patches. This method can be used when the `clickhouse/` branch tracks an upstream development branch like `master`, `main`, `dev`, etc.
