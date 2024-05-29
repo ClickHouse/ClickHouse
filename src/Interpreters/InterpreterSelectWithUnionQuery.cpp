@@ -301,6 +301,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     /// Skip union for single interpreter.
     if (num_plans == 1)
     {
+        std::cerr << "HERE1\n";
         nested_interpreters.front()->buildQueryPlan(query_plan);
     }
     else
