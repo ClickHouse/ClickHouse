@@ -1357,6 +1357,7 @@ concatWithSeparatorAssumeInjective
 cond
 conf
 config
+conformant
 configs
 congruential
 conjuction
@@ -1416,6 +1417,10 @@ cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
 cutToFirstSignificantSubdomainCustomWithWWW
 cutToFirstSignificantSubdomainWithWWW
+cutToFirstSignificantSubdomainRFC
+cutToFirstSignificantSubdomainCustomRFC
+cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 cyrus
@@ -1503,6 +1508,8 @@ distro
 divideDecimal
 dmesg
 domainWithoutWWW
+domainWithoutWWWRFC
+domainRFC
 dont
 dotProduct
 downsampling
@@ -1577,6 +1584,8 @@ fips
 firstLine
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
+firstSignificantSubdomainRFC
+firstSignificantSubdomainCustomRFC
 fixedstring
 flamegraph
 flatbuffers
@@ -2158,6 +2167,7 @@ polygonsWithinCartesian
 polygonsWithinSpherical
 popcnt
 porthttps
+portRFC
 positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
@@ -2691,6 +2701,7 @@ toolset
 topK
 topKWeighted
 topLevelDomain
+topLevelDomainRFC
 topk
 topkweighted
 transactional

@@ -230,7 +230,7 @@ firstSignificantSubdomain(URL)
 
 **Returned value**
 
-- The first signficant subdomain. [String](../data-types/string.md).
+- The first significant subdomain. [String](../data-types/string.md).
 
 **Example**
 
@@ -264,7 +264,7 @@ firstSignificantSubdomainRFC(URL)
 
 **Returned value**
 
-- The first signficant subdomain. [String](../data-types/string.md).
+- The first significant subdomain. [String](../data-types/string.md).
 
 **Example**
 
@@ -300,7 +300,7 @@ cutToFirstSignificantSubdomain(URL)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first signficant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -337,7 +337,7 @@ cutToFirstSignificantSubdomainRFC(URL)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first signficant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -374,7 +374,7 @@ cutToFirstSignificantSubdomainWithWWW(URL)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first signficant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -411,7 +411,7 @@ cutToFirstSignificantSubdomainWithWWW(URL)
 
 **Returned value**
 
-- Part of the domain that includes top-level subdomains up to the first signficant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
