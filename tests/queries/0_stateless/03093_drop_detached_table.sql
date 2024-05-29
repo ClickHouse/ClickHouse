@@ -1,6 +1,6 @@
 -- Tags: no-parallel, distributed
 
-SET allow_drop_detached_table=1;
+SET allow_experimental_drop_detached_table=1;
 
 DROP DATABASE IF EXISTS test_db;
 CREATE DATABASE test_db ENGINE=Atomic;

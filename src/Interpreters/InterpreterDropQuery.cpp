@@ -137,7 +137,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    if (context_->getSettingsRef().allow_drop_detached_table)
+    if (context_->getSettingsRef().allow_experimental_drop_detached_table)
     {
         if (query.kind == ASTDropQuery::Kind::Drop)
         {

@@ -76,6 +76,9 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
+    virtual void
+    removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
+
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -96,13 +99,12 @@ protected:
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                    const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
 
-    virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
 
     const String metadata_path;
     const String data_path;
 
-    UUID GetTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
+    UUID getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
 };
 
 }

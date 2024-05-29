@@ -1,33 +1,35 @@
-#include <string>
 #include <mutex>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TableNameHints.h>
-#include <Interpreters/loadMetadata.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Storages/IStorage.h>
-#include <Databases/IDatabase.h>
+#include <string>
+#include <Core/BackgroundSchedulePool.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
-#include <Storages/StorageMemory.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/StorageID.h>
+#include <Interpreters/TableNameHints.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/loadMetadata.h>
+#include <Parsers/formatAST.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageMemory.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Exception.h>
-#include <Common/quoteString.h>
-#include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/noexcept_scope.h>
+#include <Common/atomicRename.h>
 #include <Common/checkStackSize.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
 
 #include <boost/range/adaptor/map.hpp>
+
 
 #include "config.h"
 
@@ -1065,6 +1067,11 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
     return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
+bool isTableDetached(const ContextPtr & context_, const DatabasePtr & database, const String & table_name)
+{
+    return !database->isTableExist(table_name, context_) && fs::exists(database->getObjectMetadataPath(table_name));
+}
+
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
 {
     assert(table_id.hasUUID());
@@ -1114,7 +1121,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        addUUIDMapping(table_id.uuid);
+        if (isTableExist(table_id, getContext()))
+            addUUIDMapping(table_id.uuid);
         drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
@@ -1302,6 +1310,17 @@ void DatabaseCatalog::dropTableDataTask()
         (*drop_task)->scheduleAfter(schedule_after_ms);
 }
 
+void DatabaseCatalog::removeDetachedPermanentlyFlag(const TableMarkedAsDropped & table)
+{
+    auto database = getDatabase(table.table_id.getDatabaseName());
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
+
+    if (!database_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to remove permanently flag path for table {}", table.table_id.getNameForLogs());
+
+    database_ptr->removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
+}
+
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     if (table.table)
@@ -1322,6 +1341,8 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     fs::remove(fs::path(table.metadata_path));
+
+    removeDetachedPermanentlyFlag(table);
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);

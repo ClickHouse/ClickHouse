@@ -170,10 +170,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     assert(fs::exists(getObjectMetadataPath(table_name)));
 
     const String table_metadata_path = getObjectMetadataPath(table_name);
-    const UUID uuid_table = GetTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
-
-    waitDetachedTableNotInUse(uuid_table);
-
+    const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
     const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
     const String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
 
@@ -187,7 +184,6 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         fs::rename(table_metadata_path, table_metadata_path_drop);
         LOG_TRACE(log, "Rename {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
 
-        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid_table);
         table_name_to_path.erase(table_name);
     }
 
@@ -196,8 +192,6 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         LOG_TRACE(log, "Remove symlink for {}", table_name);
         tryRemoveSymlink(table_name);
     }
-
-    removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
 
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, table_metadata_path_drop, sync);
