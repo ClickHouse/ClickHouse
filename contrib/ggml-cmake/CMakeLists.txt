@@ -14,7 +14,6 @@ set (GGML_PUBLIC_HDRS
     ${GGML_CPP_INCLUDE_DIR}/ggml/ggml-backend.h
 )
 set(GGML_HDRS
-    "${GGML_DIR}/ggml-common.h"
     "${GGML_CPP_SOURCE_DIR}/ggml-backend-impl.h"
     "${GGML_CPP_SOURCE_DIR}/ggml-impl.h"
     ${GGML_PUBLIC_HDRS}
@@ -101,7 +100,7 @@ endif()
 add_library(_ggml
     ${GGML_SRCS} ${GGML_HDRS}
 )
-target_include_directories(_ggml PUBLIC ${GGML_DIR} ${GGML_CPP_INCLUDE_DIR} ${GGML_CPP_INCLUDE_DIR}/ggml)
+target_include_directories(_ggml PUBLIC ${GGML_CPP_INCLUDE_DIR} ${GGML_CPP_INCLUDE_DIR}/ggml)
 
 target_compile_options(_ggml PRIVATE ${GGML_ARCH_FLAGS})
 target_compile_definitions(_ggml PRIVATE ${GGML_COMPILE_DEFENITIONS})
