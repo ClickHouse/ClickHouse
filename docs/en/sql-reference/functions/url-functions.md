@@ -248,7 +248,7 @@ Result:
 
 ### firstSignificantSubdomainRFC
 
-Returns the “first significant subdomain”, similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but according to RFC 1034.
+Returns the “first significant subdomain”. Similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but according to RFC 1034.
 
 **Syntax**
 
