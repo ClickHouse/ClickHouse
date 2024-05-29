@@ -241,12 +241,11 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /** Remove a specific replica from zookeeper.
-     * returns true if there are no replicas left
      */
-    static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
                             LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
-    bool dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
@@ -307,7 +306,7 @@ public:
     /// Get best replica having this partition on a same type remote disk
     String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
 
-    const String & getReplicaName() const { return replica_name; }
+    inline const String & getReplicaName() const { return replica_name; }
 
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
@@ -330,13 +329,16 @@ public:
 
     // Return default or custom zookeeper name for table
     const String & getZooKeeperName() const { return zookeeper_name; }
+
     const String & getZooKeeperPath() const { return zookeeper_path; }
-    const String & getFullZooKeeperPath() const { return full_zookeeper_path; }
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
+
+    /// Returns the same as getTableSharedID(), but extracts it from a create query.
+    static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 
     static const String & getDefaultZooKeeperName() { return default_zookeeper_name; }
 
@@ -348,7 +350,7 @@ public:
 
     bool canUseZeroCopyReplication() const;
 
-    bool isTableReadOnly () { return is_readonly || isStaticStorage(); }
+    bool isTableReadOnly () { return is_readonly; }
 
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
@@ -417,11 +419,9 @@ private:
 
     bool is_readonly_metric_set = false;
 
-    const String full_zookeeper_path;
     static const String default_zookeeper_name;
     const String zookeeper_name;
     const String zookeeper_path;
-
     const String replica_name;
     const String replica_path;
 
@@ -566,6 +566,7 @@ private:
     void readParallelReplicasImpl(
         QueryPlan & query_plan,
         const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage);
@@ -723,7 +724,7 @@ private:
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
-    enum class CreateMergeEntryResult : uint8_t { Ok, MissingPart, LogUpdated, Other };
+    enum class CreateMergeEntryResult { Ok, MissingPart, LogUpdated, Other };
 
     CreateMergeEntryResult createLogEntryToMergeParts(
         zkutil::ZooKeeperPtr & zookeeper,
@@ -981,10 +982,6 @@ private:
     bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
-
-    std::vector<String> getZookeeperZeroCopyLockPaths() const;
-    static void dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper,
-                                               std::vector<String> zero_copy_locks_paths, LoggerPtr logger);
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

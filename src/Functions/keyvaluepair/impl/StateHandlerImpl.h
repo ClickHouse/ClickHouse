@@ -403,7 +403,7 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
     };
 
     template <typename ... Args>
-    explicit NoEscapingStateHandler(Args && ... args)
+    NoEscapingStateHandler(Args && ... args)
     : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
 };
 
@@ -465,7 +465,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
     };
 
     template <typename ... Args>
-    explicit InlineEscapingStateHandler(Args && ... args)
+    InlineEscapingStateHandler(Args && ... args)
         : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
 

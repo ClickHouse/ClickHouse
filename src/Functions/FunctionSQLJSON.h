@@ -44,27 +44,27 @@ class DefaultJSONStringSerializer
 public:
     explicit DefaultJSONStringSerializer(ColumnString & col_str_) : col_str(col_str_) { }
 
-    void addRawData(const char * ptr, size_t len)
+    inline void addRawData(const char * ptr, size_t len)
     {
         out << std::string_view(ptr, len);
     }
 
-    void addRawString(std::string_view str)
+    inline void addRawString(std::string_view str)
     {
         out << str;
     }
 
     /// serialize the json element into stringstream
-    void addElement(const Element & element)
+    inline void addElement(const Element & element)
     {
         out << element.getElement();
     }
-    void commit()
+    inline void commit()
     {
         auto out_str = out.str();
         col_str.insertData(out_str.data(), out_str.size());
     }
-    void rollback() {}
+    inline void rollback() {}
 private:
     ColumnString & col_str;
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -82,27 +82,27 @@ public:
         prev_offset = offsets.empty() ? 0 : offsets.back();
     }
     /// Put the data into column's buffer directly.
-    void addRawData(const char * ptr, size_t len)
+    inline void addRawData(const char * ptr, size_t len)
     {
         chars.insert(ptr, ptr + len);
     }
 
-    void addRawString(std::string_view str)
+    inline void addRawString(std::string_view str)
     {
         chars.insert(str.data(), str.data() + str.size());
     }
 
     /// serialize the json element into column's buffer directly
-    void addElement(const Element & element)
+    inline void addElement(const Element & element)
     {
         formatter.append(element.getElement());
     }
-    void commit()
+    inline void commit()
     {
         chars.push_back(0);
         offsets.push_back(chars.size());
     }
-    void rollback()
+    inline void rollback()
     {
         chars.resize(prev_offset);
     }
@@ -123,7 +123,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, uint32_t parse_backtracks, const ContextPtr & context)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const ContextPtr & context)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -161,7 +161,7 @@ public:
             /// Tokenize the query
             Tokens tokens(query.data(), query.data() + query.size());
             /// Max depth 0 indicates that depth is not limited
-            IParser::Pos token_iterator(tokens, parse_depth, parse_backtracks);
+            IParser::Pos token_iterator(tokens, parse_depth);
 
             /// Parse query and create AST tree
             Expected expected;
@@ -232,17 +232,16 @@ public:
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-        unsigned parse_backtracks = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_backtracks);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<
                 Name,
                 Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>,
-                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, parse_backtracks, getContext());
+                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
 #endif
         return FunctionSQLJSONHelpers::
             Executor<Name, Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>, DummyJSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, getContext());
+                arguments, result_type, input_rows_count, parse_depth, getContext());
     }
 };
 

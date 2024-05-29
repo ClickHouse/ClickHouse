@@ -6,7 +6,6 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
@@ -79,7 +78,7 @@ void DatabaseMemory::dropTable(
         {
             fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
             if (fs::exists(table_data_dir))
-                (void)fs::remove_all(table_data_dir);
+                fs::remove_all(table_data_dir);
         }
     }
     catch (...)
@@ -135,7 +134,7 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr local_context)
 {
-    (void)std::filesystem::remove_all(local_context->getPath() + data_path);
+    std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)

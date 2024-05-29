@@ -138,7 +138,7 @@ class QuantileTDigest
             compress();
     }
 
-    bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
     {
         return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
     }
@@ -234,7 +234,8 @@ public:
                 BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
 
-                err = std::min(err, err2);
+                if (err > err2)
+                    err = err2;
 
                 BetterFloat k = count_epsilon_4 * err;
 

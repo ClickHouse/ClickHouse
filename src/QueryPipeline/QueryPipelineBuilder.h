@@ -188,7 +188,7 @@ public:
         concurrency_control = concurrency_control_;
     }
 
-    bool getConcurrencyControl() const
+    bool getConcurrencyControl()
     {
         return concurrency_control;
     }

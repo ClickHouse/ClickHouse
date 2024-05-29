@@ -15,7 +15,7 @@
 
 #include "config_tools.h"
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
@@ -31,6 +31,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
@@ -67,6 +68,8 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
+#if !defined(FUZZING_MODE)
+
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
@@ -77,6 +80,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
+    {"copier", mainEntryClickHouseClusterCopier},
     {"obfuscator", mainEntryClickHouseObfuscator},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
@@ -103,14 +107,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"restart", mainEntryClickHouseRestart},
 };
 
-int printHelp(int, char **)
-{
-    std::cerr << "Use one of the following commands:" << std::endl;
-    for (auto & application : clickhouse_applications)
-        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
-    return -1;
-}
-
 /// Add an item here to register a new short name
 std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
@@ -118,8 +114,17 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
     {"chc", "client"},
 };
 
+int printHelp(int, char **)
+{
+    std::cerr << "Use one of the following commands:" << std::endl;
+    for (auto & application : clickhouse_applications)
+        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
+    return -1;
+}
+#endif
 
-enum class InstructionFail : uint8_t
+
+enum class InstructionFail
 {
     NONE = 0,
     SSE3 = 1,
@@ -282,7 +287,7 @@ struct Checker
 ;
 
 
-#if !defined(USE_MUSL)
+#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -444,8 +449,13 @@ extern "C"
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
+#ifndef FUZZING_MODE
 bool inside_main = false;
+#else
+bool inside_main = true;
+#endif
 
+#if !defined(FUZZING_MODE)
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
@@ -487,17 +497,13 @@ int main(int argc_, char ** argv_)
     /// Interpret binary without argument or with arguments starts with dash
     /// ('-') as clickhouse-local for better usability:
     ///
-    ///     clickhouse help # dumps help
+    ///     clickhouse # dumps help
     ///     clickhouse -q 'select 1' # use local
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
-    ///     clickhouse "select ..." # spawn local
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
-        || std::string_view(argv[1]).contains(' ')))
-    {
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
         main_func = mainEntryClickHouseLocal;
-    }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 
@@ -507,3 +513,4 @@ int main(int argc_, char ** argv_)
 
     return exit_code;
 }
+#endif

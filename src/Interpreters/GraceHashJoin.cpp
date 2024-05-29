@@ -1,18 +1,21 @@
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Formats/formatBlock.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
+
+#include <Formats/NativeWriter.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <base/FnTraits.h>
+
+#include <Compression/CompressedWriteBuffer.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <numeric>
+#include <base/FnTraits.h>
 #include <fmt/format.h>
+
+#include <Formats/formatBlock.h>
+
+#include <numeric>
 
 
 namespace CurrentMetrics
@@ -108,7 +111,7 @@ namespace
 
 class GraceHashJoin::FileBucket : boost::noncopyable
 {
-    enum class State : uint8_t
+    enum class State : int
     {
         WRITING_BLOCKS,
         JOINING_BLOCKS,
@@ -415,7 +418,7 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 {
     chassert(hash_join);
-    hash_join->checkTypesOfKeys(block);
+    return hash_join->checkTypesOfKeys(block);
 }
 
 void GraceHashJoin::initialize(const Block & sample_block)

@@ -42,19 +42,6 @@ Type: UInt32
 Default: 1
 
 
-## auth_use_forwarded_address
-
-Use originating address for authentication for clients connected through proxy.
-
-:::note
-This setting should be used with extra caution since forwarded address can be easily spoofed - server accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
-:::
-
-Type: Bool
-
-Default: 0
-
-
 ## background_buffer_flush_schedule_pool_size
 
 The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
@@ -213,13 +200,17 @@ Type: Bool
 Default: 0
 
 
-## dns_cache_max_entries
+## dns_cache_max_size
 
-Internal DNS cache max entries.
+Internal DNS cache max size in bytes.
+
+:::note
+ClickHouse also has a reverse cache, so the actual memory usage could be twice as much.
+:::
 
 Type: UInt64
 
-Default: 10000
+Default: 1024
 
 
 ## dns_cache_update_period
@@ -392,18 +383,6 @@ Type: UInt64
 
 Default: 0
 
-## max_waiting_queries
-
-Limit on total number of concurrently waiting queries. Execution of a waiting query is blocked while required tables are loading asynchronously (see `async_load_databases`). Note that waiting queries are not counted when `max_concurrent_queries`, `max_concurrent_insert_queries`, `max_concurrent_select_queries`, `max_concurrent_queries_for_user` and `max_concurrent_queries_for_all_users` limits are checked. This correction is done to avoid hitting these limits just after server startup. Zero means unlimited.
-
-:::note
-This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
-
-Type: UInt64
-
-Default: 0
-
 ## max_connections
 
 Max server connections.
@@ -449,7 +428,7 @@ Default: 0
 Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 Default value: 50 GB.
 The value 0 means that you can drop partitions without any restrictions.
 
@@ -523,7 +502,7 @@ See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watche
 
 Type: Double
 
-Default: 0.9
+Default: 0.95
 
 ## max_table_size_to_drop
 
@@ -531,7 +510,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 The value 0 means that you can delete all tables without any restrictions.
@@ -561,25 +540,6 @@ Default value: 5000
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
-## max\_view\_num\_to\_warn {#max-view-num-to-warn}
-If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 10000
-
-**Example**
-
-``` xml
-<max_view_num_to_warn>400</max_view_num_to_warn>
-```
-
-## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
-If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 1000
-
-**Example**
-
-``` xml
-<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
-```
 
 ## max\_part\_num\_to\_warn {#max-part-num-to-warn}
 If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
@@ -977,9 +937,9 @@ Hard limit is configured via system tools
 
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
-The delay during which a dropped table can be restored using the [UNDROP](/docs/en/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
 
-Default value: `480` (8 minutes).
+Default value: `480` (8 minute).
 
 ## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
 
@@ -1208,7 +1168,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 
 ## include_from {#include_from}
 
-The path to the file with substitutions. Both XML and YAML formats are supported.
+The path to the file with substitutions.
 
 For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
@@ -1386,7 +1346,6 @@ Keys:
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
 Both log and error log file names (only file names, not directories) support date and time format specifiers.
 
@@ -1455,8 +1414,6 @@ Writing to the console can be configured. Config example:
 </logger>
 ```
 
-### syslog
-
 Writing to the syslog is also supported. Config example:
 
 ``` xml
@@ -1480,52 +1437,6 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
 
-### Log formats
-
-You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. Here is an example of an output JSON log:
-
-```json
-{
-  "date_time": "1650918987.180175",
-  "thread_name": "#1",
-  "thread_id": "254545",
-  "level": "Trace",
-  "query_id": "",
-  "logger_name": "BaseDaemon",
-  "message": "Received signal 2",
-  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
-  "source_line": "192"
-}
-```
-To enable JSON logging support, use the following snippet:
-
-```xml
-<logger>
-    <formatting>
-        <type>json</type>
-        <names>
-            <date_time>date_time</date_time>
-            <thread_name>thread_name</thread_name>
-            <thread_id>thread_id</thread_id>
-            <level>level</level>
-            <query_id>query_id</query_id>
-            <logger_name>logger_name</logger_name>
-            <message>message</message>
-            <source_file>source_file</source_file>
-            <source_line>source_line</source_line>
-        </names>
-    </formatting>
-</logger>
-```
-
-**Renaming keys for JSON logs**
-
-Key names can be modified by changing tag values inside the `<names>` tag. For example, to change `DATE_TIME` to `MY_DATE_TIME`, you can use `<date_time>MY_DATE_TIME</date_time>`.
-
-**Omitting keys for JSON logs**
-
-Log properties can be omitted by commenting out the property.  For example, if you do not want your log to print `query_id`, you can comment out the `<query_id>` tag.
-
 ## send_crash_reports {#send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
@@ -1536,7 +1447,6 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 Keys:
 
 - `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
-- `send_logical_errors` – `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (default: `false`).
 - `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
 - `anonymize` - Avoid attaching the server hostname to the crash report.
 - `http_proxy` - Configure HTTP proxy for sending crash reports.
@@ -1603,7 +1513,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -1621,7 +1531,7 @@ Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -1819,7 +1729,7 @@ Default value: `0.5`.
 
 Asynchronous loading of databases and tables.
 
-If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
 
 If `false`, all databases are loaded when the server starts.
 
@@ -2879,7 +2789,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 
@@ -3020,7 +2930,7 @@ Default: 0
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
-If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries.
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
 
 :::note
 This setting is only necessary for the migration period and will become obsolete in 24.4

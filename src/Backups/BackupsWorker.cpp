@@ -18,7 +18,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
@@ -26,8 +25,6 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
-
-#include <boost/range/adaptor/map.hpp>
 
 
 namespace CurrentMetrics
@@ -256,26 +253,26 @@ namespace
 /// 1) there should be separate thread pools for BACKUP and RESTORE;
 /// 2) a task from a thread pool can't wait another task from the same thread pool. (Because if it schedules and waits
 /// while the thread pool is still occupied with the waiting task then a scheduled task can be never executed).
-enum class BackupsWorker::ThreadPoolId : uint8_t
+enum class BackupsWorker::ThreadPoolId
 {
     /// "BACKUP ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
-    BACKUP_ASYNC_ON_CLUSTER = 0,
+    BACKUP_ASYNC_ON_CLUSTER,
 
     /// "BACKUP ASYNC" waits in background while all file infos are built and then it copies the backup's files.
-    BACKUP_ASYNC = 1,
+    BACKUP_ASYNC,
 
     /// Making a list of files to copy and copying of those files is always sequential, so those operations can share one thread pool.
-    BACKUP_MAKE_FILES_LIST = 2,
+    BACKUP_MAKE_FILES_LIST,
     BACKUP_COPY_FILES = BACKUP_MAKE_FILES_LIST,
 
     /// "RESTORE ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
-    RESTORE_ASYNC_ON_CLUSTER = 3,
+    RESTORE_ASYNC_ON_CLUSTER,
 
     /// "RESTORE ASYNC" waits in background while the data of all tables are restored.
-    RESTORE_ASYNC = 4,
+    RESTORE_ASYNC,
 
     /// Restores from backups.
-    RESTORE = 5,
+    RESTORE,
 };
 
 
@@ -329,7 +326,7 @@ public:
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
                 metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
-                use_queue = true;
+                use_queue = (thread_pool_id != ThreadPoolId::RESTORE);
                 break;
             }
         }
@@ -489,7 +486,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
             /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
 
-            thread_pool.scheduleOrThrowOnError(
+            scheduleFromThreadPool<void>(
                 [this,
                  backup_query,
                  backup_id,
@@ -505,8 +502,6 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                     BackupMutablePtr backup_async;
                     try
                     {
-                        setThreadName("BackupWorker");
-                        CurrentThread::QueryScope query_scope(context_in_use);
                         doBackup(
                             backup_async,
                             backup_query,
@@ -522,7 +517,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                     {
                         on_exception(backup_async, backup_id, backup_name_for_logging, backup_settings, backup_coordination);
                     }
-                });
+                },
+                thread_pool, "BackupWorker");
         }
         else
         {
@@ -564,7 +560,7 @@ void BackupsWorker::doBackup(
 
     /// Checks access rights if this is not ON CLUSTER query.
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+    auto required_access = getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
         context->checkAccess(required_access);
 
@@ -598,9 +594,7 @@ void BackupsWorker::doBackup(
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
-    backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
-    backup_create_params.azure_attempt_to_create_container = backup_settings.azure_attempt_to_create_container;
     backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
     backup_create_params.write_settings = getWriteSettingsForBackup(context);
     backup = BackupFactory::instance().createBackup(backup_create_params);
@@ -706,27 +700,51 @@ void BackupsWorker::writeBackupEntries(
             backup_entries.size());
     }
 
-
-    std::atomic_bool failed = false;
+    size_t num_active_jobs = 0;
+    std::mutex mutex;
+    std::condition_variable event;
+    std::exception_ptr exception;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPY_FILES);
+    auto thread_group = CurrentThread::getGroup();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        if (failed)
-            break;
-
         auto & entry = backup_entries[i].second;
         const auto & file_info = file_infos[i];
 
-        auto job = [&]()
         {
-            if (failed)
-                return;
+            std::unique_lock lock{mutex};
+            if (exception)
+                break;
+            ++num_active_jobs;
+        }
+
+        auto job = [&](bool async)
+        {
+            SCOPE_EXIT_SAFE(
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+                if (async)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
             try
             {
+                if (async && thread_group)
+                    CurrentThread::attachToGroup(thread_group);
+
+                if (async)
+                    setThreadName("BackupWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
+
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
 
@@ -749,21 +767,27 @@ void BackupsWorker::writeBackupEntries(
             }
             catch (...)
             {
-                failed = true;
-                throw;
+                std::lock_guard lock{mutex};
+                if (!exception)
+                    exception = std::current_exception();
             }
         };
 
         if (always_single_threaded)
         {
-            job();
+            job(false);
             continue;
         }
 
-        runner(std::move(job));
+        thread_pool.scheduleOrThrowOnError([job] { job(true); });
     }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+        if (exception)
+            std::rethrow_exception(exception);
+    }
 }
 
 
@@ -840,7 +864,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
 
-            thread_pool.scheduleOrThrowOnError(
+            scheduleFromThreadPool<void>(
                 [this,
                  restore_query,
                  restore_id,
@@ -854,8 +878,6 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                 {
                     try
                     {
-                        setThreadName("RestorerWorker");
-                        CurrentThread::QueryScope query_scope(context_in_use);
                         doRestore(
                             restore_query,
                             restore_id,
@@ -869,7 +891,9 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                     {
                         on_exception(restore_id, backup_name_for_logging, restore_settings, restore_coordination);
                     }
-                });
+                },
+                thread_pool,
+                "RestoreWorker");
         }
         else
         {
@@ -913,7 +937,6 @@ void BackupsWorker::doRestore(
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
-    backup_open_params.is_internal_backup = restore_settings.internal;
     BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
     String current_database = context->getCurrentDatabase();

@@ -36,7 +36,7 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
-        ExternalResultDescription::ValueType type, DataTypePtr data_type,
+        const ExternalResultDescription::ValueType type, const DataTypePtr data_type,
         const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
 {
     switch (type)
@@ -99,7 +99,8 @@ void insertPostgreSQLValue(
             ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
-            time = std::max<time_t>(time, 0);
+            if (time < 0)
+                time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
         }
@@ -169,7 +170,7 @@ void insertPostgreSQLValue(
 
 
 void preparePostgreSQLArrayInfo(
-        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
+        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();
@@ -216,7 +217,8 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
-            time = std::max<time_t>(time, 0);
+            if (time < 0)
+                time = 0;
             return time;
         };
     else if (which.isDateTime64())
@@ -225,7 +227,8 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
-            time = std::max<time_t>(time, 0);
+            if (time < 0)
+                time = 0;
             return time;
         };
     else if (which.isDecimal32())

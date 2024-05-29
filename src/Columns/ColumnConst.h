@@ -20,10 +20,10 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWHelper<IColumnHelper<ColumnConst>, ColumnConst>
+class ColumnConst final : public COWHelper<IColumn, ColumnConst>
 {
 private:
-    friend class COWHelper<IColumnHelper<ColumnConst>, ColumnConst>;
+    friend class COWHelper<IColumn, ColumnConst>;
 
     WrappedPtr data;
     size_t s;
@@ -150,8 +150,6 @@ public:
         ++s;
     }
 
-    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
-
     void insertDefault() override
     {
         ++s;
@@ -162,14 +160,9 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
-    }
-
-    char * serializeValueIntoMemory(size_t, char * memory) const override
-    {
-        return data->serializeValueIntoMemory(0, memory);
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
@@ -306,8 +299,6 @@ public:
     T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
-
-    bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
 
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);

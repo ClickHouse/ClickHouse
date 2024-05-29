@@ -51,9 +51,9 @@ struct RedisEqualKeysSet
 template <typename EqualKeys> struct NamedCollectionValidateKey
 {
     NamedCollectionValidateKey() = default;
-    NamedCollectionValidateKey(const char * value_) : value(value_) {} /// NOLINT(google-explicit-constructor)
-    NamedCollectionValidateKey(std::string_view value_) : value(value_) {} /// NOLINT(google-explicit-constructor)
-    NamedCollectionValidateKey(const String & value_) : value(value_) {} /// NOLINT(google-explicit-constructor)
+    NamedCollectionValidateKey(const char * value_) : value(value_) {}
+    NamedCollectionValidateKey(std::string_view value_) : value(value_) {}
+    NamedCollectionValidateKey(const String & value_) : value(value_) {}
 
     std::string_view value;
 

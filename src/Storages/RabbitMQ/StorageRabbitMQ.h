@@ -68,6 +68,7 @@ public:
     RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
+    NamesAndTypesList getVirtuals() const override;
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
@@ -183,6 +184,7 @@ private:
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
 
+    void initExchange(AMQP::TcpChannel & rabbit_channel);
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
@@ -190,8 +192,6 @@ private:
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     static String getRandomName()
     {

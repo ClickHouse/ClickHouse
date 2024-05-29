@@ -43,7 +43,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Sampler : uint8_t
+enum class Sampler
 {
     NONE,
     RNG,
@@ -89,10 +89,10 @@ struct GroupArraySamplerData
         chassert(lim != 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
-        if (lim <= static_cast<UInt64>(pcg32_fast::max()))
+        if (lim <= static_cast<UInt64>(rng.max()))
             return rng() % lim;
         else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void randomShuffle()
@@ -182,14 +182,11 @@ public:
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {
-            if constexpr (limit_num_elems)
+            if (limit_num_elems && cur_elems.value.size() >= max_elems)
             {
-                if (cur_elems.value.size() >= max_elems)
-                {
-                    if constexpr (Trait::last)
-                        cur_elems.value[(cur_elems.total_values - 1) % max_elems] = row_value;
-                    return;
-                }
+                if constexpr (Trait::last)
+                    cur_elems.value[(cur_elems.total_values - 1) % max_elems] = row_value;
+                return;
             }
 
             cur_elems.value.push_back(row_value, arena);
@@ -239,7 +236,7 @@ public:
 
     void mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        if constexpr (!limit_num_elems)
+        if (!limit_num_elems)
         {
             if (rhs_elems.value.size())
                 cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
@@ -735,14 +732,14 @@ IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type
 template <typename Trait, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, args...))
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, args...);
+        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 
-    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, args...);
+    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
 size_t getMaxArraySize()
@@ -753,22 +750,13 @@ size_t getMaxArraySize()
     return 0xFFFFFF;
 }
 
-bool discardOnLimitReached()
-{
-    if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_action_when_limit_is_reached
-            == GroupArrayActionWhenLimitReached::DISCARD;
-
-    return false;
-}
-
 template <bool Tlast>
 AggregateFunctionPtr createAggregateFunctionGroupArray(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
-    bool has_limit = discardOnLimitReached();
+    bool limit_size = false;
     UInt64 max_elems = getMaxArraySize();
 
     if (parameters.empty())
@@ -785,14 +773,14 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
             (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        has_limit = true;
+        limit_size = true;
         max_elems = parameters[0].get<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
-    if (!has_limit)
+    if (!limit_size)
     {
         if (Tlast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");

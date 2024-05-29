@@ -4,7 +4,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <TableFunctions/ITableFunction.h>
@@ -89,11 +88,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     // All the arguments must be literals.
     for (const auto & arg : args)
     {
-        const IAST * arg_raw = arg.get();
-        if (const auto * func = arg_raw->as<const ASTFunction>(); func && func->name == "_CAST")
-            arg_raw = func->arguments->children.at(0).get();
-
-        if (!arg_raw->as<const ASTLiteral>())
+        if (!arg->as<const ASTLiteral>())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "All arguments of table function '{}' except structure argument must be literals. "
@@ -112,11 +107,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     if (args.size() >= arg_index + 1)
     {
-        const IAST * arg_raw = args[arg_index].get();
-        if (const auto * func = arg_raw->as<const ASTFunction>(); func && func->name == "_CAST")
-            arg_raw = func->arguments->children.at(0).get();
-
-        const auto & literal = arg_raw->as<const ASTLiteral &>();
+        const auto & literal = args[arg_index]->as<const ASTLiteral &>();
         ++arg_index;
         if (!literal.value.isNull())
             random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");

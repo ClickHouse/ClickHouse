@@ -13,7 +13,7 @@ class ASTSubquery : public ASTWithAlias
 {
 public:
     // Stored the name when the subquery is defined in WITH clause. For example:
-    // WITH a AS (SELECT 1) SELECT * FROM a AS b; cte_name will be `a`.
+    // WITH (SELECT 1) AS a SELECT * FROM a AS b; cte_name will be `a`.
     String cte_name;
 
     /** Get the text that identifies this element. */
@@ -28,7 +28,7 @@ public:
 
     ASTSubquery() = default;
 
-    explicit ASTSubquery(ASTPtr child)
+    ASTSubquery(ASTPtr child)
     {
         children.emplace_back(std::move(child));
     }

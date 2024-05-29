@@ -1,6 +1,6 @@
 #include <base/map.h>
 #include <base/range.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
@@ -291,9 +291,9 @@ bool DataTypeTuple::haveMaximumSizeOfValue() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
-bool DataTypeTuple::hasDynamicSubcolumnsDeprecated() const
+bool DataTypeTuple::hasDynamicSubcolumns() const
 {
-    return std::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
+    return std::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicSubcolumns(); });
 }
 
 bool DataTypeTuple::isComparable() const
@@ -346,7 +346,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
 
-MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
+MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfo::Settings & settings) const
 {
     MutableSerializationInfos infos;
     infos.reserve(elems.size());

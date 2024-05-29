@@ -50,6 +50,9 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 
 }
 
+/** Returns the size of physical memory (RAM) in bytes.
+  * Returns 0 on unsupported platform
+  */
 uint64_t getMemoryAmountOrZero()
 {
     int64_t num_pages = sysconf(_SC_PHYS_PAGES);
@@ -77,7 +80,8 @@ uint64_t getMemoryAmountOrZero()
         {
             uint64_t limit_v1;
             if (limit_file_v1 >> limit_v1)
-                memory_amount = std::min(memory_amount, limit_v1);
+                if (limit_v1 < memory_amount)
+                    memory_amount = limit_v1;
         }
     }
 

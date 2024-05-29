@@ -44,7 +44,7 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 {
     Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    IParser::Pos pos(tokens, 0);
 
     if (pos->type != TokenType::BareWord)
         return registered_commands_and_four_letter_words;
@@ -86,10 +86,7 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
 {
     if (!ask_confirmation)
-    {
-        callback();
-        return;
-    }
+        return callback();
 
     std::cout << prompt << " Continue?\n";
     waiting_confirmation = true;
@@ -281,7 +278,6 @@ bool KeeperClient::processQueryText(const String & text)
                 /* allow_multi_statements = */ true,
                 /* max_query_size = */ 0,
                 /* max_parser_depth = */ 0,
-                /* max_parser_backtracks = */ 0,
                 /* skip_insignificant = */ false);
 
             if (!res)
@@ -371,7 +367,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     DB::ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
-    ConfigProcessor::registerEmbeddedConfig("config.xml", "<clickhouse/>");
+    config_processor.registerEmbeddedConfig("config.xml", "<clickhouse/>");
     auto clickhouse_config = config_processor.loadConfig();
 
     Poco::Util::AbstractConfiguration::Keys keys;

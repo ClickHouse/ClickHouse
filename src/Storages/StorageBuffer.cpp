@@ -1,6 +1,5 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -25,7 +24,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
@@ -281,7 +279,7 @@ void StorageBuffer::read(
                 if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
-                    std::erase(columns_intersection, column_name);
+                    boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
                 const auto & dst_col = dest_columns.getPhysical(column_name);
@@ -299,37 +297,8 @@ void StorageBuffer::read(
             }
             else
             {
-                auto src_table_query_info = query_info;
-                if (src_table_query_info.prewhere_info)
-                {
-                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
-
-                    auto actions_dag = ActionsDAG::makeConvertingActions(
-                            header_after_adding_defaults.getColumnsWithTypeAndName(),
-                            header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
-
-                    if (src_table_query_info.prewhere_info->row_level_filter)
-                    {
-                        src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
-                            std::move(*actions_dag->clone()),
-                            std::move(*src_table_query_info.prewhere_info->row_level_filter));
-
-                        src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
-                    }
-
-                    if (src_table_query_info.prewhere_info->prewhere_actions)
-                    {
-                        src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            std::move(*actions_dag->clone()),
-                            std::move(*src_table_query_info.prewhere_info->prewhere_actions));
-
-                        src_table_query_info.prewhere_info->prewhere_actions->removeUnusedActions();
-                    }
-                }
-
                 destination->read(
-                        query_plan, columns_intersection, destination_snapshot, src_table_query_info,
+                        query_plan, columns_intersection, destination_snapshot, query_info,
                         local_context, processed_stage, max_block_size, num_streams);
 
                 if (query_plan.isInitialized())
@@ -394,31 +363,14 @@ void StorageBuffer::read(
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
-    /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
-        {
-            auto storage = std::make_shared<StorageValues>(
-                    getStorageID(),
-                    storage_snapshot->getAllColumnsDescription(),
-                    std::move(pipe_from_buffers),
-                    *getVirtualsPtr());
-
-            auto interpreter = InterpreterSelectQueryAnalyzer(
-                    query_info.query, local_context, storage,
-                    SelectQueryOptions(processed_stage));
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            buffers_plan = std::move(interpreter).extractQueryPlan();
-        }
-        else
-        {
-            auto interpreter = InterpreterSelectQuery(
-                    query_info.query, local_context, std::move(pipe_from_buffers),
-                    SelectQueryOptions(processed_stage));
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            interpreter.buildQueryPlan(buffers_plan);
-        }
+        /// TODO: Find a way to support projections for StorageBuffer
+        auto interpreter = InterpreterSelectQuery(
+                query_info.query, local_context, std::move(pipe_from_buffers),
+                SelectQueryOptions(processed_stage));
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        interpreter.buildQueryPlan(buffers_plan);
     }
     else
     {
@@ -859,25 +811,23 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
-    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
-    if (flush_pool)
-        runner.emplace(*flush_pool, "BufferFlush");
     for (auto & buf : buffers)
     {
-        if (runner)
+        if (flush_pool)
         {
-            (*runner)([&]()
+            scheduleFromThreadPool<void>([&] ()
             {
                 flushBuffer(buf, check_thresholds, false);
-            });
+            }, *flush_pool, "BufferFlush");
         }
         else
         {
             flushBuffer(buf, check_thresholds, false);
         }
     }
-    if (runner)
-        runner->waitForAllToFinishAndRethrowFirstError();
+
+    if (flush_pool)
+        flush_pool->wait();
 }
 
 

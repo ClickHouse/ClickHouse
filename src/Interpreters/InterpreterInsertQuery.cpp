@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
@@ -137,7 +136,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
             return window_view->getInputHeader();
         else if (no_destination)
-            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
+            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return metadata_snapshot->getSampleBlockNonMaterialized();
     }
@@ -152,7 +151,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         names.emplace_back(std::move(current_name));
     }
 
-    return getSampleBlockImpl(names, table, metadata_snapshot, no_destination, allow_materialized);
+    return getSampleBlock(names, table, metadata_snapshot, allow_materialized);
 }
 
 std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
@@ -174,18 +173,13 @@ std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
     return names;
 }
 
-Block InterpreterInsertQuery::getSampleBlockImpl(
+Block InterpreterInsertQuery::getSampleBlock(
     const Names & names,
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
-    bool no_destination,
     bool allow_materialized)
 {
     Block table_sample_physical = metadata_snapshot->getSampleBlock();
-    Block table_sample_virtuals;
-    if (no_destination)
-        table_sample_virtuals = table->getVirtualsHeader();
-
     Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
     Block res;
     for (const auto & current_name : names)
@@ -200,19 +194,13 @@ Block InterpreterInsertQuery::getSampleBlockImpl(
             if (table_sample_physical.has(current_name))
             {
                 if (!allow_materialized)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.",
+                        current_name);
                 res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
             }
-            else if (table_sample_virtuals.has(current_name))
-            {
-                res.insert(ColumnWithTypeAndName(table_sample_virtuals.getByName(current_name).type, current_name));
-            }
-            else
-            {
-                /// The table does not have a column with that name
+            else /// The table does not have a column with that name
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {} in table {}",
                     current_name, table->getStorageID().getNameForLogs());
-            }
         }
         else
             res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
@@ -288,7 +276,7 @@ Chain InterpreterInsertQuery::buildChain(
     if (!running_group)
         running_group = std::make_shared<ThreadGroup>(getContext());
 
-    auto sample = getSampleBlockImpl(columns, table, metadata_snapshot, no_destination, allow_materialized);
+    auto sample = getSampleBlock(columns, table, metadata_snapshot, allow_materialized);
     if (check_access)
         getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
 
@@ -340,10 +328,13 @@ bool InterpreterInsertQuery::shouldAddSquashingFroStorage(const StoragePtr & tab
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
+    const ASTInsertQuery * query = nullptr;
+    if (query_ptr)
+        query = query_ptr->as<ASTInsertQuery>();
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    return !(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash;
+    return !(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash && !(query && query->watch);
 }
 
 Chain InterpreterInsertQuery::buildPreSinkChain(
@@ -426,7 +417,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     std::vector<Chain> presink_chains;
     std::vector<Chain> sink_chains;
-    if (!distributed_pipeline)
+    if (!distributed_pipeline || query.watch)
     {
         /// Number of streams works like this:
         ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
@@ -519,20 +510,9 @@ BlockIO InterpreterInsertQuery::execute()
                 auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
                 /// It breaks some views-related tests and we have dedicated `parallel_view_processing` for views, so let's just skip them.
-                /// Also it doesn't make sense to reshuffle data if storage doesn't support parallel inserts.
-                const bool resize_to_max_insert_threads = !table->isView() && views.empty() && table->supportsParallelInsert();
+                const bool resize_to_max_insert_threads = !table->isView() && views.empty();
                 pre_streams_size = resize_to_max_insert_threads ? settings.max_insert_threads
                                                                 : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
-
-                /// Deduplication when passing insert_deduplication_token breaks if using more than one thread
-                if (!settings.insert_deduplication_token.toString().empty())
-                {
-                    LOG_DEBUG(
-                        getLogger("InsertQuery"),
-                        "Insert-select query using insert_deduplication_token, setting streams to 1 to avoid deduplication issues");
-                    pre_streams_size = 1;
-                }
-
                 if (table->supportsParallelInsert())
                     sink_streams_size = pre_streams_size;
             }
@@ -552,15 +532,16 @@ BlockIO InterpreterInsertQuery::execute()
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                         /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type)
-                            && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type)
-                            && !isVariant(query_columns[col_idx].type)
-                            && !isDynamic(query_columns[col_idx].type)
-                            && output_columns.has(query_columns[col_idx].name))
+                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type) && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type) && !isVariant(query_columns[col_idx].type) && output_columns.has(query_columns[col_idx].name))
                             query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullableOrLowCardinalityNullable(query_columns[col_idx].column), makeNullableOrLowCardinalityNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
                 }
             }
+        }
+        else if (query.watch)
+        {
+            InterpreterWatchQuery interpreter_watch{ query.watch, getContext() };
+            pipeline = interpreter_watch.buildQueryPipeline();
         }
 
         ThreadGroupPtr running_group;
@@ -588,7 +569,7 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = std::move(*distributed_pipeline);
     }
-    else if (query.select)
+    else if (query.select || query.watch)
     {
         const auto & header = presink_chains.at(0).getInputHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(

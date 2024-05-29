@@ -9,7 +9,7 @@
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
 
@@ -54,6 +54,8 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool async_insert) override;
 
+    NamesAndTypesList getVirtuals() const override;
+
     bool supportsSubsetOfColumns() const;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
@@ -68,12 +70,12 @@ private:
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
 
-    enum class PruneLevel : uint8_t
+    enum class PruneLevel
     {
-        None = 0, /// Do not prune
-        Partition = 1,
-        File = 2,
-        Split = 3,
+        None, /// Do not prune
+        Partition,
+        File,
+        Split,
         Max = Split,
     };
 

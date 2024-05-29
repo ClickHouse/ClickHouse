@@ -11,7 +11,6 @@
 #include <Disks/IO/getThreadPoolReader.h>
 
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
@@ -37,7 +36,6 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class BlobStorageLog;
 class IOUringReader;
-class StorageS3Settings;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -128,7 +126,7 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    enum class ApplicationType : uint8_t
+    enum class ApplicationType
     {
         KEEPER
     };
@@ -138,7 +136,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOUringReader() const;
+    IOUringReader & getIOURingReader() const;
 #endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
@@ -162,14 +160,6 @@ public:
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
-
-    const StorageS3Settings & getStorageS3Settings() const;
-
-    const String & getUserName() const { static std::string user; return user; }
-
-    const ServerSettings & getServerSettings() const;
-
-    bool hasTraceCollector() const;
 };
 
 }

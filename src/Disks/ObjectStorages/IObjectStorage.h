@@ -41,7 +41,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 class ReadBufferFromFileBase;
@@ -52,28 +51,21 @@ using ObjectAttributes = std::map<std::string, std::string>;
 struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
-    Poco::Timestamp last_modified;
-    ObjectAttributes attributes;
+    std::optional<Poco::Timestamp> last_modified;
+    std::optional<ObjectAttributes> attributes;
 };
 
 struct RelativePathWithMetadata
 {
     String relative_path;
-    std::optional<ObjectMetadata> metadata;
+    ObjectMetadata metadata;
 
     RelativePathWithMetadata() = default;
 
-    explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+    RelativePathWithMetadata(String relative_path_, ObjectMetadata metadata_)
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
-
-    virtual ~RelativePathWithMetadata() = default;
-
-    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
-    virtual std::string getPath() const { return relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
 };
 
 struct ObjectKeyWithMetadata
@@ -89,15 +81,11 @@ struct ObjectKeyWithMetadata
     {}
 };
 
-using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
-using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
+using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
-
-class IObjectStorageKeysGenerator;
-using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
 
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
@@ -124,9 +112,9 @@ public:
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
-    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
+    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const;
 
-    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
@@ -203,15 +191,11 @@ public:
     virtual void startup() = 0;
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
-    struct ApplyNewSettingsOptions
-    {
-        bool allow_client_change = true;
-    };
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & /* config */,
+        const Poco::Util::AbstractConfiguration &,
         const std::string & /*config_prefix*/,
-        ContextPtr /* context */,
-        const ApplyNewSettingsOptions & /* options */) {}
+        ContextPtr)
+    {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
@@ -228,12 +212,6 @@ public:
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
 
-    /// Object key prefix for local paths in the directory 'path'.
-    virtual ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
-    }
-
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
@@ -244,15 +222,12 @@ public:
 
     virtual bool isReadOnly() const { return false; }
     virtual bool isWriteOnce() const { return false; }
-    virtual bool isPlain() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
-
-    virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
     virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()

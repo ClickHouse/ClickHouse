@@ -45,11 +45,11 @@ public:
                 getName(),
                 arguments.size());
 
-        FunctionArgumentDescriptors mandatory_args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
+        FunctionArgumentDescriptors mandatory_args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
         FunctionArgumentDescriptors optional_args{
-            {"min_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
-            {"max_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
-            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"}};
+            {"min_percentile", &isFloat<IDataType>, isColumnConst, "Number"},
+            {"max_percentile", &isFloat<IDataType>, isColumnConst, "Number"},
+            {"k", &isNativeNumber<IDataType>, isColumnConst, "Number"}};
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
@@ -61,10 +61,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr col = arguments[0].column;
-        const ColumnArray & col_arr = checkAndGetColumn<ColumnArray>(*col);
+        const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(col.get());
 
-        const IColumn & arr_data = col_arr.getData();
-        const ColumnArray::Offsets & arr_offsets = col_arr.getOffsets();
+        const IColumn & arr_data = col_arr->getData();
+        const ColumnArray::Offsets & arr_offsets = col_arr->getOffsets();
 
         ColumnPtr col_res;
         if (input_rows_count == 0)

@@ -9,11 +9,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <Core/Types.h>
-
 
 namespace DB
 {
@@ -26,34 +23,19 @@ extern const int TOO_MANY_ROWS;
 namespace
 {
 
-template <iota_supported_types T>
-inline void iotaWithStepOptimized(T * begin, size_t count, T first_value, T step)
-{
-    if (step == 1)
-        iota(begin, count, first_value);
-    else
-        iotaWithStep(begin, count, first_value, step);
-}
-
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_)
-        : ISource(createHeader(column_name))
-        , block_size(block_size_)
-        , next(offset_)
-        , chunk_step(chunk_step_)
-        , step(step_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 step_)
+        : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_)
     {
         if (limit_.has_value())
             end = limit_.value() + offset_;
     }
+
     String getName() const override { return "Numbers"; }
 
-    static Block createHeader(const std::string & column_name)
-    {
-        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)};
-    }
+    static Block createHeader() { return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number")}; }
 
 protected:
     Chunk generate() override
@@ -70,12 +52,10 @@ protected:
 
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
+        UInt64 * end_ = &vec[real_block_size];
+        iota(pos, static_cast<size_t>(end_ - pos), curr);
 
-        UInt64 * current_end = &vec[real_block_size];
-
-        iotaWithStepOptimized(pos, static_cast<size_t>(current_end - pos), curr, step);
-
-        next += chunk_step;
+        next += step;
 
         progress(column->size(), column->byteSize());
 
@@ -85,49 +65,35 @@ protected:
 private:
     UInt64 block_size;
     UInt64 next;
-    UInt64 chunk_step;
     std::optional<UInt64> end; /// not included
     UInt64 step;
 };
 
-struct RangeWithStep
+
+UInt128 sizeOfRange(const Range & r)
 {
-    UInt64 left;
-    UInt64 step;
     UInt128 size;
+    if (r.right.isPositiveInfinity())
+        return static_cast<UInt128>(std::numeric_limits<uint64_t>::max()) - r.left.get<UInt64>() + r.left_included;
+
+    size = static_cast<UInt128>(r.right.get<UInt64>()) - r.left.get<UInt64>() + 1;
+
+    if (!r.left_included)
+        size--;
+
+    if (!r.right_included)
+        size--;
+    assert(size >= 0);
+    return size;
 };
 
-using RangesWithStep = std::vector<RangeWithStep>;
-
-std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
-{
-    if ((r.right.get<UInt64>() == 0) && (!r.right_included))
-        return std::nullopt;
-    UInt64 begin = (r.left.get<UInt64>() / step) * step;
-    if (begin > std::numeric_limits<UInt64>::max() - remainder)
-        return std::nullopt;
-    begin += remainder;
-
-    while ((r.left_included <= r.left.get<UInt64>()) && (begin <= r.left.get<UInt64>() - r.left_included))
-    {
-        if (std::numeric_limits<UInt64>::max() - step < begin)
-            return std::nullopt;
-        begin += step;
-    }
-
-    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
-        return std::nullopt;
-    UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
-    return std::optional{RangeWithStep{begin, step, static_cast<UInt128>(right_edge_included - begin) / step + 1}};
-}
-
-auto sizeOfRanges(const RangesWithStep & rs)
+auto sizeOfRanges(const Ranges & rs)
 {
     UInt128 total_size{};
-    for (const RangeWithStep & r : rs)
+    for (const Range & r : rs)
     {
         /// total_size will never overflow
-        total_size += r.size;
+        total_size += sizeOfRange(r);
     }
     return total_size;
 };
@@ -153,17 +119,8 @@ public:
 
     using RangesStatePtr = std::shared_ptr<RangesState>;
 
-    NumbersRangedSource(
-        const RangesWithStep & ranges_,
-        RangesStatePtr & ranges_state_,
-        UInt64 base_block_size_,
-        UInt64 step_,
-        const std::string & column_name)
-        : ISource(NumbersSource::createHeader(column_name))
-        , ranges(ranges_)
-        , ranges_state(ranges_state_)
-        , base_block_size(base_block_size_)
-        , step(step_)
+    NumbersRangedSource(const Ranges & ranges_, RangesStatePtr & ranges_state_, UInt64 base_block_size_)
+        : ISource(NumbersSource::createHeader()), ranges(ranges_), ranges_state(ranges_state_), base_block_size(base_block_size_)
     {
     }
 
@@ -176,7 +133,6 @@ protected:
     {
         std::lock_guard lock(ranges_state->mutex);
 
-
         UInt64 need = base_block_size_;
         UInt64 size = 0; /// how many item found.
 
@@ -188,7 +144,7 @@ protected:
         while (need != 0)
         {
             UInt128 can_provide = end.offset_in_ranges == ranges.size() ? static_cast<UInt128>(0)
-                                                                        : ranges[end.offset_in_ranges].size - end.offset_in_range;
+                                                                        : sizeOfRange(ranges[end.offset_in_ranges]) - end.offset_in_range;
             if (can_provide == 0)
                 break;
 
@@ -215,7 +171,6 @@ protected:
         }
 
         ranges_state->pos = end;
-
         return size;
     }
 
@@ -223,6 +178,10 @@ protected:
     {
         if (ranges.empty())
             return {};
+
+        auto first_value = [](const Range & r) { return r.left.get<UInt64>() + (r.left_included ? 0 : 1); };
+
+        auto last_value = [](const Range & r) { return r.right.get<UInt64>() - (r.right_included ? 0 : 1); };
 
         /// Find the data range.
         /// If data left is small, shrink block size.
@@ -248,43 +207,41 @@ protected:
 
             UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
                 ? end.offset_in_range - cursor.offset_in_range
-                : range.size - cursor.offset_in_range;
+                : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
 
             /// set value to block
-            auto set_value = [&pos, this](UInt128 & start_value, UInt128 & end_value)
+            auto set_value = [&pos](UInt128 & start_value, UInt128 & end_value)
             {
                 if (end_value > std::numeric_limits<UInt64>::max())
                 {
                     while (start_value < end_value)
-                    {
-                        *(pos++) = start_value;
-                        start_value += this->step;
-                    }
+                        *(pos++) = start_value++;
                 }
                 else
                 {
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
-                    auto size = (end_value_64 - start_value_64) / this->step;
-                    iotaWithStepOptimized(pos, static_cast<size_t>(size), start_value_64, step);
+                    auto size = end_value_64 - start_value_64;
+                    iota(pos, static_cast<size_t>(size), start_value_64);
                     pos += size;
                 }
             };
 
             if (can_provide > need)
             {
-                UInt64 start_value = range.left + cursor.offset_in_range * step;
+                UInt64 start_value = first_value(range) + cursor.offset_in_range;
                 /// end_value will never overflow
-                iotaWithStepOptimized(pos, static_cast<size_t>(need), start_value, step);
+                iota(pos, static_cast<size_t>(need), start_value);
                 pos += need;
+
                 provided += need;
                 cursor.offset_in_range += need;
             }
             else if (can_provide == need)
             {
                 /// to avoid UInt64 overflow
-                UInt128 start_value = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
-                UInt128 end_value = start_value + need * step;
+                UInt128 start_value = static_cast<UInt128>(first_value(range)) + cursor.offset_in_range;
+                UInt128 end_value = start_value + need;
                 set_value(start_value, end_value);
 
                 provided += need;
@@ -294,8 +251,8 @@ protected:
             else
             {
                 /// to avoid UInt64 overflow
-                UInt128 start_value = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
-                UInt128 end_value = start_value + can_provide * step;
+                UInt128 start_value = static_cast<UInt128>(first_value(range)) + cursor.offset_in_range;
+                UInt128 end_value = start_value + can_provide;
                 set_value(start_value, end_value);
 
                 provided += static_cast<UInt64>(can_provide);
@@ -312,15 +269,13 @@ protected:
 
 private:
     /// The ranges is shared between all streams.
-    RangesWithStep ranges;
+    Ranges ranges;
 
     /// Ranges state shared between all streams, actually is the start of the ranges.
     RangesStatePtr ranges_state;
 
     /// Base block size, will shrink when data left is not enough.
     UInt64 base_block_size;
-
-    UInt64 step;
 };
 
 }
@@ -341,12 +296,12 @@ bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
 
 /// Shrink ranges to size.
 ///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
-void shrinkRanges(RangesWithStep & ranges, size_t size)
+void shrinkRanges(Ranges & ranges, size_t size)
 {
     size_t last_range_idx = 0;
     for (size_t i = 0; i < ranges.size(); i++)
     {
-        auto range_size = ranges[i].size;
+        auto range_size = sizeOfRange(ranges[i]);
         if (range_size < size)
         {
             size -= static_cast<UInt64>(range_size);
@@ -360,7 +315,9 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
         else
         {
             auto & range = ranges[i];
-            range.size = static_cast<UInt128>(size);
+            UInt64 right = range.left.get<UInt64>() + static_cast<UInt64>(size);
+            range.right = Field(right);
+            range.right_included = !range.left_included;
             last_range_idx = i;
             break;
         }
@@ -430,18 +387,11 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     if (!numbers_storage.multithreaded)
         num_streams = 1;
 
-    Pipe pipe;
-    Ranges ranges;
-
-    if (numbers_storage.limit.has_value() && (numbers_storage.limit.value() == 0))
-    {
-        pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
-        return pipe;
-    }
-    chassert(numbers_storage.step != UInt64{0});
-
     /// Build rpn of query filters
     KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
+
+    Pipe pipe;
+    Ranges ranges;
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -453,8 +403,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         {
             if (std::numeric_limits<UInt64>::max() - numbers_storage.offset >= *(numbers_storage.limit))
             {
-                table_range.emplace(
-                    FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
+                table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
             }
             /// UInt64 overflow, for example: SELECT number FROM numbers(18446744073709551614, 5)
             else
@@ -470,20 +419,13 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(std::numeric_limits<UInt64>::max()), true);
         }
 
-        RangesWithStep intersected_ranges;
+        Ranges intersected_ranges;
         for (auto & r : ranges)
         {
             auto intersected_range = table_range->intersectWith(r);
-            if (intersected_range.has_value())
-            {
-                auto range_with_step
-                    = steppedRangeFromRange(intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
-                if (range_with_step.has_value())
-                    intersected_ranges.push_back(*range_with_step);
-            }
+            if (intersected_range)
+                intersected_ranges.push_back(*intersected_range);
         }
-
-
         /// intersection with overflowed_table_range goes back.
         if (overflowed_table_range.has_value())
         {
@@ -491,77 +433,66 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             {
                 auto intersected_range = overflowed_table_range->intersectWith(r);
                 if (intersected_range)
-                {
-                    auto range_with_step = steppedRangeFromRange(
-                        intersected_range.value(),
-                        numbers_storage.step,
-                        static_cast<UInt64>(
-                            (static_cast<UInt128>(numbers_storage.offset) + std::numeric_limits<UInt64>::max() + 1)
-                            % numbers_storage.step));
-                    if (range_with_step)
-                        intersected_ranges.push_back(*range_with_step);
-                }
+                    intersected_ranges.push_back(*overflowed_table_range);
             }
         }
 
         /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())
         {
-            pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
+            pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader()));
             return pipe;
         }
         const auto & limit_length = limit_length_and_offset.first;
         const auto & limit_offset = limit_length_and_offset.second;
 
-        UInt128 total_size = sizeOfRanges(intersected_ranges);
-        UInt128 query_limit = limit_length + limit_offset;
-
-        /// limit total_size by query_limit
-        if (should_pushdown_limit && query_limit < total_size)
+        /// If intersected ranges is limited or we can pushdown limit.
+        if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit)
         {
-            total_size = query_limit;
-            /// We should shrink intersected_ranges for case:
-            ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
-            shrinkRanges(intersected_ranges, total_size);
+            UInt128 total_size = sizeOfRanges(intersected_ranges);
+            UInt128 query_limit = limit_length + limit_offset;
+
+            /// limit total_size by query_limit
+            if (should_pushdown_limit && query_limit < total_size)
+            {
+                total_size = query_limit;
+                /// We should shrink intersected_ranges for case:
+                ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
+                shrinkRanges(intersected_ranges, total_size);
+            }
+
+            checkLimits(size_t(total_size));
+
+            if (total_size / max_block_size < num_streams)
+                num_streams = static_cast<size_t>(total_size / max_block_size);
+
+            if (num_streams == 0)
+                num_streams = 1;
+
+            /// Ranges state, all streams will share the state.
+            auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
+            for (size_t i = 0; i < num_streams; ++i)
+            {
+                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, ranges_state, max_block_size);
+
+                if (i == 0)
+                    source->addTotalRowsApprox(total_size);
+
+                pipe.addSource(std::move(source));
+            }
+            return pipe;
         }
-
-        checkLimits(size_t(total_size));
-
-        if (total_size / max_block_size < num_streams)
-            num_streams = static_cast<size_t>(total_size / max_block_size);
-
-        if (num_streams == 0)
-            num_streams = 1;
-
-        /// Ranges state, all streams will share the state.
-        auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            auto source = std::make_shared<NumbersRangedSource>(
-                intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
-
-            if (i == 0)
-                source->addTotalRowsApprox(total_size);
-
-            pipe.addSource(std::move(source));
-        }
-        return pipe;
     }
 
     /// Fall back to NumbersSource
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<NumbersSource>(
-            max_block_size,
-            numbers_storage.offset + i * max_block_size * numbers_storage.step,
-            numbers_storage.limit,
-            num_streams * max_block_size * numbers_storage.step,
-            numbers_storage.column_name,
-            numbers_storage.step);
+        auto source
+            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, numbers_storage.limit, num_streams * max_block_size);
 
         if (numbers_storage.limit && i == 0)
         {
-            auto rows_appr = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
+            auto rows_appr = *(numbers_storage.limit);
             if (limit > 0 && limit < rows_appr)
                 rows_appr = limit;
             source->addTotalRowsApprox(rows_appr);
@@ -573,7 +504,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     if (numbers_storage.limit)
     {
         size_t i = 0;
-        auto storage_limit = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
+        auto storage_limit = *(numbers_storage.limit);
         /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
         pipe.addSimpleTransform(
             [&](const Block & header)

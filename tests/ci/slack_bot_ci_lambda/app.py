@@ -17,12 +17,12 @@ It's deployed to slack-bot-ci-lambda in CI/CD account
 See also: https://aretestsgreenyet.com/
 """
 
-import base64
-import json
 import os
+import json
+import base64
 import random
 
-import requests
+import requests  # type: ignore
 
 DRY_RUN_MARK = "<no url, dry run>"
 
@@ -139,11 +139,13 @@ def get_play_url(query):
 
 
 def run_clickhouse_query(query):
-    url = "https://play.clickhouse.com/?user=play&query=" + requests.compat.quote(query)
-    res = requests.get(url, timeout=30)
+    url = "https://play.clickhouse.com/?user=play&query=" + requests.utils.quote(query)
+    res = requests.get(url)
     if res.status_code != 200:
         print("Failed to execute query: ", res.status_code, res.content)
-        res.raise_for_status()
+        raise Exception(
+            "Failed to execute query: {}: {}".format(res.status_code, res.content)
+        )
 
     lines = res.text.strip().splitlines()
     return [x.split("\t") for x in lines]
@@ -157,9 +159,9 @@ def split_broken_and_flaky_tests(failed_tests):
     flaky_tests = []
     for name, report, count_prev_str, count_str in failed_tests:
         count_prev, count = int(count_prev_str), int(count_str)
-        if (count_prev < 2 <= count) or (count_prev == count == 1):
+        if (2 <= count and count_prev < 2) or (count_prev == 1 and count == 1):
             # It failed 2 times or more within extended time window, it's definitely broken.
-            # 2 <= count means that it was not reported as broken on previous runs
+            # 2 <= count_prev means that it was not reported as broken on previous runs
             broken_tests.append([name, report])
         elif 0 < count and count_prev == 0:
             # It failed only once, can be a rare flaky test
@@ -170,18 +172,19 @@ def split_broken_and_flaky_tests(failed_tests):
 
 def format_failed_tests_list(failed_tests, failure_type):
     if len(failed_tests) == 1:
-        res = f"There is a new {failure_type} test:\n"
+        res = "There is a new {} test:\n".format(failure_type)
     else:
-        res = f"There are {len(failed_tests)} new {failure_type} tests:\n"
+        res = "There are {} new {} tests:\n".format(len(failed_tests), failure_type)
 
     for name, report in failed_tests[:MAX_TESTS_TO_REPORT]:
         cidb_url = get_play_url(ALL_RECENT_FAILURES_QUERY.format(name))
-        res += f"-   *{name}*  -  <{report}|Report>  -  <{cidb_url}|CI DB> \n"
+        res += "-   *{}*  -  <{}|Report>  -  <{}|CI DB> \n".format(
+            name, report, cidb_url
+        )
 
     if MAX_TESTS_TO_REPORT < len(failed_tests):
-        res += (
-            f"-   and {len(failed_tests) - MAX_TESTS_TO_REPORT} other "
-            "tests... :this-is-fine-fire:"
+        res += "-   and {} other tests... :this-is-fine-fire:".format(
+            len(failed_tests) - MAX_TESTS_TO_REPORT
         )
 
     return res
@@ -220,16 +223,19 @@ def get_too_many_failures_message_impl(failures_count):
         if random.random() < REPORT_NO_FAILURES_PROBABILITY:
             return None
         return "Wow, there are *no failures* at all... 0_o"
-    return_none = (
-        curr_failures < MAX_FAILURES
-        or curr_failures < prev_failures
-        or (curr_failures - prev_failures) / prev_failures < 0.2
-    )
-    if return_none:
+    if curr_failures < MAX_FAILURES:
         return None
     if prev_failures < MAX_FAILURES:
-        return f":alert: *CI is broken: there are {curr_failures} failures during the last 24 hours*"
-    return "CI is broken and it's getting worse: there are {curr_failures} failures during the last 24 hours"
+        return ":alert: *CI is broken: there are {} failures during the last 24 hours*".format(
+            curr_failures
+        )
+    if curr_failures < prev_failures:
+        return None
+    if (curr_failures - prev_failures) / prev_failures < 0.2:
+        return None
+    return "CI is broken and it's getting worse: there are {} failures during the last 24 hours".format(
+        curr_failures
+    )
 
 
 def get_too_many_failures_message(failures_count):
@@ -248,7 +254,7 @@ def get_failed_checks_percentage_message(percentage):
         return None
 
     msg = ":alert: " if p > 1 else "Only " if p < 0.5 else ""
-    msg += f"*{p:.2f}%* of all checks in master have failed yesterday"
+    msg += "*{0:.2f}%* of all checks in master have failed yesterday".format(p)
     return msg
 
 
@@ -274,10 +280,14 @@ def send_to_slack_impl(message):
 
     payload = SLACK_MESSAGE_JSON.copy()
     payload["text"] = message
-    res = requests.post(SLACK_URL, json.dumps(payload), timeout=30)
+    res = requests.post(SLACK_URL, json.dumps(payload))
     if res.status_code != 200:
         print("Failed to send a message to Slack: ", res.status_code, res.content)
-        res.raise_for_status()
+        raise Exception(
+            "Failed to send a message to Slack: {}: {}".format(
+                res.status_code, res.content
+            )
+        )
 
 
 def send_to_slack(message):
@@ -293,7 +303,7 @@ def query_and_alert_if_needed(query, get_message_func):
     if msg is None:
         return
 
-    msg += f"\nCI DB query: <{get_play_url(query)}|link>"
+    msg += "\nCI DB query: <{}|link>".format(get_play_url(query))
     print("Sending message to slack:", msg)
     send_to_slack(msg)
 
@@ -307,7 +317,6 @@ def check_and_alert():
 
 
 def handler(event, context):
-    _, _ = event, context
     try:
         check_and_alert()
         return {"statusCode": 200, "body": "OK"}

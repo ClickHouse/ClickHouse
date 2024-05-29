@@ -1,3 +1,6 @@
+-- Tags: no-cpu-aarch64
+-- Tag no-cpu-aarch64: values generated are slighly different on aarch64
+
 DROP TABLE IF EXISTS tb2;
 
 CREATE TABLE tb2 (`period` UInt32, `ts` Array(Float64)) ENGINE = Memory;

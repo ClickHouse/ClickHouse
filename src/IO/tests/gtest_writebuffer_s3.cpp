@@ -205,17 +205,16 @@ struct Client : DB::S3::Client
 {
     explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
         : DB::S3::Client(
-            100,
-            DB::S3::ServerSideEncryptionKMSConfig(),
-            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(),
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            DB::S3::ClientSettings{
-                .use_virtual_addressing = true,
-                .disable_checksum = false,
-                .gcs_issue_compose_request = false,
-                .is_s3express_bucket = false,
-            })
+               100,
+               DB::S3::ServerSideEncryptionKMSConfig(),
+               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
+               GetClientConfiguration(),
+               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+               DB::S3::ClientSettings{
+                   .use_virtual_addressing = true,
+                   .disable_checksum= false,
+                   .gcs_issue_compose_request = false,
+               })
         , store(mock_s3_store)
     {}
 
@@ -452,7 +451,7 @@ struct UploadPartFailIngection: InjectionModel
 struct BaseSyncPolicy
 {
     virtual ~BaseSyncPolicy() = default;
-    virtual DB::ThreadPoolCallbackRunnerUnsafe<void> getScheduler() { return {}; }
+    virtual DB::ThreadPoolCallbackRunner<void> getScheduler() { return {}; }
     virtual void execute(size_t) {}
     virtual void setAutoExecute(bool) {}
 
@@ -465,7 +464,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
     bool auto_execute = false;
     std::deque<std::packaged_task<void()>> queue;
 
-    DB::ThreadPoolCallbackRunnerUnsafe<void> getScheduler() override
+    DB::ThreadPoolCallbackRunner<void> getScheduler() override
     {
         return [this] (std::function<void()> && operation, size_t /*priority*/)
         {
@@ -547,7 +546,7 @@ public:
     std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
     {
         S3Settings::RequestSettings request_settings;
-        request_settings.updateFromSettingsIfChanged(settings);
+        request_settings.updateFromSettings(settings);
 
         client->resetCounters();
 

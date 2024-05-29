@@ -107,7 +107,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         }
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
+            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
             return false;
 
         if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
@@ -164,7 +164,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     return true;
 }
 
-IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 {
     /** Compute tree hash with this node as root.
       *
@@ -201,13 +201,13 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
-        if (compare_options.compare_aliases && !node_to_process->alias.empty())
+        if (!node_to_process->alias.empty())
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
         }
 
-        node_to_process->updateTreeHashImpl(hash_state, compare_options);
+        node_to_process->updateTreeHashImpl(hash_state);
 
         hash_state.update(node_to_process->children.size());
 

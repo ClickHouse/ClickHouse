@@ -1,9 +1,9 @@
-#include <Columns/ColumnSparse.h>
-
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnTuple.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -152,14 +152,9 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
-}
-
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
 }
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
@@ -345,7 +340,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     }
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
-    return create(res_values, std::move(res_offsets), res_offset);
+    return this->create(res_values, std::move(res_offsets), res_offset);
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -576,7 +571,7 @@ void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, I
         return;
     }
 
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
 void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -589,7 +584,7 @@ void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction
 void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int null_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(
@@ -735,6 +730,16 @@ UInt64 ColumnSparse::getNumberOfDefaultRows() const
     return _size - offsets->size();
 }
 
+MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
+{
+    return scatterImpl<ColumnSparse>(num_columns, selector);
+}
+
+void ColumnSparse::gather(ColumnGathererStream & gatherer_stream)
+{
+    gatherer_stream.gather(*this);
+}
+
 ColumnPtr ColumnSparse::compress() const
 {
     auto values_compressed = values->compress();
@@ -798,15 +803,6 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
     size_t current_offset = it - offsets_data.begin();
     return Iterator(offsets_data, _size, current_offset, n);
-}
-
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
-{
-    Columns values_source_columns;
-    values_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

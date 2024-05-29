@@ -57,7 +57,7 @@ public:
 
     String getFileName() const override { return source_file_path; }
 
-    enum class ReadType : uint8_t
+    enum class ReadType
     {
         CACHED,
         REMOTE_FS_READ_BYPASS_CACHE,

@@ -9,12 +9,13 @@ from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
-upstream = cluster.add_instance("upstream", use_old_analyzer=True)
+upstream = cluster.add_instance("upstream", allow_analyzer=False)
 backward = cluster.add_instance(
     "backward",
     image="clickhouse/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

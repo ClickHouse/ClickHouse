@@ -5,8 +5,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/callOnce.h>
 #include <Disks/IO/IOUringReader.h>
-#include <Storages/StorageS3Settings.h>
-#include <Disks/IO/getIOUringReader.h>
 
 #include <Core/ServerSettings.h>
 
@@ -46,77 +44,11 @@ struct ContextSharedPart : boost::noncopyable
         : macros(std::make_unique<Macros>())
     {}
 
-    ~ContextSharedPart()
-    {
-        if (keeper_dispatcher)
-        {
-            try
-            {
-                keeper_dispatcher->shutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        /// Wait for thread pool for background reads and writes,
-        /// since it may use per-user MemoryTracker which will be destroyed here.
-        if (asynchronous_remote_fs_reader)
-        {
-            try
-            {
-                asynchronous_remote_fs_reader->wait();
-                asynchronous_remote_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (asynchronous_local_fs_reader)
-        {
-            try
-            {
-                asynchronous_local_fs_reader->wait();
-                asynchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (synchronous_local_fs_reader)
-        {
-            try
-            {
-                synchronous_local_fs_reader->wait();
-                synchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (threadpool_writer)
-        {
-            try
-            {
-                threadpool_writer->wait();
-                threadpool_writer.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-    }
-
     /// For access of most of shared objects.
     mutable SharedMutex mutex;
+
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 
     ServerSettings server_settings;
 
@@ -145,11 +77,6 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
-
-    std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 };
 
 ContextData::ContextData() = default;
@@ -306,10 +233,10 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 }
 
 #if USE_LIBURING
-IOUringReader & Context::getIOUringReader() const
+IOUringReader & Context::getIOURingReader() const
 {
     callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = createIOUringReader();
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
     });
 
     return *shared->io_uring_reader;
@@ -453,29 +380,6 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
-}
-
-const StorageS3Settings & Context::getStorageS3Settings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->storage_s3_settings)
-    {
-        const auto & config = shared->config ? *shared->config : Poco::Util::Application::instance().config();
-        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
-    }
-
-    return *shared->storage_s3_settings;
-}
-
-const ServerSettings & Context::getServerSettings() const
-{
-    return shared->server_settings;
-}
-
-bool Context::hasTraceCollector() const
-{
-    return false;
 }
 
 }

@@ -58,14 +58,8 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
-# NOTE: we need to run clickhouse-local under script to get settings without any adjustments, like clickhouse-local does in case of stdout is not a tty
-function save_settings_clean()
-{
-  local out=$1 && shift
-  script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
-}
-
-save_settings_clean 'old_settings.native'
+# Save old settings from system table for settings changes check
+clickhouse-local -q "select * from system.settings format Native" > old_settings.native
 
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
@@ -73,7 +67,10 @@ configure
 
 function remove_keeper_config()
 {
-  sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
+  sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+    | sed "/<$1>$2<\/$1>/d" \
+    > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+  sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 }
 
 # async_replication setting doesn't exist on some older versions
@@ -81,12 +78,6 @@ remove_keeper_config "async_replication" "1"
 
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
 
 # latest_logs_cache_size_threshold setting doesn't exist on some older versions
 remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
@@ -100,7 +91,6 @@ rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xm
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
 rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
-rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
@@ -117,13 +107,10 @@ export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
 # force_sync=false doesn't work correctly on some older versions
-sudo sed -i "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" /etc/clickhouse-server/config.d/keeper_port.xml
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-#todo: remove these after 24.3 released.
-sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
+sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+  | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
+  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
 # async_replication setting doesn't exist on some older versions
 remove_keeper_config "async_replication" "1"
@@ -138,7 +125,10 @@ remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
 
 # But we still need default disk because some tables loaded only into it
-sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
+  | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
+  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
@@ -148,7 +138,6 @@ rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xm
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
 rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
-rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/config.d/block_number.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
@@ -189,7 +178,7 @@ configure
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
-  save_settings_clean 'new_settings.native'
+  clickhouse-local -q "select * from system.settings format Native" > new_settings.native
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE new_settings AS file('new_settings.native');
@@ -241,7 +230,10 @@ then
 fi
 
 # Just in case previous version left some garbage in zk
-sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
+sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
+  | sed "s|>1<|>0<|g" \
+  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500

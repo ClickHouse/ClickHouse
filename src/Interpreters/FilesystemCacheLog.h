@@ -15,7 +15,7 @@ namespace DB
 
 struct FilesystemCacheLogElement
 {
-    enum class CacheType : uint8_t
+    enum class CacheType
     {
         READ_FROM_CACHE,
         READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,

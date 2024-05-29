@@ -147,6 +147,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     }
 }
 
+
 template <int UNROLL_TIMES>
 static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
@@ -323,17 +324,14 @@ bool SerializationString::tryDeserializeWholeText(IColumn & column, ReadBuffer &
     return read<bool>(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); return true; });
 }
 
-void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read<void>(column, [&](ColumnString::Chars & data)
-    {
-        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<PaddedPODArray<UInt8>,true>(data, istr) : readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr);
-    });
+    read<void>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); });
 }
 
 bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    return read<bool>(column, [&](ColumnString::Chars & data) { readEscapedStringInto<PaddedPODArray<UInt8>,true>(data, istr); return true; });
+    return read<bool>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); return true; });
 }
 
 void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -391,7 +389,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        readJSONField(field, istr, settings.json);
+        readJSONField(field, istr);
         Float64 tmp;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
@@ -400,7 +398,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
     }
     else
-        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
+        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
 }
 
 bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -434,7 +432,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
     if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        if (!tryReadJSONField(field, istr, settings.json))
+        if (!tryReadJSONField(field, istr))
             return false;
 
         Float64 tmp;
@@ -448,7 +446,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         return false;
     }
 
-    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
+    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr); });
 }
 
 

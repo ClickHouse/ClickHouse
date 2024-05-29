@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-msan
-# It's not clear why distributed aggregation is much slower with sanitizers (https://github.com/ClickHouse/ClickHouse/issues/60625)
+## Note: The analyzer doesn't support JOIN with parallel replicas yet
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

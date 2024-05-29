@@ -149,12 +149,12 @@ public:
 
     void popFirst()
     {
-        popFirst(1);
+        return popFirst(1);
     }
 
     void pop_front() /// NOLINT
     {
-        popFirst();
+        return popFirst();
     }
 
     void popLast(size_t parts_to_remove_size)
@@ -172,7 +172,7 @@ public:
 
     void popLast()
     {
-        popLast(1);
+        return popLast(1);
     }
 
     void pop_back() /// NOLINT

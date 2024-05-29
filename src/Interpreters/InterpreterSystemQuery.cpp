@@ -10,8 +10,6 @@
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
-#include <Common/PageCache.h>
-#include <Common/HostResolvePool.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -51,17 +49,14 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
 #include <csignal>
@@ -336,15 +331,8 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
-            HostResolversPool::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context->reloadClusterConfig();
-            break;
-        }
-        case Type::DROP_CONNECTIONS_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
-            HTTPConnectionPools::instance().dropCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -398,31 +386,22 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                {
-                    if (!cache_data->cache->isInitialized())
-                        continue;
-
                     cache_data->cache->removeAllReleasable(user_id);
-                }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
-
-                if (cache->isInitialized())
+                if (query.key_to_drop.empty())
                 {
-                    if (query.key_to_drop.empty())
-                    {
-                        cache->removeAllReleasable(user_id);
-                    }
+                    cache->removeAllReleasable(user_id);
+                }
+                else
+                {
+                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
+                    if (query.offset_to_drop.has_value())
+                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
                     else
-                    {
-                        auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                        if (query.offset_to_drop.has_value())
-                            cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
-                        else
-                            cache->removeKey(key, user_id);
-                    }
+                        cache->removeKey(key, user_id);
                 }
             }
             break;
@@ -481,13 +460,6 @@ BlockIO InterpreterSystemQuery::execute()
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         }
-        case Type::DROP_PAGE_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
-
-            getContext()->dropPageCache();
-            break;
-        }
         case Type::DROP_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
@@ -501,17 +473,17 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageFile::getSchemaCache(getContext()).clear();
 #if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
+                StorageS3::getSchemaCache(getContext()).clear();
 #endif
 #if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
+                StorageHDFS::getSchemaCache(getContext()).clear();
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
 #endif
             break;
         }
@@ -730,7 +702,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->tryGetAsynchronousInsertQueue();
+            auto * queue = getContext()->getAsynchronousInsertQueue();
             if (!queue)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
@@ -741,12 +713,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
-            CannotAllocateThreadFaultInjector::setFaultProbability(0);
             break;
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
-            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
         case Type::UNFREEZE:
         {
@@ -779,11 +749,6 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
-            break;
-        }
-        case Type::UNLOAD_PRIMARY_KEY:
-        {
-            unloadPrimaryKeys();
             break;
         }
 
@@ -879,7 +844,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -1163,42 +1128,6 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
-void InterpreterSystemQuery::unloadPrimaryKeys()
-{
-    if (!table_id.empty())
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-        {
-            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->unloadPrimaryKeys();
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
-        }
-    }
-    else
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Unloading primary keys for all tables");
-
-        for (auto & database : DatabaseCatalog::instance().getDatabases())
-        {
-            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
-            {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
-                {
-                    merge_tree->unloadPrimaryKeys();
-                }
-            }
-        }
-    }
-}
-
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1227,16 +1156,12 @@ void InterpreterSystemQuery::syncTransactionLog()
 }
 
 
-void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    SettingsChanges settings_changes;
-    if (query.query_settings)
-        settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
-
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
-        storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
+        storage_distributed->flushClusterNodesAllData(getContext());
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -1275,7 +1200,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
@@ -1285,7 +1209,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
-        case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
@@ -1510,14 +1433,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
-            break;
-        }
-        case Type::UNLOAD_PRIMARY_KEY:
-        {
-            if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-            else
-                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_THREAD_FUZZER:
