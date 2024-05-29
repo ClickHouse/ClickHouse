@@ -2934,9 +2934,9 @@ static bool llama_kv_cache_init(
     {
         int n_layers = it.second;
         struct ggml_init_params params = {
-            /*.mem_size   =*/2u * n_layers * ggml_tensor_overhead(),
-            /*.mem_buffer =*/nullptr,
-            /*.no_alloc   =*/true,
+            .mem_size   = 2u * n_layers * ggml_tensor_overhead(),
+            .mem_buffer = nullptr,
+            .no_alloc   = true,
         };
         ggml_context * ctx = ggml_init(params);
         if (!ctx)
@@ -3763,8 +3763,8 @@ struct llama_model_loader
 
         struct ggml_context * ctx = nullptr;
         struct gguf_init_params params = {
-            /*.no_alloc = */ true,
-            /*.ctx      = */ &ctx,
+            .no_alloc = true,
+            .ctx      = &ctx,
         };
 
         meta = gguf_init_from_file(fname.c_str(), params);
@@ -3816,8 +3816,8 @@ struct llama_model_loader
                 llama_split_path(split_path, sizeof(split_path), split_prefix, idx, n_split);
 
                 struct gguf_init_params split_params = {
-                    /*.no_alloc = */ true,
-                    /*.ctx      = */ &ctx,
+                    .no_alloc = true,
+                    .ctx      = &ctx,
                 };
                 struct gguf_context * ctx_gguf = gguf_init_from_file(split_path, split_params);
                 if (!ctx_gguf)
@@ -6359,9 +6359,9 @@ static bool llm_load_tensors(
     for (auto & it : buft_layer_count)
     {
         struct ggml_init_params params = {
-            /*.mem_size   =*/ctx_size,
-            /*.mem_buffer =*/nullptr,
-            /*.no_alloc   =*/true,
+            .mem_size   =ctx_size,
+            .mem_buffer =nullptr,
+            .no_alloc   =true,
         };
         ggml_context * ctx = ggml_init(params);
         if (!ctx)
@@ -8640,9 +8640,9 @@ struct llm_build_context
     void init()
     {
         struct ggml_init_params params = {
-            /*.mem_size   =*/buf_compute_meta.size(),
-            /*.mem_buffer =*/buf_compute_meta.data(),
-            /*.no_alloc   =*/true,
+            .mem_size   =buf_compute_meta.size(),
+            .mem_buffer =buf_compute_meta.data(),
+            .no_alloc   =true,
         };
 
         ctx0 = ggml_init(params);
@@ -15116,77 +15116,6 @@ static void llama_kv_cache_defrag_internal(struct llama_context & lctx)
 
     //LLAMA_LOG_INFO("expected gf nodes: %u\n", 6*n_moves*n_layer);
 
-#if 0
-    // CPU defrag
-    //
-    // TODO: optimizations are possible:
-    //       - multiple threads
-    //       - avoid copying to the host memory when already there
-    //
-    // likely not worth the effort, as we have ggml_graph based defrag
-    //
-
-    const uint32_t n_embd_k_gqa = hparams.n_embd_k_gqa();
-    const uint32_t n_embd_v_gqa = hparams.n_embd_v_gqa();
-
-    const uint32_t kv_size = kv_self.size;
-
-    std::vector<uint8_t> buf_k;
-    std::vector<uint8_t> buf_v;
-
-    for (uint32_t il = 0; il < n_layer; ++il) {
-        const size_t k_size_row = ggml_row_size(kv_self.k_l[il]->type, n_embd_k_gqa);
-        const size_t k_size     = ggml_row_size(kv_self.k_l[il]->type, n_embd_k_gqa*kv_size);
-
-        const size_t v_size_el = ggml_type_size(kv_self.v_l[il]->type);
-        const size_t v_size    = ggml_row_size (kv_self.v_l[il]->type, n_embd_v_gqa*kv_size);
-
-        buf_k.resize(k_size);
-        buf_v.resize(v_size);
-
-        ggml_backend_tensor_get(kv_self.k_l[il], buf_k.data(), 0, buf_k.size());
-        ggml_backend_tensor_get(kv_self.v_l[il], buf_v.data(), 0, buf_v.size());
-
-        // batch move [i, i+nm) to [id, id+nm)
-        // note: cells can move only to a lower index
-        for (uint32_t i = 0; i < n_kv; ++i) {
-            const uint32_t id = ids[i];
-
-            if (i == id || id == n_kv) {
-                continue;
-            }
-
-            uint32_t nm = 1;
-
-            while (i + nm < n_kv && ids[i + nm] == id + nm) {
-                nm++;
-            }
-
-            // move keys
-            {
-                const int64_t os =  i*k_size_row;
-                const int64_t od = id*k_size_row;
-
-                memcpy(buf_k.data() + od, buf_k.data() + os, nm*k_size_row);
-            }
-
-            // move values (note: they are transposed)
-            {
-                const int64_t os =  i;
-                const int64_t od = id;
-
-                for (uint32_t j = 0; j < n_embd_v_gqa; ++j) {
-                    memcpy(buf_v.data() + (od + j*kv_size)*v_size_el, buf_v.data() + (os + j*kv_size)*v_size_el, nm*v_size_el);
-                }
-            }
-
-            i += nm - 1;
-        }
-
-        ggml_backend_tensor_set(kv_self.k_l[il], buf_k.data(), 0, buf_k.size());
-        ggml_backend_tensor_set(kv_self.v_l[il], buf_v.data(), 0, buf_v.size());
-    }
-#else
     // ggml_graph defrag
 
     ggml_backend_sched_reset(lctx.sched);
@@ -15194,7 +15123,6 @@ static void llama_kv_cache_defrag_internal(struct llama_context & lctx)
     ggml_cgraph * gf = llama_build_graph_defrag(lctx, ids);
 
     llama_graph_compute(lctx, gf, lctx.cparams.n_threads);
-#endif
 
     //const int64_t t_end = ggml_time_us();
 
@@ -19436,18 +19364,18 @@ static int llama_apply_lora_from_file_internal(
 struct llama_model_params llama_model_default_params()
 {
     struct llama_model_params result = {
-        /*.n_gpu_layers                =*/0,
-        /*.split_mode                  =*/LLAMA_SPLIT_MODE_LAYER,
-        /*.main_gpu                    =*/0,
-        /*.tensor_split                =*/nullptr,
-        /*.rpc_servers                 =*/nullptr,
-        /*.progress_callback           =*/nullptr,
-        /*.progress_callback_user_data =*/nullptr,
-        /*.kv_overrides                =*/nullptr,
-        /*.vocab_only                  =*/false,
-        /*.use_mmap                    =*/true,
-        /*.use_mlock                   =*/false,
-        /*.check_tensors               =*/false,
+        .n_gpu_layers                =0,
+        .split_mode                  =LLAMA_SPLIT_MODE_LAYER,
+        .main_gpu                    =0,
+        .tensor_split                =nullptr,
+        .rpc_servers                 =nullptr,
+        .progress_callback           =nullptr,
+        .progress_callback_user_data =nullptr,
+        .kv_overrides                =nullptr,
+        .vocab_only                  =false,
+        .use_mmap                    =true,
+        .use_mlock                   =false,
+        .check_tensors               =false,
     };
 
 #ifdef GGML_USE_METAL
@@ -19461,33 +19389,33 @@ struct llama_model_params llama_model_default_params()
 struct llama_context_params llama_context_default_params()
 {
     struct llama_context_params result = {
-        /*.seed                        =*/LLAMA_DEFAULT_SEED,
-        /*.n_ctx                       =*/512,
-        /*.n_batch                     =*/2048,
-        /*.n_ubatch                    =*/512,
-        /*.n_seq_max                   =*/1,
-        /*.n_threads                   =*/GGML_DEFAULT_N_THREADS, // TODO: better default
-        /*.n_threads_batch             =*/GGML_DEFAULT_N_THREADS,
-        /*.rope_scaling_type           =*/LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED,
-        /*.pooling_type                =*/LLAMA_POOLING_TYPE_UNSPECIFIED,
-        /*.rope_freq_base              =*/0.0f,
-        /*.rope_freq_scale             =*/0.0f,
-        /*.yarn_ext_factor             =*/-1.0f,
-        /*.yarn_attn_factor            =*/1.0f,
-        /*.yarn_beta_fast              =*/32.0f,
-        /*.yarn_beta_slow              =*/1.0f,
-        /*.yarn_orig_ctx               =*/0,
-        /*.defrag_thold                =*/-1.0f,
-        /*.cb_eval                     =*/nullptr,
-        /*.cb_eval_user_data           =*/nullptr,
-        /*.type_k                      =*/GGML_TYPE_F16,
-        /*.type_v                      =*/GGML_TYPE_F16,
-        /*.logits_all                  =*/false,
-        /*.embeddings                  =*/false,
-        /*.offload_kqv                 =*/true,
-        /*.flash_attn                  =*/false,
-        /*.abort_callback              =*/nullptr,
-        /*.abort_callback_data         =*/nullptr,
+        .seed                        =LLAMA_DEFAULT_SEED,
+        .n_ctx                       =512,
+        .n_batch                     =2048,
+        .n_ubatch                    =512,
+        .n_seq_max                   =1,
+        .n_threads                   =GGML_DEFAULT_N_THREADS, // TODO: better default
+        .n_threads_batch             =GGML_DEFAULT_N_THREADS,
+        .rope_scaling_type           =LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED,
+        .pooling_type                =LLAMA_POOLING_TYPE_UNSPECIFIED,
+        .rope_freq_base              =0.0f,
+        .rope_freq_scale             =0.0f,
+        .yarn_ext_factor             =-1.0f,
+        .yarn_attn_factor            =1.0f,
+        .yarn_beta_fast              =32.0f,
+        .yarn_beta_slow              =1.0f,
+        .yarn_orig_ctx               =0,
+        .defrag_thold                =-1.0f,
+        .cb_eval                     =nullptr,
+        .cb_eval_user_data           =nullptr,
+        .type_k                      =GGML_TYPE_F16,
+        .type_v                      =GGML_TYPE_F16,
+        .logits_all                  =false,
+        .embeddings                  =false,
+        .offload_kqv                 =true,
+        .flash_attn                  =false,
+        .abort_callback              =nullptr,
+        .abort_callback_data         =nullptr,
     };
 
     return result;
@@ -19496,17 +19424,17 @@ struct llama_context_params llama_context_default_params()
 struct llama_model_quantize_params llama_model_quantize_default_params()
 {
     struct llama_model_quantize_params result = {
-        /*.nthread                     =*/0,
-        /*.ftype                       =*/LLAMA_FTYPE_MOSTLY_Q5_1,
-        /*.output_tensor_type          =*/GGML_TYPE_COUNT,
-        /*.token_embedding_type        =*/GGML_TYPE_COUNT,
-        /*.allow_requantize            =*/false,
-        /*.quantize_output_tensor      =*/true,
-        /*.only_copy                   =*/false,
-        /*.pure                        =*/false,
-        /*.keep_split                  =*/false,
-        /*.imatrix                     =*/nullptr,
-        /*.kv_overrides                =*/nullptr,
+        .nthread                     =0,
+        .ftype                       =LLAMA_FTYPE_MOSTLY_Q5_1,
+        .output_tensor_type          =GGML_TYPE_COUNT,
+        .token_embedding_type        =GGML_TYPE_COUNT,
+        .allow_requantize            =false,
+        .quantize_output_tensor      =true,
+        .only_copy                   =false,
+        .pure                        =false,
+        .keep_split                  =false,
+        .imatrix                     =nullptr,
+        .kv_overrides                =nullptr,
     };
 
     return result;
@@ -20302,9 +20230,9 @@ static bool llama_control_vector_init(struct llama_control_vector & cvec, const 
     {
         int n_layers = it.second;
         struct ggml_init_params params = {
-            /*.mem_size   =*/n_layers * ggml_tensor_overhead(),
-            /*.mem_buffer =*/nullptr,
-            /*.no_alloc   =*/true,
+            .mem_size   =n_layers * ggml_tensor_overhead(),
+            .mem_buffer =nullptr,
+            .no_alloc   =true,
         };
         ggml_context * ctx = ggml_init(params);
         if (!ctx)
@@ -20394,14 +20322,14 @@ llama_control_vector_apply(struct llama_context * lctx, const float * data, size
 struct llama_kv_cache_view llama_kv_cache_view_init(const struct llama_context * ctx, int32_t n_seq_max)
 {
     struct llama_kv_cache_view result = {
-        /*.n_cells            = */ 0,
-        /*.n_seq_max          = */ n_seq_max,
-        /*.token_count        = */ 0,
-        /*.used_cells         = */ llama_get_kv_cache_used_cells(ctx),
-        /*.max_contiguous     = */ 0,
-        /*.max_contiguous_idx = */ -1,
-        /*.cells              = */ nullptr,
-        /*.cells_sequences    = */ nullptr,
+        .n_cells            = 0,
+        .n_seq_max          = n_seq_max,
+        .token_count        = 0,
+        .used_cells         = llama_get_kv_cache_used_cells(ctx),
+        .max_contiguous     = 0,
+        .max_contiguous_idx = -1,
+        .cells              = nullptr,
+        .cells_sequences    = nullptr,
     };
     return result;
 }
@@ -21209,16 +21137,16 @@ void llama_set_causal_attn(struct llama_context * ctx, bool causal_attn)
 struct llama_batch llama_batch_get_one(llama_token * tokens, int32_t n_tokens, llama_pos pos_0, llama_seq_id seq_id)
 {
     return {
-        /*n_tokens       =*/n_tokens,
-        /*tokens         =*/tokens,
-        /*embd           =*/nullptr,
-        /*pos            =*/nullptr,
-        /*n_seq_id       =*/nullptr,
-        /*seq_id         =*/nullptr,
-        /*logits         =*/nullptr,
-        /*all_pos_0      =*/pos_0,
-        /*all_pos_1      =*/1,
-        /*all_seq_id     =*/seq_id,
+        .n_tokens       =n_tokens,
+        .token          =tokens,
+        .embd           =nullptr,
+        .pos            =nullptr,
+        .n_seq_id       =nullptr,
+        .seq_id         =nullptr,
+        .logits         =nullptr,
+        .all_pos_0      =pos_0,
+        .all_pos_1      =1,
+        .all_seq_id     =seq_id,
     };
 }
 
@@ -21707,16 +21635,16 @@ int llama_split_prefix(char * split_prefix, size_t maxlen, const char * split_pa
 struct llama_timings llama_get_timings(struct llama_context * ctx)
 {
     struct llama_timings result = {
-        /*.t_start_ms  =*/1e-3 * ctx->t_start_us,
-        /*.t_end_ms    =*/1.00 * ggml_time_ms(),
-        /*.t_load_ms   =*/1e-3 * ctx->t_load_us,
-        /*.t_sample_ms =*/1e-3 * ctx->t_sample_us,
-        /*.t_p_eval_ms =*/1e-3 * ctx->t_p_eval_us,
-        /*.t_eval_ms   =*/1e-3 * ctx->t_eval_us,
+        .t_start_ms  =1e-3 * ctx->t_start_us,
+        .t_end_ms    =1.00 * ggml_time_ms(),
+        .t_load_ms   =1e-3 * ctx->t_load_us,
+        .t_sample_ms =1e-3 * ctx->t_sample_us,
+        .t_p_eval_ms =1e-3 * ctx->t_p_eval_us,
+        .t_eval_ms   =1e-3 * ctx->t_eval_us,
 
-        /*.n_sample =*/std::max(1, ctx->n_sample),
-        /*.n_p_eval =*/std::max(0, ctx->n_p_eval),
-        /*.n_eval   =*/std::max(1, ctx->n_eval),
+        .n_sample =std::max(1, ctx->n_sample),
+        .n_p_eval =std::max(0, ctx->n_p_eval),
+        .n_eval   =std::max(1, ctx->n_eval),
     };
 
     return result;

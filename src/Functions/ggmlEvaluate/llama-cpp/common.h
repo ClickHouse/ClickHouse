@@ -243,24 +243,6 @@ std::string llama_detokenize_bpe(llama_context * ctx, const std::vector<llama_to
 bool llama_should_add_bos_token(const llama_model * model);
 
 //
-// KV cache utils
-//
-
-// Dump the KV cache view with the number of sequences per cell.
-void llama_kv_cache_dump_view(const llama_kv_cache_view & view, int row_size = 80);
-
-// Dump the KV cache view showing individual sequences in each cell (long output).
-void llama_kv_cache_dump_view_seqs(const llama_kv_cache_view & view, int row_size = 40);
-
-//
-// Embedding utils
-//
-
-void llama_embd_normalize(const float * inp, float * out, int n);
-
-float llama_embd_similarity_cos(const float * embd1, const float * embd2, int n);
-
-//
 // Control vector utils
 //
 
@@ -282,13 +264,5 @@ struct llama_control_vector_load_info
 // Load control vectors, scale each by strength, and add them together.
 // On error, returns {-1, empty}
 llama_control_vector_data llama_control_vector_load(const std::vector<llama_control_vector_load_info> & load_infos);
-
-//
-// Split utils
-//
-
-static const char * const LLM_KV_SPLIT_NO = "split.no";
-static const char * const LLM_KV_SPLIT_COUNT = "split.count";
-static const char * const LLM_KV_SPLIT_TENSORS_COUNT = "split.tensors.count";
 
 // NOLINTEND

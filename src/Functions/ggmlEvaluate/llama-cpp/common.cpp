@@ -505,159 +505,6 @@ bool llama_should_add_bos_token(const llama_model * model)
 }
 
 //
-// KV cache utils
-//
-
-void llama_kv_cache_dump_view(const llama_kv_cache_view & view, int row_size)
-{
-    static const char slot_chars[] = ".123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+";
-
-    printf(
-        "=== Dumping KV cache. total cells %d, max sequences per cell %d, populated cells %d, total tokens in cache %d, largest empty "
-        "slot=%d @ %d",
-        view.n_cells,
-        view.n_seq_max,
-        view.used_cells,
-        view.token_count,
-        view.max_contiguous,
-        view.max_contiguous_idx);
-
-    llama_kv_cache_view_cell * c_curr = view.cells;
-    llama_seq_id * cs_curr = view.cells_sequences;
-
-    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_seq_max)
-    {
-        if (i % row_size == 0)
-        {
-            printf("\n%5d: ", i);
-        }
-        int seq_count = 0;
-        for (int j = 0; j < view.n_seq_max; j++)
-        {
-            if (cs_curr[j] >= 0)
-            {
-                seq_count++;
-            }
-        }
-        putchar(slot_chars[std::min(sizeof(slot_chars) - 2, size_t(seq_count))]);
-    }
-
-    printf("\n=== Done dumping\n");
-}
-
-void llama_kv_cache_dump_view_seqs(const llama_kv_cache_view & view, int row_size)
-{
-    static const char slot_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-    printf(
-        "=== Dumping KV cache. total cells %d, max sequences per cell %d, populated cells %d, total tokens in cache %d, largest empty "
-        "slot=%d @ %d\n",
-        view.n_cells,
-        view.n_seq_max,
-        view.used_cells,
-        view.token_count,
-        view.max_contiguous,
-        view.max_contiguous_idx);
-
-    std::unordered_map<llama_seq_id, size_t> seqs;
-    llama_kv_cache_view_cell * c_curr = view.cells;
-    llama_seq_id * cs_curr = view.cells_sequences;
-
-    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_seq_max)
-    {
-        for (int j = 0; j < view.n_seq_max; j++)
-        {
-            if (cs_curr[j] < 0)
-            {
-                continue;
-            }
-            if (seqs.find(cs_curr[j]) == seqs.end())
-            {
-                if (seqs.size() + 1 >= sizeof(slot_chars))
-                {
-                    break;
-                }
-                const size_t sz = seqs.size();
-                seqs[cs_curr[j]] = sz;
-            }
-        }
-        if (seqs.size() + 1 >= sizeof(slot_chars))
-        {
-            break;
-        }
-    }
-
-    printf("=== Sequence legend: ");
-    for (const auto & it : seqs)
-    {
-        printf("%zu=%d, ", it.second, it.first);
-    }
-    printf("'+'=other sequence ids");
-
-    c_curr = view.cells;
-    cs_curr = view.cells_sequences;
-    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_seq_max)
-    {
-        if (i % row_size == 0)
-        {
-            printf("\n%5d: ", i);
-        }
-        for (int j = 0; j < view.n_seq_max; j++)
-        {
-            if (cs_curr[j] >= 0)
-            {
-                const auto & it = seqs.find(cs_curr[j]);
-                putchar(it != seqs.end() ? int(slot_chars[it->second]) : '+');
-            }
-            else
-            {
-                putchar('.');
-            }
-        }
-        putchar(' ');
-    }
-
-    printf("\n=== Done dumping\n");
-}
-
-//
-// Embedding utils
-//
-
-void llama_embd_normalize(const float * inp, float * out, int n)
-{
-    double sum = 0.0;
-    for (int i = 0; i < n; i++)
-    {
-        sum += inp[i] * inp[i];
-    }
-    sum = sqrt(sum);
-
-    const float norm = static_cast<float>(sum > 0.0 ? 1.0f / sum : 0.0f);
-
-    for (int i = 0; i < n; i++)
-    {
-        out[i] = inp[i] * norm;
-    }
-}
-
-float llama_embd_similarity_cos(const float * embd1, const float * embd2, int n)
-{
-    double sum = 0.0;
-    double sum1 = 0.0;
-    double sum2 = 0.0;
-
-    for (int i = 0; i < n; i++)
-    {
-        sum += embd1[i] * embd2[i];
-        sum1 += embd1[i] * embd1[i];
-        sum2 += embd2[i] * embd2[i];
-    }
-
-    return static_cast<float>(sum / (sqrt(sum1) * sqrt(sum2)));
-}
-
-//
 // Control vector utils
 //
 
@@ -674,14 +521,14 @@ static llama_control_vector_data llama_control_vector_load_one(const llama_contr
     // calculate size of ctx needed for tensors, ensure tensors are f32, and find max layer
     {
         struct ggml_init_params meta_params = {
-            /* .mem_size   = */ ggml_tensor_overhead() * 128 + ggml_graph_overhead(),
-            /* .mem_buffer = */ nullptr,
-            /* .no_alloc   = */ true,
+            .mem_size = ggml_tensor_overhead() * 128 + ggml_graph_overhead(),
+            .mem_buffer = nullptr,
+            .no_alloc = true,
         };
         ggml_context * meta_ctx = ggml_init(meta_params);
         struct gguf_init_params meta_gguf_params = {
-            /* .no_alloc = */ true,
-            /* .ctx      = */ &meta_ctx,
+            .no_alloc = true,
+            .ctx = &meta_ctx,
         };
         struct gguf_context * meta_ctx_gguf = gguf_init_from_file(load_info.fname.c_str(), meta_gguf_params);
         if (!meta_ctx_gguf)
@@ -757,15 +604,15 @@ static llama_control_vector_data llama_control_vector_load_one(const llama_contr
 
     // load and scale tensors into final control vector context
     struct ggml_init_params ggml_params = {
-        /* .mem_size   = */ ggml_tensor_overhead() * n_tensors + n_bytes,
-        /* .mem_buffer = */ nullptr,
-        /* .no_alloc   = */ false,
+        .mem_size = ggml_tensor_overhead() * n_tensors + n_bytes,
+        .mem_buffer = nullptr,
+        .no_alloc = false,
     };
     struct ggml_context * ctx = ggml_init(ggml_params);
 
     struct gguf_init_params params = {
-        /*.no_alloc = */ false,
-        /*.ctx      = */ &ctx,
+        .no_alloc = false,
+        .ctx = &ctx,
     };
     struct gguf_context * ctx_gguf = gguf_init_from_file(load_info.fname.c_str(), params);
     if (!ctx_gguf)
