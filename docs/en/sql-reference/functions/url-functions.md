@@ -6,7 +6,9 @@ sidebar_label: URLs
 
 # Functions for Working with URLs
 
-All these functions do not follow the RFC. They are maximally simplified for improved performance.
+:::note
+The functions mentioned in this section for the most part do not follow the RFC convention as they are maximally simplified for improved performance. Functions following a specific RFC convention have `RFC` appended to the function name and are generally less performant.
+:::
 
 ## Functions that Extract Parts of a URL
 
@@ -22,15 +24,17 @@ Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
 
 Extracts the hostname from a URL.
 
+**Syntax**
+
 ``` sql
-domain(url)
+domain(URL)
 ```
 
 **Arguments**
 
 - `url` — URL. [String](../data-types/string.md).
 
-The URL can be specified with or without a scheme. Examples:
+The URL can be specified with or without a protocol. Examples:
 
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
@@ -62,6 +66,40 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
+### domainRFC
+
+Extracts the hostname from a URL. Similar to [domain](#domain), but RFC 3986 conformant.
+
+**Syntax**
+
+``` sql
+domainRFC(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. Type: [String](../../sql-reference/data-types/string.md).
+
+**Returned values**
+
+- Host name if ClickHouse can parse the input string as a URL, otherwise an empty string. [String](../data-types/string.md).
+
+Type: `String`.
+
+**Example**
+
+``` sql
+SELECT
+    domain('http://user:password@example.com:8080/path?query=value#fragment'),
+    domainRFC('http://user:password@example.com:8080/path?query=value#fragment');
+```
+
+``` text
+┌─domain('http://user:password@example.com:8080/path?query=value#fragment')─┬─domainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
+│                                                                           │ example.com                                                                  │
+└───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### domainWithoutWWW
 
 Returns the domain and removes no more than one ‘www.’ from the beginning of it, if present.
@@ -71,7 +109,7 @@ Returns the domain and removes no more than one ‘www.’ from the beginning of
 Extracts the the top-level domain from a URL.
 
 ``` sql
-topLevelDomain(url)
+topLevelDomain(URL)
 ```
 
 **Arguments**
@@ -79,7 +117,7 @@ topLevelDomain(url)
 - `url` — URL. [String](../data-types/string.md).
 
 :::note
-The URL can be specified with or without a scheme. Examples:
+The URL can be specified with or without a protocol. Examples:
 
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
@@ -113,7 +151,7 @@ Result:
 Extracts the the top-level domain from a URL. It is similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
 
 ``` sql
-topLevelDomainRFC(url)
+topLevelDomainRFC(URL)
 ```
 
 **Arguments**
@@ -121,7 +159,7 @@ topLevelDomainRFC(url)
 - `url` — URL. [String](../data-types/string.md).
 
 :::note
-The URL can be specified with or without a scheme. Examples:
+The URL can be specified with or without a protocol. Examples:
 
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
@@ -139,48 +177,241 @@ https://clickhouse.com/time/
 Query:
 
 ``` sql
-SELECT topLevelDomainRFC('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
+SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http://foo:foo%41bar@foo.com');
 ```
 
 Result:
 
 ``` text
-┌─topLevelDomainRFC('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
-│ com                                                                   │
-└───────────────────────────────────────────────────────────────────────┘
+┌─topLevelDomain('http://foo:foo%41bar@foo.com')─┬─topLevelDomainRFC('http://foo:foo%41bar@foo.com')─┐
+│                                                │ com                                               │
+└────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
 ### firstSignificantSubdomain
 
 Returns the “first significant subdomain”. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
 
+**Syntax**
+
+```sql
+firstSignificantSubdomain(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The first signficant subdomain. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT firstSignificantSubdomain('http://www.example.com/a/b/c?a=b')
+```
+
+Result:
+
+```reference
+┌─firstSignificantSubdomain('http://www.example.com/a/b/c?a=b')─┐
+│ example                                                       │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### firstSignificantSubdomainRFC
+
+Returns the “first significant subdomain”, similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but according to RFC 1034.
+
+**Syntax**
+
+```sql
+firstSignificantSubdomainRFC(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The first signficant subdomain. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    firstSignificantSubdomain('http://user:password@example.com:8080/path?query=value#fragment'),
+    firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment');
+```
+
+Result:
+
+```reference
+┌─firstSignificantSubdomain('http://user:password@example.com:8080/path?query=value#fragment')─┬─firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
+│                                                                                              │ example                                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### cutToFirstSignificantSubdomain
 
-Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
+Returns the part of the domain that includes top-level subdomains up to the [“first significant subdomain”](#firstsignificantsubdomain).
 
-For example:
+**Syntax**
 
-- `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
-- `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
-- `cutToFirstSignificantSubdomain('tr') = ''`.
+```sql
+cutToFirstSignificantSubdomain(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Part of the domain that includes top-level subdomains up to the first signficant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/'),
+    cutToFirstSignificantSubdomain('www.tr'),
+    cutToFirstSignificantSubdomain('tr');
+```
+
+Result:
+
+```response
+┌─cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/')─┬─cutToFirstSignificantSubdomain('www.tr')─┬─cutToFirstSignificantSubdomain('tr')─┐
+│ clickhouse.com.tr                                                 │ tr                                       │                                      │
+└───────────────────────────────────────────────────────────────────┴──────────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+### cutToFirstSignificantSubdomainRFC
+
+Returns the part of the domain that includes top-level subdomains up to the [“first significant subdomain”](#firstsignificantsubdomain). It is similar to [cutToFirstSignificantSubdomain](#cuttofirstsignificantsubdomain) but follows stricter rules to be compatible with RFC 3986 and is less performant.
+
+**Syntax**
+
+```sql
+cutToFirstSignificantSubdomainRFC(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Part of the domain that includes top-level subdomains up to the first signficant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    cutToFirstSignificantSubdomain('http://user:password@example.com:8080'),
+    cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080');
+```
+
+Result:
+
+```response
+┌─cutToFirstSignificantSubdomain('http://user:password@example.com:8080')─┬─cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080')─┐
+│                                                                         │ example.com                                                                │
+└─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ### cutToFirstSignificantSubdomainWithWWW
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
 
-For example:
+**Syntax**
 
-- `cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
-- `cutToFirstSignificantSubdomainWithWWW('www.tr') = 'www.tr'`.
-- `cutToFirstSignificantSubdomainWithWWW('tr') = ''`.
+```sql
+cutToFirstSignificantSubdomainWithWWW(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Part of the domain that includes top-level subdomains up to the first signficant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/'),
+    cutToFirstSignificantSubdomainWithWWW('www.tr'),
+    cutToFirstSignificantSubdomainWithWWW('tr');
+```
+
+Result:
+
+```response
+┌─cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/')─┬─cutToFirstSignificantSubdomainWithWWW('www.tr')─┬─cutToFirstSignificantSubdomainWithWWW('tr')─┐
+│ clickhouse.com.tr                                                        │ www.tr                                          │                                             │
+└──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+```
+
+### cutToFirstSignificantSubdomainWithWWWRFC
+
+Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www". Similar to [cutToFirstSignificantSubdomainWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but follows stricter rules to be compatible with RFC 3986 and is less performant.
+
+**Syntax**
+
+```sql
+cutToFirstSignificantSubdomainWithWWW(URL)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Part of the domain that includes top-level subdomains up to the first signficant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    cutToFirstSignificantSubdomainWithWWW('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy'),
+    cutToFirstSignificantSubdomainWithWWWRFC('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy');
+```
+
+Result:
+
+```response
+┌─cutToFirstSignificantSubdomainWithWWW('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy')─┬─cutToFirstSignificantSubdomainWithWWWRFC('http:%2F%2Fwwwww.nova@mail.ru/economicheskiy')─┐
+│                                                                                       │ mail.ru                                                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### cutToFirstSignificantSubdomainCustom
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
 
-Can be useful if you need fresh TLD list or you have custom.
+This can be useful if you need a fresh TLD list or if you have a custom list.
 
-Configuration example:
+**Configuration example**
 
 ```xml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
@@ -226,13 +457,36 @@ Result:
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
 
+### cutToFirstSignificantSubdomainCustomRFC
+
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name. It is similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomaincustom) but follows stricter rules according to RFC 3986 and is generally less performant as a result.
+
+**Syntax**
+
+``` sql
+cutToFirstSignificantSubdomainRFC(URL, TLD)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
+
+**See Also**
+
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+
 ### cutToFirstSignificantSubdomainCustomWithWWW
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name.
 
-Can be useful if you need fresh TLD list or you have custom.
+It can be useful if you need a fresh TLD list or if you have a custom list.
 
-Configuration example:
+**Configuration example**
 
 ```xml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
@@ -273,6 +527,29 @@ Result:
 │ www.foo                                                                      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**See Also**
+
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### cutToFirstSignificantSubdomainCustomWithWWWRFC
+
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name. It is similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but follows stricter rules according to RFC 3986 and is generally less performant as a result.
+
+**Syntax**
+
+```sql
+cutToFirstSignificantSubdomainCustomWithWWWRFC(URL, TLD)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../../sql-reference/data-types/string.md).
 
 **See Also**
 
@@ -330,9 +607,103 @@ Result:
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
 
-### port(URL\[, default_port = 0\])
+### firstSignificantSubdomainCustomRFC
 
-Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
+Returns the first significant subdomain. Accepts customs TLD list name. Similar to [firstSignificantSubdomainCustom](#firstsignificantsubdomaincustom) but follows stricter rules according to RFC 3986 and is generally less performant as a result.
+
+**Syntax**
+
+```sql
+firstSignificantSubdomainCustomRFC(URL, TLD)
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- First significant subdomain.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**See Also**
+
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+
+### port
+
+Returns the port or `default_port` if there is no port in the `URL` (or in case of validation error).
+
+**Syntax**
+
+```sql
+port(URL [, default_port = 0])
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../data-types/string.md).
+- `default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
+
+**Returned value**
+
+- Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT port('http://paul@www.example.com:80/');
+```
+
+Result:
+
+```response
+┌─port('http://paul@www.example.com:80/')─┐
+│                                      80 │
+└─────────────────────────────────────────┘
+```
+
+
+### portRFC
+
+Returns the port or `default_port` if there is no port in the `URL` (or in case of validation error). Similar to [port](#port), but RFC 3986 conformant.
+
+**Syntax**
+
+```sql
+portRFC(URL [, default_port = 0])
+```
+
+**Arguments**
+
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
+
+**Returned value**
+
+- Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    port('http://user:password@example.com:8080'),
+    portRFC('http://user:password@example.com:8080');
+```
+
+Result:
+
+```resposne
+┌─port('http://user:password@example.com:8080')─┬─portRFC('http://user:password@example.com:8080')─┐
+│                                             0 │                                             8080 │
+└───────────────────────────────────────────────┴──────────────────────────────────────────────────┘
+```
 
 ### path
 
@@ -508,7 +879,7 @@ cutURLParameter(URL, name)
 
 **Arguments**
 
-- `url` — URL. [String](../data-types/string.md).
+- `URL` — URL. [String](../data-types/string.md).
 - `name` — name of URL parameter. [String](../data-types/string.md) or [Array](../data-types/array.md) of Strings.
 
 **Returned value**
