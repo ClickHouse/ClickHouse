@@ -33,6 +33,11 @@ def list_objects(cluster, path="data/", hint="list_objects"):
     return objects
 
 
+def check_exists(zk, path):
+    zk.sync(path)
+    return zk.exists(path)
+
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -45,7 +50,7 @@ def start_cluster():
 
 
 def create_replicated_table(node, table_name):
-    engine = f"ReplicatedMergeTree('/clickhouse/tables/1/{table_name}', '{{replica}}')"
+    engine = f"ReplicatedMergeTree('/clickhouse/tables/shard1/{table_name}', '{{replica}}')"
 
     node.query_with_retry(
         f"""
@@ -78,7 +83,7 @@ def create_s3_table(node, table_name):
 def test_drop_replicated_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
 
-    create_replicated_table(replica1, "test_replicated_table")
+    create_replicated_table(node=replica1, table_name="test_replicated_table")
 
     replica1.query(
         "INSERT INTO test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
@@ -88,12 +93,31 @@ def test_drop_replicated_table(start_cluster):
     replica1.query(
         "DETACH TABLE test_replicated_table ON CLUSTER test_cluster PERMANENTLY;"
     )
+
+    zk = cluster.get_kazoo_client("zoo1")
+
+    exists_replica_1_1 = check_exists(
+        zk,
+        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
+            table_name="test_replicated_table", replica=replica1.name
+        ),
+    )
+    assert exists_replica_1_1 != None
+
     replica1.query(
         "SET allow_experimental_drop_detached_table=1; DROP TABLE test_replicated_table ON CLUSTER test_cluster SYNC;"
     )
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
+
+    exists_node = check_exists(
+        zk,
+        "/clickhouse/tables/shard1/{table_name}/".format(
+            table_name="test_replicated_table"
+        ),
+    )
+    assert exists_node == None
 
 
 def test_drop_s3_table(start_cluster):
