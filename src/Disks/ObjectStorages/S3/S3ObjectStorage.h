@@ -163,6 +163,8 @@ public:
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
+    std::shared_ptr<const S3::Client> getS3StorageClient() override;
+
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { key_generator = gen; }
 
 private:
