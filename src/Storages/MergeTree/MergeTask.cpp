@@ -5,15 +5,9 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include "Common/DateLUT.h"
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include "Core/NamesAndTypes.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/IndicesDescription.h"
-#include "Storages/MergeTree/MergeTreeIndices.h"
-#include "Storages/ProjectionsDescription.h"
-#include "Storages/StorageInMemoryMetadata.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -72,20 +66,6 @@ static Statistics getStatisticsForColumns(
         }
     }
     return statistics;
-}
-
-static void addSkipIndexesExpressions(
-    QueryPipelineBuilder & builder,
-    const IndicesDescription & indexes,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context)
-{
-    builder.addTransform(std::make_shared<ExpressionTransform>(
-        builder.getHeader(),
-        indexes.getSingleExpressionForIndices(metadata_snapshot->getColumns(),
-        context)));
-
-    builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
 }
 
 static void addMissedColumnsToSerializationInfos(
@@ -147,6 +127,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     {
         auto index_columns = index.expression->getRequiredColumns();
 
+        /// Calculate indexes that depend only on one column on vertical
+        /// stage and other indexes on horizonatal stage of merge.
         if (index_columns.size() == 1)
         {
             const auto & column_name = index_columns.front();
@@ -167,6 +149,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         {
             global_ctx->merging_columns.emplace_back(column);
 
+            /// If column is in horizontal stage we need to calculate its indexes on horizontal stage as well
             auto it = global_ctx->skip_indexes_by_column.find(column.name);
             if (it != global_ctx->skip_indexes_by_column.end())
             {
@@ -630,12 +613,12 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         pipes.emplace_back(std::move(pipe));
     }
 
-    bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
-
     auto pipe = Pipe::unitePipes(std::move(pipes));
     ctx->rows_sources_read_buf->seek(0, 0);
 
     const auto data_settings = global_ctx->data->getSettings();
+    bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
+
     auto transform = std::make_unique<ColumnGathererTransform>(
         pipe.getHeader(),
         pipe.numOutputPorts(),
@@ -644,9 +627,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         data_settings->merge_max_block_size_bytes,
         is_result_sparse);
 
-    QueryPipelineBuilder builder;
-    builder.init(std::move(pipe));
-    builder.addTransform(std::move(transform));
+    pipe.addTransform(std::move(transform));
 
     MergeTreeIndices indexes_to_recalc;
     auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
@@ -654,10 +635,16 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     if (indexes_it != global_ctx->skip_indexes_by_column.end())
     {
         indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
-        addSkipIndexesExpressions(builder, indexes_it->second, global_ctx->metadata_snapshot, global_ctx->data->getContext());
+
+        pipe.addTransform(std::make_shared<ExpressionTransform>(
+            pipe.getHeader(),
+            indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(),
+            global_ctx->data->getContext())));
+
+        pipe.addTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
     }
 
-    ctx->column_parts_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
 
     /// Dereference unique_ptr
     ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
@@ -1161,7 +1148,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     }
 
     if (!global_ctx->merging_skip_indexes.empty())
-        addSkipIndexesExpressions(*builder, global_ctx->merging_skip_indexes, global_ctx->metadata_snapshot, global_ctx->data->getContext());
+    {
+        builder->addTransform(std::make_shared<ExpressionTransform>(
+            builder->getHeader(),
+            global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(),
+            global_ctx->data->getContext())));
+
+        builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
+    }
 
     if (!subqueries.empty())
         builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), global_ctx->context);
@@ -1210,7 +1204,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_columns = global_ctx->gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
+    bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
 
     bool enough_total_rows = total_rows_count >= data_settings->vertical_merge_algorithm_min_rows_to_activate;
 
@@ -1218,7 +1212,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
 
     bool no_parts_overflow = global_ctx->future_part->parts.size() <= RowSourcePart::MAX_PARTS;
 
-    auto merge_alg = (is_supported_storage && enough_total_rows && enough_total_bytes && enough_columns && no_parts_overflow) ?
+    auto merge_alg = (is_supported_storage && enough_total_rows && enough_total_bytes && enough_ordinary_cols && no_parts_overflow) ?
                         MergeAlgorithm::Vertical : MergeAlgorithm::Horizontal;
 
     return merge_alg;

@@ -2,11 +2,8 @@
 
 #include <list>
 #include <memory>
-#include <unordered_map>
 
 #include <Common/filesystemHelpers.h>
-#include "Storages/MergeTree/MergeTreeIndices.h"
-#include "Storages/Statistics/Statistics.h"
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -27,6 +24,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB
