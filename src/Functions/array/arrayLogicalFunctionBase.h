@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -578,6 +579,14 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
                 arguments[i]->getName());
 
         const auto & nested_type = array_type->getNestedType();
+
+        if (typeid_cast<const DataTypeDynamic *>(nested_type.get()))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument {} for function {} must be an array of non-dynamic type but it has type {}.",
+                i,
+                getName(),
+                arguments[i]->getName());
 
         if (nested_type->isNullable())
             has_nullable = true;
