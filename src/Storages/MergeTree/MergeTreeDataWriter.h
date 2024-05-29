@@ -47,7 +47,6 @@ public:
         : data(data_)
         , log(getLogger(data.getLogName() + " (Writer)"))
     {
-        LOG_DEBUG(log, "MergeTreeDataWriter() called from:\n{}", StackTrace().toString());
     }
 
     /** Split the block to blocks, each of them must be written as separate part.

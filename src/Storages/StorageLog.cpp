@@ -1,6 +1,7 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
 
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>

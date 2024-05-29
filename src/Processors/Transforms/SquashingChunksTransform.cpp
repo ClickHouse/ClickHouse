@@ -17,8 +17,8 @@ SquashingChunksTransform::SquashingChunksTransform(
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
-        LOG_DEBUG(getLogger("SquashingChunksTransform"),
-              "onConsume {}", chunk.getNumRows());
+        // LOG_DEBUG(getLogger("SquashingChunksTransform"),
+        //       "onConsume {}", chunk.getNumRows());
 
     auto result = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     cur_chunk = Chunk(result.block.getColumns(), result.block.rows());
@@ -37,14 +37,14 @@ void SquashingChunksTransform::onConsume(Chunk chunk)
             cur_chunkinfos = {};
         }
 
-        LOG_DEBUG(getLogger("SquashingChunksTransform"),
-              "got result rows {}, size {}, columns {}, infos: {}/{}",
-              cur_chunk.getNumRows(), cur_chunk.bytes(), cur_chunk.getNumColumns(),
-              cur_chunk.getChunkInfos().size(), cur_chunk.getChunkInfos().debug());
+        // LOG_DEBUG(getLogger("SquashingChunksTransform"),
+        //       "got result rows {}, size {}, columns {}, infos: {}/{}",
+        //       cur_chunk.getNumRows(), cur_chunk.bytes(), cur_chunk.getNumColumns(),
+        //       cur_chunk.getChunkInfos().size(), cur_chunk.getChunkInfos().debug());
     }
     else
     {
-        assert(!result.input_block_delayed);
+        assert(result.input_block_delayed);
         cur_chunkinfos = std::move(chunk.getChunkInfos());
     }
 }
@@ -90,10 +90,10 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
-              "transform rows {}, size {}, columns {}, infos: {}/{}",
-              chunk.getNumRows(), chunk.bytes(), chunk.getNumColumns(),
-              chunk.getChunkInfos().size(), chunk.getChunkInfos().debug());
+    // LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
+    //           "transform rows {}, size {}, columns {}, infos: {}/{}",
+    //           chunk.getNumRows(), chunk.bytes(), chunk.getNumColumns(),
+    //           chunk.getChunkInfos().size(), chunk.getChunkInfos().debug());
 
     auto result = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 
@@ -111,14 +111,14 @@ void SimpleSquashingChunksTransform::consume(Chunk chunk)
             squashed_info = {};
         }
 
-        LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
-              "got result rows {}, size {}, columns {}, infos: {}/{}",
-              squashed_chunk.getNumRows(), squashed_chunk.bytes(), squashed_chunk.getNumColumns(),
-              squashed_chunk.getChunkInfos().size(), squashed_chunk.getChunkInfos().debug());
+        // LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
+        //       "got result rows {}, size {}, columns {}, infos: {}/{}",
+        //       squashed_chunk.getNumRows(), squashed_chunk.bytes(), squashed_chunk.getNumColumns(),
+        //       squashed_chunk.getChunkInfos().size(), squashed_chunk.getChunkInfos().debug());
     }
     else
     {
-        assert(!result.input_block_delayed);
+        chassert(result.input_block_delayed);
         squashed_info = std::move(chunk.getChunkInfos());
     }
 }
