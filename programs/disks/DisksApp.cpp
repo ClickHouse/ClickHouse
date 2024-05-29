@@ -256,7 +256,7 @@ void DisksApp::addOptions()
 {
     options_description.add_options()("help,h", "Print common help message")("config-file,C", po::value<String>(), "Set config file")(
         "disk", po::value<String>(), "Set disk name")("save-logs", "Save logs to a file")(
-        "log-level", po::value<String>(), "Logging level");
+        "log-level", po::value<String>(), "Logging level")("query,q", po::value<String>(), "Query for a non-interactive mode");
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("copy", makeCommandCopy());
@@ -284,6 +284,8 @@ void DisksApp::processOptions()
         config().setBool("save-logs", true);
     if (options.count("log-level"))
         config().setString("log-level", options["log-level"].as<String>());
+    if (options.count("query"))
+        query = std::optional{options["query"].as<String>()};
 }
 
 
@@ -468,7 +470,14 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     suggest.setCompletionsCallback([&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 
-    runInteractiveReplxx();
+    if (!query.has_value())
+    {
+        runInteractiveReplxx();
+    }
+    else
+    {
+        processQueryText(query.value());
+    }
 
     return Application::EXIT_OK;
 }

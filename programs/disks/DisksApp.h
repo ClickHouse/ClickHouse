@@ -67,6 +67,8 @@ private:
     CommandLineOptions options;
     std::unordered_map<String, CommandPtr> command_descriptions;
 
+    std::optional<String> query;
+
     const std::unordered_map<String, String> aliases
         = {{"cp", "copy"},
            {"mv", "move"},
