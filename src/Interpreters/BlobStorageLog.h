@@ -55,7 +55,11 @@ public:
     using SystemLog<BlobStorageLogElement>::SystemLog;
 
     /// We should not log events for table itself to avoid infinite recursion
-    bool shouldIgnorePath(const String & path) const;
+    bool shouldIgnorePath(const String & path) const
+    {
+        return !prefix_to_ignore.empty() && path.starts_with(prefix_to_ignore);
+    }
+
 protected:
     void prepareTable() override;
     void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;

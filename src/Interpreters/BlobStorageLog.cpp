@@ -98,10 +98,4 @@ void BlobStorageLog::prepareTable()
     }
 }
 
-bool BlobStorageLog::shouldIgnorePath(const String & path) const
-{
-    /// Avoid logging info for data in `blob_storage_log` itself
-    return !prefix_to_ignore.empty() && normalizePath(path).starts_with(prefix_to_ignore);
-}
-
 }
