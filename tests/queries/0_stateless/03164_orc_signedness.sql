@@ -1,3 +1,5 @@
+-- Tags: no-fasttest, no-parallel
+
 set input_format_orc_filter_push_down = 1;
 set engine_file_truncate_on_insert = 1;
 
