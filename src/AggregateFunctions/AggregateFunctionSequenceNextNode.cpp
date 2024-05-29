@@ -341,7 +341,7 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    inline std::optional<size_t> getBaseIndex(Data & data) const
+    std::optional<size_t> getBaseIndex(Data & data) const
     {
         if (data.value.size() == 0)
             return {};
