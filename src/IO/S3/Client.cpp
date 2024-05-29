@@ -743,26 +743,18 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
 
     std::string region;
-
-    try
+    auto outcome = HeadBucket(req);
+    if (outcome.IsSuccess())
     {
-        auto outcome = HeadBucket(req);
-        if (outcome.IsSuccess())
-        {
-            const auto & result = outcome.GetResult();
-            region = result.GetBucketRegion();
-        }
-        else
-        {
-            static const std::string region_header = "x-amz-bucket-region";
-            const auto & headers = outcome.GetError().GetResponseHeaders();
-            if (auto it = headers.find(region_header); it != headers.end())
-                region = it->second;
-        }
+        const auto & result = outcome.GetResult();
+        region = result.GetBucketRegion();
     }
-    catch (...)
+    else
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        static const std::string region_header = "x-amz-bucket-region";
+        const auto & headers = outcome.GetError().GetResponseHeaders();
+        if (auto it = headers.find(region_header); it != headers.end())
+            region = it->second;
     }
 
     if (region.empty())
