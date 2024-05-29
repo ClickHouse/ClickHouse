@@ -272,7 +272,7 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+    ReadFromMergeTree::AnalysisResult getAnalysisResult();
 
     AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;

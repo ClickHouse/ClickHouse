@@ -1851,10 +1851,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     return output_each_partition_through_separate_port = true;
 }
 
-ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
+ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult()
 {
-    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
-    return *result_ptr;
+    if (!analyzed_result_ptr)
+        analyzed_result_ptr = selectRangesToRead();
+
+    return *analyzed_result_ptr;
 }
 
 bool ReadFromMergeTree::isQueryWithSampling() const
