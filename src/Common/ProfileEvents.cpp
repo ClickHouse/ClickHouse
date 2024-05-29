@@ -417,6 +417,13 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
+    M(DiskPlainRewritableAzureDirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for AzureObjectStorage.") \
+    M(DiskPlainRewritableAzureDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for AzureObjectStorage.") \
+    M(DiskPlainRewritableLocalDirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for LocalObjectStorage.") \
+    M(DiskPlainRewritableLocalDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for LocalObjectStorage.") \
+    M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.") \
+    M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.") \
+    \
     M(S3Clients, "Number of created S3 clients.") \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
     \
