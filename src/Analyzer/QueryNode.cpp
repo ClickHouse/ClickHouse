@@ -20,6 +20,9 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/UnionNode.h>
 
@@ -29,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -36,6 +40,7 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
 {
+    children[arguments_child_index] = std::make_shared<ListNode>();
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
     children[group_by_child_index] = std::make_shared<ListNode>();
@@ -96,6 +101,27 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
 }
 
+DataTypePtr QueryNode::getResultType() const
+{
+    if (projection_columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not resolved");
+
+    DataTypes types;
+    types.reserve(projection_columns.size());
+
+    for (const auto & projection_column : projection_columns)
+        types.emplace_back(projection_column.type);
+
+    if (types.size() != 1)
+        types = {std::make_shared<DataTypeTuple>(types)};
+
+    auto & type = types[0];
+    if (!type->isNullable() && type->canBeInsideNullable())
+        type = makeNullable(type);
+
+    return type;
+}
+
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
@@ -140,6 +166,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
+
+    if (hasArguments())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
+        getArguments().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 
     if (hasWith())
     {

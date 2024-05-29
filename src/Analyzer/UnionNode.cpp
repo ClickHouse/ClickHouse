@@ -47,6 +47,7 @@ UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
         union_mode == SelectUnionMode::INTERSECT_DEFAULT)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
+    children[arguments_child_index] = std::make_shared<ListNode>();
     children[queries_child_index] = std::make_shared<ListNode>();
 }
 
@@ -158,6 +159,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", cte_name: " << cte_name;
 
     buffer << ", union_mode: " << toString(union_mode);
+
+    if (hasArguments())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
+        getArguments().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);

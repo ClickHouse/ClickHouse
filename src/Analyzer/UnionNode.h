@@ -139,6 +139,24 @@ public:
         return union_mode;
     }
 
+    /// Returns true if union node has arguments, false otherwise
+    bool hasArguments() const
+    {
+        return !getArguments().getNodes().empty();
+    }
+
+    /// Get union arguments
+    const ListNode & getArguments() const
+    {
+        return children[arguments_child_index]->as<const ListNode &>();
+    }
+
+    /// Get union arguments
+    ListNode & getArguments()
+    {
+        return children[arguments_child_index]->as<ListNode &>();
+    }
+
     /// Get union node queries
     const ListNode & getQueries() const
     {
@@ -197,7 +215,8 @@ private:
     ContextMutablePtr context;
     SelectUnionMode union_mode;
 
-    static constexpr size_t queries_child_index = 0;
+    static constexpr size_t arguments_child_index = 0;
+    static constexpr size_t queries_child_index = 1;
     static constexpr size_t children_size = queries_child_index + 1;
 };
 

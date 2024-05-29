@@ -1,0 +1,36 @@
+-- { echoOn }
+
+SELECT (SELECT id) FROM test_table ORDER BY id;
+0
+1
+2
+SELECT '--';
+--
+SELECT (SELECT test_table.id) FROM test_table ORDER BY id;
+0
+1
+2
+SELECT '--';
+--
+SELECT (SELECT value) FROM test_table ORDER BY id;
+Value_0
+Value_1
+Value_2
+SELECT '--';
+--
+SELECT (SELECT test_table.value) FROM test_table ORDER BY id;
+Value_0
+Value_1
+Value_2
+SELECT '--';
+--
+SELECT (SELECT test_table.id + length(test_table.value)) FROM test_table ORDER BY id;
+7
+8
+9
+SELECT '--';
+--
+SELECT (SELECT test_table.id, test_table.value) FROM test_table ORDER BY id;
+(0,'Value_0')
+(1,'Value_1')
+(2,'Value_2')

@@ -94,6 +94,66 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
     return false;
 }
 
+namespace
+{
+
+class CollectArgumentsVisitor : public ConstInDepthQueryTreeVisitor<CollectArgumentsVisitor>
+{
+public:
+    explicit CollectArgumentsVisitor()
+    {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::COLUMN)
+        {
+            potential_arguments.push_back(node);
+            return;
+        }
+
+        source_nodes.insert(node);
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        auto * query_node = child_node->as<QueryNode>();
+        auto * union_node = child_node->as<UnionNode>();
+        if (!query_node && !union_node)
+            return true;
+
+        const auto & subquery_node_arguments = query_node ? query_node->getArguments().getNodes() : union_node->getArguments().getNodes();
+        potential_arguments.insert(potential_arguments.end(), subquery_node_arguments.begin(), subquery_node_arguments.end());
+
+        return false;
+    }
+
+    QueryTreeNodes potential_arguments;
+    std::unordered_set<QueryTreeNodePtr> source_nodes;
+};
+
+}
+
+QueryTreeNodes collectQueryOrUnionNodeArguments(const QueryTreeNodePtr & node)
+{
+    CollectArgumentsVisitor visitor;
+    visitor.visit(node);
+
+    QueryTreeNodes arguments;
+
+    for (const auto & potential_argument : visitor.potential_arguments)
+    {
+        const auto & potential_argument_column_node = potential_argument->as<const ColumnNode &>();
+        auto potential_argument_column_source = potential_argument_column_node.getColumnSourceOrNull();
+        if (!potential_argument_column_source || visitor.source_nodes.contains(potential_argument_column_source))
+            continue;
+
+        arguments.push_back(potential_argument);
+    }
+
+    return arguments;
+}
+
 bool isNameOfInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||
