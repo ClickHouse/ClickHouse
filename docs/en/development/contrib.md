@@ -26,7 +26,7 @@ Each third-party library must reside in a dedicated directory under the `contrib
 Avoid dumping copies of external code into the library directory.
 Instead create a Git submodule to pull third-party code from an external upstream repository.
 
-All submodules used by ClickHouse are listed in `.gitmodule`.
+All submodules used by ClickHouse are listed in the `.gitmodule` file.
 If the library can be used as-is (the default case), you can reference the upstream repository directly.
 If the library needs patching, create a fork of the upstream repository in the [ClickHouse organization in GitHub](https://github.com/ClickHouse).
 
