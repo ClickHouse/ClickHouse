@@ -4,6 +4,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
+#include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB
@@ -21,31 +22,48 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
-    /// Construct constant query tree node from constant value and source expression
-    explicit ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression);
+    /// Construct constant query tree node from constant column, constant type and source expression
+    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr constant_type_, QueryTreeNodePtr source_expression_);
 
-    /// Construct constant query tree node from constant value
-    explicit ConstantNode(ConstantValuePtr constant_value_);
+    /// Construct constant query tree node from constant column and data type
+    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr constant_type_);
 
-    /** Construct constant query tree node from field and data type.
-      *
-      * Throws exception if value cannot be converted to value data type.
-      */
-    explicit ConstantNode(Field value_, DataTypePtr value_data_type_);
+    /// Construct constant query tree node from constant column, data type will be derived from constant column value
+    explicit ConstantNode(ColumnPtr constant_column_);
+
+    /// Construct constant query tree node from field, constant type and source expression
+    explicit ConstantNode(const Field & constant_value_, DataTypePtr constant_type_, QueryTreeNodePtr source_expression_);
+
+    /// Construct constant query tree node from field and constant type
+    explicit ConstantNode(const Field & constant_value_, DataTypePtr constant_type_);
 
     /// Construct constant query tree node from field, data type will be derived from field value
-    explicit ConstantNode(Field value_);
+    explicit ConstantNode(const Field & constant_value_);
+
+    /// Get constant column
+    const ColumnPtr & getConstantColumn() const
+    {
+        return constant_column;
+    }
 
     /// Get constant value
-    const Field & getValue() const
+    void getValue(Field & out) const
     {
-        return constant_value->getValue();
+        constant_column->get(0, out);
+    }
+
+    /// Get constant value
+    Field getValue() const
+    {
+        Field out;
+        constant_column->get(0, out);
+        return out;
     }
 
     /// Get constant value string representation
-    const String & getValueStringRepresentation() const
+    String getValueStringRepresentation() const
     {
-        return value_string;
+        return applyVisitor(FieldVisitorToString(), getValue());
     }
 
     /// Returns true if constant node has source expression, false otherwise
@@ -73,7 +91,7 @@ public:
 
     DataTypePtr getResultType() const override
     {
-        return constant_value->getType();
+        return constant_type;
     }
 
     /// Check if conversion to AST requires wrapping with _CAST function.
@@ -101,8 +119,9 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    ConstantValuePtr constant_value;
-    String value_string;
+    /// Mutable for lazy evaluation
+    mutable ColumnPtr constant_column;
+    DataTypePtr constant_type;
     QueryTreeNodePtr source_expression;
     size_t mask_id = 0;
 
