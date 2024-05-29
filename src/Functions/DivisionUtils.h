@@ -68,7 +68,7 @@ struct DivideIntegralImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
         using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
@@ -120,7 +120,7 @@ struct ModuloImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {
@@ -175,7 +175,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
         if constexpr (is_signed_v<A>)

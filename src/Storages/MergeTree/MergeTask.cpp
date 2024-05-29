@@ -598,8 +598,9 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         pipes.emplace_back(std::move(pipe));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+    bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
 
+    auto pipe = Pipe::unitePipes(std::move(pipes));
     ctx->rows_sources_read_buf->seek(0, 0);
 
     const auto data_settings = global_ctx->data->getSettings();
@@ -608,7 +609,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         pipe.numOutputPorts(),
         *ctx->rows_sources_read_buf,
         data_settings->merge_max_block_size,
-        data_settings->merge_max_block_size_bytes);
+        data_settings->merge_max_block_size_bytes,
+        is_result_sparse);
 
     pipe.addTransform(std::move(transform));
 

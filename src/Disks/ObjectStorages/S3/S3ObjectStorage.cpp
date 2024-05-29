@@ -495,13 +495,14 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         try
         {
             copyS3File(
-                current_client,
-                uri.bucket,
-                object_from.remote_path,
-                0,
-                size,
-                dest_s3->uri.bucket,
-                object_to.remote_path,
+                /*src_s3_client=*/current_client,
+                /*src_bucket=*/uri.bucket,
+                /*src_key=*/object_from.remote_path,
+                /*src_offset=*/0,
+                /*src_size=*/size,
+                /*dest_s3_client=*/current_client,
+                /*dest_bucket=*/dest_s3->uri.bucket,
+                /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
                 patchSettings(read_settings),
                 BlobStorageLogWriter::create(disk_name),
@@ -535,13 +536,15 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
 
-    copyS3File(current_client,
-        uri.bucket,
-        object_from.remote_path,
-        0,
-        size,
-        uri.bucket,
-        object_to.remote_path,
+    copyS3File(
+        /*src_s3_client=*/current_client,
+        /*src_bucket=*/uri.bucket,
+        /*src_key=*/object_from.remote_path,
+        /*src_offset=*/0,
+        /*src_size=*/size,
+        /*dest_s3_client=*/current_client,
+        /*dest_bucket=*/uri.bucket,
+        /*dest_key=*/object_to.remote_path,
         settings_ptr->request_settings,
         patchSettings(read_settings),
         BlobStorageLogWriter::create(disk_name),
@@ -575,24 +578,22 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto new_s3_settings = getSettings(config, config_prefix, context, context->getSettingsRef().s3_validate_request_settings);
-    if (!static_headers.empty())
-    {
-        new_s3_settings->auth_settings.headers.insert(
-            new_s3_settings->auth_settings.headers.end(),
-            static_headers.begin(), static_headers.end());
-    }
+    auto settings_from_config = getSettings(config, config_prefix, context, context->getSettingsRef().s3_validate_request_settings);
+    auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
+    modified_settings->auth_settings.updateFrom(settings_from_config->auth_settings);
+    modified_settings->request_settings = settings_from_config->request_settings;
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
-        new_s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
+        modified_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
 
-    auto current_s3_settings = s3_settings.get();
-    if (options.allow_client_change && (current_s3_settings->auth_settings.hasUpdates(new_s3_settings->auth_settings) || for_disk_s3))
+    auto current_settings = s3_settings.get();
+    if (options.allow_client_change
+        && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
     {
-        auto new_client = getClient(config, config_prefix, context, *new_s3_settings, for_disk_s3, &uri);
+        auto new_client = getClient(config, config_prefix, context, *modified_settings, for_disk_s3, &uri);
         client.set(std::move(new_client));
     }
-    s3_settings.set(std::move(new_s3_settings));
+    s3_settings.set(std::move(modified_settings));
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
@@ -617,6 +618,11 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
     return key_generator->generate(path, /* is_directory */ false);
+}
+
+std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
+{
+    return client.get();
 }
 
 }
