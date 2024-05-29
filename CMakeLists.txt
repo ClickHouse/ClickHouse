@@ -119,6 +119,8 @@ add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
 
+include (cmake/instrument.cmake)
+
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
