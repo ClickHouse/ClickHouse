@@ -7,31 +7,31 @@ sidebar_label: URLs
 # Functions for Working with URLs
 
 :::note
-The functions mentioned in this section for the most part do not follow the RFC-3986 convention as they are maximally simplified for improved performance. Functions following the RFC-3986 convention have `RFC` appended to the function name and are generally less performant. 
+The functions mentioned in this section for the most part do not follow the RFC-3986 convention as they are maximally simplified for improved performance. Functions following the RFC-3986 convention have `RFC` appended to the function name and are generally less performant.
 
-- When should I pick the non-`RFC` variant? 
+- When should I pick the non-`RFC` variant?
 — Pick the non-`RFC` variant when working with domains which are allowed to be publicly registered and when user info and the `@` symbol does not appear in the URL.
 :::
 
-The table below details which symbols are restricted (`✗`) and which are available (`✔`) for use in the whole URL between the two variants. 
+The table below details which symbols are restricted (`✗`) and which are available (`✔`) for use in the whole URL between the two variants.
 
 |Symbol | non-`RFC`| `RFC` |
 |-------|----------|-------|
-| ' '   | ✗        |✗      |                                                                             
-|  \t   | ✗        |✗      |                                                                              
-|  <    | ✗        |✗      |                                                                             
-|  >    | ✗        |✗      |                                                                             
-|  %    | ✗        |✔*     |                                                                                 
-|  {    | ✗        |✗      |                                                                              
-|  }    | ✗        |✗      |                                                                                 
-|  \|   | ✗        |✗      |                                                                                
-|  \\\  | ✗        |✗      |                                                                                
-|  ^    | ✗        |✗      |                                                                                 
-|  ~    | ✗        |✔*     |                                                                                  
-|  [    | ✗        |✗      |                                                                                
-|  ]    | ✗        |✔      |                                                                                
-|  ;    | ✗        |✔*     |                                                                                  
-|  =    | ✗        |✔*     |                                                                                  
+| ' '   | ✗        |✗      |
+|  \t   | ✗        |✗      |
+|  <    | ✗        |✗      |
+|  >    | ✗        |✗      |
+|  %    | ✗        |✔*     |
+|  {    | ✗        |✗      |
+|  }    | ✗        |✗      |
+|  \|   | ✗        |✗      |
+|  \\\  | ✗        |✗      |
+|  ^    | ✗        |✗      |
+|  ~    | ✗        |✔*     |
+|  [    | ✗        |✗      |
+|  ]    | ✗        |✔      |
+|  ;    | ✗        |✔*     |
+|  =    | ✗        |✔*     |
 |  &    | ✗        |✔*     |
 
 The symbols above marked `*` are sub-delimiters in the RFC 3986 convention and are allowed for user info following the `@` symbol.
