@@ -264,7 +264,7 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
         params.sparams.logit_bias[llama_token_eos(model)] = -INFINITY;
     }
 
-    if (params.warmup)
+    if (params.warm_up)
     {
         // LOG("warming up the model with an empty run\n");
 
@@ -520,13 +520,13 @@ static llama_control_vector_data llama_control_vector_load_one(const llama_contr
 
     // calculate size of ctx needed for tensors, ensure tensors are f32, and find max layer
     {
-        struct ggml_init_params meta_params = {
+        ggml_init_params meta_params = {
             .mem_size = ggml_tensor_overhead() * 128 + ggml_graph_overhead(),
             .mem_buffer = nullptr,
             .no_alloc = true,
         };
         ggml_context * meta_ctx = ggml_init(meta_params);
-        struct gguf_init_params meta_gguf_params = {
+        gguf_init_params meta_gguf_params = {
             .no_alloc = true,
             .ctx = &meta_ctx,
         };
@@ -603,14 +603,14 @@ static llama_control_vector_data llama_control_vector_load_one(const llama_contr
     }
 
     // load and scale tensors into final control vector context
-    struct ggml_init_params ggml_params = {
+    ggml_init_params ggml_params = {
         .mem_size = ggml_tensor_overhead() * n_tensors + n_bytes,
         .mem_buffer = nullptr,
         .no_alloc = false,
     };
     struct ggml_context * ctx = ggml_init(ggml_params);
 
-    struct gguf_init_params params = {
+    gguf_init_params params = {
         .no_alloc = false,
         .ctx = &ctx,
     };

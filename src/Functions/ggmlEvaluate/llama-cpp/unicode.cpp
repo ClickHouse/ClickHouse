@@ -695,7 +695,7 @@ char32_t unicode_tolower(char32_t cp)
 std::vector<std::string> unicode_regex_split(const std::string & text, const std::vector<std::string> & regex_exprs)
 {
     // unicode categories
-    static const std::map<std::string, int> k_ucat_enum = {
+    static const std::map<std::string, int> k_ucat_e = {
         {"\\p{N}", codepoint_flags::NUMBER},
         {"\\p{L}", codepoint_flags::LETTER},
         {"\\p{P}", codepoint_flags::PUNCTUATION},
@@ -719,7 +719,7 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
     for (auto & regex_expr : regex_exprs)
     {
         // search for unicode categories
-        for (const auto & ucat : k_ucat_enum)
+        for (const auto & ucat : k_ucat_e)
         {
             if (std::string::npos != regex_expr.find(ucat.first))
             {
@@ -779,7 +779,7 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
             // if a unicode category is used in the regex, we use the collapsed text and replace the unicode category
             // with the corresponding collapsed representation
             bool use_collapsed = false;
-            for (auto & ucat : k_ucat_enum)
+            for (auto & ucat : k_ucat_e)
             {
                 if (std::string::npos != regex_expr.find(ucat.first))
                 {
@@ -825,14 +825,14 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
                         && regex_expr[i + 4] == '}')
                     {
                         const std::string pat = regex_expr.substr(i, 5);
-                        if (k_ucat_enum.find(pat) != k_ucat_enum.end())
+                        if (k_ucat_e.find(pat) != k_ucat_e.end())
                         {
                             if (!inside)
                             {
                                 regex_expr_collapsed += '[';
                             }
-                            regex_expr_collapsed += k_ucat_cpt.at(k_ucat_enum.at(pat));
-                            regex_expr_collapsed += k_ucat_map.at(k_ucat_enum.at(pat));
+                            regex_expr_collapsed += k_ucat_cpt.at(k_ucat_e.at(pat));
+                            regex_expr_collapsed += k_ucat_map.at(k_ucat_e.at(pat));
                             if (!inside)
                             {
                                 regex_expr_collapsed += ']';

@@ -13,16 +13,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 class LlamaGgufModel : public IGgmlModel
 {
 public:
-    ~LlamaGgufModel() override
-    {
-        llama_free_model(model);
-    }
+    ~LlamaGgufModel() override { llama_free_model(model); }
 
 private:
     void loadImpl(const ConfigPtr & config) override;
@@ -37,7 +34,7 @@ void LlamaGgufModel::loadImpl(const ConfigPtr & config)
     g_params.model = getPathFromConfig(config);
 
     llama_context * ctx;
-    std::tie(model, ctx) = llama_init_from_gpt_params(g_params);  // GGMLTODO: idk how to init model separately from ctx
+    std::tie(model, ctx) = llama_init_from_gpt_params(g_params); // GGMLTODO: idk how to init model separately from ctx
     llama_free(ctx);
 }
 
@@ -74,17 +71,20 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
     while (n_remain != 0)
     {
         // predict
-        if (!embd.empty()) {
+        if (!embd.empty())
+        {
             // Note: (n_ctx - 4) here is to match the logic for commandline prompt handling via
             // --prompt or --file which uses the same value.
             int max_embd_size = static_cast<int>(n_ctx) - 4;
 
             // Ensure the input doesn't exceed the context size by truncating embd if necessary.
-            if (static_cast<int>(embd.size()) > max_embd_size) {
+            if (static_cast<int>(embd.size()) > max_embd_size)
+            {
                 embd.resize(max_embd_size);
             }
 
-            if (ga_n == 1) {
+            if (ga_n == 1)
+            {
                 // infinite text generation via context shifting
                 // if we run out of context:
                 // - take the n_keep first tokens from the original prompt (via n_past)
@@ -117,25 +117,28 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
                 //     LOG("clear session path\n");
                 //     path_session.clear();
                 // }
-            } else {
+            }
+            else
+            {
                 // context extension via Self-Extend
-                while (n_past >= ga_i + ga_w) {
-                    const int ib = (ga_n*ga_i)/ga_w;
-                    const int bd = (ga_w/ga_n)*(ga_n - 1);
-                    const int dd = (ga_w/ga_n) - ib*bd - ga_w;
+                while (n_past >= ga_i + ga_w)
+                {
+                    const int ib = (ga_n * ga_i) / ga_w;
+                    const int bd = (ga_w / ga_n) * (ga_n - 1);
+                    const int dd = (ga_w / ga_n) - ib * bd - ga_w;
 
                     // LOG("\n");
                     // LOG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i, n_past, ib*bd, ga_i + ib*bd, n_past + ib*bd);
                     // LOG("div:   [%6d, %6d] / %6d -> [%6d, %6d]\n", ga_i + ib*bd, ga_i + ib*bd + ga_w, ga_n, (ga_i + ib*bd)/ga_n, (ga_i + ib*bd + ga_w)/ga_n);
                     // LOG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i + ib*bd + ga_w, n_past + ib*bd, dd, ga_i + ib*bd + ga_w + dd, n_past + ib*bd + dd);
 
-                    llama_kv_cache_seq_add(lctx, 0, ga_i,                n_past,              ib*bd);
-                    llama_kv_cache_seq_div(lctx, 0, ga_i + ib*bd,        ga_i + ib*bd + ga_w, ga_n);
-                    llama_kv_cache_seq_add(lctx, 0, ga_i + ib*bd + ga_w, n_past + ib*bd,      dd);
+                    llama_kv_cache_seq_add(lctx, 0, ga_i, n_past, ib * bd);
+                    llama_kv_cache_seq_div(lctx, 0, ga_i + ib * bd, ga_i + ib * bd + ga_w, ga_n);
+                    llama_kv_cache_seq_add(lctx, 0, ga_i + ib * bd + ga_w, n_past + ib * bd, dd);
 
                     n_past -= bd;
 
-                    ga_i += ga_w/ga_n;
+                    ga_i += ga_w / ga_n;
 
                     // LOG("\nn_past_old = %d, n_past = %d, ga_i = %d\n\n", n_past + bd, n_past, ga_i);
                 }
@@ -203,15 +206,18 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
             //     }
             // }
 
-            for (int i = 0; i < static_cast<int>(embd.size()); i += g_params.n_batch) {
+            for (int i = 0; i < static_cast<int>(embd.size()); i += g_params.n_batch)
+            {
                 int n_eval = static_cast<int>(embd.size()) - i;
-                if (n_eval > g_params.n_batch) {
+                if (n_eval > g_params.n_batch)
+                {
                     n_eval = g_params.n_batch;
                 }
 
                 // LOG("eval: %s\n", LOG_TOKENS_TOSTR_PRETTY(lctx, embd).c_str());
 
-                if (llama_decode(lctx, llama_batch_get_one(&embd[i], n_eval, n_past, 0))) {
+                if (llama_decode(lctx, llama_batch_get_one(&embd[i], n_eval, n_past, 0)))
+                {
                     // LOG_TEE("%s : failed to eval\n", __func__);
                     // return 1;
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "failed to eval");
@@ -235,7 +241,8 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
         embd.clear();
         // embd_guidance.clear();
 
-        if (static_cast<int>(embd_inp.size()) <= n_consumed /*&& !is_interacting*/) {
+        if (static_cast<int>(embd_inp.size()) <= n_consumed /*&& !is_interacting*/)
+        {
             // optionally save the session on first sample (for faster prompt loading next time)
             // if (!path_session.empty() && need_to_save_session && !params.prompt_cache_ro) {
             //     need_to_save_session = false;
@@ -244,7 +251,7 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
             //     LOG("saved session to %s\n", path_session.c_str());
             // }
 
-            const llama_token id = llama_sampling_sample(ctx_sampling, lctx, /*ctx_guidance*/nullptr);
+            const llama_token id = llama_sampling_sample(ctx_sampling, lctx, /*ctx_guidance*/ nullptr);
 
             llama_sampling_accept(ctx_sampling, lctx, id, true);
 
@@ -259,10 +266,13 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
             --n_remain;
 
             // LOG("n_remain: %d\n", n_remain);
-        } else {
+        }
+        else
+        {
             // some user input remains from prompt or interaction, forward it to processing
             // LOG("embd_inp.size(): %d, n_consumed: %d\n", embd_inp.size(), n_consumed);
-            while (static_cast<int>(embd_inp.size()) > n_consumed) {
+            while (static_cast<int>(embd_inp.size()) > n_consumed)
+            {
                 embd.push_back(embd_inp[n_consumed]);
 
                 // push the prompt in the sampling context in order to apply repetition penalties later
@@ -270,7 +280,8 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
                 llama_sampling_accept(ctx_sampling, lctx, embd_inp[n_consumed], false);
 
                 ++n_consumed;
-                if (static_cast<int>(embd.size()) >= g_params.n_batch) {
+                if (static_cast<int>(embd.size()) >= g_params.n_batch)
+                {
                     break;
                 }
             }
@@ -303,7 +314,8 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
         // }
 
         // if not currently processing queued inputs;
-        if (static_cast<int>(embd_inp.size()) <= n_consumed) {
+        if (static_cast<int>(embd_inp.size()) <= n_consumed)
+        {
             // check for reverse prompt in the last n_prev tokens
             // if (!params.antiprompt.empty()) {
             //     const int n_prev = 32;
@@ -458,7 +470,8 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
         }
 
         // end of text token
-        if (!embd.empty() && embd.back() == llama_token_eos(model) /*&& !(params.instruct || params.interactive || params.chatml)*/) {
+        if (!embd.empty() && embd.back() == llama_token_eos(model) /*&& !(params.instruct || params.interactive || params.chatml)*/)
+        {
             // LOG_TEE(" [end of text]\n");
             break;
         }

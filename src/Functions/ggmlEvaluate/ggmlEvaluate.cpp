@@ -173,7 +173,7 @@ private:
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'builder' set in model '{}' config", model_name);
         auto builder = model_config->getRawString("builder");
         auto & storage = getContext()->getGgmlModelStorage();
-        auto model = storage.get(model_name, builder);  // llama-gguf is defult for now
+        auto model = storage.get(model_name, builder);  // llama-gguf is default for now
 
         LOG_DEBUG(log, "Start loading model");
         model->load(model_config);

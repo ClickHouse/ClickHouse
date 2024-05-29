@@ -2931,7 +2931,7 @@ static bool llama_kv_cache_init(
     for (auto & it : buft_layer_count)
     {
         int n_layers = it.second;
-        struct ggml_init_params params = {
+        ggml_init_params params = {
             .mem_size   = 2u * n_layers * ggml_tensor_overhead(),
             .mem_buffer = nullptr,
             .no_alloc   = true,
@@ -3760,7 +3760,7 @@ struct llama_model_loader
         }
 
         struct ggml_context * ctx = nullptr;
-        struct gguf_init_params params = {
+        gguf_init_params params = {
             .no_alloc = true,
             .ctx      = &ctx,
         };
@@ -3813,7 +3813,7 @@ struct llama_model_loader
             {
                 llama_split_path(split_path, sizeof(split_path), split_prefix, idx, n_split);
 
-                struct gguf_init_params split_params = {
+                gguf_init_params split_params = {
                     .no_alloc = true,
                     .ctx      = &ctx,
                 };
@@ -5885,7 +5885,7 @@ static void llm_load_vocab(llama_model_loader & ml, llama_model & model)
 
     // special tokens
     {
-        const std::vector<std::pair<enum llm_kv, int32_t &>> special_token_types = {
+        const std::vector<std::pair<llm_kv, int32_t &>> special_token_types = {
             {LLM_KV_TOKENIZER_BOS_ID, vocab.special_bos_id},
             {LLM_KV_TOKENIZER_EOS_ID, vocab.special_eos_id},
             {LLM_KV_TOKENIZER_UNK_ID, vocab.special_unk_id},
@@ -5968,10 +5968,10 @@ static void llm_load_vocab(llama_model_loader & ml, llama_model & model)
         // Counting special tokens and verifying in only one direction
         //  is sufficient to detect difference in those two sets.
         //
-        uint32_t special_tokens_count_by_type = 0;
-        uint32_t special_tokens_count_from_verification = 0;
+        // uint32_t special_tokens_count_by_type = 0;
+        // uint32_t special_tokens_count_from_verification = 0;
 
-        bool special_tokens_definition_mismatch = false;
+        // bool special_tokens_definition_mismatch = false;
 
         for (const auto & t : vocab.token_to_id)
         {
@@ -5979,10 +5979,10 @@ static void llm_load_vocab(llama_model_loader & ml, llama_model & model)
             const auto & id = t.second;
 
             // Count all non-normal tokens in the vocab while iterating
-            if (vocab.id_to_token[id].type != LLAMA_TOKEN_TYPE_NORMAL)
-            {
-                special_tokens_count_by_type++;
-            }
+            // if (vocab.id_to_token[id].type != LLAMA_TOKEN_TYPE_NORMAL)
+            // {
+            //     special_tokens_count_by_type++;
+            // }
 
             // Skip single character tokens
             if (token.length() > 1)
@@ -5996,7 +5996,7 @@ static void llm_load_vocab(llama_model_loader & ml, llama_model & model)
                     const auto left = token.substr(0, i);
                     const auto right = token.substr(i);
 
-                    // check if we didnt partition in the middle of a utf sequence
+                    // check if we didn't partition in the middle of a utf sequence
                     auto utf = utf8_len(left.at(left.length() - 1));
 
                     if (utf == 1)
@@ -6048,24 +6048,24 @@ static void llm_load_vocab(llama_model_loader & ml, llama_model & model)
             }
         }
 
-        if (special_tokens_definition_mismatch || special_tokens_count_from_verification != special_tokens_count_by_type)
-        {
-            LLAMA_LOG_WARN(
-                "%s: mismatch in special tokens definition ( %u/%zu vs %u/%zu ).\n",
-                __func__,
-                special_tokens_count_from_verification,
-                vocab.id_to_token.size(),
-                special_tokens_count_by_type,
-                vocab.id_to_token.size());
-        }
-        else
-        {
-            LLAMA_LOG_INFO(
-                "%s: special tokens definition check successful ( %u/%zu ).\n",
-                __func__,
-                special_tokens_count_from_verification,
-                vocab.id_to_token.size());
-        }
+        // if (special_tokens_definition_mismatch || special_tokens_count_from_verification != special_tokens_count_by_type)
+        // {
+        //     LLAMA_LOG_WARN(
+        //         "%s: mismatch in special tokens definition ( %u/%zu vs %u/%zu ).\n",
+        //         __func__,
+        //         special_tokens_count_from_verification,
+        //         vocab.id_to_token.size(),
+        //         special_tokens_count_by_type,
+        //         vocab.id_to_token.size());
+        // }
+        // else
+        // {
+        //     LLAMA_LOG_INFO(
+        //         "%s: special tokens definition check successful ( %u/%zu ).\n",
+        //         __func__,
+        //         special_tokens_count_from_verification,
+        //         vocab.id_to_token.size());
+        // }
     }
 }
 
@@ -6356,7 +6356,7 @@ static bool llm_load_tensors(
     std::map<ggml_backend_buffer_type_t, ggml_context *> ctx_map;
     for (auto & it : buft_layer_count)
     {
-        struct ggml_init_params params = {
+        ggml_init_params params = {
             .mem_size   =ctx_size,
             .mem_buffer =nullptr,
             .no_alloc   =true,
@@ -8637,7 +8637,7 @@ struct llm_build_context
 
     void init()
     {
-        struct ggml_init_params params = {
+        ggml_init_params params = {
             .mem_size   =buf_compute_meta.size(),
             .mem_buffer =buf_compute_meta.data(),
             .no_alloc   =true,
@@ -11734,7 +11734,7 @@ struct llm_build_context
 
             // FF
             // special-case: the up and gate tensors are merged into a single tensor
-            // TOOD: support into llm_build_ffn
+            // TODO: support into llm_build_ffn
             {
                 struct ggml_tensor * up = ggml_mul_mat(ctx0, model.layers[il].ffn_up, cur);
                 cb(up, "ffn_up", il);
@@ -13067,7 +13067,7 @@ struct llm_build_context
                 // Custom operator which is needed only to ease simultaneous sequence processing.
                 // For a single sequence, the equivalent is to concatenate the columns of conv_states and x,
                 // then make a self-overlapping view of that over d_conv columns at each stride in the 3rd dimension,
-                // then element-wise multiply that with the conv1d weigth,
+                // then element-wise multiply that with the conv1d weight,
                 // then sum the elements of each row,
                 // (the last two steps are a dot product over rows (also doable with mul_mat))
                 // then permute away the ne[0] dimension,
@@ -19361,7 +19361,7 @@ static int llama_apply_lora_from_file_internal(
 //
 struct llama_model_params llama_model_default_params()
 {
-    struct llama_model_params result = {
+    llama_model_params result = {
         .n_gpu_layers                =0,
         .split_mode                  =LLAMA_SPLIT_MODE_LAYER,
         .main_gpu                    =0,
@@ -19386,7 +19386,7 @@ struct llama_model_params llama_model_default_params()
 
 struct llama_context_params llama_context_default_params()
 {
-    struct llama_context_params result = {
+    llama_context_params result = {
         .seed                        =LLAMA_DEFAULT_SEED,
         .n_ctx                       =512,
         .n_batch                     =2048,
@@ -19421,7 +19421,7 @@ struct llama_context_params llama_context_default_params()
 
 struct llama_model_quantize_params llama_model_quantize_default_params()
 {
-    struct llama_model_quantize_params result = {
+    llama_model_quantize_params result = {
         .nthread                     =0,
         .ftype                       =LLAMA_FTYPE_MOSTLY_Q5_1,
         .output_tensor_type          =GGML_TYPE_COUNT,
@@ -20227,7 +20227,7 @@ static bool llama_control_vector_init(struct llama_control_vector & cvec, const 
     for (auto & it : buft_layer_count)
     {
         int n_layers = it.second;
-        struct ggml_init_params params = {
+        ggml_init_params params = {
             .mem_size   =n_layers * ggml_tensor_overhead(),
             .mem_buffer =nullptr,
             .no_alloc   =true,
@@ -20319,7 +20319,7 @@ llama_control_vector_apply(struct llama_context * lctx, const float * data, size
 
 struct llama_kv_cache_view llama_kv_cache_view_init(const struct llama_context * ctx, int32_t n_seq_max)
 {
-    struct llama_kv_cache_view result = {
+    llama_kv_cache_view result = {
         .n_cells            = 0,
         .n_seq_max          = n_seq_max,
         .token_count        = 0,
@@ -21632,7 +21632,7 @@ int llama_split_prefix(char * split_prefix, size_t maxlen, const char * split_pa
 
 struct llama_timings llama_get_timings(struct llama_context * ctx)
 {
-    struct llama_timings result = {
+    llama_timings result = {
         .t_start_ms  =1e-3 * ctx->t_start_us,
         .t_end_ms    =1.00 * ggml_time_ms(),
         .t_load_ms   =1e-3 * ctx->t_load_us,
