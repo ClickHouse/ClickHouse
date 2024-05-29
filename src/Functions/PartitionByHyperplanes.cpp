@@ -67,6 +67,9 @@ DECLARE_DEFAULT_CODE(
     }
 ) // DECLARE_DEFAULT_CODE
 
+
+#if defined(OS_LINUX)
+
 DECLARE_AMXBF16_SPECIFIC_CODE(
     static std::vector<uint16_t> bufA(2 * tile_size * tile_size), bufB(2 * tile_size * tile_size);
 
@@ -173,6 +176,8 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
     }
 ) // DECLARE_AMX_SPECIFIC_CODE
 
+#endif
+
 DECLARE_AVX2_SPECIFIC_CODE(
     void doMultiplyTile(
         const ColumnFloat32 & nested_vectors_data,
@@ -245,6 +250,8 @@ private:
         size_t coordinate_index)
     {
 #if USE_MULTITARGET_CODE
+
+#if defined(OS_LINUX)
         if (isArchSupported(TargetArch::AMXBF16))
         {
             TargetSpecific::AMXBF16::doMultiplyTile(
@@ -259,6 +266,7 @@ private:
                 coordinate_index);
             return;
         }
+#endif
 
         if (isArchSupported(TargetArch::AVX512BW))
         {
