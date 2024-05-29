@@ -45,9 +45,7 @@ def test_failed_async_inserts(started_cluster):
         ignore_error=True,
     )
 
-    select_query = (
-        "SELECT value FROM system.events WHERE event == 'FailedAsyncInsertQuery' SETTINGS min_untracked_memory = 4194304"
-    )
+    select_query = "SELECT value FROM system.events WHERE event == 'FailedAsyncInsertQuery' SETTINGS min_untracked_memory = 4194304"
 
     assert node.query(select_query) == "4\n"
 
