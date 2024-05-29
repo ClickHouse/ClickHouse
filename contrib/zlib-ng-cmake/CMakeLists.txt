@@ -25,6 +25,7 @@ if(ARCH_AARCH64)
     set(ARCHDIR "${SOURCE_DIR}/arch/arm")
 
     add_definitions(-DARM_FEATURES)
+    add_definitions(-DHAVE_SYS_AUXV_H)
     add_definitions(-DARM_AUXV_HAS_CRC32 -DARM_ASM_HWCAP)
     add_definitions(-DARM_AUXV_HAS_NEON)
     add_definitions(-DARM_ACLE)
