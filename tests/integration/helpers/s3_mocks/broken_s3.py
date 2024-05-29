@@ -183,6 +183,9 @@ class _ServerRuntime:
             )
             request_handler.write_error(429, data)
 
+    # make sure that Alibaba errors (QpsLimitExceeded, TotalQpsLimitExceededAction) are retriable
+    # we patched contrib/aws to achive it: https://github.com/ClickHouse/aws-sdk-cpp/pull/22 https://github.com/ClickHouse/aws-sdk-cpp/pull/23
+    # https://www.alibabacloud.com/help/en/oss/support/http-status-code-503
     class QpsLimitExceededAction:
         def inject_error(self, request_handler):
             data = (
