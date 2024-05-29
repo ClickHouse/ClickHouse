@@ -6,8 +6,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
-#include <Common/DNSResolver.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 
 namespace DB
 {
