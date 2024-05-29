@@ -82,7 +82,7 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
-    static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach = false, bool is_materialized_view = false);
+    static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach = false, bool is_materialized_view = false, bool is_restore_from_backup_ = false);
 
 private:
     struct TableProperties

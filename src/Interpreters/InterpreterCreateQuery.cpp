@@ -1086,7 +1086,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view, is_restore_from_backup);
 
     DDLGuardPtr ddl_guard;
 
@@ -1880,7 +1880,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view, bool is_restore_from_backup_)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
@@ -1921,7 +1921,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
     }
 
     /// Checks the permissions for the specified definer user.
-    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
+    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach && !is_restore_from_backup_)
     {
         const auto definer_name = sql_security.definer->toString();
 
@@ -1931,7 +1931,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
-    if (sql_security.type == SQLSecurityType::NONE && !is_attach)
+    if (sql_security.type == SQLSecurityType::NONE && !is_attach && !is_restore_from_backup_)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
