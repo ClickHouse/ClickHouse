@@ -81,9 +81,7 @@ public:
         const auto leading_zeros_count = getLeadingZeroBits(x | y);
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
         if (used_bits > 32)
-        {
             return 0; // hilbert code will be overflowed in this case
-        }
 
         auto [current_shift, state] = getInitialShiftAndState(used_bits);
         while (current_shift >= 0)
