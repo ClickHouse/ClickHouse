@@ -51,12 +51,12 @@ Extracts the hostname from a URL.
 **Syntax**
 
 ``` sql
-domain(URL)
+domain(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a protocol. Examples:
 
@@ -97,12 +97,12 @@ Extracts the hostname from a URL. Similar to [domain](#domain), but RFC 3986 con
 **Syntax**
 
 ``` sql
-domainRFC(URL)
+domainRFC(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
 **Returned values**
 
@@ -133,12 +133,12 @@ Returns the domain and removes no more than one ‘www.’ from the beginning of
 Extracts the the top-level domain from a URL.
 
 ``` sql
-topLevelDomain(URL)
+topLevelDomain(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 :::note
 The URL can be specified with or without a protocol. Examples:
@@ -175,12 +175,12 @@ Result:
 Extracts the the top-level domain from a URL. It is similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
 
 ``` sql
-topLevelDomainRFC(URL)
+topLevelDomainRFC(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 :::note
 The URL can be specified with or without a protocol. Examples:
@@ -224,7 +224,7 @@ firstSignificantSubdomain(URL)
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -253,12 +253,12 @@ Returns the “first significant subdomain”, similar to [firstSignficantSubdom
 **Syntax**
 
 ```sql
-firstSignificantSubdomainRFC(URL)
+firstSignificantSubdomainRFC(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -289,12 +289,12 @@ Returns the part of the domain that includes top-level subdomains up to the [“
 **Syntax**
 
 ```sql
-cutToFirstSignificantSubdomain(URL)
+cutToFirstSignificantSubdomain(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -326,12 +326,12 @@ Returns the part of the domain that includes top-level subdomains up to the [“
 **Syntax**
 
 ```sql
-cutToFirstSignificantSubdomainRFC(URL)
+cutToFirstSignificantSubdomainRFC(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -363,12 +363,12 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 **Syntax**
 
 ```sql
-cutToFirstSignificantSubdomainWithWWW(URL)
+cutToFirstSignificantSubdomainWithWWW(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -400,12 +400,12 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 **Syntax**
 
 ```sql
-cutToFirstSignificantSubdomainWithWWW(URL)
+cutToFirstSignificantSubdomainWithWWW(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -449,13 +449,13 @@ This can be useful if you need a fresh TLD list or if you have a custom list.
 **Syntax**
 
 ``` sql
-cutToFirstSignificantSubdomain(URL, TLD)
+cutToFirstSignificantSubdomain(url, tld)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -488,13 +488,13 @@ Returns the part of the domain that includes top-level subdomains up to the firs
 **Syntax**
 
 ``` sql
-cutToFirstSignificantSubdomainRFC(URL, TLD)
+cutToFirstSignificantSubdomainRFC(url, tld)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -524,13 +524,13 @@ It can be useful if you need a fresh TLD list or if you have a custom list.
 **Syntax**
 
 ```sql
-cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
+cutToFirstSignificantSubdomainCustomWithWWW(url, tld)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -565,13 +565,13 @@ Returns the part of the domain that includes top-level subdomains up to the firs
 **Syntax**
 
 ```sql
-cutToFirstSignificantSubdomainCustomWithWWWRFC(URL, TLD)
+cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -601,13 +601,13 @@ Configuration example:
 **Syntax**
 
 ```sql
-firstSignificantSubdomainCustom(URL, TLD)
+firstSignificantSubdomainCustom(url, tld)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -642,13 +642,13 @@ Returns the first significant subdomain. Accepts customs TLD list name. Similar 
 **Syntax**
 
 ```sql
-firstSignificantSubdomainCustomRFC(URL, TLD)
+firstSignificantSubdomainCustomRFC(url, tld)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
-- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -662,17 +662,17 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 ### port
 
-Returns the port or `default_port` if there is no port in the `URL` (or in case of validation error).
+Returns the port or `default_port` if there is no port in the `url` (or in case of validation error).
 
 **Syntax**
 
 ```sql
-port(URL [, default_port = 0])
+port(url [, default_port = 0])
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 - `default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
 
 **Returned value**
@@ -698,17 +698,17 @@ Result:
 
 ### portRFC
 
-Returns the port or `default_port` if there is no port in the `URL` (or in case of validation error). Similar to [port](#port), but RFC 3986 conformant.
+Returns the port or `default_port` if there is no port in the `url` (or in case of validation error). Similar to [port](#port), but RFC 3986 conformant.
 
 **Syntax**
 
 ```sql
-portRFC(URL [, default_port = 0])
+portRFC(url [, default_port = 0])
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 - `default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
 
 **Returned value**
@@ -753,23 +753,23 @@ Returns the fragment identifier. fragment does not include the initial hash symb
 
 Returns the query string and fragment identifier. Example: page=1#29390.
 
-### extractURLParameter(URL, name)
+### extractURLParameter(url, name)
 
 Returns the value of the ‘name’ parameter in the URL, if present. Otherwise, an empty string. If there are many parameters with this name, it returns the first occurrence. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
-### extractURLParameters(URL)
+### extractURLParameters(url)
 
 Returns an array of name=value strings corresponding to the URL parameters. The values are not decoded in any way.
 
-### extractURLParameterNames(URL)
+### extractURLParameterNames(url)
 
 Returns an array of name strings corresponding to the names of URL parameters. The values are not decoded in any way.
 
-### URLHierarchy(URL)
+### URLHierarchy(url)
 
 Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters.
 
-### URLPathHierarchy(URL)
+### URLPathHierarchy(url)
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included.
 
@@ -781,7 +781,7 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 ]
 ```
 
-### encodeURLComponent(URL)
+### encodeURLComponent(url)
 
 Returns the encoded URL.
 Example:
@@ -796,7 +796,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-### decodeURLComponent(URL)
+### decodeURLComponent(url)
 
 Returns the decoded URL.
 Example:
@@ -811,7 +811,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-### encodeURLFormComponent(URL)
+### encodeURLFormComponent(url)
 
 Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
 Example:
@@ -826,7 +826,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-### decodeURLFormComponent(URL)
+### decodeURLFormComponent(url)
 
 Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(` `).
 Example:
@@ -848,12 +848,12 @@ Extracts network locality (`username:password@host:port`) from a URL.
 **Syntax**
 
 ``` sql
-netloc(URL)
+netloc(url)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -897,24 +897,24 @@ Removes the fragment identifier. The number sign is also removed.
 
 Removes the query string and fragment identifier. The question mark and number sign are also removed.
 
-### cutURLParameter(URL, name)
+### cutURLParameter(url, name)
 
 Removes the `name` parameter from URL, if present. This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
 
 **Syntax**
 
 ``` sql
-cutURLParameter(URL, name)
+cutURLParameter(url, name)
 ```
 
 **Arguments**
 
-- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 - `name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
 
 **Returned value**
 
-- URL with `name` URL parameter removed.
+- url with `name` URL parameter removed.
 
 Type: `String`.
 
