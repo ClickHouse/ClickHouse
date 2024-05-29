@@ -415,12 +415,12 @@ class BuildResult:
         for file in Path(REPORT_PATH).iterdir():
             if f"{build_name}.json" in file.name:
                 any_report = file
-            if "_master_" in file.name:
-                master_report = file
-            elif f"_{head_ref}_" in file.name:
-                ref_report = file
-            elif pr_number and f"_{pr_number}_" in file.name:
-                pr_report = file
+                if "_master_" in file.name:
+                    master_report = file
+                elif f"_{head_ref}_" in file.name:
+                    ref_report = file
+                elif pr_number and f"_{pr_number}_" in file.name:
+                    pr_report = file
 
         if not any_report:
             return None

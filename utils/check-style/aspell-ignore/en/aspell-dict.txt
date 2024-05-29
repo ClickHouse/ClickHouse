@@ -1603,6 +1603,12 @@ freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
+fromReadableSize
+fromReadableSizeOrNull
+fromReadableSizeOrZero
+fromReadableDecimalSize
+fromReadableDecimalSizeOrNull
+fromReadableDecimalSizeOrZero
 fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestampInJodaSyntax
@@ -1619,7 +1625,6 @@ generateRandom
 generateRandomStructure
 generateSeries
 generateSnowflakeID
-generateSnowflakeIDThreadMonotonic
 generateULID
 generateUUIDv
 geoDistance
@@ -2661,6 +2666,9 @@ toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
 toStartOfYear
+toStartOfMicrosecond
+toStartOfMillisecond
+toStartOfNanosecond
 toString
 toStringCutToZero
 toTime
@@ -2789,6 +2797,7 @@ urls
 usearch
 userspace
 userver
+UTCTimestamp
 utils
 uuid
 uuidv
