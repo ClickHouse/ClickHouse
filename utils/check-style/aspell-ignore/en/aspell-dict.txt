@@ -246,7 +246,6 @@ DockerHub
 DoubleDelta
 Doxygen
 Durre
-doesnt
 ECMA
 Ecto
 EdgeAngle
@@ -1357,8 +1356,8 @@ concatWithSeparatorAssumeInjective
 cond
 conf
 config
-conformant
 configs
+conformant
 congruential
 conjuction
 conjuctive
@@ -1415,11 +1414,11 @@ cutQueryString
 cutQueryStringAndFragment
 cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
-cutToFirstSignificantSubdomainCustomWithWWW
-cutToFirstSignificantSubdomainWithWWW
-cutToFirstSignificantSubdomainRFC
 cutToFirstSignificantSubdomainCustomRFC
+cutToFirstSignificantSubdomainCustomWithWWW
 cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainRFC
+cutToFirstSignificantSubdomainWithWWW
 cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
@@ -1507,9 +1506,10 @@ displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
+doesnt
+domainRFC
 domainWithoutWWW
 domainWithoutWWWRFC
-domainRFC
 dont
 dotProduct
 downsampling
@@ -1582,10 +1582,11 @@ filesystems
 finalizeAggregation
 fips
 firstLine
+firstSignficantSubdomain
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
-firstSignificantSubdomainRFC
 firstSignificantSubdomainCustomRFC
+firstSignificantSubdomainRFC
 fixedstring
 flamegraph
 flatbuffers
@@ -2166,8 +2167,8 @@ polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
 popcnt
-porthttps
 portRFC
+porthttps
 positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
