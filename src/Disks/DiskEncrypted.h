@@ -350,13 +350,6 @@ public:
         return delegate;
     }
 
-#if USE_AWS_S3
-    std::shared_ptr<const S3::Client> getS3StorageClient() const override
-    {
-        return delegate->getS3StorageClient();
-    }
-#endif
-
 private:
     String wrappedPath(const String & path) const
     {

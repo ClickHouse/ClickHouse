@@ -43,6 +43,8 @@ void registerStorageIceberg(StorageFactory & factory);
 #endif
 
 #if USE_HDFS
+void registerStorageHDFS(StorageFactory & factory);
+
 #if USE_HIVE
 void registerStorageHive(StorageFactory & factory);
 #endif
@@ -95,7 +97,9 @@ void registerStorageSQLite(StorageFactory & factory);
 
 void registerStorageKeeperMap(StorageFactory & factory);
 
-void registerStorageObjectStorage(StorageFactory & factory);
+#if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureBlob(StorageFactory & factory);
+#endif
 
 void registerStorages()
 {
@@ -125,6 +129,7 @@ void registerStorages()
 #endif
 
 #if USE_AWS_S3
+    registerStorageS3(factory);
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
 
@@ -139,9 +144,12 @@ void registerStorages()
     #endif
 
     #if USE_HDFS
+    registerStorageHDFS(factory);
+
     #if USE_HIVE
     registerStorageHive(factory);
     #endif
+
     #endif
 
     registerStorageODBC(factory);
@@ -189,7 +197,9 @@ void registerStorages()
 
     registerStorageKeeperMap(factory);
 
-    registerStorageObjectStorage(factory);
+    #if USE_AZURE_BLOB_STORAGE
+    registerStorageAzureBlob(factory);
+    #endif
 }
 
 }

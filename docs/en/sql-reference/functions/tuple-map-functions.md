@@ -6,7 +6,7 @@ sidebar_label: Maps
 
 ## map
 
-Arranges `key:value` pairs into [Map(key, value)](../data-types/map.md) data type.
+Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types/map.md) data type.
 
 **Syntax**
 
@@ -16,12 +16,14 @@ map(key1, value1[, key2, value2, ...])
 
 **Arguments**
 
-- `key` — The key part of the pair. Arbitrary type, except [Nullable](../data-types/nullable.md) and [LowCardinality](../data-types/lowcardinality.md) nested with [Nullable](../data-types/nullable.md).
-- `value` — The value part of the pair. Arbitrary type, including [Map](../data-types/map.md) and [Array](../data-types/array.md).
+- `key` — The key part of the pair. Arbitrary type, except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md).
+- `value` — The value part of the pair. Arbitrary type, including [Map](../../sql-reference/data-types/map.md) and [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
-- Data structure as `key:value` pairs. [Map(key, value)](../data-types/map.md).
+- Data structure as `key:value` pairs.
+
+Type: [Map(key, value)](../../sql-reference/data-types/map.md).
 
 **Examples**
 
@@ -61,11 +63,11 @@ Result:
 
 **See Also**
 
-- [Map(key, value)](../data-types/map.md) data type
+- [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
 ## mapFromArrays
 
-Merges an [Array](../data-types/array.md) of keys and an [Array](../data-types/array.md) of values into a [Map(key, value)](../data-types/map.md). Notice that the second argument could also be a [Map](../data-types/map.md), thus it is casted to an Array when executing.
+Merges an [Array](../../sql-reference/data-types/array.md) of keys and an [Array](../../sql-reference/data-types/array.md) of values into a [Map(key, value)](../../sql-reference/data-types/map.md). Notice that the second argument could also be a [Map](../../sql-reference/data-types/map.md), thus it is casted to an Array when executing.
 
 
 The function is a more convenient alternative to `CAST((key_array, value_array_or_map), 'Map(key_type, value_type)')`. For example, instead of writing `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
@@ -81,7 +83,7 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 
 **Arguments**
 
-- `keys` — Given key array to create a map from. The nested type of array must be: [String](../data-types/string.md), [Integer](../data-types/int-uint.md), [LowCardinality](../data-types/lowcardinality.md), [FixedString](../data-types/fixedstring.md), [UUID](../data-types/uuid.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [Date32](../data-types/date32.md), [Enum](../data-types/enum.md)
+- `keys` — Given key array to create a map from. The nested type of array must be: [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md)
 - `values`  - Given value array or map to create a map from.
 
 **Returned value**
@@ -109,7 +111,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 
 ## extractKeyValuePairs
 
-Extracts key-value pairs, i.e. a [Map(String, String)](../data-types/map.md), from a string. Parsing is robust towards noise (e.g. log files).
+Extracts key-value pairs, i.e. a [Map(String, String)](../../sql-reference/data-types/map.md), from a string. Parsing is robust towards noise (e.g. log files).
 
 A key-value pair consists of a key, followed by a `key_value_delimiter` and a value. Key value pairs must be separated by `pair_delimiter`. Quoted keys and values are also supported. 
 
@@ -125,14 +127,14 @@ Alias:
 
 **Arguments**
 
-- `data` - String to extract key-value pairs from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to ` `, `,` and `;`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to ` `, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Returned values**
 
-- A [Map(String, String)](../data-types/map.md) of key-value pairs.
+- A [Map(String, String)](../../sql-reference/data-types/map.md) of key-value pairs.
 
 **Examples**
 
@@ -221,11 +223,11 @@ mapAdd(arg1, arg2 [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](../data-types/int-uint.md#uint-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
-- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](../data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+- Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) or [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
@@ -269,11 +271,11 @@ mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](../data-types/int-uint.md#uint-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
-- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](../data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
+- Depending on the arguments returns one [map](../../sql-reference/data-types/map.md) or [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
@@ -322,21 +324,21 @@ For array arguments the number of elements in `keys` and `values` must be the sa
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or two [arrays](../data-types/array.md#data-type-array), where the first array represent keys, and the second array contains values for the each key.
+Arguments are [maps](../../sql-reference/data-types/map.md) or two [arrays](../../sql-reference/data-types/array.md#data-type-array), where the first array represent keys, and the second array contains values for the each key.
 
 Mapped arrays:
 
-- `keys` — Array of keys. [Array](../data-types/array.md#data-type-array)([Int](../data-types/int-uint.md#uint-ranges)).
-- `values` — Array of values. [Array](../data-types/array.md#data-type-array)([Int](../data-types/int-uint.md#uint-ranges)).
-- `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](../data-types/int-uint.md#int-ranges).
+- `keys` — Array of keys. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#uint-ranges)).
+- `values` — Array of values. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#uint-ranges)).
+- `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](../../sql-reference/data-types/int-uint.md#int-ranges).
 
 or
 
-- `map` — Map with integer keys. [Map](../data-types/map.md).
+- `map` — Map with integer keys. [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
-- Depending on the arguments returns a [map](../data-types/map.md) or a [tuple](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
+- Depending on the arguments returns a [map](../../sql-reference/data-types/map.md) or a [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
 
 **Example**
 
@@ -380,12 +382,14 @@ mapContains(map, key)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
 - `key` — Key. Type matches the type of keys of `map` parameter.
 
 **Returned value**
 
-- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
+- `1` if `map` contains `key`, `0` if not.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -413,7 +417,7 @@ Result:
 
 Returns all keys from the `map` parameter.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [keys](../data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapKeys(m) FROM table` transforms to `SELECT m.keys FROM table`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapKeys(m) FROM table` transforms to `SELECT m.keys FROM table`.
 
 **Syntax**
 
@@ -423,11 +427,13 @@ mapKeys(map)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
-- Array containing all keys from the `map`. [Array](../data-types/array.md).
+- Array containing all keys from the `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -454,7 +460,7 @@ Result:
 
 Returns all values from the `map` parameter.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [values](../data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapValues(m) FROM table` transforms to `SELECT m.values FROM table`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn instead of reading and processing the whole column data. The query `SELECT mapValues(m) FROM table` transforms to `SELECT m.values FROM table`.
 
 **Syntax**
 
@@ -464,11 +470,13 @@ mapValues(map)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
-- Array containing all the values from `map`. [Array](../data-types/array.md).
+- Array containing all the values from `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -500,7 +508,7 @@ mapContainsKeyLike(map, pattern)
 ```
 
 **Arguments**
-- `map` — Map. [Map](../data-types/map.md).
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
 - `pattern`  - String pattern to match.
 
 **Returned value**
@@ -538,7 +546,7 @@ mapExtractKeyLike(map, pattern)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
 - `pattern`  - String pattern to match.
 
 **Returned value**
@@ -577,11 +585,11 @@ mapApply(func, map)
 **Arguments**
 
 - `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
-- `map` — [Map](../data-types/map.md).
+- `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
-- Returns a map obtained from the original map by application of `func(map1[i], ..., mapN[i])` for each element.
+- Returns a map obtained from the original map by application of `func(map1[i], …, mapN[i])` for each element.
 
 **Example**
 
@@ -617,11 +625,11 @@ mapFilter(func, map)
 **Arguments**
 
 - `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
-- `map` — [Map](../data-types/map.md).
+- `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
-- Returns a map containing only the elements in `map` for which `func(map1[i], ..., mapN[i])` returns something other than 0.
+- Returns a map containing only the elements in `map` for which `func(map1[i], …, mapN[i])` returns something other than 0.
 
 
 **Example**
@@ -658,8 +666,8 @@ mapUpdate(map1, map2)
 
 **Arguments**
 
-- `map1` [Map](../data-types/map.md).
-- `map2` [Map](../data-types/map.md).
+- `map1` [Map](../../sql-reference/data-types/map.md).
+- `map2` [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
@@ -691,7 +699,7 @@ mapConcat(maps)
 
 **Arguments**
 
--   `maps` – Arbitrary number of arguments of [Map](../data-types/map.md) type.
+-   `maps` – Arbitrary number of arguments of [Map](../../sql-reference/data-types/map.md) type.
 
 **Returned value**
 

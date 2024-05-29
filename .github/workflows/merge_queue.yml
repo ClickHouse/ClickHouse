@@ -20,7 +20,7 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
-          fetch-depth: 0 # to get a version
+          fetch-depth: 0 # to get version
           filter: tree:0
       - name: Cancel PR workflow
         run: |
@@ -60,7 +60,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Style check
-      runner_type: style-checker-aarch64
+      runner_type: style-checker
       run_command: |
           python3 style_check.py
       data: ${{ needs.RunConfig.outputs.data }}
@@ -85,7 +85,7 @@ jobs:
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest]
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1

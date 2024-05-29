@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames, StatusNames
+from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -45,14 +45,13 @@ from env_helper import (
     S3_BUILDS_BUCKET,
     TEMP_PATH,
     GITHUB_RUN_ID,
-    GITHUB_REPOSITORY,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, PENDING
+from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from ci_metadata import CiMetadata
 from version_helper import get_version_from_repo
@@ -997,11 +996,6 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         help="Action that cancels previous running PR workflow if PR added into the Merge Queue",
     )
     parser.add_argument(
-        "--set-pending-status",
-        action="store_true",
-        help="Action to set needed pending statuses in the beginning of CI workflow, e.g. for Sync wf",
-    )
-    parser.add_argument(
         "--configure",
         action="store_true",
         help="Action that configures ci run. Calculates digests, checks job to be executed, generates json output",
@@ -1913,40 +1907,13 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
-    wf_data = CiMetadata(s3, pr_number).fetch_meta()
-    if not cancel_sync:
-        if not wf_data.run_id:
-            print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
-        else:
-            print(
-                f"Canceling PR workflow run_id: [{wf_data.run_id}], pr: [{pr_number}]"
-            )
-            GitHub.cancel_wf(GITHUB_REPOSITORY, wf_data.run_id, get_best_robot_token())
+def _cancel_pr_wf(s3: S3Helper, pr_number: int) -> None:
+    run_id = CiMetadata(s3, pr_number).fetch_meta().run_id
+    if not run_id:
+        print(f"ERROR: FIX IT: Run id has not been found PR [{pr_number}]!")
     else:
-        if not wf_data.sync_pr_run_id:
-            print("WARNING: Sync PR run id has not been found")
-        else:
-            print(f"Canceling sync PR workflow run_id: [{wf_data.sync_pr_run_id}]")
-            GitHub.cancel_wf(
-                "ClickHouse/clickhouse-private",
-                wf_data.sync_pr_run_id,
-                get_best_robot_token(),
-            )
-
-
-def _set_pending_statuses(pr_info: PRInfo) -> None:
-    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
-    try:
-        print("Set SYNC status to pending")
-        commit.create_status(
-            state=PENDING,
-            target_url="",
-            description="",
-            context=StatusNames.SYNC,
-        )
-    except Exception as ex:
-        print(f"ERROR: failed to set GH commit status, ex: {ex}")
+        print(f"Canceling PR workflow run_id: [{run_id}], pr: [{pr_number}]")
+        GitHub.cancel_wf(run_id)
 
 
 def main() -> int:
@@ -1979,7 +1946,7 @@ def main() -> int:
     if args.configure:
         if CI and pr_info.is_pr:
             # store meta on s3 (now we need it only for PRs)
-            meta = CiMetadata(s3, pr_info.number, pr_info.head_ref)
+            meta = CiMetadata(s3, pr_info.number)
             meta.run_id = int(GITHUB_RUN_ID)
             meta.push_meta()
 
@@ -2277,19 +2244,10 @@ def main() -> int:
 
     ### CANCEL PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
-        if pr_info.is_merge_queue:
-            _cancel_pr_wf(s3, pr_info.merged_pr)
-        elif pr_info.is_pr:
-            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
-        else:
-            assert False, "BUG! Not supported scenario"
-
-    ### SET PENDING STATUS
-    elif args.set_pending_status:
-        if pr_info.is_pr:
-            _set_pending_statuses(pr_info)
-        else:
-            assert False, "BUG! Not supported scenario"
+        assert (
+            pr_info.is_merge_queue
+        ), "Currently it's supposed to be used in MQ wf to cancel running PR wf if any"
+        _cancel_pr_wf(s3, pr_info.merged_pr)
 
     ### print results
     _print_results(result, args.outfile, args.pretty)

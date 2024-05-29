@@ -2,7 +2,6 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/formatReadable.h>
-#include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
 #include <iomanip>
 
@@ -21,13 +20,11 @@ ColumnGathererStream::ColumnGathererStream(
     size_t num_inputs,
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
-    size_t block_preferred_size_bytes_,
-    bool is_result_sparse_)
+    size_t block_preferred_size_bytes_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
-    , is_result_sparse(is_result_sparse_)
 {
     if (num_inputs == 0)
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
@@ -39,23 +36,17 @@ void ColumnGathererStream::initialize(Inputs inputs)
     source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        if (!inputs[i].chunk)
-            continue;
-
-        if (!is_result_sparse)
-            convertToFullIfSparse(inputs[i].chunk);
-
-        sources[i].update(inputs[i].chunk.detachColumns().at(0));
-        source_columns.push_back(sources[i].column);
+        if (inputs[i].chunk)
+        {
+            sources[i].update(inputs[i].chunk.detachColumns().at(0));
+            source_columns.push_back(sources[i].column);
+        }
     }
 
     if (source_columns.empty())
         return;
 
     result_column = source_columns[0]->cloneEmpty();
-    if (is_result_sparse && !result_column->isSparse())
-        result_column = ColumnSparse::create(std::move(result_column));
-
     if (result_column->hasDynamicStructure())
         result_column->takeDynamicStructureFromSourceColumns(source_columns);
 }
@@ -155,12 +146,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 {
     auto & source = sources[source_num];
     if (input.chunk)
-    {
-        if (!is_result_sparse)
-            convertToFullIfSparse(input.chunk);
-
         source.update(input.chunk.getColumns().at(0));
-    }
 
     if (0 == source.size)
     {
@@ -173,11 +159,10 @@ ColumnGathererTransform::ColumnGathererTransform(
     size_t num_inputs,
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
-    size_t block_preferred_size_bytes_,
-    bool is_result_sparse_)
+    size_t block_preferred_size_bytes_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_)
+        num_inputs, row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_)
     , log(getLogger("ColumnGathererStream"))
 {
     if (header.columns() != 1)

@@ -1093,15 +1093,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
-        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
-        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
-        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
-        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
-        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
-        std::optional<Settings> settings_copy;
-        if (can_use_query_cache)
-            settings_copy = settings;
-
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
@@ -1110,7 +1101,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1233,7 +1224,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),

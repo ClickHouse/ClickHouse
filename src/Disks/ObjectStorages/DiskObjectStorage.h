@@ -6,8 +6,6 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
 
-#include "config.h"
-
 
 namespace CurrentMetrics
 {
@@ -211,10 +209,6 @@ public:
 
     bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override;
-
-#if USE_AWS_S3
-    std::shared_ptr<const S3::Client> getS3StorageClient() const override;
-#endif
 
 private:
 

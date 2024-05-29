@@ -140,24 +140,16 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::addToChecksums(Merg
 
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
-    const String & data_part_name_,
-    const String & logger_name_,
-    const SerializationByName & serializations_,
-    MutableDataPartStoragePtr data_part_storage_,
-    const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const MergeTreeSettingsPtr & storage_settings_,
+    const MergeTreeMutableDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
     const Statistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(
-        data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
-        storage_settings_, columns_list_, metadata_snapshot_, virtual_columns_, settings_, index_granularity_)
+    : IMergeTreeDataPartWriter(data_part_, columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
     , stats(stats_to_recalc_)
     , marks_file_extension(marks_file_extension_)
@@ -165,14 +157,14 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compute_granularity(index_granularity.empty())
     , compress_primary_key(settings.compress_primary_key)
     , execution_stats(skip_indices.size(), stats.size())
-    , log(getLogger(logger_name_ + " (DataPartWriter)"))
+    , log(getLogger(storage.getLogName() + " (DataPartWriter)"))
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
-    if (!getDataPartStorage().exists())
-        getDataPartStorage().createDirectories();
+    if (!data_part->getDataPartStorage().exists())
+        data_part->getDataPartStorage().createDirectories();
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
@@ -231,6 +223,7 @@ static size_t computeIndexGranularityImpl(
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
+    const auto storage_settings = storage.getSettings();
     return computeIndexGranularityImpl(
             block,
             storage_settings->index_granularity_bytes,
@@ -244,7 +237,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     if (metadata_snapshot->hasPrimaryKey())
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
-        index_file_stream = getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
+        index_file_stream = data_part->getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 
         if (compress_primary_key)
@@ -263,7 +256,7 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
         String stats_name = stat_ptr->getFileName();
         stats_streams.emplace_back(std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<true>>(
                                        stats_name,
-                                       data_part_storage,
+                                       data_part->getDataPartStoragePtr(),
                                        stats_name, STAT_FILE_SUFFIX,
                                        default_codec, settings.max_compress_block_size,
                                        settings.query_write_settings));
@@ -282,7 +275,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<false>>(
                         stream_name,
-                        data_part_storage,
+                        data_part->getDataPartStoragePtr(),
                         stream_name, skip_index->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
@@ -292,7 +285,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_index) != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, storage_settings->max_digestion_size_per_segment);
+            store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
         skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
@@ -505,7 +498,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
     }
 
     for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part_name);
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part->name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -531,7 +524,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         store.second->finalize();
 
     for (size_t i = 0; i < skip_indices.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part_name);
+        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part->name);
 
     gin_index_stores.clear();
     skip_indices_streams.clear();

@@ -491,12 +491,12 @@ public:
         incrementErrorMetrics(code);
     }
 
-    static Exception createDeprecated(const std::string & msg, Error code_)
+    inline static Exception createDeprecated(const std::string & msg, Error code_)
     {
         return Exception(msg, code_, 0);
     }
 
-    static Exception fromPath(Error code_, const std::string & path)
+    inline static Exception fromPath(Error code_, const std::string & path)
     {
         return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
     }
@@ -504,7 +504,7 @@ public:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    static Exception fromMessage(Error code_, T && message)
+    inline static Exception fromMessage(Error code_, T && message)
     {
         return Exception(std::forward<T>(message), code_);
     }

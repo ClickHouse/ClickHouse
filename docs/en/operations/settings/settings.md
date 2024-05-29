@@ -2248,7 +2248,7 @@ Default value: 0.
 
 ## count_distinct_implementation {#count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
 Possible values:
 
@@ -3665,26 +3665,6 @@ Possible values:
 
 Default value: `0`.
 
-## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
-
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 — `SELECT` returns empty result.
-- 0 — `SELECT` throws an exception.
-
-Default value: `0`.
-
-## s3_validate_request_settings {#s3_validate_request_settings}
-
-Enables s3 request settings validation.
-
-Possible values:
-- 1 — validate settings.
-- 0 — do not validate settings.
-
-Default value: `1`.
-
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3710,56 +3690,6 @@ Default value: `0`.
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
-
-Possible values:
-- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 — `SELECT` returns empty result for empty file.
-
-Default value: `0`.
-
-## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
-
-Throw an error if matched zero files according to glob expansion rules.
-
-Possible values:
-- 1 — `SELECT` throws an exception.
-- 0 — `SELECT` returns empty result.
-
-Default value: `0`.
-
-## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
-
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 — `SELECT` returns empty result.
-- 0 — `SELECT` throws an exception.
-
-Default value: `0`.
-
-## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
-
-Throw an error if matched zero files according to glob expansion rules.
-
-Possible values:
-- 1 — `SELECT` throws an exception.
-- 0 — `SELECT` returns empty result.
-
-Default value: `0`.
-
-## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
-
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 — `SELECT` returns empty result.
-- 0 — `SELECT` throws an exception.
-
-Default value: `0`.
-
-## azure_skip_empty_files {#azure_skip_empty_files}
-
-Enables or disables skipping empty files in S3 engine.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.

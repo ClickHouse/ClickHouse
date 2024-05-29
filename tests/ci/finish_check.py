@@ -15,7 +15,7 @@ from commit_status_helper import (
 )
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import PENDING
+from report import PENDING, SUCCESS
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 
@@ -67,7 +67,7 @@ def main():
         if status.state == PENDING:
             post_commit_status(
                 commit,
-                state,  # map Mergeable Check status to CI Running
+                SUCCESS,
                 status.target_url,
                 "All checks finished",
                 StatusNames.CI,
