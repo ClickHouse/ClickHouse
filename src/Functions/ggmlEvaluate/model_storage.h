@@ -30,7 +30,7 @@ private:
 class GgmlModelStorage
 {
 public:
-    std::shared_ptr<IGgmlModel> get(const std::string & key);
+    std::shared_ptr<IGgmlModel> get(const std::string & key, const std::string & builder_name);
 
 private:
     std::unordered_map<std::string, std::shared_ptr<IGgmlModel>> models;

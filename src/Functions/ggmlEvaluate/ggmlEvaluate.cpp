@@ -163,12 +163,15 @@ private:
 
     std::shared_ptr<IGgmlModel> getModel(const std::string & model_name) const
     {
-        auto & storage = getContext()->getGgmlModelStorage();
-        auto model = storage.get(model_name);
-
         if (!getContext()->getConfigRef().has(ggmlConfigSection))
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key '{}' in config", ggmlConfigSection);
-        ConfigPtr model_config{getContext()->getConfigRef().createView(ggmlConfigSection)};
+         ConfigPtr ggml_config{getContext()->getConfigRef().createView(ggmlConfigSection)};
+         if (!ggml_config->has(model_name))
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key '{}' set in ggml config", model_name);
+         ConfigPtr model_config{ggml_config->createView(model_name)};
+ 
+         auto & storage = getContext()->getGgmlModelStorage();
+         auto model = storage.get(model_name, "llama-gguf");  // llama-gguf is defult for now
 
         LOG_DEBUG(log, "Start loading model");
         model->load(model_config);

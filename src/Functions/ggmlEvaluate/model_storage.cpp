@@ -17,15 +17,17 @@ GgmlModelBuilders & GgmlModelBuilders::instance()
     return instance;
 }
 
-std::shared_ptr<IGgmlModel> GgmlModelStorage::get(const std::string & key)
+std::shared_ptr<IGgmlModel> GgmlModelStorage::get(const std::string & key, const std::string & builder_name)
 {
     std::lock_guard lock{mtx};
+
     if (models.contains(key))
         return models[key];
+
     auto & builders = GgmlModelBuilders::instance();
-    auto it = builders.find(key);
+    auto it = builders.find(builder_name);
     if (it == builders.end())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No model with name '{}'", key);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No builder with name '{}'", builder_name);
     return models[key] = it->second();
 }
 

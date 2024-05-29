@@ -4,7 +4,7 @@
 namespace DB
 {
 
-void IGgmlModel::load(ConfigPtr config)
+void IGgmlModel::load(const ConfigPtr & config)
 {
     std::lock_guard lock{load_mutex};
     if (!loaded)

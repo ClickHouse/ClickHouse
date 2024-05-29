@@ -54,6 +54,6 @@ std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string
 GptVocab::id gpt_sample_top_k_top_p(
     const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, pcg64_fast & random_number_generator);
 
-std::string getPathFromConfig(const DB::ConfigPtr & config, const std::string & model_name);
+std::string getPathFromConfig(const DB::ConfigPtr & config);
 
 }

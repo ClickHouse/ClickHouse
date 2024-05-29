@@ -6,9 +6,16 @@
 -->
 <clickhouse>
     <ggml>
-        <gptj>
-            <path>/models/gptj.ggml</path>
-        </gptj>
+         <gptj>
+             <path>/home/m0r0zk01/ggml-model.bin</path>
+             <builder>gptj-ggml</builder>
+         </gptj>
+         <deepseek>
+             <path>/home/m0r0zk01/deepseek.gguf</path>
+         </deepseek>
+         <llama3>
+             <path>/home/m0r0zk01/llama.gguf</path>
+         </llama3>
     </ggml>
     <logger>
         <!-- Possible levels [1]:
