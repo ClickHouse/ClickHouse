@@ -1323,7 +1323,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             {
                 Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
                 ColumnsWithTypeAndName cols;
-                if (projection_chunk.hasColumns())
+                if (projection_chunk.hasColumns() && block_to_squash)
                     for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
                         cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], block_to_squash.getDataTypes()[j], block_to_squash.getNames()[j]));
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
@@ -1351,7 +1351,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
             ColumnsWithTypeAndName cols;
-            if (projection_chunk.hasColumns())
+            if (projection_chunk.hasColumns() && projection_squashes[i].header)
                 for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
                     cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], projection_squashes[i].header.getDataTypes()[j], projection_squashes[i].header.getNames()[j]));
 
