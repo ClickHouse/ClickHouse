@@ -13,7 +13,7 @@ The functions mentioned in this section for the most part do not follow the RFC-
 — Pick the non-`RFC` variant when working with domains which are allowed to be publically registered and when userinfo and the `@` symbol does not appear in the URL.
 :::
 
-The table belows details which symbols are restricted (`✗`) and which are available (`✔`) for use in the whole URL between the two variants. 
+The table below details which symbols are restricted (`✗`) and which are available (`✔`) for use in the whole URL between the two variants. 
 
 |Symbol | non-`RFC`| `RFC` |
 |-------|----------|-------|
