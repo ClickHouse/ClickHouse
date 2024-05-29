@@ -1,6 +1,7 @@
 #include <Server/ServersManager/InterServersManager.h>
 
 #include <Interpreters/Context.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/KeeperReadinessHandler.h>
@@ -168,9 +169,9 @@ void InterServersManager::createServers(
 #endif
     }
 
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+    if (config.has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
     {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
+        PlacementInfo::PlacementInfo::instance().initialize(config);
     }
 
     {

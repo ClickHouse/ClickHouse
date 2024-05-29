@@ -86,7 +86,6 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <Server/CloudPlacementInfo.h>
 #include <Server/ServersManager/InterServersManager.h>
 #include <Server/ServersManager/ProtocolServersManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
