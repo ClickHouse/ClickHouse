@@ -19,13 +19,6 @@
 #include <utility>
 #include <vector>
 
-// static std::string unicode_cpts_to_utf8(const std::vector<uint32_t> & cps) {
-//     std::string result;
-//     for (size_t i = 0; i < cps.size(); ++i) {
-//         result.append(unicode_cpt_to_utf8(cps[i]));
-//     }
-//     return result;
-// }
 
 static uint32_t unicode_cpt_from_utf8(const std::string & utf8, size_t & offset)
 {
@@ -74,55 +67,6 @@ static uint32_t unicode_cpt_from_utf8(const std::string & utf8, size_t & offset)
     }
     throw std::invalid_argument("failed to convert utf8 to codepoint");
 }
-
-//static std::vector<uint16_t> unicode_cpt_to_utf16(uint32_t cp) {
-//    std::vector<uint16_t> result;
-//    if (/* 0x0000 <= cp && */ cp <= 0xffff) {
-//        result.emplace_back(cp);
-//        return result;
-//    }
-//    if (0x10000 <= cp && cp <= 0x10ffff) {
-//        result.emplace_back(0xd800 | ((cp - 0x10000) >> 10));
-//        result.emplace_back(0xdc00 | ((cp - 0x10000) & 0x03ff));
-//        return result;
-//    }
-//    throw std::invalid_argument("failed to convert codepoint to utf16");
-//}
-
-//static std::vector<uint16_t> unicode_cpts_to_utf16(const std::vector<uint32_t> & cps) {
-//    std::vector<uint16_t> result;
-//    for (size_t i = 0; i < cps.size(); ++i) {
-//        auto temp = unicode_cpt_to_utf16(cps[i]);
-//        result.insert(result.end(), temp.begin(), temp.end());
-//    }
-//    return result;
-//}
-
-//static uint32_t unicode_cpt_from_utf16(const std::vector<uint16_t> & utf16, size_t & offset) {
-//    assert(offset < utf16.size());
-//    if (((utf16[0] >> 10) << 10) != 0xd800) {
-//        auto result = utf16[offset + 0];
-//        offset += 1;
-//        return result;
-//    }
-//
-//    if (offset + 1 >= utf16.size() || !((utf16[1] & 0xdc00) == 0xdc00)) {
-//        throw std::invalid_argument("invalid character");
-//    }
-//
-//    auto result = 0x10000 + (((utf16[0] & 0x03ff) << 10) | (utf16[1] & 0x03ff));
-//    offset += 2;
-//    return result;
-//}
-
-//static std::vector<uint32_t> unicode_cpts_from_utf16(const std::vector<uint16_t> & utf16) {
-//    std::vector<uint32_t> result;
-//    size_t offset = 0;
-//    while (offset < utf16.size()) {
-//        result.push_back(unicode_cpt_from_utf16(utf16, offset));
-//    }
-//    return result;
-//}
 
 static std::vector<codepoint_flags> unicode_cpt_flags_array()
 {
@@ -553,39 +497,9 @@ static std::string wstring_to_utf8(const std::wstring & wstr)
     return converter.to_bytes(wstr);
 }
 
-// // use std::wregex to split the text
-// static std::vector<size_t> unicode_regex_split_stl(const std::wstring & wtext, const std::wstring & regex_expr, const std::vector<size_t> & offsets) {
-//     std::wregex expr(regex_expr);
-//     std::vector<size_t> bpe_offsets; // store the offset of each word
-//     bpe_offsets.reserve(offsets.size()); // Reserve memory for the approximate size
-//     size_t start = 0;
-//     for (auto offset : offsets) {
-//         std::wcregex_iterator it(wtext.data() + start, wtext.data() + start + offset, expr);
-//         std::wcregex_iterator end;
-
-//         int64_t start_idx = 0;
-//         while (it != end) {
-//             std::wcmatch match = *it;
-//             if (match.position() > start_idx) {
-//                 bpe_offsets.emplace_back(match.position() - start_idx);
-//             }
-//             bpe_offsets.emplace_back(match.length());
-//             start_idx = match.position() + match.length();
-//             ++it;
-//         }
-
-//         if (start_idx < int64_toffset) {
-//             bpe_offsets.emplace_back(offset - start_idx);
-//         }
-//         start += offset;
-//     }
-
-//     return bpe_offsets;
-// }
-
 // Use Google RE2 to split the text
 static std::vector<size_t>
-unicode_regex_split_stl(const std::wstring & wtext, const std::wstring & wregex_expr, const std::vector<size_t> & offsets)
+unicode_regex_split_re2(const std::wstring & wtext, const std::wstring & wregex_expr, const std::vector<size_t> & offsets)
 {
     std::string text = wstring_to_utf8(wtext);
     std::string regex_expr = wstring_to_utf8(wregex_expr);
@@ -621,39 +535,9 @@ unicode_regex_split_stl(const std::wstring & wtext, const std::wstring & wregex_
     return bpe_offsets;
 }
 
-// // use std::regex to split the text
-// static std::vector<size_t> unicode_regex_split_stl(const std::string & text, const std::string & regex_expr, const std::vector<size_t> & offsets) {
-//     std::regex expr(regex_expr);
-//     std::vector<size_t> bpe_offsets; // store the offset of each word
-//     bpe_offsets.reserve(offsets.size()); // Reserve memory for the approximate size
-//     size_t start = 0;
-//     for (auto offset : offsets) {
-//         std::cregex_iterator it(text.data() + start, text.data() + start + offset, expr);
-//         std::cregex_iterator end;
-
-//         int64_t start_idx = 0;
-//         while (it != end) {
-//             std::cmatch match = *it;
-//             if (match.position() > start_idx) {
-//                 bpe_offsets.emplace_back(match.position() - start_idx);
-//             }
-//             bpe_offsets.emplace_back(match.length());
-//             start_idx = match.position() + match.length();
-//             ++it;
-//         }
-
-//         if (start_idx < (int64_t) offset) {
-//             bpe_offsets.emplace_back(offset - start_idx);
-//         }
-//         start += offset;
-//     }
-
-//     return bpe_offsets;
-// }
-
 // Use Google RE2 to split the text
 static std::vector<size_t>
-unicode_regex_split_stl(const std::string & text, const std::string & regex_expr, const std::vector<size_t> & offsets)
+unicode_regex_split_re2(const std::string & text, const std::string & regex_expr, const std::vector<size_t> & offsets)
 {
     re2::RE2 expr(regex_expr);
     std::vector<size_t> bpe_offsets; // Store the offset of each word
@@ -964,7 +848,7 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
 
                 //printf("text_collapsed: %s\n", text_collapsed.c_str());
                 //printf("regex_expr_collapsed: %s\n", regex_expr_collapsed.c_str());
-                bpe_offsets = unicode_regex_split_stl(text_collapsed, regex_expr_collapsed, bpe_offsets);
+                bpe_offsets = unicode_regex_split_re2(text_collapsed, regex_expr_collapsed, bpe_offsets);
             }
             else
             {
@@ -974,7 +858,7 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
 
                 //printf("text: %s\n", text.c_str());
                 //printf("regex_expr: %s\n", regex_expr.c_str());
-                bpe_offsets = unicode_regex_split_stl(wtext, wregex_expr, bpe_offsets);
+                bpe_offsets = unicode_regex_split_re2(wtext, wregex_expr, bpe_offsets);
             }
         }
         catch (std::exception & e)

@@ -1,8 +1,8 @@
+#pragma once
+
 // NOLINTBEGIN
 
 // Various helper functions and utilities
-
-#pragma once
 
 #include "llama.h"
 

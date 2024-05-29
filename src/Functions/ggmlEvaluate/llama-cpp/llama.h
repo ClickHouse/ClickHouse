@@ -1,3 +1,5 @@
+#pragma once
+
 // NOLINTBEGIN
 
 #ifndef LLAMA_H

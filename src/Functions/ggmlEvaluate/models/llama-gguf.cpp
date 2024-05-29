@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 class LlamaGgufModel : public IGgmlModel

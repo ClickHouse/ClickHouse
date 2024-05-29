@@ -1,6 +1,6 @@
-// NOLINTBEGIN
-
 #pragma once
+
+// NOLINTBEGIN
 
 #include "llama.h"
 

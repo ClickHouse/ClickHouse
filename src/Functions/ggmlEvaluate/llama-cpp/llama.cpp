@@ -22287,7 +22287,7 @@ static int32_t llama_chat_apply_template_internal(
     }
     else if (tmpl == "monarch" || tmpl.find("bos_token + message['role']") != std::string::npos)
     {
-        // mlabonne/AlphaMonarch-7B template (the <s> is included inside history)
+        // mlabonne/AlphaMonarch-7B template (the \<s\> is included inside history)
         for (auto message : chat)
         {
             std::string bos = (message == chat.front()) ? "" : "<s>"; // skip BOS for first message
@@ -22542,7 +22542,7 @@ LLAMA_API int llama_split_path(char * split_path, size_t maxlen, const char * pa
     return 0;
 }
 
-int llama_split_prefix(char * dest, size_t maxlen, const char * split_path, int split_no, int split_count)
+int llama_split_prefix(char * split_prefix, size_t maxlen, const char * split_path, int split_no, int split_count)
 {
     std::string str_split_path(split_path);
     char postfix[32];
@@ -22553,7 +22553,7 @@ int llama_split_prefix(char * dest, size_t maxlen, const char * split_path, int 
     int size_prefix = str_split_path.size() - str_postfix.size();
     if (size_prefix > 0 && str_split_path.find(str_postfix, size_prefix) != std::string::npos)
     {
-        snprintf(dest, std::min((size_t)size_prefix + 1, maxlen), "%s", split_path);
+        snprintf(split_prefix, std::min((size_t)size_prefix + 1, maxlen), "%s", split_path);
         return size_prefix;
     }
 

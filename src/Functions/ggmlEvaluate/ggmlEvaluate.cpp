@@ -169,7 +169,7 @@ private:
          if (!ggml_config->has(model_name))
              throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key '{}' set in ggml config", model_name);
          ConfigPtr model_config{ggml_config->createView(model_name)};
- 
+
          auto & storage = getContext()->getGgmlModelStorage();
          auto model = storage.get(model_name, "llama-gguf");  // llama-gguf is defult for now
 

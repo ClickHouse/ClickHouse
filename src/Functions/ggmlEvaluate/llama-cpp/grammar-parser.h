@@ -1,3 +1,5 @@
+#pragma once
+
 // NOLINTBEGIN
 
 // Implements a parser for an extended Backus-Naur form (BNF), producing the
@@ -11,7 +13,6 @@
 // num   ::= [0-9]+ space
 // space ::= [ \t\n]*
 
-#pragma once
 #include <cstdint>
 #include <map>
 #include <string>
