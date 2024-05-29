@@ -1,0 +1,17 @@
+false	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+false	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+true	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+2001-01-01 01:01:01.111	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+s	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+0	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+1	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+\N	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+
+false	Bool
+false	Bool
+true	Bool
+2001-01-01 01:01:01.111	DateTime64(3)
+s	String
+0	UInt32
+1	UInt32
+\N	None

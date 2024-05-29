@@ -148,6 +148,9 @@ public:
     size_t sizeOfValueIfFixed() const override { return values->sizeOfValueIfFixed() + values->sizeOfValueIfFixed(); }
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
+    bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+
     size_t getNumberOfTrailingDefaults() const
     {
         return offsets->empty() ? _size : _size - getOffsetsData().back() - 1;
@@ -186,6 +189,8 @@ public:
         size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
         size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
         size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
+        size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
+        size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 
         bool operator==(const Iterator & other) const
         {
