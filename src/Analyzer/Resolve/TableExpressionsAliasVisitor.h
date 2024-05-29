@@ -22,7 +22,7 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        updateAliasesIfNeeded(node);
+        updateAliasesIfNeeded(node, scope);
     }
 
     static bool needChildVisit(const QueryTreeNodePtr & node, const QueryTreeNodePtr & child)
@@ -50,21 +50,21 @@ public:
         return false;
     }
 
-private:
-    void updateAliasesIfNeeded(const QueryTreeNodePtr & node)
+    static void updateAliasesIfNeeded(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
     {
         if (!node->hasAlias())
             return;
 
         const auto & node_alias = node->getAlias();
-        auto [_, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(node_alias, node);
-        if (!inserted)
+        auto [it, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(node_alias, node);
+        if (!inserted && node != it->second)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "Multiple table expressions with same alias {}. In scope {}",
                 node_alias,
                 scope.scope_node->formatASTForErrorMessage());
     }
 
+private:
     IdentifierResolveScope & scope;
 };
 
