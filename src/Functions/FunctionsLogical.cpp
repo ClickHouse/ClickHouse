@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/logger_useful.h>
 
 #include <cstring>
 #include <algorithm>
@@ -701,13 +702,29 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
+        {
+            const auto float_value = constant_field_value.get<Float64>();
+            if (!isFinite(float_value))
+            {
+                throw Exception(
+                    DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal Float64 argument for logical function: {}. The value has to be convertible to UInt8 or Nullable(UInt8).",
+                    argument.name);
+            }
+
             constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
+        }
         else if (field_type == Field::Types::Int64)
             constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
         else if (field_type == Field::Types::UInt64)
             constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
+        if constexpr (std::is_same_v<Impl, OrImpl>)
+        {
+            if (has_true_constant)
+                break;
+        }
         has_false_constant = has_false_constant || !constant_value_bool;
     }
 
