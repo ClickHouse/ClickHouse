@@ -13,6 +13,8 @@
 #    include <stdint.h>
 #    include <stdio.h>
 
+#    include <Poco/Random.h>
+
 #    ifdef LLAMA_SHARED
 #        if defined(_WIN32) && !defined(__MINGW32__)
 #            ifdef LLAMA_BUILD
@@ -964,9 +966,9 @@ void llama_grammar_accept(
 
 std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(const std::string & src, llama_partial_utf8 partial_start);
 
-// Randomly selects a token from the candidates based on their probabilities using given std::mt19937.
+// Randomly selects a token from the candidates based on their probabilities using given rng.
 // This is a temporary workaround in order to fix race conditions when sampling with multiple sequences.
-llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, std::mt19937 & rng);
+llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, Poco::Random & rng);
 
 #    endif // LLAMA_API_INTERNAL
 

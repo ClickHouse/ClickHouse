@@ -81,9 +81,12 @@ void llama_sampling_set_rng_seed(struct llama_sampling_context * ctx, uint32_t s
 {
     if (seed == LLAMA_DEFAULT_SEED)
     {
-        seed = std::random_device{}();
+        ctx->rng.seed();
     }
-    ctx->rng.seed(seed);
+    else
+    {
+        ctx->rng.seed(seed);
+    }
 }
 
 void llama_sampling_cp(llama_sampling_context * src, llama_sampling_context * dst)

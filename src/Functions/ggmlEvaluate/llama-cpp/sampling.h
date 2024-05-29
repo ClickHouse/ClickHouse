@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <Poco/Random.h>
+
 // sampler types
 enum class llama_sampler_type : char
 {
@@ -87,7 +89,7 @@ struct llama_sampling_context
     std::vector<llama_token_data> cur;
     size_t n_valid; // Number of correct top tokens with correct probabilities.
 
-    std::mt19937 rng;
+    Poco::Random rng;
 };
 
 // Create a new sampling context instance.

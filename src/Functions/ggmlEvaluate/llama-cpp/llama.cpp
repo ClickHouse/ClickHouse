@@ -1,8 +1,6 @@
 #define LLAMA_API_INTERNAL
 #include "llama.h"
 
-#include <iostream>
-
 #include "unicode.h"
 
 #include "ggml-alloc.h"
@@ -2455,7 +2453,7 @@ struct llama_context
     // key + value cache for the self attention
     struct llama_kv_cache kv_self;
 
-    std::mt19937 rng;
+    Poco::Random rng;
 
     bool has_evaluated_once = false;
 
@@ -6036,13 +6034,13 @@ static void llm_load_vocab(llama_model_loader & ml, llama_model & model)
                         vocab.special_tokens_cache[token] = id;
 
                         // Count manually found special tokens
-                        special_tokens_count_from_verification++;
+                        // special_tokens_count_from_verification++;
 
                         // If this manually found special token is not marked as such, flag a mismatch
-                        if (vocab.id_to_token[id].type == LLAMA_TOKEN_TYPE_NORMAL)
-                        {
-                            special_tokens_definition_mismatch = true;
-                        }
+                        // if (vocab.id_to_token[id].type == LLAMA_TOKEN_TYPE_NORMAL)
+                        // {
+                            // special_tokens_definition_mismatch = true;
+                        // }
                     }
                 }
             }
@@ -16135,8 +16133,6 @@ llama_tokenize_internal(const llama_vocab & vocab, std::string raw_text, bool ad
             bool is_prev_special = false;
             bool special_token_rtrim = false;
 
-            std::cerr << "LLAMA_VOCAB_TYPE_SPM\n";
-
             if (add_special && vocab.special_add_bos != 0)
             {
                 GGML_ASSERT(vocab.special_bos_id != -1);
@@ -17577,7 +17573,7 @@ llama_token llama_sample_token_greedy(struct llama_context * ctx, llama_token_da
     return result;
 }
 
-llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, std::mt19937 & rng)
+llama_token llama_sample_token_with_rng(struct llama_context * ctx, llama_token_data_array * candidates, Poco::Random & rng)
 {
     GGML_ASSERT(ctx);
 
@@ -19687,7 +19683,8 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
     ctx->abort_callback = params.abort_callback;
     ctx->abort_callback_data = params.abort_callback_data;
 
-    ctx->rng = std::mt19937(params.seed);
+    ctx->rng = Poco::Random();
+    ctx->rng.seed(params.seed);
     ctx->logits_all = params.logits_all;
 
     uint32_t kv_size = cparams.n_ctx;
@@ -20497,15 +20494,9 @@ void llama_kv_cache_update(struct llama_context * ctx)
 {
     llama_kv_cache_update_internal(*ctx);
 }
-
-// Returns the *maximum* size of the state
-size_t llama_state_get_size(const struct llama_context * ctx)
-{
     const auto & cparams = ctx->cparams;
     const auto & hparams = ctx->model.hparams;
 
-    // we don't know size of rng until we actually serialize it. so reserve more than enough memory for its serialized state.
-    // for reference, std::mt19937(1337) serializes to 6701 bytes.
     const size_t s_rng_size = sizeof(size_t);
     const size_t s_rng = LLAMA_MAX_RNG_STATE;
     const size_t s_n_outputs = sizeof(size_t);
@@ -20533,7 +20524,6 @@ size_t llama_state_get_size(const struct llama_context * ctx)
         LLAMA_SESSION_VERSION == 6, "So you just bumped the session version - good. But did you remember to update llama_state_get_size?");
 
     return s_total;
-}
 
 // llama_context_data
 struct llama_data_context
