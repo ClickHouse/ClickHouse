@@ -170,7 +170,9 @@ def test_restore_table(engine):
 
 def test_restore_materialized_view_with_definer():
     instance.query("CREATE DATABASE test")
-    instance.query("CREATE TABLE test.test_table (s String) ENGINE = MergeTree ORDER BY s")
+    instance.query(
+        "CREATE TABLE test.test_table (s String) ENGINE = MergeTree ORDER BY s"
+    )
     instance.query("CREATE USER u1")
     instance.query("GRANT SELECT ON *.* TO u1")
     instance.query("GRANT INSERT ON *.* TO u1")
