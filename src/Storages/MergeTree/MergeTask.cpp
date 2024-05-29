@@ -572,7 +572,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
     ctx->use_prefetch = all_parts_on_remote_disks && global_ctx->data->getSettings()->vertical_merge_remote_filesystem_prefetch;
 
-    if (ctx->use_prefetch)
+    if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
         ctx->prepared_pipe = createPipeForReadingOneColumn(ctx->it_name_and_type->name);
 
     return false;
