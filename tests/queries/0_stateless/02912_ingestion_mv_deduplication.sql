@@ -54,7 +54,7 @@ SELECT '-- Original issue with deduplicate_blocks_in_dependent_materialized_view
 
     - 1st insert works for landing and mv tables
     - 2nd insert gets first block 20220901 deduplicated and second one inserted in landing table
-    - 2nd insert is not inserting anything in mv table due to a bug computing blocks to be discarded
+    - 2nd insert is not inserting anything in mv table due to a bug computing blocks to be discarded, now that block is inserted because deduplicate_blocks_in_dependent_materialized_views=0
 
     Now it is fixed.
 */
