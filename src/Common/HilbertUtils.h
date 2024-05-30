@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
 #include "base/types.h"
@@ -18,18 +20,49 @@ namespace HilbertDetails
 
 }
 
-
+/*
+    Given the range of values of hilbert code - and this function will return segments of the Hilbert curve
+    such that each of them lies in a whole domain (aka square)
+           0                 1
+    ┌────────────────────────────────┐
+    │               │                │
+    │               │                │
+  0 │    00xxx      │     11xxx      │
+    │      |        │       |        │
+    │      |        │       |        │
+    │_______________│________________│
+    │      |        │       |        │
+    │      |        │       |        │
+    │      |        │       |        │
+  1 │    01xxx______│_____10xxx      │
+    │               │                │
+    │               │                │
+    └────────────────────────────────┘
+    Imagine a square, one side of which is a x-axis, other is a y-axis.
+    First approximation of the Hilbert curve is on the picture - U curve
+    So we divide Hilbert Code Interval on 4 parts each of which is represented by a square:
+    [00xxxxxx      |      01xxxxxx      |      10xxxxxx      |      11xxxxxx      ]
+    1:     [                                                ]
+           start = 0010111                                  end = 10111110
+    2:     [       ]                    [                   ]
+    And look where the given interval [start, end] is located. If it contains whole sector (that represents a domain=square),
+    then we take this range. int he example above - it is a sector [01000000, 01111111]
+    Then we dig into the recursion and check the remaing ranges
+    Note that after first call all other ranges in the recursion will have either start or end on the end of a range,
+    so the comlexity of the algorithm will be O(logN), not O(N), where N is the maximum of hilbert code.
+*/
 template <typename F>
 void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F && callback)
 {
     if (current_bits == 0)
         return;
 
-    auto next_bits = current_bits - 2;
-    auto history = (start >> current_bits) << current_bits;
+    const auto next_bits = current_bits - 2;
+    const auto history = (start >> current_bits) << current_bits;
 
-    auto start_chunk = (start >> next_bits) & 0b11;
-    auto finish_chunk = (finish >> next_bits) & 0b11;
+    const auto chunk_mask = 0b11;
+    const auto start_chunk = (start >> next_bits) & chunk_mask;
+    const auto finish_chunk = (finish >> next_bits) & chunk_mask;
 
     auto construct_range = [next_bits, history](UInt64 chunk)
     {
@@ -55,7 +88,7 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
         callback(construct_range(range_chunk));
     }
 
-    auto start_range = construct_range(start_chunk);
+    const auto start_range = construct_range(start_chunk);
     if (start == start_range.begin)
     {
         callback(start_range);
@@ -65,7 +98,7 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
         segmentBinaryPartition(start, start_range.end, next_bits, callback);
     }
 
-    auto finish_range = construct_range(finish_chunk);
+    const auto finish_range = construct_range(finish_chunk);
     if (finish == finish_range.end)
     {
         callback(finish_range);
@@ -76,6 +109,8 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
     }
 }
 
+// Given 2 points representing ends of the range of Hilbert Curve that lies in a whole domain.
+// The are neighboor corners of some square - and the function returns ranges of both sides of this square
 std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1, UInt64 y1, UInt64 x2, UInt64 y2)
 {
     UInt64 dist_x = x1 > x2 ? x1 - x2 : x2 - x1;
@@ -94,11 +129,12 @@ std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1, UInt6
 template <typename F>
 void hilbertIntervalToHyperrectangles2D(UInt64 first, UInt64 last, F && callback)
 {
-    segmentBinaryPartition(first, last, 64, [&](HilbertDetails::Segment range)
+    const auto equal_bits_count = getLeadingZeroBits(last - first);
+    const auto even_equal_bits_count = equal_bits_count - equal_bits_count % 2;
+    segmentBinaryPartition(first, last, 64 - even_equal_bits_count, [&](HilbertDetails::Segment range)
     {
-
-        auto interval1 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<2>::decode(range.begin);
-        auto interval2 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<2>::decode(range.end);
+        auto interval1 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<3>::decode(range.begin);
+        auto interval2 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<3>::decode(range.end);
 
         std::array<std::pair<UInt64, UInt64>, 2> unpacked_range = createRangeFromCorners(
             std::get<0>(interval1), std::get<1>(interval1),
