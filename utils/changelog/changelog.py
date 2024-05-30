@@ -3,18 +3,20 @@
 
 import argparse
 import logging
-import os.path as p
 import os
+import os.path as p
 import re
 from datetime import date, timedelta
-from subprocess import CalledProcessError, DEVNULL
+from subprocess import DEVNULL, CalledProcessError
 from typing import Dict, List, Optional, TextIO
 
 from fuzzywuzzy.fuzz import ratio  # type: ignore
-from github_helper import GitHub, PullRequest, PullRequests, Repository
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
-from git_helper import is_shallow, git_runner as runner
+
+from git_helper import git_runner as runner
+from git_helper import is_shallow
+from github_helper import GitHub, PullRequest, PullRequests, Repository
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
