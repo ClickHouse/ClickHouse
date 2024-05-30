@@ -618,11 +618,11 @@ class CiCache:
 
     def download_build_reports(self, file_prefix: str = "") -> List[str]:
         """
-        not ideal class for this method,
+        not an ideal class for this method,
         but let it be as we store build reports in CI cache directory on s3
         and CiCache knows where exactly
 
-        @file_prefix allows to filter out reports by git head_ref
+        @file_prefix allows filtering out reports by git head_ref
         """
         report_path = Path(REPORT_PATH)
         report_path.mkdir(exist_ok=True, parents=True)
@@ -1194,7 +1194,7 @@ def _pre_action(s3, indata, pr_info):
     BuildResult.cleanup()
     ci_cache = CiCache(s3, indata["jobs_data"]["digests"])
 
-    # for release/master branches reports must be from the same branches
+    # for release/master branches reports must be from the same branch
     report_prefix = normalize_string(pr_info.head_ref) if pr_info.number == 0 else ""
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
@@ -1612,6 +1612,7 @@ def _upload_build_artifacts(
     job_report: JobReport,
     s3: S3Helper,
     s3_destination: str,
+    upload_binary: bool,
 ) -> str:
     # There are ugly artifacts for the performance test. FIXME:
     s3_performance_path = "/".join(
@@ -1625,25 +1626,29 @@ def _upload_build_artifacts(
     performance_urls = []
     assert job_report.build_dir_for_upload, "Must be set for build job"
     performance_path = Path(job_report.build_dir_for_upload) / "performance.tar.zst"
-    if performance_path.exists():
-        performance_urls.append(
-            s3.upload_build_file_to_s3(performance_path, s3_performance_path)
+    if upload_binary:
+        if performance_path.exists():
+            performance_urls.append(
+                s3.upload_build_file_to_s3(performance_path, s3_performance_path)
+            )
+            print(
+                "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
+                performance_urls[0],
+            )
+            performance_path.unlink()
+        build_urls = (
+            s3.upload_build_directory_to_s3(
+                Path(job_report.build_dir_for_upload),
+                s3_destination,
+                keep_dirs_in_s3_path=False,
+                upload_symlinks=False,
+            )
+            + performance_urls
         )
-        print(
-            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
-            performance_urls[0],
-        )
-        performance_path.unlink()
-    build_urls = (
-        s3.upload_build_directory_to_s3(
-            Path(job_report.build_dir_for_upload),
-            s3_destination,
-            keep_dirs_in_s3_path=False,
-            upload_symlinks=False,
-        )
-        + performance_urls
-    )
-    print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+        print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+    else:
+        build_urls = []
+        print("::notice ::No binaries will be uploaded for this job")
     log_path = Path(job_report.additional_files[0])
     log_url = ""
     if log_path.exists():
@@ -1652,7 +1657,7 @@ def _upload_build_artifacts(
         )
     print(f"::notice ::Log URL: {log_url}")
 
-    # generate and upload build report
+    # generate and upload a build report
     build_result = BuildResult(
         build_name,
         log_url,
@@ -2180,6 +2185,14 @@ def main() -> int:
                 assert (
                     indata
                 ), f"--infile with config must be provided for POST action of a build type job [{args.job_name}]"
+
+                # upload binaries only for normal builds in PRs
+                upload_binary = (
+                    not pr_info.is_pr
+                    or args.job_name
+                    not in CI_CONFIG.get_builds_for_report(JobNames.BUILD_CHECK_SPECIAL)
+                )
+
                 build_name = args.job_name
                 s3_path_prefix = "/".join(
                     (
@@ -2195,10 +2208,12 @@ def main() -> int:
                     job_report=job_report,
                     s3=s3,
                     s3_destination=s3_path_prefix,
+                    upload_binary=upload_binary,
                 )
-                _upload_build_profile_data(
-                    pr_info, build_name, job_report, git_runner, ch_helper
-                )
+                # FIXME: profile data upload does not work
+                # _upload_build_profile_data(
+                #     pr_info, build_name, job_report, git_runner, ch_helper
+                # )
                 check_url = log_url
             else:
                 # test job
