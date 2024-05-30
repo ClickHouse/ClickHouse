@@ -1067,6 +1067,7 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
+                Build.BINARY_RELEASE,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -1084,7 +1085,6 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
-                Build.BINARY_RELEASE,
                 Build.FUZZERS,
             ]
         ),
@@ -1386,6 +1386,9 @@ REQUIRED_CHECKS = [
     JobNames.FAST_TEST,
     JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
+    JobNames.STATELESS_TEST_ASAN,
+    JobNames.STATELESS_TEST_FLAKY_ASAN,
+    JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,
     JobNames.UNIT_TEST_ASAN,
     JobNames.UNIT_TEST_MSAN,
@@ -1419,6 +1422,11 @@ class CheckDescription:
 
 
 CHECK_DESCRIPTIONS = [
+    CheckDescription(
+        StatusNames.SYNC,
+        "If it fails, ask a maintainer for help",
+        lambda x: x == StatusNames.SYNC,
+    ),
     CheckDescription(
         "AST fuzzer",
         "Runs randomly generated queries to catch program errors. "

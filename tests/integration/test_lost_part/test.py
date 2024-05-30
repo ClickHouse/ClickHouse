@@ -90,7 +90,7 @@ def test_lost_part_same_replica(start_cluster):
             )
 
         assert node1.contains_in_log(
-            "Created empty part"
+            f"Created empty part {victim_part_from_the_middle}"
         ), f"Seems like empty part {victim_part_from_the_middle} is not created or log message changed"
 
         assert node1.query("SELECT COUNT() FROM mt0") == "4\n"
@@ -143,7 +143,10 @@ def test_lost_part_other_replica(start_cluster):
         node1.query("CHECK TABLE mt1")
 
         node2.query("SYSTEM START REPLICATION QUEUES")
-        res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt1")
+        # Reduce timeout in sync replica since it might never finish with merge stopped and we don't want to wait 300s
+        res, err = node1.query_and_get_answer_with_error(
+            "SYSTEM SYNC REPLICA mt1", settings={"receive_timeout": 30}
+        )
         print("result: ", res)
         print("error: ", res)
 
@@ -158,10 +161,10 @@ def test_lost_part_other_replica(start_cluster):
             )
 
         assert node1.contains_in_log(
-            "Created empty part"
-        ), "Seems like empty part {} is not created or log message changed".format(
-            victim_part_from_the_middle
-        )
+            f"Created empty part {victim_part_from_the_middle}"
+        ) or node1.contains_in_log(
+            f"Part {victim_part_from_the_middle} looks broken. Removing it and will try to fetch."
+        ), f"Seems like empty part {victim_part_from_the_middle} is not created or log message changed"
 
         assert_eq_with_retry(node2, "SELECT COUNT() FROM mt1", "4")
         assert_eq_with_retry(node2, "SELECT COUNT() FROM system.replication_queue", "0")

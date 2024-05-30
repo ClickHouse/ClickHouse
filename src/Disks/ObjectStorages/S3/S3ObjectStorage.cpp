@@ -259,7 +259,10 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     S3Settings::RequestSettings request_settings = s3_settings.get()->request_settings;
-    if (auto query_context = CurrentThread::getQueryContext())
+    /// NOTE: For background operations settings are not propagated from session or query. They are taken from
+    /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
+    /// to rely on settings from disk.
+    if (auto query_context = CurrentThread::getQueryContext(); query_context && !query_context->isBackgroundOperationContext())
     {
         request_settings.updateFromSettingsIfChanged(query_context->getSettingsRef());
     }
@@ -495,13 +498,14 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         try
         {
             copyS3File(
-                current_client,
-                uri.bucket,
-                object_from.remote_path,
-                0,
-                size,
-                dest_s3->uri.bucket,
-                object_to.remote_path,
+                /*src_s3_client=*/current_client,
+                /*src_bucket=*/uri.bucket,
+                /*src_key=*/object_from.remote_path,
+                /*src_offset=*/0,
+                /*src_size=*/size,
+                /*dest_s3_client=*/current_client,
+                /*dest_bucket=*/dest_s3->uri.bucket,
+                /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
                 patchSettings(read_settings),
                 BlobStorageLogWriter::create(disk_name),
@@ -535,13 +539,15 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
 
-    copyS3File(current_client,
-        uri.bucket,
-        object_from.remote_path,
-        0,
-        size,
-        uri.bucket,
-        object_to.remote_path,
+    copyS3File(
+        /*src_s3_client=*/current_client,
+        /*src_bucket=*/uri.bucket,
+        /*src_key=*/object_from.remote_path,
+        /*src_offset=*/0,
+        /*src_size=*/size,
+        /*dest_s3_client=*/current_client,
+        /*dest_bucket=*/uri.bucket,
+        /*dest_key=*/object_to.remote_path,
         settings_ptr->request_settings,
         patchSettings(read_settings),
         BlobStorageLogWriter::create(disk_name),
@@ -578,6 +584,7 @@ void S3ObjectStorage::applyNewSettings(
     auto settings_from_config = getSettings(config, config_prefix, context, context->getSettingsRef().s3_validate_request_settings);
     auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
     modified_settings->auth_settings.updateFrom(settings_from_config->auth_settings);
+    modified_settings->request_settings = settings_from_config->request_settings;
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         modified_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
@@ -614,6 +621,11 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
     return key_generator->generate(path, /* is_directory */ false);
+}
+
+std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
+{
+    return client.get();
 }
 
 }
