@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace

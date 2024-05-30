@@ -1,3 +1,4 @@
+#pragma once
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
 
