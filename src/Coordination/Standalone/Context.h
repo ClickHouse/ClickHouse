@@ -170,6 +170,8 @@ public:
     const ServerSettings & getServerSettings() const;
 
     bool hasTraceCollector() const;
+
+    bool isBackgroundOperationContext() const;
 };
 
 }

@@ -18,6 +18,7 @@ import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames, StatusNames
+from ci_metadata import CiMetadata
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -39,22 +40,23 @@ from digest_helper import DockerDigester, JobDigester
 from env_helper import (
     CI,
     GITHUB_JOB_API_URL,
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_ID,
     GITHUB_RUN_URL,
     REPO_COPY,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
-    GITHUB_RUN_ID,
-    GITHUB_REPOSITORY,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, PENDING
+from report import ERROR, FAILURE, PENDING, SUCCESS, BuildResult, JobReport, TestResult
 from s3_helper import S3Helper
-from ci_metadata import CiMetadata
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -1867,8 +1869,8 @@ def _run_test(job_name: str, run_command: str) -> int:
         run_command or CI_CONFIG.get_job_config(job_name).run_command
     ), "Run command must be provided as input argument or be configured in job config"
 
-    if CI_CONFIG.get_job_config(job_name).timeout:
-        os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
+    env = os.environ.copy()
+    timeout = CI_CONFIG.get_job_config(job_name).timeout or None
 
     if not run_command:
         run_command = "/".join(
@@ -1879,26 +1881,27 @@ def _run_test(job_name: str, run_command: str) -> int:
         print("Use run command from a job config")
     else:
         print("Use run command from the workflow")
-    os.environ["CHECK_NAME"] = job_name
+    env["CHECK_NAME"] = job_name
     print(f"Going to start run command [{run_command}]")
-    process = subprocess.run(
-        run_command,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        text=True,
-        check=False,
-        shell=True,
-    )
+    stopwatch = Stopwatch()
+    job_log = Path(TEMP_PATH) / "job_log.txt"
+    with TeePopen(run_command, job_log, env, timeout) as process:
+        retcode = process.wait()
+        if retcode != 0:
+            print(f"Run action failed for: [{job_name}] with exit code [{retcode}]")
+            if timeout and process.timeout_exceeded:
+                print(f"Timeout {timeout} exceeded, dumping the job report")
+                JobReport(
+                    status=FAILURE,
+                    description=f"Timeout {timeout} exceeded",
+                    test_results=[TestResult.create_check_timeout_expired(timeout)],
+                    start_time=stopwatch.start_time_str,
+                    duration=stopwatch.duration_seconds,
+                    additional_files=[job_log],
+                ).dump()
 
-    if process.returncode == 0:
-        print(f"Run action done for: [{job_name}]")
-        exit_code = 0
-    else:
-        print(
-            f"Run action failed for: [{job_name}] with exit code [{process.returncode}]"
-        )
-        exit_code = process.returncode
-    return exit_code
+    print(f"Run action done for: [{job_name}]")
+    return retcode
 
 
 def _get_ext_check_name(check_name: str) -> str:

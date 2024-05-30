@@ -23,6 +23,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
+#include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
@@ -85,7 +86,9 @@ ObjectStoragePtr createObjectStorage(
                 DataSourceDescription{DataSourceType::ObjectStorage, type, MetadataStorageType::PlainRewritable, /*description*/ ""}
                     .toString());
 
-        return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
+        auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<BaseObjectStorage, MetadataStorageType::PlainRewritable>();
+        return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
+            std::move(metadata_storage_metrics), std::forward<Args>(args)...);
     }
     else
         return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
@@ -267,8 +270,9 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
             auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
+            auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<S3ObjectStorage, MetadataStorageType::PlainRewritable>();
             auto object_storage = std::make_shared<PlainRewritableObjectStorage<S3ObjectStorage>>(
-                std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+                std::move(metadata_storage_metrics), std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
             /// NOTE: should we still perform this check for clickhouse-disks?
             if (!skip_access_check)

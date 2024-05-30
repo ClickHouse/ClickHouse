@@ -22,14 +22,14 @@ namespace
 struct RepeatImpl
 {
     /// Safety threshold against DoS.
-    static inline void checkRepeatTime(UInt64 repeat_time)
+    static void checkRepeatTime(UInt64 repeat_time)
     {
         static constexpr UInt64 max_repeat_times = 1'000'000;
         if (repeat_time > max_repeat_times)
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}", repeat_time, max_repeat_times);
     }
 
-    static inline void checkStringSize(UInt64 size)
+    static void checkStringSize(UInt64 size)
     {
         static constexpr UInt64 max_string_size = 1 << 30;
         if (size > max_string_size)
