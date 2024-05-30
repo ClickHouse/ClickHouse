@@ -270,7 +270,8 @@ void Connection::disconnect()
     try
     {
         // finalize() can write and throw an exception.
-        maybe_compressed_out->finalize();
+        if (maybe_compressed_out)
+            maybe_compressed_out->finalize();
     }
     catch (...)
     {
