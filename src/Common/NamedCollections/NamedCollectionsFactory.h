@@ -1,7 +1,11 @@
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+class ASTCreateNamedCollectionQuery;
+class ASTDropNamedCollectionQuery;
+class ASTAlterNamedCollectionQuery;
 
 class NamedCollectionFactory : boost::noncopyable
 {
@@ -26,9 +30,22 @@ public:
 
     void removeIfExists(const std::string & collection_name);
 
-    void removeById(NamedCollectionUtils::SourceId id);
+    void removeById(NamedCollection::SourceId id);
 
     NamedCollectionsMap getAll() const;
+
+    void loadIfNot();
+
+    void reloadFromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context);
+
+    void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context);
+
+    void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context);
+
+    /// This method is public only for unit tests.
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config);
 
 private:
     bool existsUnlocked(
@@ -50,8 +67,12 @@ private:
 
     mutable NamedCollectionsMap loaded_named_collections;
 
+    LoggerPtr log = getLogger("NamedCollectionFactory");
     mutable std::mutex mutex;
     bool is_initialized = false;
+    bool loaded = false;
+
+    void loadFromSQL(const ContextPtr & context);
 };
 
 }

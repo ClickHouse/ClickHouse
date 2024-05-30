@@ -1,6 +1,5 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <gtest/gtest.h>
@@ -29,7 +28,7 @@ TEST(NamedCollections, SimpleConfig)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    NamedCollectionFactory::instance().loadFromConfig(*config);
 
     ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection1"));
     ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection2"));
@@ -119,7 +118,7 @@ TEST(NamedCollections, NestedConfig)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    NamedCollectionFactory::instance().loadFromConfig(*config);
 
     ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection3"));
 
@@ -171,7 +170,7 @@ TEST(NamedCollections, NestedConfigDuplicateKeys)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    NamedCollectionFactory::instance().loadFromConfig(*config);
     auto collection = NamedCollectionFactory::instance().get("collection");
 
     auto keys = collection->getKeys();
