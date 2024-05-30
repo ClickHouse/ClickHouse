@@ -95,7 +95,7 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
     /// Create bucket lock node as ephemeral node.
     requests.push_back(zkutil::makeCreateRequest(bucket_lock_path, "", zkutil::CreateMode::Ephemeral));
 
-    /// Crate bucket lock id node as persistent node if it does not exist yet.
+    /// Create bucket lock id node as persistent node if it does not exist yet.
     requests.push_back(
         zkutil::makeCreateRequest(
             bucket_lock_id_path, processor_info, zkutil::CreateMode::Persistent, /* ignore_if_exists */true));
