@@ -2972,11 +2972,11 @@ static bool llama_kv_cache_init(
             return false;
         }
         ggml_backend_buffer_clear(buf, 0);
-        LLAMA_LOG_INFO(
-            "%s: %10s KV buffer size = %8.2f MiB\n",
-            __func__,
-            ggml_backend_buffer_name(buf),
-            ggml_backend_buffer_get_size(buf) / 1024.0 / 1024.0);
+        // LLAMA_LOG_INFO(
+        //     "%s: %10s KV buffer size = %8.2f MiB\n",
+        //     __func__,
+        //     ggml_backend_buffer_name(buf),
+        //     ggml_backend_buffer_get_size(buf) / 1024.0 / 1024.0);
         cache.bufs.push_back(buf);
     }
 
@@ -19675,12 +19675,12 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
         params.seed = time(nullptr);
     }
 
-    LLAMA_LOG_INFO("%s: n_ctx      = %u\n", __func__, cparams.n_ctx);
-    LLAMA_LOG_INFO("%s: n_batch    = %u\n", __func__, cparams.n_batch);
-    LLAMA_LOG_INFO("%s: n_ubatch   = %u\n", __func__, cparams.n_ubatch);
-    LLAMA_LOG_INFO("%s: flash_attn = %d\n", __func__, cparams.flash_attn);
-    LLAMA_LOG_INFO("%s: freq_base  = %.1f\n", __func__, cparams.rope_freq_base);
-    LLAMA_LOG_INFO("%s: freq_scale = %g\n", __func__, cparams.rope_freq_scale);
+    // LLAMA_LOG_INFO("%s: n_ctx      = %u\n", __func__, cparams.n_ctx);
+    // LLAMA_LOG_INFO("%s: n_batch    = %u\n", __func__, cparams.n_batch);
+    // LLAMA_LOG_INFO("%s: n_ubatch   = %u\n", __func__, cparams.n_ubatch);
+    // LLAMA_LOG_INFO("%s: flash_attn = %d\n", __func__, cparams.flash_attn);
+    // LLAMA_LOG_INFO("%s: freq_base  = %.1f\n", __func__, cparams.rope_freq_base);
+    // LLAMA_LOG_INFO("%s: freq_scale = %g\n", __func__, cparams.rope_freq_scale);
 
     ctx->abort_callback = params.abort_callback;
     ctx->abort_callback_data = params.abort_callback_data;
@@ -19853,29 +19853,29 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
             return nullptr;
         }
 
-        {
-            size_t memory_size_k = 0;
-            size_t memory_size_v = 0;
+        // {
+        //     size_t memory_size_k = 0;
+        //     size_t memory_size_v = 0;
 
-            for (auto & k : ctx->kv_self.k_l)
-            {
-                memory_size_k += ggml_nbytes(k);
-            }
+        //     for (auto & k : ctx->kv_self.k_l)
+        //     {
+        //         memory_size_k += ggml_nbytes(k);
+        //     }
 
-            for (auto & v : ctx->kv_self.v_l)
-            {
-                memory_size_v += ggml_nbytes(v);
-            }
+        //     for (auto & v : ctx->kv_self.v_l)
+        //     {
+        //         memory_size_v += ggml_nbytes(v);
+        //     }
 
-            LLAMA_LOG_INFO(
-                "%s: KV self size  = %7.2f MiB, K (%s): %7.2f MiB, V (%s): %7.2f MiB\n",
-                __func__,
-                (float)(memory_size_k + memory_size_v) / (1024.0f * 1024.0f),
-                ggml_type_name(type_k),
-                (float)memory_size_k / (1024.0f * 1024.0f),
-                ggml_type_name(type_v),
-                (float)memory_size_v / (1024.0f * 1024.0f));
-        }
+        //     LLAMA_LOG_INFO(
+        //         "%s: KV self size  = %7.2f MiB, K (%s): %7.2f MiB, V (%s): %7.2f MiB\n",
+        //         __func__,
+        //         (float)(memory_size_k + memory_size_v) / (1024.0f * 1024.0f),
+        //         ggml_type_name(type_k),
+        //         (float)memory_size_k / (1024.0f * 1024.0f),
+        //         ggml_type_name(type_v),
+        //         (float)memory_size_v / (1024.0f * 1024.0f));
+        // }
 
         // graph outputs buffer
         {
@@ -19887,11 +19887,11 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
                 return nullptr;
             }
 
-            LLAMA_LOG_INFO(
-                "%s: %10s  output buffer size = %8.2f MiB\n",
-                __func__,
-                ggml_backend_buffer_name(ctx->buf_output),
-                ggml_backend_buffer_get_size(ctx->buf_output) / 1024.0 / 1024.0);
+            // LLAMA_LOG_INFO(
+            //     "%s: %10s  output buffer size = %8.2f MiB\n",
+            //     __func__,
+            //     ggml_backend_buffer_name(ctx->buf_output),
+            //     ggml_backend_buffer_get_size(ctx->buf_output) / 1024.0 / 1024.0);
         }
 
         // scheduler and compute buffers
@@ -19927,7 +19927,7 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
 
             if (pipeline_parallel)
             {
-                LLAMA_LOG_INFO("%s: pipeline parallelism enabled (n_copies=%d)\n", __func__, ggml_backend_sched_get_n_copies(ctx->sched));
+                // LLAMA_LOG_INFO("%s: pipeline parallelism enabled (n_copies=%d)\n", __func__, ggml_backend_sched_get_n_copies(ctx->sched));
             }
 
             // build worst-case graph
@@ -19948,19 +19948,19 @@ struct llama_context * llama_new_context_with_model(struct llama_model * model, 
             for (size_t i = 0; i < ctx->backends.size(); i++)
             {
                 ggml_backend_t backend = ctx->backends[i];
-                ggml_backend_buffer_type_t buft = backend_buft[i];
+                // ggml_backend_buffer_type_t buft = backend_buft[i];
                 size_t size = ggml_backend_sched_get_buffer_size(ctx->sched, backend);
                 if (size > 1)
                 {
-                    LLAMA_LOG_INFO(
-                        "%s: %10s compute buffer size = %8.2f MiB\n", __func__, ggml_backend_buft_name(buft), size / 1024.0 / 1024.0);
+                    // LLAMA_LOG_INFO(
+                    //     "%s: %10s compute buffer size = %8.2f MiB\n", __func__, ggml_backend_buft_name(buft), size / 1024.0 / 1024.0);
                 }
             }
 
             // note: the number of splits during measure is higher than during inference due to the kv shift
-            int n_splits = ggml_backend_sched_get_n_splits(ctx->sched);
-            LLAMA_LOG_INFO("%s: graph nodes  = %d\n", __func__, gf->n_nodes);
-            LLAMA_LOG_INFO("%s: graph splits = %d\n", __func__, n_splits);
+            // int n_splits = ggml_backend_sched_get_n_splits(ctx->sched);
+            // LLAMA_LOG_INFO("%s: graph nodes  = %d\n", __func__, gf->n_nodes);
+            // LLAMA_LOG_INFO("%s: graph splits = %d\n", __func__, n_splits);
         }
     }
 

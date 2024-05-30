@@ -298,6 +298,9 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
 
         for (auto id : embd)
         {
+            if (llama_token_is_control(llama_get_model(lctx), id)) {
+                continue;
+            }
             result += llama_token_to_piece(lctx, id);
         }
 
