@@ -82,7 +82,7 @@ Result:
 
 ## Reading subcolumns of Map
 
-To avoid reading the entire map, you can use subcolumsn `keys` and `values` in some cases.
+To avoid reading the entire map, you can use subcolumns `keys` and `values` in some cases.
 
 **Example**
 

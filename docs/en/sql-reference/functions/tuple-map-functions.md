@@ -300,7 +300,7 @@ Result:
 
 Fills missing key-value pairs in a map with integer keys.
 To support extending the keys beyond the largest value, a maximum key can be specified.
-More specificaly, the function returns a map in which the the keys form a series from the smallest to the largest key (or `max` argument if it specified) with step size of 1, and corresponding values.
+More specifically, the function returns a map in which the the keys form a series from the smallest to the largest key (or `max` argument if it specified) with step size of 1, and corresponding values.
 If no value is specified for a key, a default value is used as value.
 In case keys repeat, only the first value (in order of appearance) is associated with the key.
 
