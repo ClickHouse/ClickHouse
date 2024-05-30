@@ -56,8 +56,6 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     auto & [endpoint, proxy_protocol_string, proxy_port, cache_ttl] = remote_server_configuration;
 
-    LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
-
     std::lock_guard lock(cache_mutex);
 
     std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
