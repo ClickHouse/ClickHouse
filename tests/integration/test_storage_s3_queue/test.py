@@ -1148,7 +1148,7 @@ def test_shards(started_cluster, mode, processing_threads):
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(100):
+    for _ in range(30):
         count = (
             get_count(f"{dst_table_name}_1")
             + get_count(f"{dst_table_name}_2")
@@ -1166,12 +1166,15 @@ def test_shards(started_cluster, mode, processing_threads):
     ) != files_to_generate:
         processed_files = (
             node.query(
-                f"select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' order by file"
+                f"""
+select splitByChar('/', file_name)[-1] as file from system.s3queue
+where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
+                """
             )
             .strip()
             .split("\n")
         )
-        logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}")
+        logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}: {processed_files}")
 
         count = (
             get_count(f"{dst_table_name}_1")
@@ -1183,7 +1186,8 @@ def test_shards(started_cluster, mode, processing_threads):
         info = node.query(
             f"""
             select concat('test_',  toString(number), '.csv') as file from numbers(300)
-            where file not in (select splitByChar('/', file_name)[-1] from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed')
+            where file not in (select splitByChar('/', file_name)[-1] from system.s3queue
+            where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
         logging.debug(f"Unprocessed files: {info}")
@@ -1434,16 +1438,6 @@ def test_settings_check(started_cluster):
             },
             expect_error=True,
         )
-    )
-
-    assert "s3queue_current_shard_num = 0" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    node.restart_clickhouse()
-
-    assert "s3queue_current_shard_num = 0" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
     )
 
     node.query(f"DROP TABLE {table_name} SYNC")

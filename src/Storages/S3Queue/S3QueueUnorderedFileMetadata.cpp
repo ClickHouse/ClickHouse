@@ -110,6 +110,7 @@ void S3QueueUnorderedFileMetadata::setProcessedImpl()
     };
 
     const auto zk_client = getZooKeeper();
+    std::string failure_reason;
 
     Coordination::Requests requests;
     requests.push_back(
@@ -137,31 +138,18 @@ void S3QueueUnorderedFileMetadata::setProcessedImpl()
     }
 
     if (Coordination::isHardwareError(code))
-    {
-        LOG_WARNING(log, "Cannot set file {} as processed. Lost connection to keeper: {}", path, code);
-        return;
-    }
-
-    if (is_request_failed(SET_MAX_PROCESSED_PATH))
-    {
+        failure_reason = "Lost connection to keeper";
+    else if (is_request_failed(SET_MAX_PROCESSED_PATH))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot create a persistent node in /processed since it already exists");
-    }
+    else if (is_request_failed(CHECK_PROCESSING_ID_PATH))
+        failure_reason = "Version of processing id node changed";
+    else if (is_request_failed(REMOVE_PROCESSING_PATH))
+        failure_reason = "Failed to remove processing path";
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
-    if (is_request_failed(CHECK_PROCESSING_ID_PATH))
-    {
-        LOG_WARNING(log, "Cannot set file as processed. "
-                    "Version of processing id node changed: {}", code);
-        return;
-    }
-
-    if (is_request_failed(REMOVE_PROCESSING_PATH))
-    {
-        LOG_WARNING(log, "Failed to remove processing path: {}", code);
-        return;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
+    LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
 }
 
 }

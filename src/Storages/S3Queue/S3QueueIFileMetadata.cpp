@@ -223,20 +223,25 @@ bool S3QueueIFileMetadata::setProcessing()
 
 void S3QueueIFileMetadata::setProcessed()
 {
+    LOG_TRACE(log, "Setting file {} as processed (path: {})", path, processed_node_path);
+
     ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
     file_status->onProcessed();
     setProcessedImpl();
 
     processing_id.reset();
     processing_id_version.reset();
+
+    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
 void S3QueueIFileMetadata::setFailed(const std::string & exception)
 {
+    LOG_TRACE(log, "Setting file {} as failed (exception: {}, path: {})", path, exception, failed_node_path);
+
     ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
     file_status->onFailed(exception);
 
-    LOG_TEST(log, "Setting file {} as failed (exception: {})", path, exception);
     node_metadata.last_exception = exception;
 
     if (max_loading_retries == 0)
@@ -246,6 +251,8 @@ void S3QueueIFileMetadata::setFailed(const std::string & exception)
 
     processing_id.reset();
     processing_id_version.reset();
+
+    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows);
 }
 
 void S3QueueIFileMetadata::setFailedNonRetriable()

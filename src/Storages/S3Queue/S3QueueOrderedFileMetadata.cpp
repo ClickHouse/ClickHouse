@@ -249,8 +249,6 @@ void S3QueueOrderedFileMetadata::setProcessedRequests(
 
 void S3QueueOrderedFileMetadata::setProcessedImpl()
 {
-    LOG_TRACE(log, "Setting file `{}` as processed (at {})", path, processed_node_path);
-
     /// In one zookeeper transaction do the following:
     enum RequestType
     {
@@ -262,6 +260,7 @@ void S3QueueOrderedFileMetadata::setProcessedImpl()
 
     const auto zk_client = getZooKeeper();
     const auto node_metadata_str = node_metadata.toString();
+    std::string failure_reason;
 
     while (true)
     {
@@ -276,38 +275,27 @@ void S3QueueOrderedFileMetadata::setProcessedImpl()
         {
             if (max_loading_retries)
                 zk_client->tryRemove(failed_node_path + ".retriable", -1);
-
-            LOG_TRACE(log, "Moved file `{}` to processed", path);
             return;
         }
 
         if (Coordination::isHardwareError(code))
+            failure_reason = "Lost connection to keeper";
+        else if (is_request_failed(SET_MAX_PROCESSED_PATH))
         {
-            LOG_WARNING(log, "Cannot set file {} as processed. Lost connection to keeper: {}", path, code);
-            return;
-        }
-
-        if (is_request_failed(SET_MAX_PROCESSED_PATH))
-        {
-            LOG_TRACE(log, "Failed to update processed node for path {}: {}. "
+            LOG_TRACE(log, "Cannot set file {} as processed. "
+                      "Failed to update processed node: {}. "
                       "Will retry.", path, code);
             continue;
         }
+        else if (is_request_failed(CHECK_PROCESSING_ID_PATH))
+            failure_reason = "Version of processing id node changed";
+        else if (is_request_failed(REMOVE_PROCESSING_PATH))
+            failure_reason = "Failed to remove processing path";
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
-        if (is_request_failed(CHECK_PROCESSING_ID_PATH))
-        {
-            LOG_WARNING(log, "Cannot set file as processed. "
-                        "Version of processing id node changed: {}", code);
-            return;
-        }
-
-        if (is_request_failed(REMOVE_PROCESSING_PATH))
-        {
-            LOG_WARNING(log, "Failed to remove processing path: {}", code);
-            return;
-        }
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
+        LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
+        return;
     }
 }
 

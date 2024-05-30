@@ -22,10 +22,11 @@ struct S3QueueTableMetadata
     String columns;
     String after_processing;
     String mode;
-    UInt64 s3queue_tracked_files_limit = 0;
-    UInt64 s3queue_tracked_file_ttl_sec = 0;
-    UInt64 s3queue_buckets = 0;
-    UInt64 s3queue_processing_threads_num = 1;
+    UInt64 tracked_files_limit = 0;
+    UInt64 tracked_file_ttl_sec = 0;
+    UInt64 buckets = 0;
+    UInt64 processing_threads_num = 1;
+    String last_processed_path;
 
     S3QueueTableMetadata() = default;
     S3QueueTableMetadata(

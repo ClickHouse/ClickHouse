@@ -18,6 +18,7 @@ namespace DB
 {
 struct S3QueueSettings;
 class StorageS3Queue;
+struct S3QueueTableMetadata;
 struct StorageInMemoryMetadata;
 using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
@@ -54,27 +55,24 @@ public:
     using Processor = std::string;
 
     S3QueueMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
-
     ~S3QueueMetadata();
 
     void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata);
+    void checkSettings(const S3QueueSettings & settings) const;
+    void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path);
 
     FileStatusPtr getFileStatus(const std::string & path);
+    FileStatuses getFileStateses() const;
 
-    FileStatuses getFileStateses() const { return local_file_statuses.getAll(); }
-
-    void checkSettings(const S3QueueSettings & settings) const;
-
-    void shutdown();
-
+    /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;
-    /// Calculate which processing id corresponds to a given file path.
-    /// The file will be processed by a thread related to this processing id.
     Bucket getBucketForPath(const std::string & path) const;
-
     S3QueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
+
+    static size_t getBucketsNum(const S3QueueSettings & settings);
+    static size_t getBucketsNum(const S3QueueTableMetadata & settings);
 
 private:
     void cleanupThreadFunc();
@@ -90,17 +88,8 @@ private:
     std::atomic_bool shutdown_called = false;
     BackgroundSchedulePool::TaskHolder task;
 
-    struct LocalFileStatuses
-    {
-        FileStatuses file_statuses;
-        mutable std::mutex mutex;
-
-        FileStatuses getAll() const;
-        FileStatusPtr get(const std::string & filename, bool create);
-        bool remove(const std::string & filename, bool if_exists);
-        std::unique_lock<std::mutex> lock() const;
-    };
-    LocalFileStatuses local_file_statuses;
+    class LocalFileStatuses;
+    std::shared_ptr<LocalFileStatuses> local_file_statuses;
 };
 
 }

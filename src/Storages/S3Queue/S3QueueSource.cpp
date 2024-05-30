@@ -222,30 +222,48 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
         if (object_info)
         {
             const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+            auto & bucket_cache = listed_keys_cache[bucket];
 
-            LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}",
+            LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}, cached_keys: {}",
                      object_info->getFileName(), bucket,
-                     bucket_holder_it->second ? toString(bucket_holder_it->second->getBucket()) : "None");
+                     bucket_holder_it->second ? toString(bucket_holder_it->second->getBucket()) : "None",
+                     bucket_cache.keys.size());
 
             if (bucket_holder_it->second)
             {
                 if (bucket_holder_it->second->getBucket() != bucket)
                 {
-                    listed_keys_cache[bucket].keys.emplace_back(object_info);
+                    /// Acquired bucket differs from object's bucket,
+                    /// put it into bucket's cache and continue.
+                    bucket_cache.keys.emplace_back(object_info);
                     continue;
                 }
+                /// Bucket is already acquired, process the file.
+                return object_info;
             }
             else
             {
                 bucket_holder_it->second = metadata->tryAcquireBucket(bucket, current_processor);
-                if (!bucket_holder_it->second)
+                if (bucket_holder_it->second)
+                {
+                    bucket_cache.processor = current_processor;
+                    if (!bucket_cache.keys.empty())
+                    {
+                        /// We have to maintain ordering between keys,
+                        /// so if some keys are already in cache - start with them.
+                        bucket_cache.keys.emplace_back(object_info);
+                        object_info = bucket_cache.keys.front();
+                        bucket_cache.keys.pop_front();
+                    }
+                    return object_info;
+                }
+                else
                 {
                     LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
-                    listed_keys_cache[bucket].keys.emplace_back(object_info);
+                    bucket_cache.keys.emplace_back(object_info);
                     continue;
                 }
             }
-            return object_info;
         }
         else
         {
