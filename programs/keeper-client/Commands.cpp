@@ -387,7 +387,7 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
         size_t threshold;
     } ctx {.threshold = threshold };
 
-    parallelized_traverse(path, client, 50, ctx);
+    parallelized_traverse(path, client, /* max_in_flight_requests */ 50, ctx);
 }
 
 bool DeleteStaleBackups::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
@@ -469,7 +469,7 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
         }
     } ctx;
 
-    parallelized_traverse(path, client, 50, ctx);
+    parallelized_traverse(path, client, /* max_in_flight_requests */ 50, ctx);
 
     std::sort(ctx.result.begin(), ctx.result.end(), std::greater());
     for (UInt64 i = 0; i < std::min(ctx.result.size(), static_cast<size_t>(n)); ++i)
