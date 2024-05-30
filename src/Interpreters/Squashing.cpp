@@ -80,7 +80,7 @@ Chunk PlanSquashing::flush()
     return convertToChunk(std::move(chunks_to_merge_vec));
 }
 
-Chunk PlanSquashing::add(Chunk && input_chunk)
+Chunk PlanSquashing::add(Chunk & input_chunk)
 {
     if (!input_chunk)
         return {};

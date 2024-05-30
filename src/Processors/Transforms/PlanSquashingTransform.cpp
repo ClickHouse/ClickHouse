@@ -134,7 +134,7 @@ IProcessor::Status PlanSquashingTransform::waitForDataIn()
 
 void PlanSquashingTransform::transform(Chunk & chunk_)
 {
-    Chunk res_chunk = balance.add(std::move(chunk_));
+    Chunk res_chunk = balance.add(chunk_);
     std::swap(res_chunk, chunk_);
 }
 

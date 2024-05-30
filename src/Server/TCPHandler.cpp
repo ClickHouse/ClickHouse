@@ -890,7 +890,8 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
 
     while (readDataNext())
     {
-        auto planned_chunk = plan_squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        Chunk input_chunk = {state.block_for_insert.getColumns(), state.block_for_insert.rows()};
+        auto planned_chunk = plan_squashing.add(input_chunk);
         if (planned_chunk.hasChunkInfo())
         {
             Chunk result_chunk = apply_squashing.add(std::move(planned_chunk));

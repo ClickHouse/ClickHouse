@@ -19,7 +19,7 @@ SquashingTransform::SquashingTransform(
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    Chunk planned_chunk = planSquashing.add(std::move(chunk));
+    Chunk planned_chunk = planSquashing.add(chunk);
     if (planned_chunk.hasChunkInfo())
         cur_chunk = applySquashing.add(std::move(planned_chunk));
 }
@@ -69,7 +69,7 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        Chunk planned_chunk = planSquashing.add(std::move(chunk));
+        Chunk planned_chunk = planSquashing.add(chunk);
         if (planned_chunk.hasChunkInfo())
             chunk = applySquashing.add(std::move(planned_chunk));
     }
