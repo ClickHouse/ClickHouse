@@ -27,7 +27,7 @@ def check_proxy_logs(cluster, proxy_instance, protocol, bucket, requested_http_m
 
 
 def wait_resolver(cluster):
-    for i in range(15):
+    for i in range(10):
         response = cluster.exec_in_container(
             cluster.get_container_id("resolver"),
             [
