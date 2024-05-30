@@ -3186,9 +3186,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_inverted_index)
+    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_full_text_index)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
