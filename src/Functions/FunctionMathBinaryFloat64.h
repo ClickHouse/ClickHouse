@@ -56,7 +56,7 @@ private:
     static void executeInIterations(const LeftType * left_src_data, size_t left_src_size, const RightType * right_src_data, size_t right_src_size, Float64 * dst_data)
     {
         if (left_src_size == 0 || right_src_size == 0)
-            return; // empty column
+            return; // empty column (ex, for dry run)
 
         const auto left_rows_remaining = left_src_size % Impl::rows_per_iteration;
         const auto right_rows_remaining = right_src_size % Impl::rows_per_iteration;
@@ -85,11 +85,7 @@ private:
 
             const auto rows_remaining = std::max(left_rows_remaining, right_rows_remaining);
 
-            if constexpr (is_big_int_v<LeftType> || std::is_same_v<LeftType, Decimal256> || is_big_int_v<RightType> || std::is_same_v<RightType, Decimal256>)
-                for (size_t i = 0; i < rows_remaining; ++i)
-                    dst_data[rows_size + i] = dst_remaining[i];
-            else
-                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
+            memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
         }
     }
 
@@ -107,14 +103,13 @@ private:
             if constexpr (is_decimal<LeftType>)
             {
                 Float64 left_src_data[Impl::rows_per_iteration];
-                const auto left_arg_typed = checkAndGetColumn<ColumnVectorOrDecimal<LeftType>>(left_arg->getDataColumnPtr().get());
-                UInt32 left_scale = left_arg_typed->getScale();
-                for (size_t i = 0; i < src_size; ++i)
-                    left_src_data[i] = DecimalUtils::convertTo<Float64>(left_arg->template getValue<LeftType>(), left_scale);
+                const auto left_data_column = left_arg->getDataColumnPtr();
+                const auto left_scale = checkAndGetColumn<ColumnDecimal<LeftType>>(*left_data_column).getScale();
+                std::fill(std::begin(left_src_data), std::end(left_src_data), DecimalUtils::convertTo<Float64>(left_arg->template getValue<LeftType>(), left_scale));
 
                 if constexpr (is_decimal<RightType>)
                 {
-                    UInt32 right_scale = right_arg_typed->getScale();
+                    const auto right_scale = right_arg_typed->getScale();
                     for (size_t i = 0; i < src_size; ++i)
                         dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
 
@@ -132,7 +127,7 @@ private:
 
                 if constexpr (is_decimal<RightType>)
                 {
-                    UInt32 right_scale = right_arg_typed->getScale();
+                    const auto right_scale = right_arg_typed->getScale();
                     for (size_t i = 0; i < src_size; ++i)
                         dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
 
@@ -168,8 +163,8 @@ private:
                 auto left = ColumnVector<Float64>::create();
                 auto & left_data = left->getData();
                 left_data.resize(src_size);
-                UInt32 left_scale = left_arg->getScale();
-                UInt32 right_scale = right_arg_typed->getScale();
+                const auto left_scale = left_arg->getScale();
+                const auto right_scale = right_arg_typed->getScale();
                 for (size_t i = 0; i < src_size; ++i)
                 {
                     left_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
@@ -180,17 +175,17 @@ private:
             }
             else if constexpr (!is_decimal<LeftType> && is_decimal<RightType>)
             {
-                UInt32 scale = right_arg_typed->getScale();
+                const auto right_scale = right_arg_typed->getScale();
                 for (size_t i = 0; i < src_size; ++i)
-                    dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], scale);
+                    dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
 
                 executeInIterations(left_src_data.data(), src_size, dst_data.data(), src_size, dst_data.data());
             }
             else if constexpr (is_decimal<LeftType> && !is_decimal<RightType>)
             {
-                UInt32 scale = left_arg->getScale();
+                const auto left_scale = left_arg->getScale();
                 for (size_t i = 0; i < src_size; ++i)
-                    dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], scale);
+                    dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
 
                 executeInIterations(dst_data.data(), src_size, right_src_data.data(), src_size, dst_data.data());
             }
@@ -213,14 +208,13 @@ private:
             if constexpr (is_decimal<RightType>)
             {
                 Float64 right_src_data[Impl::rows_per_iteration];
-                UInt32 right_scale
-                        = checkAndGetColumn<ColumnVectorOrDecimal<RightType>>(right_arg_typed->getDataColumnPtr().get())->getScale();
-                for (size_t i = 0; i < src_size; ++i)
-                    right_src_data[i] = DecimalUtils::convertTo<Float64>(right_arg_typed->template getValue<RightType>(), right_scale);
+                const auto right_data_column = right_arg_typed->getDataColumnPtr();
+                const auto right_scale = checkAndGetColumn<ColumnDecimal<RightType>>(*right_data_column).getScale();
+                std::fill(std::begin(right_src_data), std::end(right_src_data), DecimalUtils::convertTo<Float64>(right_arg_typed->template getValue<RightType>(), right_scale));
 
                 if constexpr (is_decimal<LeftType>)
                 {
-                    UInt32 left_scale = left_arg->getScale();
+                    const auto left_scale = left_arg->getScale();
                     for (size_t i = 0; i < src_size; ++i)
                         dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
 
@@ -238,7 +232,7 @@ private:
 
                 if constexpr (is_decimal<LeftType>)
                 {
-                    UInt32 left_scale = left_arg->getScale();
+                    const auto left_scale = left_arg->getScale();
                     for (size_t i = 0; i < src_size; ++i)
                         dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
 
