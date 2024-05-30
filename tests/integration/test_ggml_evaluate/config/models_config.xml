@@ -2,6 +2,7 @@
     <ggml>
         <gpt2>
             <path>/etc/clickhouse-server/model/gpt2-q3_k.ggml</path>
+            <builder>gpt2</builder>
         </gpt2>
     </ggml>
 </clickhouse>
