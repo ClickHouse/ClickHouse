@@ -54,7 +54,7 @@ jobs:
     if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
-    runs-on: [self-hosted, altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
