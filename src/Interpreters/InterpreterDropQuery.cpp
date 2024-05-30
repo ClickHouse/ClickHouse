@@ -139,7 +139,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     if (context_->getSettingsRef().allow_experimental_drop_detached_table)
     {
-        if (query.kind == ASTDropQuery::Kind::Drop)
+        if (query.detached)
         {
             auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
 

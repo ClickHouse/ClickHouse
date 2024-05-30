@@ -1,8 +1,9 @@
+#include <cmath>
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDropQuery.h>
 
 namespace DB
 {
@@ -19,6 +20,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 {
     ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_detached(Keyword::DETACHED);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_database(Keyword::DATABASE);
@@ -45,6 +47,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool is_view = false;
     bool sync = false;
     bool permanently = false;
+    bool detached = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -77,6 +80,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
             is_dictionary = true;
         else if (s_temporary.ignore(pos, expected))
             temporary = true;
+        else if (s_detached.ignore(pos, expected))
+            detached = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
         if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
@@ -123,6 +128,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->is_view = is_view;
     query->sync = sync;
     query->permanently = permanently;
+    query->detached = detached;
     query->database = database;
     query->database_and_tables = database_and_tables;
 
