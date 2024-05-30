@@ -2,7 +2,7 @@
 
 drop table if exists t1;
 
-replace table t1 (n UInt64, s String) engine=MergeTree order by n; -- { serverError 60 }
+replace table t1 (n UInt64, s String) engine=MergeTree order by n; -- { serverError UNKNOWN_TABLE }
 show tables;
 create or replace table t1 (n UInt64, s String) engine=MergeTree order by n;
 show tables;

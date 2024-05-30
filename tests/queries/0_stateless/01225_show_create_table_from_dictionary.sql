@@ -21,7 +21,7 @@ LIFETIME(MIN 0 MAX 0)
 LAYOUT(FLAT());
 
 SHOW CREATE TABLE dict_db_01225_dictionary.`dict_db_01225.dict` FORMAT TSVRaw;
-SHOW CREATE TABLE dict_db_01225_dictionary.`dict_db_01225.no_such_dict`; -- { serverError 487 }
+SHOW CREATE TABLE dict_db_01225_dictionary.`dict_db_01225.no_such_dict`; -- { serverError CANNOT_GET_CREATE_DICTIONARY_QUERY }
 
 DROP DATABASE dict_db_01225;
 DROP DATABASE dict_db_01225_dictionary;
