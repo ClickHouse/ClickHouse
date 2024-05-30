@@ -58,10 +58,10 @@ static Statistics getStatisticsForColumns(
 
     for (const auto & column : columns_to_read)
     {
-        const auto & desc = all_columns.get(column.name);
-        if (desc.stat)
+        const auto * desc = all_columns.tryGet(column.name);
+        if (desc && desc->stat)
         {
-            auto statistic = MergeTreeStatisticsFactory::instance().get(*desc.stat);
+            auto statistic = MergeTreeStatisticsFactory::instance().get(*desc->stat);
             statistics.push_back(std::move(statistic));
         }
     }
