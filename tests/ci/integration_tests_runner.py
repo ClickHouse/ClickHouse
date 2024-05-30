@@ -310,7 +310,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             f"cd {repo_path}/tests/integration && "
-            f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
+            f"timeout --signal=KILL 2h ./runner {self._get_runner_opts()} {image_cmd} "
             "--pre-pull --command ' echo Pre Pull finished ' "
         )
 
@@ -423,7 +423,7 @@ class ClickhouseIntegrationTestsRunner:
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
             f"cd {repo_path}/tests/integration && "
-            f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
+            f"timeout --signal=KILL 2h ./runner {runner_opts} {image_cmd} -- --setup-plan "
         )
 
         logging.info(
@@ -635,7 +635,7 @@ class ClickhouseIntegrationTestsRunner:
             # -s -- (s)kipped
             cmd = (
                 f"cd {repo_path}/tests/integration && "
-                f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
+                f"timeout --signal=KILL 2h ./runner {self._get_runner_opts()} "
                 f"{image_cmd} -t {test_cmd} {parallel_cmd} -- -rfEps --run-id={i} "
                 f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
                 f"| tee {info_path}"
