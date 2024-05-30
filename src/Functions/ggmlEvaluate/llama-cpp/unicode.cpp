@@ -701,11 +701,11 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
         {"\\p{P}", codepoint_flags::PUNCTUATION},
     };
 
-    static const std::map<int, int> k_ucat_cpt = {
-        {codepoint_flags::NUMBER, 0xD1},
-        {codepoint_flags::LETTER, 0xD2},
-        {codepoint_flags::PUNCTUATION, 0xD3},
-    };
+    // static const std::map<int, int> k_ucat_cpt = {
+    //     {codepoint_flags::NUMBER, 0xD1},
+    //     {codepoint_flags::LETTER, 0xD2},
+    //     {codepoint_flags::PUNCTUATION, 0xD3},
+    // };
 
     static const std::map<int, std::string> k_ucat_map = {
         {codepoint_flags::NUMBER, "\x30-\x39"}, // 0-9
@@ -748,16 +748,16 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
                 continue;
             }
 
-            const int cpt_flag = unicode_cpt_flags(cpts[i]).category_flag();
+            // const int cpt_flag = unicode_cpt_flags(cpts[i]).category_flag();
 
-            if (k_ucat_cpt.find(cpt_flag) != k_ucat_cpt.end())
-            {
-                text_collapsed[i] = k_ucat_cpt.at(cpt_flag);
-            }
-            else
-            {
-                text_collapsed[i] = 0xD0; // fallback
-            }
+            // if (k_ucat_cpt.find(cpt_flag) != k_ucat_cpt.end())
+            // {
+            //     text_collapsed[i] = k_ucat_cpt.at(cpt_flag);
+            // }
+            // else
+            // {
+            //     text_collapsed[i] = 0xD0; // fallback
+            // }
         }
     }
 
@@ -831,7 +831,7 @@ std::vector<std::string> unicode_regex_split(const std::string & text, const std
                             {
                                 regex_expr_collapsed += '[';
                             }
-                            regex_expr_collapsed += k_ucat_cpt.at(k_ucat_e.at(pat));
+                            // regex_expr_collapsed += k_ucat_cpt.at(k_ucat_e.at(pat));
                             regex_expr_collapsed += k_ucat_map.at(k_ucat_e.at(pat));
                             if (!inside)
                             {
