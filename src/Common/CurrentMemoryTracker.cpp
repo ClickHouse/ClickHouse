@@ -111,7 +111,8 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         if (current_thread)
         {
             current_thread->untracked_memory -= size;
-            if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
+            // Note that we use `max_untracked_memory` and not `untracked_memory_limit` to create hysteresis to avoid track/untrack cycles
+            if (current_thread->untracked_memory < -current_thread->max_untracked_memory)
             {
                 Int64 untracked_memory = current_thread->untracked_memory;
                 current_thread->untracked_memory = 0;
