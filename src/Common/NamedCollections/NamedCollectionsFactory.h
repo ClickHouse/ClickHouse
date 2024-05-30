@@ -1,3 +1,4 @@
+#pragma once
 #include <Common/NamedCollections/NamedCollections.h>
 
 namespace DB
