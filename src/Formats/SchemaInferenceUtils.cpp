@@ -879,11 +879,11 @@ namespace
     }
 
     template <bool is_json>
-    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings)
+    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings, bool & has_fractional)
     {
         if (is_json || settings.try_infer_exponent_floats)
-            return tryReadFloatText(value, buf);
-        return tryReadFloatTextNoExponent(value, buf);
+            return tryReadFloatTextExt(value, buf, has_fractional);
+        return tryReadFloatTextExtNoExponent(value, buf, has_fractional);
     }
 
     template <bool is_json>
@@ -893,6 +893,7 @@ namespace
             return nullptr;
 
         Float64 tmp_float;
+        bool has_fractional;
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
@@ -906,12 +907,10 @@ namespace
                 if (buf.eof())
                     return read_int ? std::make_shared<DataTypeInt64>() : nullptr;
 
-                char * int_end = buf.position();
                 /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
                 buf.position() = number_start;
 
                 bool read_uint = false;
-                char * uint_end = nullptr;
                 /// In case of Int64 overflow we can try to infer UInt64.
                 if (!read_int)
                 {
@@ -921,15 +920,14 @@ namespace
                     if (buf.eof())
                         return read_uint ? std::make_shared<DataTypeUInt64>() : nullptr;
 
-                    uint_end = buf.position();
                     buf.position() = number_start;
                 }
 
-                if (tryReadFloat<is_json>(tmp_float, buf, settings))
+                if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
                 {
-                    if (read_int && buf.position() == int_end)
+                    if (read_int && !has_fractional)
                         return std::make_shared<DataTypeInt64>();
-                    if (read_uint && buf.position() == uint_end)
+                    if (read_uint && !has_fractional)
                         return std::make_shared<DataTypeUInt64>();
                     return std::make_shared<DataTypeFloat64>();
                 }
@@ -944,34 +942,31 @@ namespace
             PeekableReadBufferCheckpoint checkpoint(peekable_buf);
             Int64 tmp_int;
             bool read_int = tryReadIntText(tmp_int, peekable_buf);
-            auto * int_end = peekable_buf.position();
             peekable_buf.rollbackToCheckpoint(true);
 
             bool read_uint = false;
-            char * uint_end = nullptr;
             /// In case of Int64 overflow we can try to infer UInt64.
             if (!read_int)
             {
                 PeekableReadBufferCheckpoint new_checkpoint(peekable_buf);
                 UInt64 tmp_uint;
                 read_uint = tryReadIntText(tmp_uint, peekable_buf);
-                uint_end = peekable_buf.position();
                 peekable_buf.rollbackToCheckpoint(true);
             }
 
-            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings))
+            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional))
             {
                 /// Float parsing reads no fewer bytes than integer parsing,
                 /// so position of the buffer is either the same, or further.
                 /// If it's the same, then it's integer.
-                if (read_int && peekable_buf.position() == int_end)
+                if (read_int && !has_fractional)
                     return std::make_shared<DataTypeInt64>();
-                if (read_uint && peekable_buf.position() == uint_end)
+                if (read_uint && !has_fractional)
                     return std::make_shared<DataTypeUInt64>();
                 return std::make_shared<DataTypeFloat64>();
             }
         }
-        else if (tryReadFloat<is_json>(tmp_float, buf, settings))
+        else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -1004,7 +999,8 @@ namespace
         buf.position() = buf.buffer().begin();
 
         Float64 tmp;
-        if (tryReadFloat<is_json>(tmp, buf, settings) && buf.eof())
+        bool has_fractional;
+        if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
             return std::make_shared<DataTypeFloat64>();
 
         return nullptr;
