@@ -5,14 +5,18 @@ import time
 ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
 
 
-def check_proxy_logs(cluster, proxy_instances, protocol, bucket, requested_http_methods):
+def check_proxy_logs(
+    cluster, proxy_instances, protocol, bucket, requested_http_methods
+):
     for i in range(10):
         # Check with retry that all possible interactions with Minio are present
         for http_method in ALL_HTTP_METHODS:
             for proxy_instance in proxy_instances:
                 logs = cluster.get_container_logs(proxy_instance)
                 if (
-                    logs.find(http_method + f" {protocol}://minio1:9001/root/data/{bucket}")
+                    logs.find(
+                        http_method + f" {protocol}://minio1:9001/root/data/{bucket}"
+                    )
                     >= 0
                 ):
                     if http_method not in requested_http_methods:
