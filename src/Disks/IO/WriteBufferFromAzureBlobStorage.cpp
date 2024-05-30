@@ -127,7 +127,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
 
     /// If there is only one block and size is less than or equal to max_single_part_upload_size
     /// then we use single part upload instead of multi part upload
-    if (detached_part_data.size() == 1)
+    if (detached_part_data.size() == 1 && block_ids.empty())
     {
         if (detached_part_data.front().data_size <= max_single_part_upload_size)
         {
@@ -168,6 +168,11 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
 {
+    if (is_prefinalized)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot write to prefinalized buffer for Azure Blob Storage, the file could have been created");
+
     task_tracker->waitIfAny();
 
     hidePartialData();
