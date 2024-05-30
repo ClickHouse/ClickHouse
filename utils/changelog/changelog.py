@@ -302,8 +302,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     return Description(item.number, item.user, item.html_url, entry, category)
 
 
-def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
-    year = date.today().year
+def write_changelog(
+    fd: TextIO, descriptions: Dict[str, List[Description]], year: int
+) -> None:
     to_commit = runner(f"git rev-parse {TO_REF}^{{}}")[:11]
     from_commit = runner(f"git rev-parse {FROM_REF}^{{}}")[:11]
     fd.write(
@@ -361,6 +362,12 @@ def set_sha_in_changelog():
     ).split("\n")
 
 
+def get_year(prs: PullRequests) -> int:
+    if not prs:
+        return date.today().year
+    return max(pr.created_at.year for pr in prs)
+
+
 def main():
     log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
@@ -414,8 +421,9 @@ def main():
     prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
 
     descriptions = get_descriptions(prs)
+    changelog_year = get_year(prs)
 
-    write_changelog(args.output, descriptions)
+    write_changelog(args.output, descriptions, changelog_year)
 
 
 if __name__ == "__main__":
