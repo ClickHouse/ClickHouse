@@ -267,7 +267,7 @@ public:
         if (traverse_children)
         {
             /// Schedule traversal of each child
-            for (auto & child : response.names)
+            for (const auto & child : response.names)
             {
                 auto task = std::make_shared<TraversalTask>(path / child, this->shared_from_this());
                 ctx.new_tasks.push_back(task);
