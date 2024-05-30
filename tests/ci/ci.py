@@ -754,6 +754,7 @@ class CiOptions:
 
     do_not_test: bool = False
     no_ci_cache: bool = False
+    upload_all: bool = False
     no_merge_commit: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
@@ -823,6 +824,9 @@ class CiOptions:
             elif match == CILabels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
+            elif match == CILabels.UPLOAD_ALL_ARTIFACTS:
+                res.upload_all = True
+                print("NOTE: All binary artifacts will be uploaded")
             elif match == CILabels.DO_NOT_TEST_LABEL:
                 res.do_not_test = True
             elif match == CILabels.NO_MERGE_COMMIT:
@@ -2191,6 +2195,7 @@ def main() -> int:
                     not pr_info.is_pr
                     or args.job_name
                     not in CI_CONFIG.get_builds_for_report(JobNames.BUILD_CHECK_SPECIAL)
+                    or CiOptions.create_from_run_config(indata).upload_all
                 )
 
                 build_name = args.job_name
