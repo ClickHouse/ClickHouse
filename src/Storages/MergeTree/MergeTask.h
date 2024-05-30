@@ -299,7 +299,9 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
+        std::optional<Pipe> prepared_pipe;
         size_t max_delayed_streams = 0;
+        bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
@@ -339,6 +341,8 @@ private:
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
+
+        Pipe createPipeForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;

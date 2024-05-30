@@ -10,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int KEEPER_EXCEPTION;
 }
 
@@ -441,7 +442,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
             new_members = query->args[1].safeGet<String>();
             break;
         default:
-            UNREACHABLE();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected operation: {}", operation);
     }
 
     auto response = client->zookeeper->reconfig(joining, leaving, new_members);
