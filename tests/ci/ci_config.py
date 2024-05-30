@@ -705,10 +705,7 @@ class CIConfig:
                     elif isinstance(config[job_name], BuildConfig):  # type: ignore
                         pass
                     elif isinstance(config[job_name], BuildReportConfig):  # type: ignore
-                        # add all build jobs as parents for build report check
-                        res.extend(
-                            [job for job in JobNames if job in self.build_config]
-                        )
+                        pass
                     else:
                         assert (
                             False

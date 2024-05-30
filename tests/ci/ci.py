@@ -895,9 +895,10 @@ class CiOptions:
                     for job in job_with_parents:
                         if job in jobs_to_do and job not in jobs_to_do_requested:
                             jobs_to_do_requested.append(job)
-            print(
-                f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
-            )
+            if not jobs_to_do_requested:
+                print(
+                    f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+                )
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
