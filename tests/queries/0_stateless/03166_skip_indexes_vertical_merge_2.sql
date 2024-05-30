@@ -11,8 +11,8 @@ CREATE TABLE t_ind_merge_2 (
     INDEX idx_b  b TYPE minmax,
     INDEX idx_cd c * d TYPE minmax,
     INDEX idx_d1 d TYPE minmax,
-    INDEX idx_d2 d TYPE set(3),
-    INDEX idx_e  e TYPE set(3))
+    INDEX idx_d2 d + 7 TYPE set(3),
+    INDEX idx_e  e * 3 TYPE set(3))
 ENGINE = MergeTree
 ORDER BY a SETTINGS
     index_granularity = 64,

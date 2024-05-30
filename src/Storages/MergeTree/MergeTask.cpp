@@ -679,14 +679,15 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+    NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
-        ctx->executor->getHeader(),
+        columns_list,
         ctx->compression_codec,
         indexes_to_recalc,
-        getStatisticsForColumns({*ctx->it_name_and_type}, global_ctx->metadata_snapshot),
+        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
         &global_ctx->written_offset_columns,
         global_ctx->to->getIndexGranularity());
 
