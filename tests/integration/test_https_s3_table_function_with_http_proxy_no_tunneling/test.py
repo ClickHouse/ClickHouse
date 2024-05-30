@@ -52,12 +52,12 @@ def cluster():
 
 
 def test_s3_with_https_proxy_list(cluster):
-    proxy_util.simple_test(cluster, "proxy1", "https", "proxy_list_node")
+    proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "https", "proxy_list_node")
 
 
 def test_s3_with_https_remote_proxy(cluster):
-    proxy_util.simple_test(cluster, "proxy1", "https", "remote_proxy_node")
+    proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "https", "remote_proxy_node")
 
 
 def test_s3_with_https_env_proxy(cluster):
-    proxy_util.simple_test(cluster, "proxy1", "https", "env_node")
+    proxy_util.simple_test(cluster, ["proxy1"], "https", "env_node")

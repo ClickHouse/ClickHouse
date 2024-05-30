@@ -28,4 +28,4 @@ def cluster():
 
 @pytest.mark.parametrize("policy", ["s3", "s3_with_resolver"])
 def test_s3_with_proxy_list(cluster, policy):
-    proxy_util.simple_storage_test(cluster, cluster.instances["node"], "proxy1", policy)
+    proxy_util.simple_storage_test(cluster, cluster.instances["node"], ["proxy1", "proxy2"], policy)
