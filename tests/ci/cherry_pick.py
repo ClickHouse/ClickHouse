@@ -115,10 +115,13 @@ close it.
         if branch_updated:
             self._backported = True
 
-    def pop_prs(self, prs: PullRequests) -> None:
+    def pop_prs(self, prs: PullRequests) -> PullRequests:
         """the method processes all prs and pops the ReleaseBranch related prs"""
         to_pop = []  # type: List[int]
         for i, pr in enumerate(prs):
+            if self.name not in pr.head.ref:
+                # this pr is not for the current branch
+                continue
             if pr.head.ref.startswith(f"cherrypick/{self.name}"):
                 self.cherrypick_pr = pr
                 to_pop.append(i)
@@ -126,16 +129,18 @@ close it.
                 self.backport_pr = pr
                 to_pop.append(i)
             else:
-                assert False, "BUG! Invalid branch suffix"
+                assert False, f"BUG! Invalid PR's branch [{pr.head.ref}]"
         for i in reversed(to_pop):
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
+        return prs
 
     def process(  # pylint: disable=too-many-return-statements
         self, dry_run: bool
     ) -> None:
         if self.backported:
             return
+
         if not self.cherrypick_pr:
             if dry_run:
                 logging.info(
@@ -143,41 +148,39 @@ close it.
                 )
                 return
             self.create_cherrypick()
-        if self.backported:
-            return
-        if self.cherrypick_pr is not None:
-            # Try to merge cherrypick instantly
-            if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
-                if dry_run:
-                    logging.info(
-                        "DRY RUN: Would merge cherry-pick PR for #%s", self.pr.number
-                    )
-                    return
-                self.cherrypick_pr.merge()
-                # The PR needs update, since PR.merge doesn't update the object
-                self.cherrypick_pr.update()
-            if self.cherrypick_pr.merged:
-                if dry_run:
-                    logging.info(
-                        "DRY RUN: Would create backport PR for #%s", self.pr.number
-                    )
-                    return
-                self.create_backport()
-                return
-            if self.cherrypick_pr.state == "closed":
+        assert self.cherrypick_pr, "BUG!"
+
+        if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
+            if dry_run:
                 logging.info(
-                    "The cherrypick PR #%s for PR #%s is discarded",
-                    self.cherrypick_pr.number,
-                    self.pr.number,
+                    "DRY RUN: Would merge cherry-pick PR for #%s", self.pr.number
                 )
-                self._backported = True
                 return
+            self.cherrypick_pr.merge()
+            # The PR needs update, since PR.merge doesn't update the object
+            self.cherrypick_pr.update()
+        if self.cherrypick_pr.merged:
+            if dry_run:
+                logging.info(
+                    "DRY RUN: Would create backport PR for #%s", self.pr.number
+                )
+                return
+            self.create_backport()
+            return
+        if self.cherrypick_pr.state == "closed":
             logging.info(
-                "Cherrypick PR #%s for PR #%s have conflicts and unable to be merged",
+                "The cherry-pick PR #%s for PR #%s is discarded",
                 self.cherrypick_pr.number,
                 self.pr.number,
             )
-            self.ping_cherry_pick_assignees(dry_run)
+            self._backported = True
+            return
+        logging.info(
+            "Cherry-pick PR #%s for PR #%s has conflicts and unable to be merged",
+            self.cherrypick_pr.number,
+            self.pr.number,
+        )
+        self.ping_cherry_pick_assignees(dry_run)
 
     def create_cherrypick(self):
         # First, create backport branch:
@@ -211,7 +214,6 @@ close it.
                     self.name,
                     self.pr.number,
                 )
-                self._backported = True
                 return
         except CalledProcessError:
             # There are most probably conflicts, they'll be resolved in PR
@@ -241,6 +243,7 @@ close it.
             self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
         elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
             self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
+        self._backported = True
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
         self.cherrypick_pr.update()
@@ -478,7 +481,7 @@ class Backport:
                 self.process_pr(pr)
             except Exception as e:
                 logging.error(
-                    "During processing the PR #%s error occured: %s", pr.number, e
+                    "During processing the PR #%s error occurred: %s", pr.number, e
                 )
                 self.error = e
 
@@ -499,13 +502,7 @@ class Backport:
                     if label in self.labels_to_backport
                 ]
             ]
-        if not branches:
-            # This is definitely some error. There must be at least one branch
-            # It also make the whole program exit code non-zero
-            self.error = Exception(
-                f"There are no branches to backport PR #{pr.number}, logical error"
-            )
-            raise self.error
+        assert branches, "BUG!"
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
@@ -524,23 +521,14 @@ class Backport:
             label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
         for br in branches:
-            br.pop_prs(bp_cp_prs)
-
-        if bp_cp_prs:
-            # This is definitely some error. All prs must be consumed by
-            # branches with ReleaseBranch.pop_prs. It also makes the whole
-            # program exit code non-zero
-            self.error = Exception(
-                "The following PRs are not filtered by release branches:\n"
-                "\n".join(map(str, bp_cp_prs))
-            )
-            raise self.error
+            bp_cp_prs = br.pop_prs(bp_cp_prs)
+        assert not bp_cp_prs, "BUG!"
 
         for br in branches:
             br.process(self.dry_run)
 
-        if all(br.backported for br in branches):
-            self.mark_pr_backported(pr)
+        assert all(br.backported for br in branches), "BUG!"
+        self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
