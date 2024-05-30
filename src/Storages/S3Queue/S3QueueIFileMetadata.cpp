@@ -136,7 +136,7 @@ S3QueueIFileMetadata::~S3QueueIFileMetadata()
                 && code != Coordination::Error::ZBADVERSION
                 && code != Coordination::Error::ZNONODE)
             {
-                LOG_WARNING(log, "Unexpected error while removing procesing node: {}", code);
+                LOG_WARNING(log, "Unexpected error while removing processing node: {}", code);
                 chassert(false);
             }
         }
