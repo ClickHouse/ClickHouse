@@ -175,8 +175,8 @@ class JobNames(metaclass=WithIter):
     COMPATIBILITY_TEST = "Compatibility check (amd64)"
     COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
-    CLCIKBENCH_TEST = "ClickBench (amd64)"
-    CLCIKBENCH_TEST_ARM = "ClickBench (aarch64)"
+    CLICKBENCH_TEST = "ClickBench (amd64)"
+    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -472,17 +472,18 @@ compatibility_test_common_params = {
 }
 stateless_test_common_params = {
     "digest": stateless_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
+    "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 10800,
 }
 stateful_test_common_params = {
     "digest": stateful_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
+    "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 3600,
 }
 stress_test_common_params = {
     "digest": stress_check_digest,
     "run_command": "stress_check.py",
+    "timeout": 9000,
 }
 upgrade_test_common_params = {
     "digest": upgrade_check_digest,
@@ -531,6 +532,7 @@ clickbench_test_params = {
         docker=["clickhouse/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
+    "timeout": 900,
 }
 install_test_params = JobConfig(
     digest=install_check_digest,
@@ -1111,6 +1113,7 @@ CI_CONFIG = CIConfig(
                     exclude_files=[".md"],
                     docker=["clickhouse/fasttest"],
                 ),
+                timeout=2400,
             ),
         ),
         JobNames.STYLE_CHECK: TestConfig(
@@ -1123,7 +1126,9 @@ CI_CONFIG = CIConfig(
             "",
             # we run this check by label - no digest required
             job_config=JobConfig(
-                run_by_label="pr-bugfix", run_command="bugfix_validate_check.py"
+                run_by_label="pr-bugfix",
+                run_command="bugfix_validate_check.py",
+                timeout=900,
             ),
         ),
     },
@@ -1357,10 +1362,10 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_RELEASE, job_config=sqllogic_test_params
         ),
         JobNames.SQLTEST: TestConfig(Build.PACKAGE_RELEASE, job_config=sql_test_params),
-        JobNames.CLCIKBENCH_TEST: TestConfig(
+        JobNames.CLICKBENCH_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
-        JobNames.CLCIKBENCH_TEST_ARM: TestConfig(
+        JobNames.CLICKBENCH_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
         JobNames.LIBFUZZER_TEST: TestConfig(
@@ -1368,7 +1373,7 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(
                 run_by_label=CILabels.libFuzzer,
                 timeout=10800,
-                run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
+                run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             ),
         ),  # type: ignore
     },
