@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 ApplySquashing::ApplySquashing(Block header_)
-    : header(std::move(header_))
+    : header(header_)
 {
 }
 
