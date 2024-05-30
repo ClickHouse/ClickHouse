@@ -12,8 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NAMED_COLLECTION_DOESNT_EXIST;
-    extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int BAD_ARGUMENTS;
 }

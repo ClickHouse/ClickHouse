@@ -313,4 +313,5 @@ void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);
 }
+
 }
