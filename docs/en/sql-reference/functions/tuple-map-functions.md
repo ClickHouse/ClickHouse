@@ -44,10 +44,9 @@ Result:
 ## mapFromArrays
 
 Creates a map from an array of keys and an array of values.
-The second argument can also be a map, it will be casted during execution to an array.
 
 The function is a convenient alternative to syntax `CAST((key_array, value_array_or_map), 'Map(key_type, value_type)')`.
-For example, instead of writing `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
+For example, instead of writing `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')` or `CAST([('aa',4), ('bb',5)], 'Map(String, UInt32)')`, you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
 
 **Syntax**
 
