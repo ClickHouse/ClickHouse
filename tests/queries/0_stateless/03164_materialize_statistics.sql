@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS t_statistic_materialize;
 
+SET allow_experimental_analyzer = 1;
 SET allow_experimental_statistic = 1;
 SET allow_statistic_optimize = 1;
 SET materialize_statistics_on_insert = 0;
