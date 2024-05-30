@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 ApplySquashing::ApplySquashing(Block header_)
-    : header(std::move(header_))
+    : header(header_)
 {
 }
 
@@ -71,7 +71,7 @@ const ChunksToSquash* ApplySquashing::getInfoFromChunk(const Chunk & chunk)
 PlanSquashing::PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
-    , header(std::move(header_))
+    , header(header_)
 {
 }
 

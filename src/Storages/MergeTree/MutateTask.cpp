@@ -1314,10 +1314,9 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             const auto & projection = *ctx->projections_to_build[i];
 
-            Chunk planned_chunk;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
             Block block_to_squash = projection.calculate(cur_block, ctx->context);
-            planned_chunk = projection_squash_plannings[i]->add({block_to_squash.getColumns(), block_to_squash.rows()});
+            Chunk planned_chunk = projection_squash_plannings[i]->add({block_to_squash.getColumns(), block_to_squash.rows()});
 
             if (planned_chunk.hasChunkInfo())
             {
