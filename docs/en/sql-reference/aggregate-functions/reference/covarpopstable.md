@@ -1,15 +1,11 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarpop
-sidebar_position: 37
+slug: /en/sql-reference/aggregate-functions/reference/covarpopstable
+sidebar_position: 36
 ---
 
-# covarPop
+# covarPopStable
 
-Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
-
-:::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarPopStable` function. It works slower but provides a lower computational error.
-:::
+Calculates the value of `Σ((x - x̅)(y - y̅)) / n`. It is similar to [covarPop](../reference/covarpop.md) but works slower while providing a lower computational error.
 
 **Syntax**
 
@@ -37,7 +33,7 @@ INSERT INTO series(i, x_value, y_value) VALUES (1, 5.6,-4.4),(2, -9.6,3),(3, -1.
 ```
 
 ```sql
-SELECT covarPop(x_value, y_value)
+SELECT covarPopStable(x_value, y_value)
 FROM
 (
     SELECT
@@ -50,7 +46,8 @@ FROM
 Result:
 
 ```reference
-┌─covarPop(x_value, y_value)─┐
-│                   6.485648 │
-└────────────────────────────┘
+┌─covarPopStable(x_value, y_value)─┐
+│                         6.485648 │
+└──────────────────────────────────┘
 ```
+

@@ -1,20 +1,16 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/corr
+slug: /en/sql-reference/aggregate-functions/reference/corrstable
 sidebar_position: 107
 ---
 
-# corr
+# corrStable
 
-Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
-
-:::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrstable.md) function. It works slower but provides a lower computational error.
-:::
+Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`. Similar to the [`corr`](../reference/corr.md) function, but uses a numerically stable algorithm and works slower for large datasets as a result.
 
 **Syntax**
 
 ```sql
-corr(x, y)
+corrStable(x, y)
 ```
 
 **Arguments**
@@ -26,7 +22,7 @@ corr(x, y)
 
 - The Pearson correlation coefficient. [Float64](../../data-types/float.md).
 
-**Example**
+***Example**
 
 Query:
 
@@ -43,7 +39,7 @@ INSERT INTO series(i, x_value, y_value) VALUES (1, 5.6,-4.4),(2, -9.6,3),(3, -1.
 ```
 
 ```sql
-SELECT corr(x_value, y_value)
+SELECT corrStable(x_value, y_value)
 FROM
 (
     SELECT
@@ -56,7 +52,7 @@ FROM
 Result:
 
 ```response
-┌─corr(x_value, y_value)─┐
-│     0.1730265755453256 │
-└────────────────────────┘
+┌─corrStable(x_value, y_value)─┐
+│          0.17302657554532558 │
+└──────────────────────────────┘
 ```
