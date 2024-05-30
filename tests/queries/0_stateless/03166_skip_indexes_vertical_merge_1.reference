@@ -3,7 +3,7 @@ Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
       Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_ind_merge)
+        ReadFromMergeTree (default.t_ind_merge_1)
         Indexes:
           PrimaryKey
             Condition: true
@@ -19,7 +19,7 @@ Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
       Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_ind_merge)
+        ReadFromMergeTree (default.t_ind_merge_1)
         Indexes:
           PrimaryKey
             Condition: true
@@ -30,3 +30,4 @@ Expression ((Project names + Projection))
             Description: minmax GRANULARITY 1
             Parts: 1/1
             Granules: 4/32
+4	1	3
