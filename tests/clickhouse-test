@@ -2409,7 +2409,7 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
             parallel_tests_array.append((None, batch_size, test_suite))
 
         # If we don't do random shuffling then there will be always
-        # nearly the same groups of tests suits running concurrently.
+        # nearly the same groups of test suites running concurrently.
         # Thus, if there is a test within group which appears to be broken
         # then it will affect all other tests in a non-random form.
         # So each time a bad test fails - other tests from the group will also fail
