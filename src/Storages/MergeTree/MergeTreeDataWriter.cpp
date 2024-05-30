@@ -360,8 +360,6 @@ Block MergeTreeDataWriter::mergeBlock(
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
         }
-
-        UNREACHABLE();
     };
 
     auto merging_algorithm = get_merging_algorithm();
@@ -606,7 +604,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         statistics,
         compression_codec,
-        context->getCurrentTransaction(),
+        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         false,
         false,
         context->getWriteSettings());
@@ -744,7 +742,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         MergeTreeIndices{},
         Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
         compression_codec,
-        NO_TRANSACTION_PTR,
+        Tx::PrehistoricTID,
         false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
