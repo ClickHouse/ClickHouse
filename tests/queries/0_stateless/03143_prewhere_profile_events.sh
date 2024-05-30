@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -nq "
   DROP TABLE IF EXISTS t;
 
-  CREATE TABLE t(a UInt32, b UInt32, c UInt32, d UInt32) ENGINE=MergeTree ORDER BY a;
+  CREATE TABLE t(a UInt32, b UInt32, c UInt32, d UInt32) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1;
 
   INSERT INTO t SELECT number, number, number, number FROM numbers_mt(1e7);
 
