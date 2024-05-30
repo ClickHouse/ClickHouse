@@ -245,16 +245,17 @@ private:
             }
 
             /// Digits
+            size_t digits_written = 0;
             while (w >= 100)
             {
                 w /= 100;
 
                 writeNumber2(dest + pos, n / w);
                 pos += 2;
-
+                digits_written += 2;
                 n = n % w;
             }
-            if (n)
+            if (digits_written != digits)
             {
                 dest[pos] = '0' + n;
                 ++pos;
