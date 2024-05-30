@@ -130,6 +130,10 @@ close it.
                 to_pop.append(i)
             else:
                 assert False, f"BUG! Invalid PR's branch [{pr.head.ref}]"
+
+            # Cherry-pick or backport PR found, set @backported flag for current release branch
+            self._backported = True
+
         for i in reversed(to_pop):
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
@@ -336,7 +340,7 @@ close it.
 
     @property
     def backported(self) -> bool:
-        return self._backported or self.backport_pr is not None
+        return self._backported
 
     def __repr__(self):
         return self.name
@@ -527,7 +531,8 @@ class Backport:
         for br in branches:
             br.process(self.dry_run)
 
-        assert all(br.backported for br in branches), "BUG!"
+        for br in branches:
+            assert br.backported, f"BUG! backport to branch [{br}] failed"
         self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
