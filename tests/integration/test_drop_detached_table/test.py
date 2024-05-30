@@ -50,7 +50,9 @@ def start_cluster():
 
 
 def create_replicated_table(node, table_name):
-    engine = f"ReplicatedMergeTree('/clickhouse/tables/shard1/{table_name}', '{{replica}}')"
+    engine = (
+        f"ReplicatedMergeTree('/clickhouse/tables/shard1/{table_name}', '{{replica}}')"
+    )
 
     node.query_with_retry(
         f"""
