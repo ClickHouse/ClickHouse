@@ -6,28 +6,30 @@ sidebar_label: Map(K, V)
 
 # Map(K, V)
 
-`Map(K, V)` data type stores `key:value` pairs.
+Data type `Map(K, V)` stores key-value pairs.
 
-Maps are internally implemented as `Array(Tuple(key T1, value T2))`.
-As a result, maps maintain the order in which keys are inserted.
+Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
+(The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)
+
+You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
+If more than one element with key `k` exists, the value for the first element is returned.
+Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
 
 **Parameters**
 
 - `K` — The type of the Map keys. Arbitrary type except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md) types.
 - `V` — The type of the Map values. Arbitrary type.
 
-You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
-
 **Examples**
 
-Consider the table:
+Create a table with a column of type map:
 
 ``` sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
 
-To select all `key2` values:
+To select `key2` values:
 
 ```sql
 SELECT m['key2'] FROM tab;
@@ -43,7 +45,8 @@ Result:
 └─────────────────────────┘
 ```
 
-If the map does not contain the requested key, `m[k]` returns the value type's default value, e.g. `0` for integer types, `''` for string types or `[]` for Array types.
+If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
+To check whether a key exists in a map, you can use function [mapContains](../../sql-reference/functions/tuple-map-functions#mapcontains).
 
 ```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -92,8 +95,8 @@ Query:
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
 INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
 
-SELECT m.keys FROM tab;
-SELECT m.values FROM tab;
+SELECT m.keys FROM tab; --   same as mapKeys(m)
+SELECT m.values FROM tab; -- same as mapValues(m)
 ```
 
 Result:
