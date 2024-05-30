@@ -94,10 +94,10 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
     UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
 
-    if (lower > range_lower)
+    if (lower_limit_rational > range_lower)
         has_lower_limit = true;
 
-    if (upper < range_upper)
+    if (upper_limit_rational < range_upper)
         has_upper_limit = true;
 
     assert(has_lower_limit || has_upper_limit);
