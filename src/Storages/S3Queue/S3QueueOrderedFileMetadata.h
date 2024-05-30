@@ -12,11 +12,20 @@ class S3QueueOrderedFileMetadata : public S3QueueIFileMetadata
 public:
     using Processor = std::string;
     using Bucket = size_t;
+    struct BucketInfo
+    {
+        Bucket bucket;
+        int bucket_version;
+        std::string bucket_lock_path;
+        std::string bucket_lock_id_path;
+    };
+    using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
 
     explicit S3QueueOrderedFileMetadata(
         const std::filesystem::path & zk_path_,
         const std::string & path_,
         FileStatusPtr file_status_,
+        BucketInfoPtr bucket_info_,
         size_t buckets_num_,
         size_t max_loading_retries_,
         LoggerPtr log_);
@@ -40,6 +49,7 @@ public:
 private:
     const size_t buckets_num;
     const std::string zk_path;
+    const BucketInfoPtr bucket_info;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
     void setProcessedImpl() override;
@@ -79,11 +89,19 @@ struct S3QueueOrderedFileMetadata::BucketHolder
 {
     BucketHolder(
         const Bucket & bucket_,
+        int bucket_version_,
         const std::string & bucket_lock_path_,
+        const std::string & bucket_lock_id_path_,
         zkutil::ZooKeeperPtr zk_client_)
-        : bucket(bucket_), bucket_lock_path(bucket_lock_path_), zk_client(zk_client_) {}
+        : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
+            .bucket = bucket_,
+            .bucket_version = bucket_version_,
+            .bucket_lock_path = bucket_lock_path_,
+            .bucket_lock_id_path = bucket_lock_id_path_}))
+        , zk_client(zk_client_) {}
 
-    Bucket getBucket() const { return bucket; }
+    Bucket getBucket() const { return bucket_info->bucket; }
+    BucketInfoPtr getBucketInfo() const { return bucket_info; }
 
     void release()
     {
@@ -91,9 +109,18 @@ struct S3QueueOrderedFileMetadata::BucketHolder
             return;
 
         released = true;
-        LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}", bucket);
+        LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}", bucket_info->bucket);
 
-        zk_client->remove(bucket_lock_path);
+        Coordination::Requests requests;
+        /// Check that bucket lock version has not changed
+        /// (which could happen if session had expired as bucket_lock_path is ephemeral node).
+        requests.push_back(zkutil::makeCheckRequest(bucket_info->bucket_lock_id_path, bucket_info->bucket_version));
+        /// Remove bucket lock.
+        requests.push_back(zkutil::makeRemoveRequest(bucket_info->bucket_lock_path, -1));
+
+        Coordination::Responses responses;
+        const auto code = zk_client->tryMulti(requests, responses);
+        zkutil::KeeperMultiException::check(code, requests, responses);
     }
 
     ~BucketHolder()
@@ -109,8 +136,7 @@ struct S3QueueOrderedFileMetadata::BucketHolder
     }
 
 private:
-    const Bucket bucket;
-    const std::string bucket_lock_path;
+    BucketInfoPtr bucket_info;
     const zkutil::ZooKeeperPtr zk_client;
     bool released = false;
 };

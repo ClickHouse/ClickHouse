@@ -118,6 +118,7 @@ S3QueueMetadata::S3QueueMetadata(const fs::path & zookeeper_path_, const S3Queue
     , zookeeper_path(zookeeper_path_)
     , buckets_num(getBucketsNum(settings_))
     , log(getLogger("StorageS3Queue(" + zookeeper_path_.string() + ")"))
+    , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
     if (settings.mode == S3QueueMode::UNORDERED
         && (settings.s3queue_tracked_files_limit || settings.s3queue_tracked_file_ttl_sec))
@@ -160,7 +161,9 @@ S3QueueMetadata::FileStatuses S3QueueMetadata::getFileStateses() const
     return local_file_statuses->getAll();
 }
 
-S3QueueMetadata::FileMetadataPtr S3QueueMetadata::getFileMetadata(const std::string & path)
+S3QueueMetadata::FileMetadataPtr S3QueueMetadata::getFileMetadata(
+    const std::string & path,
+    S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info)
 {
     auto file_status = local_file_statuses->get(path, /* create */true);
     switch (settings.mode)
@@ -170,6 +173,7 @@ S3QueueMetadata::FileMetadataPtr S3QueueMetadata::getFileMetadata(const std::str
                 zookeeper_path,
                 path,
                 file_status,
+                bucket_info,
                 buckets_num,
                 settings.s3queue_loading_retries,
                 log);

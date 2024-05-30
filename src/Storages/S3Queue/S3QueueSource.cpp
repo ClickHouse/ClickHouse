@@ -60,13 +60,17 @@ size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
 
 StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl(size_t processor)
 {
+    ObjectInfoPtr object_info;
+    S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info;
+
     while (!shutdown_called)
     {
-        auto val = metadata->useBucketsForProcessing()
-            ? getNextKeyFromAcquiredBucket(processor)
-            : glob_iterator->next(processor);
+        if (metadata->useBucketsForProcessing())
+            std::tie(object_info, bucket_info) = getNextKeyFromAcquiredBucket(processor);
+        else
+            object_info = glob_iterator->next(processor);
 
-        if (!val)
+        if (!object_info)
             return {};
 
         if (shutdown_called)
@@ -75,14 +79,14 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
             return {};
         }
 
-        auto file_metadata = metadata->getFileMetadata(val->relative_path);
+        auto file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
         if (file_metadata->setProcessing())
-            return std::make_shared<S3QueueObjectInfo>(*val, file_metadata);
+            return std::make_shared<S3QueueObjectInfo>(*object_info, file_metadata);
     }
     return {};
 }
 
-StorageS3QueueSource::ObjectInfoPtr
+std::pair<StorageS3QueueSource::ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr>
 StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
     /// We need this lock to maintain consistency between listing s3 directory
@@ -138,7 +142,7 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
                     LOG_TEST(log, "Current bucket: {}, will process file: {}",
                              bucket, object_info->getFileName());
 
-                    return object_info;
+                    return std::pair{object_info, bucket_holder_it->second->getBucketInfo()};
                 }
 
                 LOG_TEST(log, "Cache of bucket {} is empty", bucket);
@@ -208,7 +212,7 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
                 LOG_TEST(log, "Acquired bucket: {}, will process file: {}",
                          bucket, object_info->getFileName());
 
-                return object_info;
+                return std::pair{object_info, bucket_holder_it->second->getBucketInfo()};
             }
         }
 
@@ -239,7 +243,7 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
                     continue;
                 }
                 /// Bucket is already acquired, process the file.
-                return object_info;
+                return std::pair{object_info, bucket_holder_it->second->getBucketInfo()};
             }
             else
             {
@@ -255,7 +259,7 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
                         object_info = bucket_cache.keys.front();
                         bucket_cache.keys.pop_front();
                     }
-                    return object_info;
+                    return std::pair{object_info, bucket_holder_it->second->getBucketInfo()};
                 }
                 else
                 {

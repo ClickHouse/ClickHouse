@@ -91,8 +91,17 @@ protected:
     NodeMetadata node_metadata;
     LoggerPtr log;
 
+    /// processing node is ephemeral, so we cannot verify with it if
+    /// this node was created by a certain processor on a previous s3 queue processing stage,
+    /// because we could get a session expired in between the stages
+    /// and someone else could just create this processing node.
+    /// Therefore we also create a persistent processing node
+    /// which is updated on each creation of ephemeral processing node.
+    /// We use the version of this node to verify the version of the processing ephemeral node.
     const std::string processing_node_id_path;
+    /// Id of the processor.
     std::optional<std::string> processing_id;
+    /// Version of the processing id persistent node.
     std::optional<int> processing_id_version;
 
     static std::string getNodeName(const std::string & path);

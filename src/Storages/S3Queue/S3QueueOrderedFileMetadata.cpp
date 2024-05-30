@@ -44,6 +44,7 @@ S3QueueOrderedFileMetadata::S3QueueOrderedFileMetadata(
     const std::filesystem::path & zk_path_,
     const std::string & path_,
     FileStatusPtr file_status_,
+    BucketInfoPtr bucket_info_,
     size_t buckets_num_,
     size_t max_loading_retries_,
     LoggerPtr log_)
@@ -57,6 +58,7 @@ S3QueueOrderedFileMetadata::S3QueueOrderedFileMetadata(
         log_)
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
+    , bucket_info(bucket_info_)
 {
 }
 
@@ -85,16 +87,41 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
 {
     const auto zk_client = getZooKeeper();
     const auto bucket_lock_path = zk_path / "buckets" / toString(bucket) / "lock";
+    const auto bucket_lock_id_path = zk_path / "buckets" / toString(bucket) / "lock_id";
     const auto processor_info = getProcessorInfo(processor);
 
-    auto code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Ephemeral);
+    Coordination::Requests requests;
+
+    /// Create bucket lock node as ephemeral node.
+    requests.push_back(zkutil::makeCreateRequest(bucket_lock_path, "", zkutil::CreateMode::Ephemeral));
+
+    /// Crate bucket lock id node as persistent node if it does not exist yet.
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            bucket_lock_id_path, processor_info, zkutil::CreateMode::Persistent, /* ignore_if_exists */true));
+
+    /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.
+    /// (See comment near S3QueueIFileMetadata::processing_node_version).
+    requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
+
+    Coordination::Responses responses;
+    const auto code = zk_client->tryMulti(requests, responses);
     if (code == Coordination::Error::ZOK)
     {
+        const auto * set_response = dynamic_cast<const Coordination::SetResponse *>(responses[2].get());
+        const auto bucket_lock_version = set_response->stat.version;
+
         LOG_TEST(
             getLogger("S3QueueOrderedFileMetadata"),
-            "Processor {} acquired bucket {} for processing", processor, bucket);
+            "Processor {} acquired bucket {} for processing (bucket lock version: {})",
+            processor, bucket, bucket_lock_version);
 
-        return std::make_shared<BucketHolder>(bucket, bucket_lock_path, zk_client);
+        return std::make_shared<BucketHolder>(
+            bucket,
+            bucket_lock_version,
+            bucket_lock_path,
+            bucket_lock_id_path,
+            zk_client);
     }
 
     if (code == Coordination::Error::ZNODEEXISTS)
@@ -117,8 +144,10 @@ std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueOrderedFileMetad
         CREATED_PROCESSING_PATH = 2,
         /// update processing id
         SET_PROCESSING_ID = 4,
+        /// bucket version did not change
+        CHECKED_BUCKET_VERSION = 5,
         /// max_processed_node version did not change
-        CHECKED_MAX_PROCESSED_PATH = 5,
+        CHECKED_MAX_PROCESSED_PATH = 6,
     };
 
     const auto zk_client = getZooKeeper();
@@ -151,6 +180,12 @@ std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueOrderedFileMetad
                 processing_node_id_path, processor_info, zkutil::CreateMode::Persistent, /* ignore_if_exists */true));
         requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
 
+        if (bucket_info)
+            requests.push_back(zkutil::makeCheckRequest(bucket_info->bucket_lock_id_path, bucket_info->bucket_version));
+
+        /// TODO: for ordered processing with buckets it should be enough to check only bucket lock version,
+        /// so may be remove creation and check for processing_node_id if bucket_info is set?
+
         if (has_processed_node)
         {
             requests.push_back(zkutil::makeCheckRequest(processed_node_path, processed_node_stat.version));
@@ -178,7 +213,13 @@ std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueOrderedFileMetad
         if (is_request_failed(CREATED_PROCESSING_PATH))
             return {false, FileStatus::State::Processing};
 
-        if (is_request_failed(CHECKED_MAX_PROCESSED_PATH))
+        if (bucket_info && is_request_failed(CHECKED_BUCKET_VERSION))
+        {
+            LOG_TEST(log, "Version of bucket lock changed: {}. Will retry for file `{}`", code, path);
+            continue;
+        }
+
+        if (is_request_failed(bucket_info ? CHECKED_MAX_PROCESSED_PATH : CHECKED_BUCKET_VERSION))
         {
             LOG_TEST(log, "Version of max processed file changed: {}. Will retry for file `{}`", code, path);
             continue;

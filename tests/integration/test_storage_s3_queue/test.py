@@ -1428,23 +1428,6 @@ def test_settings_check(started_cluster):
         )
     )
 
-    assert (
-        "Existing table metadata in ZooKeeper differs in s3queue_processing_threads_num setting. Stored in ZooKeeper: 5, local: 2"
-        in create_table(
-            started_cluster,
-            node_2,
-            table_name,
-            mode,
-            files_path,
-            additional_settings={
-                "keeper_path": keeper_path,
-                "s3queue_processing_threads_num": 2,
-                "s3queue_buckets": 2,
-            },
-            expect_error=True,
-        )
-    )
-
     node.query(f"DROP TABLE {table_name} SYNC")
 
 

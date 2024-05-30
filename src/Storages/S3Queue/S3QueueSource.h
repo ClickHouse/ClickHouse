@@ -78,7 +78,7 @@ public:
         bool iterator_finished = false;
         std::unordered_map<size_t, S3QueueOrderedFileMetadata::BucketHolderPtr> bucket_holders;
 
-        ObjectInfoPtr getNextKeyFromAcquiredBucket(size_t processor);
+        std::pair<ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
     };
 
     StorageS3QueueSource(

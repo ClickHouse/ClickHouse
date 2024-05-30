@@ -61,7 +61,7 @@ public:
     void checkSettings(const S3QueueSettings & settings) const;
     void shutdown();
 
-    FileMetadataPtr getFileMetadata(const std::string & path);
+    FileMetadataPtr getFileMetadata(const std::string & path, S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
 
     FileStatusPtr getFileStatus(const std::string & path);
     FileStatuses getFileStateses() const;

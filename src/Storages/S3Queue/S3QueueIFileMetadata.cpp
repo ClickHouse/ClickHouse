@@ -181,7 +181,6 @@ S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::createNodeMetadata(
 std::string S3QueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
 {
     /// Add information which will be useful for debugging just in case.
-    /// TODO: add it for Unordered mode as well.
     Poco::JSON::Object json;
     json.set("hostname", DNSResolver::instance().getHostName());
     json.set("processor_id", processor_id);
@@ -241,7 +240,6 @@ void S3QueueIFileMetadata::setFailed(const std::string & exception)
 
     ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
     file_status->onFailed(exception);
-
     node_metadata.last_exception = exception;
 
     if (max_loading_retries == 0)
