@@ -33,9 +33,10 @@ public:
 
     Chunk add(Chunk && input_chunk);
 
+    Block header;
+
 private:
     Chunk accumulated_chunk;
-    const Block header;
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
@@ -48,7 +49,8 @@ private:
 class PlanSquashing
 {
 public:
-    PlanSquashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    explicit PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    PlanSquashing(PlanSquashing && other) = default;
 
     Chunk add(Chunk && input_chunk);
     Chunk flush();
@@ -68,7 +70,7 @@ private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
 
-    // const Block header;
+    const Block header;
     CurrentSize accumulated_size;
 
     void expandCurrentSize(size_t rows, size_t bytes);
