@@ -118,7 +118,7 @@ CREATE TABLE test_db.test_table_03093_buffer_perm (key UInt64) Engine=Buffer(tes
 INSERT INTO test_db.test_table_03093_buffer_perm SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_buffer_perm PERMANENTLY;
 DROP DETACHED TABLE test_db.test_table_03093_buffer_perm SYNC;
-DROP DETACHED TABLE test_db.test_table_03093_null_for_buffer SYNC;
+DROP TABLE test_db.test_table_03093_null_for_buffer SYNC;
 
 CREATE TABLE test_db.test_table_03093_null_for_buffer (key UInt64) Engine=Null();
 CREATE TABLE test_db.test_table_03093_buffer (key UInt64) Engine=Buffer(test_db, test_table_03093_null_for_buffer,
@@ -133,20 +133,20 @@ CREATE TABLE test_db.test_table_03093_buffer (key UInt64) Engine=Buffer(test_db,
 INSERT INTO test_db.test_table_03093_buffer SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_buffer;
 DROP DETACHED TABLE test_db.test_table_03093_buffer SYNC;
-DROP DETACHED TABLE test_db.test_table_03093_null_for_buffer SYNC;
+DROP TABLE test_db.test_table_03093_null_for_buffer SYNC;
 
 CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) Engine=TinyLog();
 CREATE TABLE test_db.test_table_03093_dist AS test_db.test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_for_dist', key);
 INSERT INTO test_db.test_table_03093_dist SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_dist;
 DROP DETACHED TABLE test_db.test_table_03093_dist SYNC;
-DROP DETACHED TABLE test_db.test_table_03093_for_dist SYNC;
+DROP TABLE test_db.test_table_03093_for_dist SYNC;
 
 CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) Engine=TinyLog();
 CREATE TABLE test_db.test_table_03093_dist_perm AS test_db.test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_for_dist', key);
 INSERT INTO test_db.test_table_03093_dist_perm SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_dist_perm PERMANENTLY;
 DROP DETACHED TABLE test_db.test_table_03093_dist_perm SYNC;
-DROP DETACHED TABLE test_db.test_table_03093_for_dist SYNC;
+DROP TABLE test_db.test_table_03093_for_dist SYNC;
 
 DROP DATABASE test_db;
