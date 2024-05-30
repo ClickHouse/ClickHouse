@@ -4,7 +4,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <IO/SnappyReadBuffer.h>
+#include <IO/SnappyWriteBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
+#include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
@@ -14,6 +16,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include "config.h"
 
@@ -45,6 +48,11 @@ void PrometheusRequestHandler::handleMetrics(HTTPServerRequest & request, HTTPSe
 void PrometheusRequestHandler::handleRemoteWrite(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     wrapHandler(request, response, /* authenticate= */ true, [&] { handleRemoteWriteImpl(request, response); });
+}
+
+void PrometheusRequestHandler::handleRemoteRead(HTTPServerRequest & request, HTTPServerResponse & response)
+{
+    wrapHandler(request, response, /* authenticate= */ true, [&] { handleRemoteReadImpl(request, response); });
 }
 
 
@@ -107,6 +115,54 @@ void PrometheusRequestHandler::handleRemoteWriteImpl(HTTPServerRequest & request
 
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote write protocol is disabled");
+#endif
+}
+
+
+void PrometheusRequestHandler::handleRemoteReadImpl(HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response)
+{
+    LOG_INFO(log, "Handling remote read request from {}", request.get("User-Agent", ""));
+
+#if USE_PROMETHEUS_PROTOBUFS
+    chassert(config->remote_read);
+    const auto & remote_read_config = *config->remote_read;
+
+    checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
+    checkHTTPHeader(request, "Content-Encoding", "snappy");
+
+    auto table = DatabaseCatalog::instance().getTable(StorageID{remote_read_config.table_name}, context);
+    PrometheusRemoteReadProtocol protocol{table, context};
+
+    ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::make_unique<SnappyReadBuffer>(wrapReadBufferReference(request.getStream()))};
+
+    prometheus::ReadRequest read_request;
+    if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+
+    prometheus::ReadResponse read_response;
+
+    size_t num_queries = read_request.queries_size();
+    for (size_t i = 0; i != num_queries; ++i)
+    {
+        const auto & query = read_request.queries(static_cast<int>(i));
+        auto & new_query_result = *read_response.add_results();
+        protocol.readTimeSeries(*new_query_result.mutable_timeseries(),
+                                query.start_timestamp_ms(), query.end_timestamp_ms(), query.matchers(), query.hints());
+    }
+
+#if 0
+    LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
+#endif
+
+    response.setContentType("application/x-protobuf");
+    response.set("Content-Encoding", "snappy");
+
+    ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
+    read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+    zero_copy_output_stream.finalize();
+
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote read protocol is disabled");
 #endif
 }
 

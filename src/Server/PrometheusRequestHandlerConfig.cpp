@@ -62,10 +62,20 @@ PrometheusRequestHandlerConfig::PrometheusRequestHandlerConfig(const Poco::Util:
         remote_write->table_name = loadTableNameFromConfig(config_, config_prefix + ".remote_write");
     }
 
+    /// Read configuration for a handler of the prometheus remote-read protocol.
+    if (config_.has(config_prefix + ".remote_read"))
+    {
+        if (!detect_handler_by_endpoint && config_.has(config_prefix + ".remote_read.endpoint"))
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "URL path at {}.remote_read.endpoint can't be used and must not be specified", config_prefix);
+        remote_read.emplace();
+        remote_read->endpoint = config_.getString(config_prefix + ".remote_read.endpoint", "/read");
+        remote_read->table_name = loadTableNameFromConfig(config_, config_prefix + ".remote_read");
+    }
+
     /// Read configuration for a handler for exposing ClickHouse metrics, alternative format (without the <expose> tag).
     if (config_.has(config_prefix + ".endpoint") || config_.has(config_prefix + ".metrics") || config_.has(config_prefix + ".asynchronous_metrics") ||
         config_.has(config_prefix + ".events") || config_.has(config_prefix + ".errors") ||
-        (!metrics && !remote_write))
+        (!metrics && !remote_write && !remote_read))
     {
         if (metrics)
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Two handlers to expose metrics are specified in the same config section {}", config_prefix);
@@ -82,7 +92,7 @@ PrometheusRequestHandlerConfig::PrometheusRequestHandlerConfig(const Poco::Util:
     if (!detect_handler_by_endpoint)
     {
         /// If it's a rule inside <http_handlers> then only one handler is allowed.
-        size_t num_handlers = static_cast<int>(metrics.has_value()) + static_cast<int>(remote_write.has_value());
+        size_t num_handlers = static_cast<int>(metrics.has_value()) + static_cast<int>(remote_write.has_value()) + static_cast<int>(remote_read.has_value());
         if (num_handlers != 1)
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "{} prometheus handlers are specified in config section {}, expected exactly one handler", num_handlers, config_prefix);
     }
@@ -101,6 +111,9 @@ bool PrometheusRequestHandlerConfig::filterRequest(const HTTPServerRequest & req
 
     if (remote_write && (!detect_handler_by_endpoint || (path == remote_write->endpoint)))
         return (method == Poco::Net::HTTPRequest::HTTP_POST);
+
+    if (remote_read && (!detect_handler_by_endpoint || (path == remote_read->endpoint)))
+        return (method == Poco::Net::HTTPRequest::HTTP_GET) || (method == Poco::Net::HTTPRequest::HTTP_POST);
 
     return false;
 }

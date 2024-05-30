@@ -26,6 +26,9 @@ protected:
     /// Handles the remote write protocol - parses data from request and writes to a TimeSeries table.
     virtual void handleRemoteWrite(HTTPServerRequest & request, HTTPServerResponse & response) { handlerNotFound(request, response); }
 
+    /// Handles the remote read protocol - sends data from a TimeSeries table to client.
+    virtual void handleRemoteRead(HTTPServerRequest & request, HTTPServerResponse & response) { handlerNotFound(request, response); }
+
     /// Throws an exception that there is no handler for that path.
     void handlerNotFound(HTTPServerRequest & request, HTTPServerResponse & response);
 

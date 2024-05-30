@@ -22,6 +22,7 @@ public:
 protected:
     void handleMetrics(HTTPServerRequest & request, HTTPServerResponse & response) override;
     void handleRemoteWrite(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRemoteRead(HTTPServerRequest & request, HTTPServerResponse & response) override;
     void onException() override;
 
 private:
@@ -35,6 +36,11 @@ private:
     [[noreturn]]
 #endif
     void handleRemoteWriteImpl(HTTPServerRequest & request, HTTPServerResponse & response);
+
+#if !USE_PROMETHEUS_PROTOBUFS
+    [[noreturn]]
+#endif
+    void handleRemoteReadImpl(HTTPServerRequest & request, HTTPServerResponse & response);
 
     const Settings & default_settings;
     std::unique_ptr<HTMLForm> params;

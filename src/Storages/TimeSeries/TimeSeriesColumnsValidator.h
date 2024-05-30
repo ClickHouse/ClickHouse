@@ -8,6 +8,7 @@ namespace DB
 {
 class ColumnsDescription;
 struct ColumnDescription;
+struct ColumnWithTypeAndName;
 struct TimeSeriesSettings;
 
 /// Checks the types of columns of a TimeSeries table.
@@ -31,8 +32,11 @@ public:
     void validateColumnForValue(const ColumnDescription & column) const;
 
     void validateColumnForMetricName(const ColumnDescription & column) const;
+    void validateColumnForMetricName(const ColumnWithTypeAndName & column) const;
     void validateColumnForTagValue(const ColumnDescription & column) const;
+    void validateColumnForTagValue(const ColumnWithTypeAndName & column) const;
     void validateColumnForTagsMap(const ColumnDescription & column) const;
+    void validateColumnForTagsMap(const ColumnWithTypeAndName & column) const;
 
     void validateColumnForMetricFamilyName(const ColumnDescription & column) const;
     void validateColumnForType(const ColumnDescription & column) const;

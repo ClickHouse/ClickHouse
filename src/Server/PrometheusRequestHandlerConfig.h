@@ -47,6 +47,7 @@ struct PrometheusRequestHandlerConfig
     ///     </remote_write>
     /// </prometheus>
     std::optional<EndpointAndTableName> remote_write;
+    std::optional<EndpointAndTableName> remote_read;
 
     size_t keep_alive_timeout;
     bool is_stacktrace_enabled = true;
