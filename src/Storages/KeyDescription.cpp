@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/extractKeyExpressionList.h>
+#include "Common/Exception.h"
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -80,6 +81,24 @@ void KeyDescription::recalculateWithNewColumns(
     ContextPtr context)
 {
     *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
+}
+
+KeyDescription KeyDescription::getKeyPrefix(
+    size_t prefix_size,
+    const ColumnsDescription & columns,
+    ContextPtr context) const
+{
+    auto new_expression_list_ast = expression_list_ast->clone();
+    auto & new_expression_list = assert_cast<ASTExpressionList &>(*new_expression_list_ast);
+
+    if (prefix_size > new_expression_list.children.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "prefix size {} cannot be greater than number of expressions {}",
+            prefix_size, new_expression_list.children.size());
+
+    new_expression_list.children.resize(prefix_size);
+    auto new_key_ast = wrapExpressionListToKeyAST(new_expression_list_ast);
+    return getKeyFromAST(new_key_ast, columns, context);
 }
 
 KeyDescription KeyDescription::getKeyFromAST(

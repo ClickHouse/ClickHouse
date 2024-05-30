@@ -896,7 +896,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     size_t max_layers,
     ContextPtr context,
     ReadingInOrderStepGetter && in_order_reading_step_getter,
-    bool split_parts_ranges_into_intersecting_and_non_intersecting_final,
+    bool split_parts_ranges_into_intersecting_and_non_intersecting,
     bool split_intersecting_parts_ranges_into_layers)
 {
     auto logger = getLogger("PartsSplitter");
@@ -911,7 +911,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return result;
     }
 
-    if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
+    if (split_parts_ranges_into_intersecting_and_non_intersecting)
     {
         SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, logger);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
@@ -943,10 +943,12 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+
         reorderColumns(*actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
+
         result.merging_pipes[i].addSimpleTransform(
             [&](const Block & header)
             {

@@ -67,6 +67,11 @@ struct KeyDescription
         const ColumnsDescription & columns,
         ContextPtr context);
 
+    KeyDescription getKeyPrefix(
+        size_t prefix_size,
+        const ColumnsDescription & columns,
+        ContextPtr context) const;
+
     KeyDescription() = default;
 
     /// We need custom copy constructors because we don't want

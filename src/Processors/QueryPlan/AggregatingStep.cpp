@@ -395,6 +395,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     many_data, counter++);
             });
 
+            skip_merging = true;
+
             if (skip_merging)
             {
                 pipeline.addSimpleTransform([&](const Block & header)
