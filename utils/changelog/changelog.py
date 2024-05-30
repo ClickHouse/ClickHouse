@@ -60,9 +60,10 @@ class Description:
             self.entry,
         )
         # 2) issue URL w/o markdown link
+        # including #issuecomment-1 or #event-12
         entry = re.sub(
-            r"([^(])https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})",
-            r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
+            r"([^(])(https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})[-#a-z0-9]*)",
+            r"\1[#\3](\2)",
             entry,
         )
         # It's possible that we face a secondary rate limit.
