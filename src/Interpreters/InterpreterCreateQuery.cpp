@@ -88,6 +88,11 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTable;
+}
+
 namespace DB
 {
 
@@ -113,6 +118,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_MANY_TABLES;
+    extern const int TOO_MANY_DATABASES;
 }
 
 namespace fs = std::filesystem;
@@ -136,6 +143,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             return {};
         else
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
+    }
+
+    if (auto max_db = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw; max_db > 0)
+    {
+        size_t db_count = DatabaseCatalog::instance().getDatabases().size();
+        // there's an invisiable system database _temporary_and_external_tables, so we need to subtract 1
+        if (db_count > 0)
+            db_count--;
+        if (db_count >= max_db)
+            throw Exception(ErrorCodes::TOO_MANY_DATABASES,
+                            "Too many databases, max: {}, now: {}. "
+                            "See setting max_database_num_to_throw.", max_db, db_count);
     }
 
     /// Will write file with database metadata, if needed.
@@ -1542,6 +1561,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
+    }
+
+    if (UInt64 max_table = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw; max_table > 0)
+    {
+        UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        if (table_count >= max_table)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many tables in the system. Current is {}, limit is {}. "
+                            "See setting 'max_table_num_to_throw'.",
+                            table_count, max_table);
     }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
