@@ -315,23 +315,34 @@ std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams
     if (auto it = user_params.find("n_predict"); it != user_params.end())
         n_predict = it->second.safeGet<Int64>();
     n_predict = std::min(n_predict, state.hparams.n_ctx - static_cast<Int64>(embd_inp.size()));
+    Int32 n_threads = gpt_params.n_threads;
+    {
+        if (auto it = user_params.find("n_threads"); it != user_params.end())
+            n_threads = static_cast<Int32>(it->second.safeGet<Int64>());
+    }
+    Int32 seed = gpt_params.seed;
+    {
+        if (auto it = user_params.find("seed"); it != user_params.end())
+            seed = static_cast<Int32>(it->second.safeGet<Int64>());
+    }
 
     // submit the input prompt token-by-token
     // this reduces the memory usage during inference, at the cost of a bit of speed at the beginning
     size_t mem_per_token = 0;
-    gpt2_eval(gpt_params.n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
+    gpt2_eval(n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
 
     std::vector<GptVocab::id> embd;
 
     std::string result;
     pcg64_fast random_number_generator;
+    random_number_generator.seed(seed);
 
     for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++)
     {
         // predict
         if (!embd.empty())
         {
-            if (!gpt2_eval(gpt_params.n_threads, n_past, embd, logits, mem_per_token))
+            if (!gpt2_eval(n_threads, n_past, embd, logits, mem_per_token))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Failed to predict");
         }
 

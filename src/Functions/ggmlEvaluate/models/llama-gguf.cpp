@@ -60,6 +60,15 @@ std::string LlamaGgufModel::evalImpl(const std::string & input, const GgmlModelP
     Int64 n_remain = g_params.n_predict;
     if (auto it = user_params.find("n_predict"); it != user_params.end())
         n_remain = it->second.safeGet<Int64>();
+    {
+        if (auto it = user_params.find("n_threads"); it != user_params.end())
+            g_params.n_threads = static_cast<Int32>(it->second.safeGet<Int64>());
+    }
+    {
+        if (auto it = user_params.find("seed"); it != user_params.end())
+            g_params.seed = static_cast<Int32>(it->second.safeGet<Int64>());
+    }
+
     int n_past = 0;
     int n_consumed = 0;
 

@@ -14,7 +14,7 @@
 namespace DB
 {
 
-static constexpr const char* ModelArchName = "gptj";
+static constexpr const char * ModelArchName = "gptj";
 
 namespace ErrorCodes
 {
@@ -518,27 +518,39 @@ std::string GptJModel::evalImpl(const std::string & input, const GgmlModelParams
 
 std::vector<GptVocab::id> GptJModel::predict(const GgmlModelParams & user_params, const std::vector<GptVocab::id> & embd_inp)
 {
+    Int64 n_predict = gpt_params.n_predict;
+    {
+        if (auto it = user_params.find("n_predict"); it != user_params.end())
+            n_predict = it->second.safeGet<Int64>();
+        n_predict = std::min(n_predict, hparams.n_ctx - static_cast<Int64>(embd_inp.size()));
+    }
+    Int32 n_threads = gpt_params.n_threads;
+    {
+        if (auto it = user_params.find("n_threads"); it != user_params.end())
+            n_threads = static_cast<Int32>(it->second.safeGet<Int64>());
+    }
+    Int32 seed = gpt_params.seed;
+    {
+        if (auto it = user_params.find("seed"); it != user_params.end())
+            seed = static_cast<Int32>(it->second.safeGet<Int64>());
+    }
+
     std::vector<GptVocab::id> total_embd;
     std::vector<GptVocab::id> embd;
 
     pcg64_fast random_number_generator;
+    random_number_generator.seed(seed);
     int n_past = 0;
     std::vector<float> logits;
-
-    Int64 n_predict = gpt_params.n_predict;
-    if (auto it = user_params.find("n_predict"); it != user_params.end())
-        n_predict = it->second.safeGet<Int64>();
-    n_predict = std::min(n_predict, hparams.n_ctx - static_cast<Int64>(embd_inp.size()));
-
     size_t mem_per_token = 0;
-    evalInternal(gpt_params.n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
+    evalInternal(n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
 
     for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++)
     {
         // predict
         if (!embd.empty())
         {
-            if (!evalInternal(gpt_params.n_threads, n_past, embd, logits, mem_per_token))
+            if (!evalInternal(n_threads, n_past, embd, logits, mem_per_token))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Failed to predict");
         }
 
