@@ -1179,7 +1179,9 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             .strip()
             .split("\n")
         )
-        logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}: {processed_files}")
+        logging.debug(
+            f"Processed files: {len(processed_files)}/{files_to_generate}: {processed_files}"
+        )
 
         count = (
             get_count(f"{dst_table_name}_1")
