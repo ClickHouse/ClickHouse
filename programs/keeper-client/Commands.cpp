@@ -229,6 +229,8 @@ struct TraversalTask : public std::enable_shared_from_this<TraversalTask<UserCtx
         std::deque<std::function<void(Ctx &)>> finish_callbacks;    /// Callbacks to be called
         KeeperClient * client;
         UserCtx & user_ctx;
+
+        Ctx(KeeperClient * client_, UserCtx & user_ctx_) : client(client_), user_ctx(user_ctx_) {}
     };
 
 private:
@@ -311,7 +313,7 @@ private:
 template <class UserCtx>
 void parallelized_traverse(const fs::path & path, KeeperClient * client, size_t max_in_flight_requests, UserCtx & ctx_)
 {
-    typename TraversalTask<UserCtx>::Ctx ctx{.client = client, .user_ctx = ctx_};
+    typename TraversalTask<UserCtx>::Ctx ctx(client, ctx_);
 
     auto root_task = std::make_shared<TraversalTask<UserCtx>>(path, nullptr);
 
@@ -373,8 +375,6 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
 
     struct
     {
-        std::vector<std::tuple<Int64, String>> result;
-
         bool onListChildren(const fs::path & path, const Strings & children)
         {
             if (children.size() >= threshold)
