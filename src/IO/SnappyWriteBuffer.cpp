@@ -16,7 +16,13 @@ namespace ErrorCodes
 }
 
 SnappyWriteBuffer::SnappyWriteBuffer(std::unique_ptr<WriteBuffer> out_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
+    : SnappyWriteBuffer(*out_, buf_size, existing_memory, alignment)
+{
+    out_holder = std::move(out_);
+}
+
+SnappyWriteBuffer::SnappyWriteBuffer(WriteBuffer & out_, size_t buf_size, char * existing_memory, size_t alignment)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(&out_)
 {
 }
 
