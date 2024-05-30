@@ -552,8 +552,11 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
+    else
+    {
+        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
+    }
 
-    result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
 
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));

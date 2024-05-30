@@ -1,4 +1,5 @@
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Transforms/NumberBlocksTransform.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -16,6 +17,10 @@ void SinkToStorage::onConsume(Chunk chunk)
     Nested::validateArraySizes(getHeader().cloneWithColumns(chunk.getColumns()));
 
     consume(chunk);
+
+    // Add comment here
+    DeduplicationToken::SetInitialTokenTransform::setInitialToken(chunk);
+
     cur_chunk = std::move(chunk);
 }
 

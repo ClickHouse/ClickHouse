@@ -121,6 +121,8 @@ namespace DeduplicationToken
         String getName() const override { return "DeduplicationToken::SetInitialTokenTransform"; }
 
         void transform(Chunk & chunk) override;
+
+        static void setInitialToken(Chunk & chunk);
     };
 
     class ResetTokenTransform : public ISimpleTransform

@@ -105,7 +105,7 @@ void CheckTokenTransform::transform(Chunk & chunk)
     LOG_DEBUG(getLogger("CheckInsertDeduplicationTokenTransform"), "{}, token: {}", debug, token_info->getToken(false));
 }
 
-void SetInitialTokenTransform::transform(Chunk & chunk)
+void SetInitialTokenTransform::setInitialToken(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
 
@@ -125,6 +125,12 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
 
     const auto hash_value = hash.get128();
     token_info->setInitialToken(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
+}
+
+
+void SetInitialTokenTransform::transform(Chunk & chunk)
+{
+    setInitialToken(chunk);
 }
 
 void SetUserTokenTransform::transform(Chunk & chunk)
