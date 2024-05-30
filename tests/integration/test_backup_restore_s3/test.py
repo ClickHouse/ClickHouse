@@ -255,6 +255,7 @@ def check_system_tables(backup_query_id=None):
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
         ("disk_s3_restricted_user", "ObjectStorage", "S3", "Local"),
+        ("local", "Local", "None", "None"),
     )
     assert len(expected_disks) == len(disks)
     for expected_disk in expected_disks:

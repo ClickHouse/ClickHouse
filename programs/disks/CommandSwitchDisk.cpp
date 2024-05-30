@@ -13,7 +13,7 @@ public:
     explicit CommandSwitchDisk() : ICommand()
     {
         command_name = "switch-disk";
-        description = "Switch disk";
+        description = "Switch disk (makes sense only in interactive mode)";
         options_description.add_options()("disk", po::value<String>(), "the disk to switch to (mandatory, positional)")(
             "path", po::value<String>(), "the path to switch on the disk");
         positional_options_description.add("disk", 1);

@@ -32,7 +32,7 @@ void ICommand::execute(const Strings & commands, DisksClient & client)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", exc.what());
     }
-    return executeImpl(processCommandLineArguments(commands), client);
+    executeImpl(processCommandLineArguments(commands), client);
 }
 
 DiskWithPath & ICommand::getDiskWithPath(DisksClient & client, const CommandLineOptions & options, const String & name)

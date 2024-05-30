@@ -24,10 +24,10 @@ public:
         bool recursive = options.count("recursive");
         bool show_hidden = options.count("all");
         auto disk = client.getCurrentDiskWithPath();
-        String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", "");
+        String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
-            listRecursive(disk, disk.getAbsolutePath(path), show_hidden);
+            listRecursive(disk, path, show_hidden);
         else
             list(disk, path, show_hidden);
     }
@@ -49,12 +49,13 @@ private:
         }
     }
 
-    static void listRecursive(const DiskWithPath & disk, const std::string & absolute_path, bool show_hidden)
+    static void listRecursive(const DiskWithPath & disk, const std::string & relative_path, bool show_hidden)
     {
-        std::vector<String> file_names = disk.listAllFilesByPath(absolute_path);
+        // std::cerr << absolute_path << std::endl;
+        std::vector<String> file_names = disk.listAllFilesByPath(relative_path);
         std::vector<String> selected_and_sorted_file_names{};
 
-        std::cout << absolute_path << ":\n";
+        std::cout << relative_path << ":\n";
 
         if (!file_names.empty())
         {
@@ -72,7 +73,17 @@ private:
 
         for (const auto & file_name : selected_and_sorted_file_names)
         {
-            auto path = absolute_path + "/" + file_name;
+            auto path = [&]() -> String
+            {
+                if (relative_path.ends_with("/"))
+                {
+                    return relative_path + file_name;
+                }
+                else
+                {
+                    return relative_path + "/" + file_name;
+                }
+            }();
             if (disk.isDirectory(path))
                 listRecursive(disk, path, show_hidden);
         }

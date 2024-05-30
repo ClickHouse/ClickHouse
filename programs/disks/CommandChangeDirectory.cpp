@@ -13,7 +13,7 @@ public:
     explicit CommandChangeDirectory() : ICommand()
     {
         command_name = "cd";
-        description = "Change directory";
+        description = "Change directory (makes sense only in interactive mode)";
         options_description.add_options()("path", po::value<String>(), "the path we want to get to (mandatory, positional)")(
             "disk", po::value<String>(), "A disk where the path is changed");
         positional_options_description.add("path", 1);
