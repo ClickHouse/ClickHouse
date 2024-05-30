@@ -122,11 +122,6 @@ struct QueryState
 
     void reset()
     {
-        if (maybe_compressed_out && maybe_compressed_out.unique())
-        {
-                maybe_compressed_out->cancel();
-        }
-
         *this = QueryState();
     }
 

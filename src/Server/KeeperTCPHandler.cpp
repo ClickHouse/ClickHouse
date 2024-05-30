@@ -693,12 +693,6 @@ void KeeperTCPHandler::resetStats()
 
 KeeperTCPHandler::~KeeperTCPHandler()
 {
-    if (compressed_out)
-        compressed_out->cancel();
-
-    if (out)
-        out->cancel();
-
     KeeperTCPHandler::unregisterConnection(this);
 }
 
