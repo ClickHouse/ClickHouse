@@ -101,6 +101,13 @@ table:        async_insert_landing
 partition_id: all
 rows:         3
 
+Row 2:
+──────
+database:     default
+table:        async_insert_target
+partition_id: all
+rows:         3
+
 system.query_log
 Row 1:
 ──────
