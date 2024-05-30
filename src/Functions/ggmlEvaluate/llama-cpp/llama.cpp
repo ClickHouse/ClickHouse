@@ -105,6 +105,7 @@
 #pragma clang diagnostic ignored "-Wunused-macros"
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wsign-compare"
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4244 4267) // possible loss of data
