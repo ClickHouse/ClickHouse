@@ -7,36 +7,11 @@ CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_merge_tree_settings --allow_experimental_dynamic_type=1 --optimize_aggregation_in_order 0 --index_granularity_bytes 10485760 --index_granularity 8128 --merge_max_block_size 8128"
-
+# Fix some settings to avoid timeouts because of some settings randomization
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_merge_tree_settings --allow_experimental_dynamic_type=1 --index_granularity_bytes 10485760 --index_granularity 8128 --merge_max_block_size 8128 --optimize_aggregation_in_order 0"
 
 function test()
 {
-    echo "ReplacingMergeTree"
-    $CH_CLIENT -q "create table test (id UInt64, d Dynamic) engine=ReplacingMergeTree order by id settings $1;"
-    $CH_CLIENT -q "system stop merges test"
-    $CH_CLIENT -q "insert into test select number, number from numbers(100000)"
-    $CH_CLIENT -q "insert into test select number, 'str_' || toString(number) from numbers(50000, 100000)"
-
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
-    $CH_CLIENT -nm -q "system start merges test; optimize table test final"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
-    $CH_CLIENT -q "drop table test"
-
-    echo "SummingMergeTree"
-    $CH_CLIENT -q "create table test (id UInt64, sum UInt64, d Dynamic) engine=SummingMergeTree(sum) order by id settings $1;"
-    $CH_CLIENT -q "system stop merges test"
-    $CH_CLIENT -q "insert into test select number, 1, number from numbers(100000)"
-    $CH_CLIENT -q "insert into test select number, 1, 'str_' || toString(number) from numbers(50000, 100000)"
-
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
-    $CH_CLIENT -q "select count(), sum from test group by sum order by sum, count()"
-    $CH_CLIENT -nm -q "system start merges test; optimize table test final"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
-    $CH_CLIENT -q "select count(), sum from test group by sum order by sum, count()"
-    $CH_CLIENT -q "drop table test"
-
-    echo "AggregatingMergeTree"
     $CH_CLIENT -q "create table test (id UInt64, sum AggregateFunction(sum, UInt64), d Dynamic) engine=AggregatingMergeTree() order by id settings $1;"
     $CH_CLIENT -q "system stop merges test"
     $CH_CLIENT -q "insert into test select number, sumState(1::UInt64), number from numbers(100000) group by number"
