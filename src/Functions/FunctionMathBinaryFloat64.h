@@ -42,7 +42,8 @@ private:
         const auto check_argument_type = [this] (const IDataType * arg)
         {
             if (!isNativeNumber(arg) && !isDecimal(arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arg->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arg->getName(), getName());
         };
 
         check_argument_type(arguments.front().get());
@@ -276,14 +277,16 @@ private:
                 if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
 
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", right_arg->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
+                    right_arg->getName(), getName());
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<ColVecOrDecimalLeft>(left_arg))
             {
                 if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
 
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", right_arg->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
+                    right_arg->getName(), getName());
             }
 
             return false;
@@ -293,11 +296,13 @@ private:
         TypeIndex right_index = col_right.type->getTypeId();
 
         if (!callOnBasicTypes<true, true, true, false>(left_index, right_index, call))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_left.column->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                col_left.column->getName(), getName());
 
         return res;
     }
 };
+
 
 template <typename Name, Float64(Function)(Float64, Float64)>
 struct BinaryFunctionVectorized

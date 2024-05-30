@@ -78,7 +78,7 @@ SELECT max2(NULL, 1) - min2(NULL, 1);
 SELECT L1Norm(1); -- { serverError 43 }
 SELECT (1, 1) / toString(1); -- { serverError 43 }
 SELECT -(1, toString(1)); -- { serverError 43 }
-SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError 43 }
+SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError 44 }
 SELECT (1, 2) * toDecimal32(3.1, 8);
 
 SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError 43 }
