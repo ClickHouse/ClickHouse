@@ -530,6 +530,8 @@ Chain buildPushingToViewsChain(
         result_chain = Chain(std::move(processors));
         result_chain.setNumThreads(std::min(views_data->max_threads, max_parallel_streams));
         result_chain.setConcurrencyControl(settings.use_concurrency_control);
+
+        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
     }
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
@@ -552,11 +554,6 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
-    else
-    {
-        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
-    }
-
 
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
