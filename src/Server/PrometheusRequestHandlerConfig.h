@@ -16,6 +16,9 @@ struct PrometheusRequestHandlerConfig
 
         /// Handles Prometheus remote-write protocol.
         RemoteWrite,
+
+        /// Handles Prometheus remote-read protocol.
+        RemoteRead,
     };
 
     Type type = Type::ExposeMetrics;

@@ -81,6 +81,13 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///             <table>db.time_series_table_name</table>
 ///         </handler>
 ///     </my_rule2>
+///     <my_rule3>
+///         <url>/read</url>
+///         <handler>
+///             <type>remote_read</type>
+///             <table>db.time_series_table_name</table>
+///         </handler>
+///     </my_rule3>
 /// </http_handlers>
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,

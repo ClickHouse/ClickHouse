@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int THERE_IS_NO_COLUMN;
 }
@@ -199,11 +200,25 @@ void TimeSeriesColumnsValidator::validateColumnForMetricName(const ColumnDescrip
     validateColumnForTagValue(column);
 }
 
+void TimeSeriesColumnsValidator::validateColumnForMetricName(const ColumnWithTypeAndName & column) const
+{
+    validateColumnForTagValue(column);
+}
+
 void TimeSeriesColumnsValidator::validateColumnForTagValue(const ColumnDescription & column) const
 {
     if (!isString(removeLowCardinalityAndNullable(column.type)))
     {
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Column {} has illegal data type {}, expected String or LowCardinality(String)",
+                        column.name, column.type->getName());
+    }
+}
+
+void TimeSeriesColumnsValidator::validateColumnForTagValue(const ColumnWithTypeAndName & column) const
+{
+    if (!isString(removeLowCardinalityAndNullable(column.type)))
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column {} has illegal data type {}, expected String or LowCardinality(String)",
                         column.name, column.type->getName());
     }
 }
@@ -215,6 +230,17 @@ void TimeSeriesColumnsValidator::validateColumnForTagsMap(const ColumnDescriptio
         || !isString(removeLowCardinality(typeid_cast<const DataTypeMap &>(*column.type).getValueType())))
     {
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Column {} has illegal data type {}, expected Map(String, String) or Map(LowCardinality(String), String)",
+                        column.name, column.type->getName());
+    }
+}
+
+void TimeSeriesColumnsValidator::validateColumnForTagsMap(const ColumnWithTypeAndName & column) const
+{
+    if (!isMap(column.type)
+        || !isString(removeLowCardinality(typeid_cast<const DataTypeMap &>(*column.type).getKeyType()))
+        || !isString(removeLowCardinality(typeid_cast<const DataTypeMap &>(*column.type).getValueType())))
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column {} has illegal data type {}, expected Map(String, String) or Map(LowCardinality(String), String)",
                         column.name, column.type->getName());
     }
 }
