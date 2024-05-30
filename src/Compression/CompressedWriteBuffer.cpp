@@ -62,10 +62,11 @@ CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCode
 {
 }
 
-// CompressedWriteBuffer::~CompressedWriteBuffer()
-// {
-//     finalize();
-// }
+CompressedWriteBuffer::~CompressedWriteBuffer()
+{
+    if (!canceled)
+        finalize();
+}
 
 
 }
