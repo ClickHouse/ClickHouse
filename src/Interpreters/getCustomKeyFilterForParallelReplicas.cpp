@@ -72,7 +72,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     if (range_lower < 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid custom key filter range: Range lower bound must be a positive");
 
-    if (range_lower > range_upper)
+    if (range_lower >= range_upper)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid custom key filter range: Range upper bound {} must be larger than range lower bound {}",
@@ -80,6 +80,10 @@ ASTPtr getCustomKeyFilterForParallelReplica(
             range_upper);
 
     RelativeSize size_of_universum = range_upper - range_lower;
+
+    if (size_of_universum <= RelativeSize(replicas_count))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE, "Invalid custom key filter range: Range must be larger than than the number of replicas");
 
     RelativeSize relative_range_size = RelativeSize(1) / replicas_count;
     RelativeSize relative_range_offset = relative_range_size * RelativeSize(replica_num);
