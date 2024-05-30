@@ -108,7 +108,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     const auto & settings = context->getSettingsRef();
 
     auto s3_settings = getSettings(
-        config, "s3"/* config_prefix */, context, url.endpoint, settings.s3_validate_request_settings);
+        config, "s3"/* config_prefix */, context, url.uri_str, settings.s3_validate_request_settings);
 
     s3_settings->auth_settings.updateIfChanged(auth_settings);
     s3_settings->request_settings.updateIfChanged(request_settings);
