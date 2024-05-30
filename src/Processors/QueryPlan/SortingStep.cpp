@@ -248,13 +248,12 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     {
         if (use_buffering && sort_settings.read_in_order_max_bytes_to_buffer)
         {
-            auto transform = std::make_shared<BufferChunksTransform>(
-                pipeline.getHeader(),
-                pipeline.getNumStreams(),
-                sort_settings.read_in_order_max_bytes_to_buffer,
-                limit_);
+            size_t bytes_to_buffer = sort_settings.read_in_order_max_bytes_to_buffer / pipeline.getNumStreams();
 
-            pipeline.addTransform(std::move(transform));
+            pipeline.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<BufferChunksTransform>(header, bytes_to_buffer, limit_);
+            });
         }
 
         auto transform = std::make_shared<MergingSortedTransform>(

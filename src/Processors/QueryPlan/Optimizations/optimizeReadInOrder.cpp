@@ -915,9 +915,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         auto & union_node = node.children.front();
 
-        const SortDescription * best_sort_descr = nullptr;
-        StepStack best_steps_to_update;
         bool use_buffering = false;
+        const SortDescription * max_sort_descr = nullptr;
 
         std::vector<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
@@ -928,17 +927,14 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
             if (infos.back())
             {
-                if (!best_sort_descr || best_sort_descr->size() < infos.back()->sort_description_for_merging.size())
-                {
-                    best_sort_descr = &infos.back()->sort_description_for_merging;
-                    best_steps_to_update = steps_to_update;
-                }
+                if (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size())
+                    max_sort_descr = &infos.back()->sort_description_for_merging;
 
                 use_buffering |= infos.back()->limit == 0;
             }
         }
 
-        if (!best_sort_descr || best_sort_descr->empty())
+        if (!max_sort_descr || max_sort_descr->empty())
             return;
 
         for (size_t i = 0; i < infos.size(); ++i)
@@ -953,7 +949,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                 auto limit = sorting->getLimit();
                 /// If we have limit, it's better to sort up to full description and apply limit.
                 /// We cannot sort up to partial read-in-order description with limit cause result set can be wrong.
-                const auto & descr = limit ? sorting->getSortDescription() : *best_sort_descr;
+                const auto & descr = limit ? sorting->getSortDescription() : *max_sort_descr;
                 additional_sorting = std::make_unique<SortingStep>(
                     child->step->getOutputStream(),
                     descr,
@@ -961,12 +957,12 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                     sorting->getSettings(),
                     false);
             }
-            else if (info->sort_description_for_merging.size() < best_sort_descr->size())
+            else if (info->sort_description_for_merging.size() < max_sort_descr->size())
             {
                 additional_sorting = std::make_unique<SortingStep>(
                     child->step->getOutputStream(),
                     info->sort_description_for_merging,
-                    *best_sort_descr,
+                    *max_sort_descr,
                     sorting->getSettings().max_block_size,
                     0); /// TODO: support limit with ties
             }
@@ -980,8 +976,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*best_sort_descr, use_buffering);
-        updateStepsDataStreams(best_steps_to_update);
+        sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
