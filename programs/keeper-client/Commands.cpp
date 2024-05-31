@@ -375,14 +375,14 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
 
     struct
     {
-        bool onListChildren(const fs::path & path, const Strings & children)
+        bool onListChildren(const fs::path & path, const Strings & children) const
         {
             if (children.size() >= threshold)
                 std::cout << static_cast<String>(path) << "\t" << children.size() << "\n";
             return true;
         }
 
-        void onFinishChildrenTraversal(const fs::path &, Int64) {}
+        void onFinishChildrenTraversal(const fs::path &, Int64) const {}
 
         size_t threshold;
     } ctx {.threshold = threshold };
@@ -461,7 +461,7 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
     {
         std::vector<std::tuple<Int64, String>> result;
 
-        bool onListChildren(const fs::path &, const Strings &) { return true; }
+        bool onListChildren(const fs::path &, const Strings &) const { return true; }
 
         void onFinishChildrenTraversal(const fs::path & path, Int64 nodes_in_subtree)
         {
