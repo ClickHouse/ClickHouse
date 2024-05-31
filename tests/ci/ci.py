@@ -793,7 +793,7 @@ class CiOptions:
         )
 
         # CI setting example we need to match with re:
-        #- [x] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
+        # - [x] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
         pattern = r"(#|- \[x\] +<!---)([|\w]+)"
         matches = [match[-1] for match in re.findall(pattern, message)]
         print(f"CI tags from commit message: [{matches}]")
