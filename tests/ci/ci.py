@@ -47,6 +47,7 @@ from env_helper import (
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
+    CI_CONFIG_PATH,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
@@ -278,10 +279,9 @@ class CiCache:
     @staticmethod
     def dump_run_config(indata: Dict[str, Any]) -> None:
         assert indata
-        path = Path(TEMP_PATH) / "ci_config.json"
-        with open(path, "w", encoding="utf-8") as json_file:
+        assert CI_CONFIG_PATH
+        with open(CI_CONFIG_PATH, "w", encoding="utf-8") as json_file:
             json.dump(indata, json_file, indent=2)
-        os.environ["CI_CONFIG_PATH"] = str(path)
 
     def update(self):
         """

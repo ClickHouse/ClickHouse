@@ -14,6 +14,7 @@ from env_helper import (
     REPORT_PATH,
     TEMP_PATH,
     CI_CONFIG_PATH,
+    CI,
 )
 from pr_info import PRInfo
 from report import (
@@ -54,7 +55,7 @@ def main():
         release=pr_info.is_release,
         backport=pr_info.head_ref.startswith("backport/"),
     )
-    if CI_CONFIG_PATH:
+    if CI:
         # In CI only specific builds might be manually selected, or some wf does not build all builds.
         #   Filtering @builds_for_check to verify only builds that are present in the current CI workflow
         with open(CI_CONFIG_PATH, encoding="utf-8") as jfd:
