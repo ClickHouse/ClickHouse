@@ -101,7 +101,7 @@ Result:
 
 ## extractKeyValuePairs
 
-Convertes a string of key-value pairs to a [Map(String, String)](../data-types/map.md).
+Converts a string of key-value pairs to a [Map(String, String)](../data-types/map.md).
 Parsing is tolerant towards noise (e.g. log files).
 Key-value pairs in the input string consist of a key, followed by a key-value delimiter, and a value.
 Key value pairs are separated by a pair delimiter.
