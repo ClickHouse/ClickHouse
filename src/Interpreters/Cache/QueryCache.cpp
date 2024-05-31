@@ -31,6 +31,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+}
+
 namespace
 {
 
@@ -62,7 +68,6 @@ struct HasSystemTablesMatcher
 {
     struct Data
     {
-        const ContextPtr context;
         bool has_system_tables = false;
     };
 
@@ -111,16 +116,16 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
-    HasNonDeterministicFunctionsMatcher::Data finder_data{context};
-    HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
-    return finder_data.has_non_deterministic_functions;
+    HasNonDeterministicFunctionsMatcher::Data data{context};
+    HasNonDeterministicFunctionsVisitor(data).visit(ast);
+    return data.has_non_deterministic_functions;
 }
 
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+bool astContainsSystemTables(ASTPtr ast)
 {
-    HasSystemTablesMatcher::Data finder_data{context};
-    HasSystemTablesVisitor(finder_data).visit(ast);
-    return finder_data.has_system_tables;
+    HasSystemTablesMatcher::Data data;
+    HasSystemTablesVisitor(data).visit(ast);
+    return data.has_system_tables;
 }
 
 namespace
@@ -159,7 +164,34 @@ public:
     /// currently don't match.
 };
 
+}
+
 using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSettingsMatcher, true>;
+
+bool QueryCache::astIsEligibleForCaching(ASTPtr ast, ContextPtr context, const Settings & settings)
+{
+    const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context); /// e.g. rand(), now()
+    const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
+
+    if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
+        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                "The query result was not cached because the query contains a non-deterministic function."
+                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+    const bool ast_contains_system_tables = astContainsSystemTables(ast); /// e.g. `system.processes'
+    const QueryCacheSystemTableHandling system_table_handling = settings.query_cache_system_table_handling;
+
+    if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
+        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                 "The query result was not cached because the query contains a system table."
+                 " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+    return ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
+            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save));
+}
+
+namespace
+{
 
 /// Consider
 ///   (1) SET use_query_cache = true;
@@ -216,13 +248,6 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     return getSipHash128AsPair(hash);
 }
 
-String queryStringFromAST(ASTPtr ast)
-{
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
-    return buf.str();
-}
-
 }
 
 QueryCache::Key::Key(
@@ -233,7 +258,8 @@ QueryCache::Key::Key(
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
+    bool is_compressed_,
+    const String & query_string_)
     : ast_hash(calculateAstHash(ast_, current_database, settings))
     , header(header_)
     , user_id(user_id_)
@@ -241,12 +267,17 @@ QueryCache::Key::Key(
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
-    , query_string(queryStringFromAST(ast_))
+    , query_string(query_string_)
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
+QueryCache::Key::Key(
+    ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
+    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    const String & query_string_)
+    : QueryCache::Key(ast_, current_database, settings, /*dummy*/ {}, user_id_, current_user_roles_, /*dummy*/ false, /*dummy*/ std::chrono::system_clock::from_time_t(1), /*dummy*/ false, query_string_)
 {
 }
 

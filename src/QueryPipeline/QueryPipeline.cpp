@@ -610,6 +610,8 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer
     add_stream_in_query_cache_transform(output, Result);
     add_stream_in_query_cache_transform(totals, Totals);
     add_stream_in_query_cache_transform(extremes, Extremes);
+
+    query_cache_usage = QueryCache::Usage::Write;
 }
 
 void QueryPipeline::finalizeWriteInQueryCache()
@@ -643,6 +645,8 @@ void QueryPipeline::readFromQueryCache(
     add_stream_from_query_cache_source(output, std::move(source));
     add_stream_from_query_cache_source(totals, std::move(source_totals));
     add_stream_from_query_cache_source(extremes, std::move(source_extremes));
+
+    query_cache_usage = QueryCache::Usage::Read;
 }
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)

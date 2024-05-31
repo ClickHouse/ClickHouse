@@ -16,12 +16,6 @@ namespace DB
 
 struct Settings;
 
-/// Does AST contain non-deterministic functions like rand() and now()?
-bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
-
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -39,6 +33,9 @@ public:
         Write,    /// query result written into query cache
         Read,     /// query result read from query cache
     };
+
+    /// Returns true if the query will have a deterministic result.
+    static bool astIsEligibleForCaching(ASTPtr ast, ContextPtr context, const Settings & settings);
 
     /// Represents a query result in the cache.
     struct Key
@@ -96,10 +93,15 @@ public:
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            const String & query_string_);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_,
+            const String & current_database,
+            const Settings & settings,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const String & query_string_);
 
         bool operator==(const Key & other) const;
     };

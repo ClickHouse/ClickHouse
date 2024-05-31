@@ -114,6 +114,7 @@ public:
         std::unique_ptr<SourceFromChunks> source,
         std::unique_ptr<SourceFromChunks> source_totals,
         std::unique_ptr<SourceFromChunks> source_extremes);
+    QueryCache::Usage getQueryCacheUsage() const { return query_cache_usage; }
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
@@ -161,6 +162,8 @@ private:
 
     size_t num_threads = 0;
     bool concurrency_control = false;
+
+    QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;

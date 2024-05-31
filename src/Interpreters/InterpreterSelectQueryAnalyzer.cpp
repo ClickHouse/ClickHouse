@@ -7,6 +7,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/formatAST.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -26,6 +27,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
@@ -216,6 +218,74 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock()
     return planner.getQueryPlan().getCurrentDataStream().header;
 }
 
+namespace
+{
+
+String queryStringFromAst(const ASTPtr & ast)
+{
+    /// Reconstruct the query string from the AST (needed for pretty-printing)
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
+    return buf.str();
+}
+
+bool tryReadResultFromQueryCache(
+    const QueryCachePtr & query_cache,
+    const QueryTreeNodePtr & query_tree, const ASTPtr & query,
+    const ContextPtr & context, const Settings & settings,
+    BlockIO & result)
+{
+    if (!settings.enable_reads_from_query_cache)
+        return false;
+
+    QueryCache::Key key(query_tree->toAST(), context->getCurrentDatabase(), context->getSettingsRef(), context->getUserID(), context->getCurrentRoles(), queryStringFromAst(query));
+    QueryCache::Reader reader = query_cache->createReader(key);
+    if (!reader.hasCacheEntryForKey())
+        return false;
+
+    /// Replace the existing pipeline by a pipeline which reads the result from the query cache
+    QueryPipeline new_pipeline;
+    new_pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+    result.pipeline = std::move(new_pipeline);
+    return true;
+}
+
+void writeResultIntoQueryCache(
+    const QueryCachePtr & query_cache,
+    const QueryTreeNodePtr & query_tree, const ASTPtr & query,
+    const ContextPtr & context, const Settings & settings,
+    BlockIO & result)
+{
+    /// If we really write on the query cache depends on a few things ...
+    if (!settings.enable_writes_to_query_cache)
+        return;
+
+    if (!QueryCache::astIsEligibleForCaching(query, context, settings))
+        return;
+
+    QueryCache::Key key(
+        query_tree->toAST(), context->getCurrentDatabase(), context->getSettingsRef(),
+        result.pipeline.getHeader(),
+        context->getUserID(), context->getCurrentRoles(),
+        settings.query_cache_share_between_users,
+        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+        settings.query_cache_compress_entries,
+        queryStringFromAst(query));
+
+    size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// avoid locking the mutex in recordQueryRun()
+    if (num_query_runs <= settings.query_cache_min_query_runs)
+        return;
+
+    /// Add a processor on top of the pipeline which forwards the result to the query cache
+    auto writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                     key, std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
+                     settings.query_cache_squash_partial_results, settings.max_block_size,
+                     settings.query_cache_max_size_in_bytes, settings.query_cache_max_entries));
+    result.pipeline.writeResultIntoQueryCache(writer);
+}
+
+}
+
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
     auto pipeline_builder = buildQueryPipeline();
@@ -225,6 +295,28 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
 
     if (!select_query_options.ignore_quota && select_query_options.to_stage == QueryProcessingStage::Complete)
         result.pipeline.setQuota(context->getQuota());
+
+    /// Can we write/read the result into/from the query cache? Requires to run the query with 'SETTINGS use_query_cache = 1'
+    QueryCachePtr query_cache = context->getQueryCache();
+    const Settings & settings = context->getSettingsRef();
+    bool use_query_cache = settings.use_query_cache && (query_cache != nullptr) && !select_query_options.is_internal;
+    if (use_query_cache)
+    {
+        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
+        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
+        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
+        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
+        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
+        /// std::optional<Settings> settings_copy;
+        /// if (can_use_query_cache)
+        ///     settings_copy = settings;
+        /// TODO
+
+        bool read_from_query_cache = tryReadResultFromQueryCache(query_cache, query_tree, query, context, settings, result);
+        if (read_from_query_cache)
+            return result;
+        writeResultIntoQueryCache(query_cache, query_tree, query, context, settings, result);
+    }
 
     return result;
 }

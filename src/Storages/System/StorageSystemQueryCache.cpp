@@ -14,7 +14,7 @@ ColumnsDescription StorageSystemQueryCache::getColumnsDescription()
     return ColumnsDescription
     {
         {"query", std::make_shared<DataTypeString>(), "Query string."},
-        {"result_size", std::make_shared<DataTypeUInt64>(), "Size of the query cache entry."},
+        {"result_size", std::make_shared<DataTypeUInt64>(), "Size of the query cache entry in bytes."},
         {"stale", std::make_shared<DataTypeUInt8>(), "If the query cache entry is stale."},
         {"shared", std::make_shared<DataTypeUInt8>(), "If the query cache entry is shared between multiple users."},
         {"compressed", std::make_shared<DataTypeUInt8>(), "If the query cache entry is compressed."},
