@@ -32,6 +32,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_IDENTIFIER;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 // QueryAnalyzer::QueryAnalyzer(bool only_analyze_) : only_analyze(only_analyze_) {}
