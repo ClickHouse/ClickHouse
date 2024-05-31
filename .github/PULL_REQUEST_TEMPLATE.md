@@ -52,29 +52,24 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_stateful--> Allow: Stateful tests
 - [ ] <!---ci_include_unit--> Allow: Unit tests
 - [ ] <!---ci_include_performance--> Allow: Performance tests
-- [ ] <!---ci_include_aarch64--> Allow: All with aarch64
-- [ ] <!---ci_include_asan--> Allow: All with ASAN
-- [ ] <!---ci_include_tsan--> Allow: All with TSAN
-- [ ] <!---ci_include_analyzer--> Allow: All with Analyzer
-- [ ] <!---ci_include_azure --> Allow: All with Azure
+- [ ] <!---ci_set_required--> Allow: All Required Checks
+- [ ] <!---ci_set_non_required--> Allow: All NOT Required Checks
 - [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
 - [ ] <!---batch_2_3--> Allow: batch 3, 4
 - [ ] <!---batch_4_5--> Allow: batch 5, 6
 ---
+- [ ] <!---ci_exclude_style--> Exclude: Style check
 - [ ] <!---ci_exclude_fast--> Exclude: Fast test
 - [ ] <!---ci_exclude_integration--> Exclude: Integration Tests
 - [ ] <!---ci_exclude_stateless--> Exclude: Stateless tests
 - [ ] <!---ci_exclude_stateful--> Exclude: Stateful tests
 - [ ] <!---ci_exclude_performance--> Exclude: Performance tests
 - [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
-- [ ] <!---ci_exclude_tsan--> Exclude: All with TSAN
-- [ ] <!---ci_exclude_msan--> Exclude: All with MSAN
-- [ ] <!---ci_exclude_ubsan--> Exclude: All with UBSAN
-- [ ] <!---ci_exclude_coverage--> Exclude: All with Coverage
+- [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
 - [ ] <!---ci_exclude_aarch64--> Exclude: All with Aarch64
 ---
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---upload_all--> Upload binaries for special builds
 - [ ] <!---no_merge_commit--> Disable merge-commit
-- [ ] <!---no_ci_cache--> disable CI cache
+- [ ] <!---no_ci_cache--> Disable CI cache
 </details>

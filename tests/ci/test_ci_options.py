@@ -8,7 +8,7 @@ from pr_info import PRInfo
 
 _TEST_BODY_1 = """
 #### Run only:
-- [x] <!---ci_set_integration--> Integration tests
+- [x] <!---ci_set_non_required--> Non required
 - [ ] <!---ci_set_arm--> Integration tests (arm64)
 - [x] <!---ci_include_foo--> Integration tests
 - [x] <!---ci_include_foo_Bar--> Integration tests
@@ -138,7 +138,7 @@ class TestCIOptions(unittest.TestCase):
         self.assertFalse(ci_options.do_not_test)
         self.assertFalse(ci_options.no_ci_cache)
         self.assertTrue(ci_options.no_merge_commit)
-        self.assertEqual(ci_options.ci_sets, ["ci_set_integration"])
+        self.assertEqual(ci_options.ci_sets, ["ci_set_non_required"])
         self.assertCountEqual(ci_options.include_keywords, ["foo", "foo_bar"])
         self.assertCountEqual(ci_options.exclude_keywords, ["foo", "foo_bar"])
 

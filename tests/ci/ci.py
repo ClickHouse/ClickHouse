@@ -826,9 +826,10 @@ class CiOptions:
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
-                res.exclude_keywords.append(
-                    normalize_check_name(match.removeprefix("ci_exclude_"))
-                )
+                keywords = match.removeprefix("ci_exclude_").split("|")
+                res.exclude_keywords += [
+                    normalize_check_name(keyword) for keyword in keywords
+                ]
             elif match == CILabels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
@@ -911,7 +912,6 @@ class CiOptions:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
 
-        # FIXME: to be removed in favor of include/exclude
         # 1. Handle "ci_set_" tags if any
         if self.ci_sets:
             for tag in self.ci_sets:
@@ -920,7 +920,12 @@ class CiOptions:
                 print(
                     f"NOTE: CI Set's tag: [{tag}], add jobs: [{label_config.run_jobs}]"
                 )
-                jobs_to_do_requested += label_config.run_jobs
+                # match against @jobs_to_do and @jobs_to_skip to remove non-relevant entries from @label_config.run_jobs
+                jobs_to_do_requested += [
+                    job
+                    for job in label_config.run_jobs
+                    if job in jobs_to_do or job in jobs_to_skip
+                ]
 
         # FIXME: to be removed in favor of include/exclude
         # 2. Handle "job_" tags if any
