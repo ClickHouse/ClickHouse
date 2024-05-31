@@ -20,10 +20,7 @@ Optimizations could rewrite the initial query so it becomes valid and can be exe
 In the new infrastructure, query validation takes place before the optimization step.
 This means that invalid queries that were possible to execute before are now unsupported.
 
-**Example:**
-
-The following query uses column `number` in the projection list when only `toString(number)` is available after the aggregation.
-In the old infrastructure, `GROUP BY toString(number)` was optimized into `GROUP BY number,` making the query valid.
+**Example 1:**
 
 ```sql
 SELECT number
@@ -31,7 +28,24 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-### Known incompatibilities for JOIN clause
+The following query uses column `number` in the projection list when only `toString(number)` is available after the aggregation.
+In the old infrastructure, `GROUP BY toString(number)` was optimized into `GROUP BY number,` making the query valid.
+
+**Example 2:**
+
+```sql
+SELECT
+    number % 2 AS n,
+    sum(number)
+FROM numbers(10)
+GROUP BY n
+HAVING number > 5
+```
+
+The same problem occurs in this query: column `number` is used after aggregation with another key.
+The previous query analyzer fixed this query by moving the `number > 5` filter from the `HAVING` clause to the `WHERE` clause.
+
+### Known incompatibilities of JOIN clause
 
 * Using expression from `SELECT` list in `JOIN` key as an expression from LEFT table. Example.  Fix (best effort, should be under compatibility flag).
 * Similar issue ^. Alias for column (in select list) now applied to JOIN result (and not to left table). Example from Denny Crane. New behavior is the correct one. Will try to add best-effort compatibility setting.
@@ -58,8 +72,6 @@ SELECT
     x + 1
 SETTINGS allow_experimental_analyzer = 1
 FORMAT PrettyCompact
-
-Query id: 2a5e39a3-3b64-49fd-bad3-0e351931ac99
 
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
