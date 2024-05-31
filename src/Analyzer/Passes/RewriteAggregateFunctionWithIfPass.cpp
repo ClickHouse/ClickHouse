@@ -35,6 +35,10 @@ public:
         if (!function_node || !function_node->isAggregateFunction())
             return;
 
+        auto lower_name = Poco::toLower(function_node->getFunctionName());
+        if (lower_name.ends_with("if"))
+            return;
+
         auto & function_arguments_nodes = function_node->getArguments().getNodes();
         if (function_arguments_nodes.size() != 1)
             return;
@@ -43,7 +47,6 @@ public:
         if (!if_node || if_node->getFunctionName() != "if")
             return;
 
-        auto lower_name = Poco::toLower(function_node->getFunctionName());
         auto if_arguments_nodes = if_node->getArguments().getNodes();
         auto * first_const_node = if_arguments_nodes[1]->as<ConstantNode>();
         auto * second_const_node = if_arguments_nodes[2]->as<ConstantNode>();
