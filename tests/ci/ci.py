@@ -1215,7 +1215,9 @@ def _pre_action(s3, indata, pr_info):
     ci_cache = CiCache(s3, indata["jobs_data"]["digests"])
 
     # for release/master branches reports must be from the same branch
-    report_prefix = normalize_string(pr_info.head_ref) if pr_info.number == 0 else ""
+    report_prefix = ""
+    if pr_info.is_master or pr_info.is_release:
+        report_prefix = normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -1374,7 +1376,12 @@ def _configure_jobs(
 
     # FIXME: find better place for these config variables
     DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
-    MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
+    MQ_JOBS = [
+        JobNames.STYLE_CHECK,
+        JobNames.FAST_TEST,
+        Build.BINARY_RELEASE,
+        JobNames.UNIT_TEST,
+    ]
     # Must always calculate digest for these jobs for CI Cache to function (they define s3 paths where records are stored)
     REQUIRED_DIGESTS = [JobNames.DOCS_CHECK, Build.PACKAGE_RELEASE]
     if pr_info.has_changes_in_documentation_only():
@@ -1390,6 +1397,9 @@ def _configure_jobs(
             and job not in REQUIRED_DIGESTS
         ):
             # We still need digest for JobNames.DOCS_CHECK since CiCache depends on it (FIXME)
+            continue
+        if pr_info.is_master and job in MQ_JOBS:
+            # On master - skip jobs that run in MQ
             continue
         if (
             pr_info.has_changes_in_documentation_only()
