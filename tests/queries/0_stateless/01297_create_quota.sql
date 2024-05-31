@@ -21,7 +21,7 @@ SHOW CREATE QUOTA q4_01297;
 
 SELECT '-- rename';
 ALTER QUOTA q2_01297 RENAME TO 'q2_01297_renamed';
-SHOW CREATE QUOTA q2_01297; -- { serverError 199 } -- Policy not found
+SHOW CREATE QUOTA q2_01297; -- { serverError UNKNOWN_QUOTA } -- Policy not found
 SHOW CREATE QUOTA q2_01297_renamed;
 DROP QUOTA q1_01297, q2_01297_renamed, q3_01297, q4_01297;
 

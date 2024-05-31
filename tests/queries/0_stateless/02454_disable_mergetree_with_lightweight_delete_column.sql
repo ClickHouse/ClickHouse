@@ -1,6 +1,6 @@
 drop table if exists t_row_exists;
 
-create table t_row_exists(a int, _row_exists int) engine=MergeTree order by a; --{serverError 44}
+create table t_row_exists(a int, _row_exists int) engine=MergeTree order by a; --{serverError ILLEGAL_COLUMN}
 
 create table t_row_exists(a int, b int) engine=MergeTree order by a;
 alter table t_row_exists add column _row_exists int; --{serverError ILLEGAL_COLUMN}

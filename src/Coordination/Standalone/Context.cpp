@@ -478,4 +478,9 @@ bool Context::hasTraceCollector() const
     return false;
 }
 
+bool Context::isBackgroundOperationContext() const
+{
+    return false;
+}
+
 }
