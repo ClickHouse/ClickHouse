@@ -126,9 +126,7 @@ def testMultipleRows(ch_cluster):
 def testTwoConsecutiveEvals(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
-    _ = instance.query(
-        "INSERT INTO T (a) VALUES ('From the deepest')"
-    )
+    _ = instance.query("INSERT INTO T (a) VALUES ('From the deepest')")
 
     result = instance.query(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), ggmlEvaluate('gpt2', map('n_predict', 4), a)) from T;"
