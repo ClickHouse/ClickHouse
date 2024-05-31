@@ -13,17 +13,18 @@
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
 
-#include <Disks/ObjectStorages/StoredObject.h>
-#include <Disks/DiskType.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/ObjectStorageKey.h>
-#include <Disks/WriteMode.h>
-#include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Disks/DiskType.h>
+#include <Disks/ObjectStorages/MetadataStorageMetrics.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/WriteMode.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -114,6 +115,8 @@ public:
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
+
+    virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;

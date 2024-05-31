@@ -18,6 +18,7 @@ import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames, StatusNames
+from ci_metadata import CiMetadata
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -39,22 +40,23 @@ from digest_helper import DockerDigester, JobDigester
 from env_helper import (
     CI,
     GITHUB_JOB_API_URL,
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_ID,
     GITHUB_RUN_URL,
     REPO_COPY,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
-    GITHUB_RUN_ID,
-    GITHUB_REPOSITORY,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, PENDING
+from report import ERROR, FAILURE, PENDING, SUCCESS, BuildResult, JobReport, TestResult
 from s3_helper import S3Helper
-from ci_metadata import CiMetadata
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -616,11 +618,11 @@ class CiCache:
 
     def download_build_reports(self, file_prefix: str = "") -> List[str]:
         """
-        not ideal class for this method,
+        not an ideal class for this method,
         but let it be as we store build reports in CI cache directory on s3
         and CiCache knows where exactly
 
-        @file_prefix allows to filter out reports by git head_ref
+        @file_prefix allows filtering out reports by git head_ref
         """
         report_path = Path(REPORT_PATH)
         report_path.mkdir(exist_ok=True, parents=True)
@@ -752,6 +754,7 @@ class CiOptions:
 
     do_not_test: bool = False
     no_ci_cache: bool = False
+    upload_all: bool = False
     no_merge_commit: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
@@ -821,6 +824,9 @@ class CiOptions:
             elif match == CILabels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
+            elif match == CILabels.UPLOAD_ALL_ARTIFACTS:
+                res.upload_all = True
+                print("NOTE: All binary artifacts will be uploaded")
             elif match == CILabels.DO_NOT_TEST_LABEL:
                 res.do_not_test = True
             elif match == CILabels.NO_MERGE_COMMIT:
@@ -889,9 +895,10 @@ class CiOptions:
                     for job in job_with_parents:
                         if job in jobs_to_do and job not in jobs_to_do_requested:
                             jobs_to_do_requested.append(job)
-            print(
-                f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
-            )
+            if not jobs_to_do_requested:
+                print(
+                    f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+                )
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
@@ -1192,7 +1199,7 @@ def _pre_action(s3, indata, pr_info):
     BuildResult.cleanup()
     ci_cache = CiCache(s3, indata["jobs_data"]["digests"])
 
-    # for release/master branches reports must be from the same branches
+    # for release/master branches reports must be from the same branch
     report_prefix = normalize_string(pr_info.head_ref) if pr_info.number == 0 else ""
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
@@ -1610,6 +1617,7 @@ def _upload_build_artifacts(
     job_report: JobReport,
     s3: S3Helper,
     s3_destination: str,
+    upload_binary: bool,
 ) -> str:
     # There are ugly artifacts for the performance test. FIXME:
     s3_performance_path = "/".join(
@@ -1623,25 +1631,29 @@ def _upload_build_artifacts(
     performance_urls = []
     assert job_report.build_dir_for_upload, "Must be set for build job"
     performance_path = Path(job_report.build_dir_for_upload) / "performance.tar.zst"
-    if performance_path.exists():
-        performance_urls.append(
-            s3.upload_build_file_to_s3(performance_path, s3_performance_path)
+    if upload_binary:
+        if performance_path.exists():
+            performance_urls.append(
+                s3.upload_build_file_to_s3(performance_path, s3_performance_path)
+            )
+            print(
+                "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
+                performance_urls[0],
+            )
+            performance_path.unlink()
+        build_urls = (
+            s3.upload_build_directory_to_s3(
+                Path(job_report.build_dir_for_upload),
+                s3_destination,
+                keep_dirs_in_s3_path=False,
+                upload_symlinks=False,
+            )
+            + performance_urls
         )
-        print(
-            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
-            performance_urls[0],
-        )
-        performance_path.unlink()
-    build_urls = (
-        s3.upload_build_directory_to_s3(
-            Path(job_report.build_dir_for_upload),
-            s3_destination,
-            keep_dirs_in_s3_path=False,
-            upload_symlinks=False,
-        )
-        + performance_urls
-    )
-    print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+        print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+    else:
+        build_urls = []
+        print("::notice ::No binaries will be uploaded for this job")
     log_path = Path(job_report.additional_files[0])
     log_url = ""
     if log_path.exists():
@@ -1650,7 +1662,7 @@ def _upload_build_artifacts(
         )
     print(f"::notice ::Log URL: {log_url}")
 
-    # generate and upload build report
+    # generate and upload a build report
     build_result = BuildResult(
         build_name,
         log_url,
@@ -1867,8 +1879,8 @@ def _run_test(job_name: str, run_command: str) -> int:
         run_command or CI_CONFIG.get_job_config(job_name).run_command
     ), "Run command must be provided as input argument or be configured in job config"
 
-    if CI_CONFIG.get_job_config(job_name).timeout:
-        os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
+    env = os.environ.copy()
+    timeout = CI_CONFIG.get_job_config(job_name).timeout or None
 
     if not run_command:
         run_command = "/".join(
@@ -1879,26 +1891,27 @@ def _run_test(job_name: str, run_command: str) -> int:
         print("Use run command from a job config")
     else:
         print("Use run command from the workflow")
-    os.environ["CHECK_NAME"] = job_name
+    env["CHECK_NAME"] = job_name
     print(f"Going to start run command [{run_command}]")
-    process = subprocess.run(
-        run_command,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        text=True,
-        check=False,
-        shell=True,
-    )
+    stopwatch = Stopwatch()
+    job_log = Path(TEMP_PATH) / "job_log.txt"
+    with TeePopen(run_command, job_log, env, timeout) as process:
+        retcode = process.wait()
+        if retcode != 0:
+            print(f"Run action failed for: [{job_name}] with exit code [{retcode}]")
+            if timeout and process.timeout_exceeded:
+                print(f"Timeout {timeout} exceeded, dumping the job report")
+                JobReport(
+                    status=FAILURE,
+                    description=f"Timeout {timeout} exceeded",
+                    test_results=[TestResult.create_check_timeout_expired(timeout)],
+                    start_time=stopwatch.start_time_str,
+                    duration=stopwatch.duration_seconds,
+                    additional_files=[job_log],
+                ).dump()
 
-    if process.returncode == 0:
-        print(f"Run action done for: [{job_name}]")
-        exit_code = 0
-    else:
-        print(
-            f"Run action failed for: [{job_name}] with exit code [{process.returncode}]"
-        )
-        exit_code = process.returncode
-    return exit_code
+    print(f"Run action done for: [{job_name}]")
+    return retcode
 
 
 def _get_ext_check_name(check_name: str) -> str:
@@ -2177,6 +2190,15 @@ def main() -> int:
                 assert (
                     indata
                 ), f"--infile with config must be provided for POST action of a build type job [{args.job_name}]"
+
+                # upload binaries only for normal builds in PRs
+                upload_binary = (
+                    not pr_info.is_pr
+                    or args.job_name
+                    not in CI_CONFIG.get_builds_for_report(JobNames.BUILD_CHECK_SPECIAL)
+                    or CiOptions.create_from_run_config(indata).upload_all
+                )
+
                 build_name = args.job_name
                 s3_path_prefix = "/".join(
                     (
@@ -2192,10 +2214,12 @@ def main() -> int:
                     job_report=job_report,
                     s3=s3,
                     s3_destination=s3_path_prefix,
+                    upload_binary=upload_binary,
                 )
-                _upload_build_profile_data(
-                    pr_info, build_name, job_report, git_runner, ch_helper
-                )
+                # FIXME: profile data upload does not work
+                # _upload_build_profile_data(
+                #     pr_info, build_name, job_report, git_runner, ch_helper
+                # )
                 check_url = log_url
             else:
                 # test job
