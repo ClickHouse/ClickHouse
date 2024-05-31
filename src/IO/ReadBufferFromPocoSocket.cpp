@@ -32,9 +32,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-size_t ReadBufferFromPocoSocket::readSocket(Position begin, size_t size)
+ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t size)
 {
     ssize_t bytes_read = 0;
+    Stopwatch watch;
+
+    SCOPE_EXIT({
+        /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
+        ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
+    });
 
     /// Add more details to exceptions.
     try
@@ -49,7 +56,7 @@ size_t ReadBufferFromPocoSocket::readSocket(Position begin, size_t size)
             socket.setBlocking(false);
             SCOPE_EXIT(socket.setBlocking(true));
             bool secure = socket.secure();
-            bytes_read = socket.impl()->receiveBytes(begin, static_cast<int>(size));
+            bytes_read = socket.impl()->receiveBytes(ptr, static_cast<int>(size));
 
             /// Check EAGAIN and ERR_SSL_WANT_READ/ERR_SSL_WANT_WRITE for secure socket (reading from secure socket can write too).
             while (bytes_read < 0 && (errno == EAGAIN || (secure && (checkSSLWantRead(bytes_read) || checkSSLWantWrite(bytes_read)))))
@@ -61,12 +68,12 @@ size_t ReadBufferFromPocoSocket::readSocket(Position begin, size_t size)
                     async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
 
                 /// Try to read again.
-                bytes_read = socket.impl()->receiveBytes(begin, static_cast<int>(size));
+                bytes_read = socket.impl()->receiveBytes(ptr, static_cast<int>(size));
             }
         }
         else
         {
-            bytes_read = socket.impl()->receiveBytes(begin, static_cast<int>(size));
+            bytes_read = socket.impl()->receiveBytes(ptr, static_cast<int>(size));
         }
     }
     catch (const Poco::Net::NetException & e)
@@ -90,36 +97,12 @@ size_t ReadBufferFromPocoSocket::readSocket(Position begin, size_t size)
     return bytes_read;
 }
 
-bool ReadBufferFromPocoSocket::readSocketExact(Position begin, size_t size)
+bool ReadBufferFromPocoSocketBase::nextImpl()
 {
-    for (size_t bytes_left = size; bytes_left > 0;)
-    {
-        size_t ret = readSocket(begin + size - bytes_left, bytes_left);
-        if (ret == 0)
-            return false;
-        bytes_left -= ret;
-    }
-
-    return true;
-}
-
-bool ReadBufferFromPocoSocket::nextImpl()
-{
-    ssize_t bytes_read = 0;
-    Stopwatch watch;
-
-    SCOPE_EXIT({
-        /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
-        ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
-    });
-
-    CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
-
     if (internal_buffer.size() > INT_MAX)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
-    bytes_read = readSocket(internal_buffer.begin(), internal_buffer.size());
+    ssize_t bytes_read = socketReceiveBytesImpl(internal_buffer.begin(), internal_buffer.size());
 
     if (read_event != ProfileEvents::end())
         ProfileEvents::increment(read_event, bytes_read);
@@ -132,7 +115,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
     return true;
 }
 
-ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
+ReadBufferFromPocoSocketBase::ReadBufferFromPocoSocketBase(Poco::Net::Socket & socket_, size_t buf_size)
     : BufferWithOwnMemory<ReadBuffer>(buf_size)
     , socket(socket_)
     , peer_address(socket.peerAddress())
@@ -141,13 +124,13 @@ ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, 
 {
 }
 
-ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size)
-    : ReadBufferFromPocoSocket(socket_, buf_size)
+ReadBufferFromPocoSocketBase::ReadBufferFromPocoSocketBase(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size)
+    : ReadBufferFromPocoSocketBase(socket_, buf_size)
 {
     read_event = read_event_;
 }
 
-bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
+bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
 {
     if (available())
         return true;

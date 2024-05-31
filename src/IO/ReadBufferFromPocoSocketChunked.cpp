@@ -16,126 +16,149 @@ ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Sock
 {}
 
 ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size)
-    : ReadBuffer(nullptr, 0), log(getLogger("Protocol")), peer_address(socket_.peerAddress()), our_address(socket_.address()), buffer_socket(socket_, read_event_, buf_size)
+    : ReadBufferFromPocoSocketBase(socket_, read_event_, buf_size), our_address(socket_.address()), log(getLogger("Protocol"))
+
 {
     chassert(buf_size <= std::numeric_limits<decltype(chunk_left)>::max());
-
-    working_buffer = buffer_socket.buffer();
-    pos = buffer_socket.position();
 }
 
 void ReadBufferFromPocoSocketChunked::enableChunked()
 {
-    chunked = true;
-    buffer_socket.position() = pos;
+    if (chunked)
+        return;
+    chunked = 1;
+    data_end = buffer().end();
     working_buffer.resize(offset());
+    chunk_left = 0;
+    next_chunk = 0;
 }
 
-bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds)
-{
-    if (!chunked)
-        buffer_socket.position() = pos;
-
-    return buffer_socket.poll(timeout_microseconds);
-}
-
-void ReadBufferFromPocoSocketChunked::setAsyncCallback(AsyncCallback async_callback_)
-{
-    buffer_socket.setAsyncCallback(async_callback_);
-}
-
-bool ReadBufferFromPocoSocketChunked::hasBufferedData() const
+bool ReadBufferFromPocoSocketChunked::hasPendingData() const
 {
     if (chunked)
-        return hasPendingData() || buffer_socket.hasPendingData();
-    return hasPendingData();
+        return available() || static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk);
+
+    return ReadBufferFromPocoSocketBase::hasPendingData();
 }
 
-bool ReadBufferFromPocoSocketChunked::startChunk()
+bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds) const
 {
-    if (buffer_socket.read(reinterpret_cast<char *>(&chunk_left), sizeof(chunk_left)) < sizeof(chunk_left))
-        return false;
-    if (chunk_left == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: empty chunk received");
+    if (chunked)
+        if (available() || static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk))
+            return true;
 
-    chunk_left = fromLittleEndian(chunk_left);
-
-    return nextChunk();
+    return ReadBufferFromPocoSocketBase::poll(timeout_microseconds);
 }
 
-bool ReadBufferFromPocoSocketChunked::nextChunk()
-{
-    if (chunk_left == 0)
-    {
-        started = true;
-        return startChunk();
-    }
 
-    if (buffer_socket.available() == 0)
-        if (!buffer_socket.next())
+bool ReadBufferFromPocoSocketChunked::load_next_chunk(Position c_pos, bool cont)
+{
+    auto buffered = std::min(static_cast<size_t>(data_end - c_pos), sizeof(next_chunk));
+
+    if (buffered)
+        std::memcpy(&next_chunk, c_pos, buffered);
+    if (buffered < sizeof(next_chunk))
+        if (socketReceiveBytesImpl(reinterpret_cast<char *>(&next_chunk) + buffered, sizeof(next_chunk) - buffered) < static_cast<ssize_t>(sizeof(next_chunk) - buffered))
             return false;
-    if (started)
-        LOG_TEST(log, "Packet receive started. Message {}, size {}", static_cast<unsigned int>(*buffer_socket.position()), chunk_left);
-    else
-        LOG_TEST(log, "Packet receive continued. Size {}", chunk_left);
+    next_chunk = fromLittleEndian(next_chunk);
 
-    started = false;
-
-    nextimpl_working_buffer_offset = buffer_socket.offset();
-
-    if (buffer_socket.available() < chunk_left)
+    if (next_chunk)
     {
-        working_buffer.resize(buffer_socket.offset() + buffer_socket.available());
-        chunk_left -= buffer_socket.available();
-        buffer_socket.position() += buffer_socket.available();
+        if (cont)
+            LOG_TEST(log, "Packet receive continued. Size {}", next_chunk);
+    }
+    else
+        LOG_TEST(log, "Packet receive ended.");
+
+    return true;
+}
+
+bool ReadBufferFromPocoSocketChunked::process_chunk_left(Position c_pos)
+{
+    if (data_end - c_pos < chunk_left)
+    {
+        working_buffer.resize(data_end - buffer().begin());
+        nextimpl_working_buffer_offset = c_pos - buffer().begin();
+        chunk_left -= (data_end - c_pos);
         return true;
     }
 
-    working_buffer.resize(buffer_socket.offset() + chunk_left);
-    UInt8 buffered = std::min(static_cast<size_t>(4), buffer_socket.available() - chunk_left);
+    nextimpl_working_buffer_offset = c_pos - buffer().begin();
+    working_buffer.resize(nextimpl_working_buffer_offset + chunk_left);
 
-    buffer_socket.position() += chunk_left;
-    if (buffered > 0)
-        std::memcpy(&chunk_left, buffer_socket.position(), buffered);
-    buffer_socket.position() += buffered;
+    c_pos += chunk_left;
 
-    if (4 > buffered)
-        if (!buffer_socket.readSocketExact(reinterpret_cast<Position>(&chunk_left) + buffered, 4 - buffered))
-            return false;
+    if (!load_next_chunk(c_pos, true))
+        return false;
 
-    chunk_left = fromLittleEndian(chunk_left);
-
-    if (chunk_left == 0)
-        LOG_TEST(log, "Packet receive ended.");
-
+    chunk_left = 0;
     return true;
 }
 
 
 bool ReadBufferFromPocoSocketChunked::nextImpl()
 {
-    if (chunked)
+    if (!chunked)
+        return ReadBufferFromPocoSocketBase::nextImpl();
+
+    auto c_pos = pos;
+
+    if (chunk_left == 0)
     {
-        if (!nextChunk())
+        if (next_chunk == 0)
         {
-            pos = buffer_socket.position();
-            return false;
+            if (chunked == 1)
+                chunked = 2; // first chunked block - no end marker
+            else
+                c_pos = pos + sizeof(next_chunk); // bypass chunk end marker
+
+            if (c_pos > data_end)
+                c_pos = data_end;
+
+            if (!load_next_chunk(c_pos))
+                return false;
+
+            chunk_left = next_chunk;
+            next_chunk = 0;
+
+            c_pos += sizeof(next_chunk);
+
+            if (c_pos >= data_end)
+            {
+                if (!ReadBufferFromPocoSocketBase::nextImpl())
+                    return false;
+                data_end = buffer().end();
+                c_pos = buffer().begin();
+            }
+
+            LOG_TEST(log, "Packet receive started. Message {}, size {}", static_cast<unsigned int>(*c_pos), chunk_left);
         }
-        return true;
+        else
+        {
+            c_pos += sizeof(next_chunk);
+            if (c_pos >= data_end)
+            {
+                if (!ReadBufferFromPocoSocketBase::nextImpl())
+                    return false;
+                data_end = buffer().end();
+                c_pos = buffer().begin();
+            }
+
+            chunk_left = next_chunk;
+            next_chunk = 0;
+        }
     }
-
-    buffer_socket.position() = pos;
-
-    if (!buffer_socket.next())
+    else
     {
-        pos = buffer_socket.position();
-        return false;
+        chassert(c_pos == data_end);
+
+        if (!ReadBufferFromPocoSocketBase::nextImpl())
+            return false;
+        data_end = buffer().end();
+        c_pos = buffer().begin();
     }
 
-    pos = buffer_socket.position();
-    working_buffer.resize(offset() + buffer_socket.available());
-
-    return true;
+    return process_chunk_left(c_pos);
 }
 
 }
