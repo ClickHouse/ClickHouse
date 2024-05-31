@@ -33,7 +33,7 @@ _TEST_BODY_2 = """
 - [x] <!---ci_include_azure--> MUST include azure
 - [x] <!---ci_include_foo_Bar--> no action must be applied
 - [ ] <!---ci_include_bar--> no action must be applied
-- [x] <!---ci_exclude_tsan--> MUST exclude tsan
+- [x] <!---ci_exclude_tsan|foobar--> MUST exclude tsan
 - [x] <!---ci_exclude_aarch64--> MUST exclude aarch64
 - [x] <!---ci_exclude_analyzer--> MUST exclude test with analazer
 - [ ] <!---ci_exclude_bar--> no action applied
@@ -153,7 +153,7 @@ class TestCIOptions(unittest.TestCase):
         )
         self.assertCountEqual(
             ci_options.exclude_keywords,
-            ["tsan", "aarch64", "analyzer", "s3_storage", "coverage"],
+            ["tsan", "foobar", "aarch64", "analyzer", "s3_storage", "coverage"],
         )
         jobs_to_do = list(_TEST_JOB_LIST)
         jobs_to_skip = []

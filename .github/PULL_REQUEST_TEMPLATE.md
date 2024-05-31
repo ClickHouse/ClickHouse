@@ -42,21 +42,15 @@ At a minimum, the following information should be added (but add more as needed)
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
-<details>
-    <summary>CI Settings</summary>
-
-**NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
-**NOTE:** Checked options will be applied if set before CI RunConfig/PrepareRunConfig step
-- [ ] <!---ci_include_integration--> Allow: Integration Tests
+#### CI Settings (Only check the boxes if you know what you are doing):
+- [ ] <!---ci_set_required--> Allow: All Required Checks
 - [ ] <!---ci_include_stateless--> Allow: Stateless tests
 - [ ] <!---ci_include_stateful--> Allow: Stateful tests
-- [ ] <!---ci_include_unit--> Allow: Unit tests
+- [ ] <!---ci_include_integration--> Allow: Integration Tests
 - [ ] <!---ci_include_performance--> Allow: Performance tests
-- [ ] <!---ci_set_required--> Allow: All Required Checks
 - [ ] <!---ci_set_non_required--> Allow: All NOT Required Checks
 - [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
-- [ ] <!---batch_2_3--> Allow: batch 3, 4
-- [ ] <!---batch_4_5--> Allow: batch 5, 6
+- [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
 ---
 - [ ] <!---ci_exclude_style--> Exclude: Style check
 - [ ] <!---ci_exclude_fast--> Exclude: Fast test
@@ -65,11 +59,10 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_stateful--> Exclude: Stateful tests
 - [ ] <!---ci_exclude_performance--> Exclude: Performance tests
 - [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
-- [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
 - [ ] <!---ci_exclude_aarch64--> Exclude: All with Aarch64
+- [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
 ---
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---upload_all--> Upload binaries for special builds
 - [ ] <!---no_merge_commit--> Disable merge-commit
 - [ ] <!---no_ci_cache--> Disable CI cache
-</details>
