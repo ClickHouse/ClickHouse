@@ -47,6 +47,7 @@ from env_helper import (
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
+    CI_CONFIG_PATH,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
@@ -274,6 +275,13 @@ class CiCache:
                 f"Cache records: [{record_type}]", list(self.records[record_type])
             )
         return self
+
+    @staticmethod
+    def dump_run_config(indata: Dict[str, Any]) -> None:
+        assert indata
+        assert CI_CONFIG_PATH
+        with open(CI_CONFIG_PATH, "w", encoding="utf-8") as json_file:
+            json.dump(indata, json_file, indent=2)
 
     def update(self):
         """
@@ -784,7 +792,9 @@ class CiOptions:
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
         )
 
-        pattern = r"(#|- \[x\] +<!---)(\w+)"
+        # CI setting example we need to match with re:
+        # - [x] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
+        pattern = r"(#|- \[x\] +<!---)([|\w]+)"
         matches = [match[-1] for match in re.findall(pattern, message)]
         print(f"CI tags from commit message: [{matches}]")
 
@@ -818,9 +828,10 @@ class CiOptions:
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
-                res.exclude_keywords.append(
-                    normalize_check_name(match.removeprefix("ci_exclude_"))
-                )
+                keywords = match.removeprefix("ci_exclude_").split("|")
+                res.exclude_keywords += [
+                    normalize_check_name(keyword) for keyword in keywords
+                ]
             elif match == CILabels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
@@ -903,7 +914,6 @@ class CiOptions:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
 
-        # FIXME: to be removed in favor of include/exclude
         # 1. Handle "ci_set_" tags if any
         if self.ci_sets:
             for tag in self.ci_sets:
@@ -912,7 +922,12 @@ class CiOptions:
                 print(
                     f"NOTE: CI Set's tag: [{tag}], add jobs: [{label_config.run_jobs}]"
                 )
-                jobs_to_do_requested += label_config.run_jobs
+                # match against @jobs_to_do and @jobs_to_skip to remove non-relevant entries from @label_config.run_jobs
+                jobs_to_do_requested += [
+                    job
+                    for job in label_config.run_jobs
+                    if job in jobs_to_do or job in jobs_to_skip
+                ]
 
         # FIXME: to be removed in favor of include/exclude
         # 2. Handle "job_" tags if any
@@ -1200,11 +1215,16 @@ def _pre_action(s3, indata, pr_info):
     ci_cache = CiCache(s3, indata["jobs_data"]["digests"])
 
     # for release/master branches reports must be from the same branch
-    report_prefix = normalize_string(pr_info.head_ref) if pr_info.number == 0 else ""
+    report_prefix = ""
+    if pr_info.is_master or pr_info.is_release:
+        report_prefix = normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
     reports_files = ci_cache.download_build_reports(file_prefix=report_prefix)
+
+    ci_cache.dump_run_config(indata)
+
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
 
@@ -1356,7 +1376,12 @@ def _configure_jobs(
 
     # FIXME: find better place for these config variables
     DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
-    MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
+    MQ_JOBS = [
+        JobNames.STYLE_CHECK,
+        JobNames.FAST_TEST,
+        Build.BINARY_RELEASE,
+        JobNames.UNIT_TEST,
+    ]
     # Must always calculate digest for these jobs for CI Cache to function (they define s3 paths where records are stored)
     REQUIRED_DIGESTS = [JobNames.DOCS_CHECK, Build.PACKAGE_RELEASE]
     if pr_info.has_changes_in_documentation_only():
@@ -1372,6 +1397,9 @@ def _configure_jobs(
             and job not in REQUIRED_DIGESTS
         ):
             # We still need digest for JobNames.DOCS_CHECK since CiCache depends on it (FIXME)
+            continue
+        if pr_info.is_master and job in MQ_JOBS:
+            # On master - skip jobs that run in MQ
             continue
         if (
             pr_info.has_changes_in_documentation_only()
