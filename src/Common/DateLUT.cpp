@@ -191,9 +191,10 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impls.emplace(time_zone, nullptr).first;
+    auto mapping_timezone = mappingForJavaTimezone(time_zone);
+    auto it = impls.emplace(mapping_timezone, nullptr).first;
     if (!it->second)
-        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(mapping_timezone));
 
     return *it->second;
 }

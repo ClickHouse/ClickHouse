@@ -13,6 +13,21 @@
 
 class DateLUTImpl;
 
+static const std::unordered_map<std::string_view, std::string_view> JAVA_TIMEZONE_MAPPING
+    = {{"GMT", "Etc/GMT"}, //
+       {"GMT+1", "Etc/GMT-1"},     {"GMT+2", "Etc/GMT-2"},      {"GMT+3", "Etc/GMT-3"},      {"GMT+4", "Etc/GMT-4"},
+       {"GMT+5", "Etc/GMT-5"},     {"GMT+6", "Etc/GMT-6"},      {"GMT+7", "Etc/GMT-7"},      {"GMT+8", "Etc/GMT-8"},
+       {"GMT+9", "Etc/GMT-9"},     {"GMT+10", "Etc/GMT-10"},    {"GMT+11", "Etc/GMT-11"},    {"GMT+12", "Etc/GMT-12"}, //
+       {"GMT-1", "Etc/GMT+1"},     {"GMT-2", "Etc/GMT+2"},      {"GMT-3", "Etc/GMT+3"},      {"GMT-4", "Etc/GMT+4"},
+       {"GMT-5", "Etc/GMT+5"},     {"GMT-6", "Etc/GMT+6"},      {"GMT-7", "Etc/GMT+7"},      {"GMT-8", "Etc/GMT+8"},
+       {"GMT-9", "Etc/GMT+9"},     {"GMT-10", "Etc/GMT+10"},    {"GMT-11", "Etc/GMT+11"},    {"GMT-12", "Etc/GMT+12"}, //
+       {"GMT+00:00", "Etc/GMT"}, //
+       {"GMT+01:00", "Etc/GMT-1"}, {"GMT+02:00", "Etc/GMT-2"},  {"GMT+03:00", "Etc/GMT-3"},  {"GMT+04:00", "Etc/GMT-4"},
+       {"GMT+05:00", "Etc/GMT-5"}, {"GMT+06:00", "Etc/GMT-6"},  {"GMT+07:00", "Etc/GMT-7"},  {"GMT+08:00", "Etc/GMT-8"},
+       {"GMT+09:00", "Etc/GMT-9"}, {"GMT+10:00", "Etc/GMT-10"}, {"GMT+11:00", "Etc/GMT-11"}, {"GMT+12:00", "Etc/GMT-12"}, //
+       {"GMT-01:00", "Etc/GMT+1"}, {"GMT-02:00", "Etc/GMT+2"},  {"GMT-03:00", "Etc/GMT+3"},  {"GMT-04:00", "Etc/GMT+4"},
+       {"GMT-05:00", "Etc/GMT+5"}, {"GMT-06:00", "Etc/GMT+6"},  {"GMT-07:00", "Etc/GMT+7"},  {"GMT-08:00", "Etc/GMT+8"},
+       {"GMT-09:00", "Etc/GMT+9"}, {"GMT-10:00", "Etc/GMT+10"}, {"GMT-11:00", "Etc/GMT+11"}, {"GMT-12:00", "Etc/GMT+12"}};
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.
 class DateLUT : private boost::noncopyable
@@ -45,6 +60,12 @@ public:
         auto & date_lut = getInstance();
         const auto & impl = date_lut.getImplementation(time_zone);
         date_lut.default_impl.store(&impl, std::memory_order_release);
+    }
+
+    static ALWAYS_INLINE std::string_view mappingForJavaTimezone(std::string_view time_zone)
+    {
+        const auto it = JAVA_TIMEZONE_MAPPING.find(time_zone);
+        return (it != JAVA_TIMEZONE_MAPPING.end()) ? it->second : time_zone;
     }
 
 protected:
