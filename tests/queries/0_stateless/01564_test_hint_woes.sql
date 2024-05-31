@@ -10,7 +10,7 @@ insert into values_01564 values ('f'); -- { clientError 6 }
 select 1;
 
 insert into values_01564 values ('f'); -- { clientError 6 }
-select nonexistent column; -- { serverError 47 }
+select nonexistent column; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- syntax error hint after broken insert values
 insert into values_01564 this is bad syntax values ('f'); -- { clientError 62 }
@@ -19,22 +19,22 @@ insert into values_01564 this is bad syntax values ('f'); -- { clientError 62 }
 select 1;
 
 insert into values_01564 this is bad syntax values ('f'); -- { clientError 62 }
-select nonexistent column; -- { serverError 47 }
+select nonexistent column; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- server error hint after broken insert values (violated constraint)
-insert into values_01564 values (11); -- { serverError 469 }
+insert into values_01564 values (11); -- { serverError VIOLATED_CONSTRAINT }
 
-insert into values_01564 values (11); -- { serverError 469 }
+insert into values_01564 values (11); -- { serverError VIOLATED_CONSTRAINT }
 select 1;
 
-insert into values_01564 values (11); -- { serverError 469 }
-select nonexistent column; -- { serverError 47 }
+insert into values_01564 values (11); -- { serverError VIOLATED_CONSTRAINT }
+select nonexistent column; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- query after values on the same line
 insert into values_01564 values (1); select 1;
 
 -- even this works (not sure why we need it lol)
--- insert into values_01564 values (11) /*{ serverError 469 }*/; select 1;
+-- insert into values_01564 values (11) /*{ serverError VIOLATED_CONSTRAINT }*/; select 1;
 
 -- syntax error, where the last token we can parse is long before the semicolon.
 select this is too many words for an alias; -- { clientError 62 }
@@ -48,7 +48,7 @@ INSERT INTO t0(c0, c1) VALUES ("1",1) ; -- { clientError 47 }
 INSERT INTO t0(c0, c1) VALUES ('1', 1) ;
 
 -- the return code must be zero after the final query has failed with expected error
-insert into values_01564 values (11); -- { serverError 469 }
+insert into values_01564 values (11); -- { serverError VIOLATED_CONSTRAINT }
 
 drop table t0;
 drop table values_01564;
