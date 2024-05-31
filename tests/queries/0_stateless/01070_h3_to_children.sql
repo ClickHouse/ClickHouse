@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-SELECT h3ToChildren(599405990164561919, 16); -- { serverError 69 }
+SELECT h3ToChildren(599405990164561919, 16); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 DROP TABLE IF EXISTS h3_indexes;
 
