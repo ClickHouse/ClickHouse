@@ -12,7 +12,6 @@ Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contai
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)
 
 You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
-If more than one element with key `k` exists, the value for the first element is returned.
 Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
 
 **Parameters**

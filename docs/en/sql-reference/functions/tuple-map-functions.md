@@ -45,8 +45,12 @@ Result:
 
 Creates a map from an array of keys and an array of values.
 
-The function is a convenient alternative to syntax `CAST((key_array, value_array_or_map), 'Map(key_type, value_type)')`.
-For example, instead of writing `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')` or `CAST([('aa',4), ('bb',5)], 'Map(String, UInt32)')`, you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
+The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, value_type)')`.
+For example, instead of writing
+- `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, or
+- `CAST([('aa',4), ('bb',5)], 'Map(String, UInt32)')`
+
+you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
 
 **Syntax**
 
@@ -81,7 +85,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-Query
+`mapFromArrays` also accepts arguments of type [Map](../data-types/map.md). These are casted to array of tuples during execution.
 
 ```sql
 SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
@@ -97,11 +101,11 @@ Result:
 
 ## extractKeyValuePairs
 
-Creates a value of type [Map(String, String)](../data-types/map.md) from key-value pairs in a string.
-Parsing is robust towards noise (e.g. log files).
-A key-value pair consists of a key, followed by a key-value delimiter, and a value.
-Key value pairs are separated by `pair_delimiter`.
-Keys and values can also be quoted.
+Convertes a string of key-value pairs to a [Map(String, String)](../data-types/map.md).
+Parsing is tolerant towards noise (e.g. log files).
+Key-value pairs in the input string consist of a key, followed by a key-value delimiter, and a value.
+Key value pairs are separated by a pair delimiter.
+Keys and values can be quoted.
 
 **Syntax**
 
@@ -140,7 +144,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-With a single quote `'`as quoting character:
+With a single quote `'` as quoting character:
 
 ``` sql
 SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
@@ -166,6 +170,26 @@ Result:
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
 └────────────────────────┘
+```
+
+To restore a map string key-value pairs serialized with `toString`:
+
+```sql
+SELECT
+    map('John', '33', 'Paula', '31') AS m,
+    toString(m) as map_serialized,
+    extractKeyValuePairs(map_serialized, ':', ',', '\'') AS map_restored
+FORMAT Vertical;
+```
+
+Result:
+
+```
+Row 1:
+──────
+m:              {'John':'33','Paula':'31'}
+map_serialized: {'John':'33','Paula':'31'}
+map_restored:   {'John':'33','Paula':'31'}
 ```
 
 ## extractKeyValuePairsWithEscaping
