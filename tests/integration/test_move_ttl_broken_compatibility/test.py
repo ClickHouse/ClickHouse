@@ -31,9 +31,11 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_bc_compatibility(started_cluster):
     node1 = cluster.instances["node1"]
-    node1.query("""
+    node1.query(
+        """
         CREATE TABLE test_ttl_table (
             generation UInt64,
             date_key DateTime,
@@ -46,9 +48,11 @@ def test_bc_compatibility(started_cluster):
         PARTITION BY toMonth(date_key)
         TTL expired + INTERVAL 20 SECONDS TO DISK 's3'
         SETTINGS storage_policy = 's3';
-    """)
+    """
+    )
 
-    node1.query("""
+    node1.query(
+        """
         INSERT INTO test_ttl_table (
             generation,
             date_key,
@@ -61,13 +65,20 @@ def test_bc_compatibility(started_cluster):
             number,
             toString(number)
         FROM numbers(10000);
-    """)
+    """
+    )
 
-    disks = node1.query("""
+    disks = (
+        node1.query(
+            """
         SELECT distinct disk_name
         FROM system.parts
         WHERE table = 'test_ttl_table'
-    """).strip().split('\n')
+    """
+        )
+        .strip()
+        .split("\n")
+    )
     print("Disks before", disks)
 
     assert len(disks) == 1
@@ -76,11 +87,17 @@ def test_bc_compatibility(started_cluster):
     node1.restart_with_latest_version()
 
     for _ in range(60):
-        disks = node1.query("""
+        disks = (
+            node1.query(
+                """
             SELECT distinct disk_name
             FROM system.parts
             WHERE table = 'test_ttl_table'
-        """).strip().split('\n')
+        """
+            )
+            .strip()
+            .split("\n")
+        )
         print("Disks after", disks)
         if "s3" in disks:
             break
