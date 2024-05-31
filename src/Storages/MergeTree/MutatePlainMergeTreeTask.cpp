@@ -139,6 +139,7 @@ ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
     context->makeQueryContext();
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
+    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
     return context;
 }
 
