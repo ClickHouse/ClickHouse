@@ -343,9 +343,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     {
         .all_callback = all_ranges_callback.value(),
         .callback = read_task_callback.value(),
-        .count_participating_replicas = client_info.count_participating_replicas,
         .number_of_current_replica = client_info.number_of_current_replica,
-        .columns_to_read = required_columns,
     };
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
@@ -516,9 +514,7 @@ Pipe ReadFromMergeTree::readInOrder(
         {
             .all_callback = all_ranges_callback.value(),
             .callback = read_task_callback.value(),
-            .count_participating_replicas = client_info.count_participating_replicas,
             .number_of_current_replica = client_info.number_of_current_replica,
-            .columns_to_read = required_columns,
         };
 
         const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
