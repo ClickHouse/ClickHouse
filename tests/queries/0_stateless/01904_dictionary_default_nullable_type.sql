@@ -109,7 +109,7 @@ LAYOUT(IP_TRIE());
 
 -- Nullable type is not supported by IPTrie dictionary
 SELECT 'IPTrie dictionary';
-SELECT dictGet('ip_trie_dictionary', 'value', tuple(IPv4StringToNum('127.0.0.0'))); --{serverError 1}
+SELECT dictGet('ip_trie_dictionary', 'value', tuple(IPv4StringToNum('127.0.0.0'))); --{serverError UNSUPPORTED_METHOD}
 
 DROP TABLE dictionary_nullable_source_table;
 DROP TABLE dictionary_nullable_default_source_table;
