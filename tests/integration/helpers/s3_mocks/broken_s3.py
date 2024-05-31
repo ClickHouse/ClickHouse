@@ -246,7 +246,7 @@ class _ServerRuntime:
     class BrokenPipeAction:
         def inject_error(self, request_handler):
             # partial read
-            request_handler.rfile.read(50)
+            self.rfile.read(50)
 
             time.sleep(1)
             request_handler.connection.setsockopt(
