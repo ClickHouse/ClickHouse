@@ -6,7 +6,7 @@ disk_types = {
     "default": "Local",
     "disk_s3": "S3",
     "disk_encrypted": "S3",
-    "local": "Local"
+    "local": "Local",
 }
 
 # do not test HDFS on ARM
@@ -20,9 +20,9 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/storage_arm.xml"]
-            if is_arm()
-            else ["configs/storage_amd.xml"],
+            main_configs=(
+                ["configs/storage_arm.xml"] if is_arm() else ["configs/storage_amd.xml"]
+            ),
             with_minio=True,
             with_hdfs=not is_arm(),
         )
@@ -96,7 +96,9 @@ def test_select_by_type(cluster):
         if disk_type == "Local":
             assert (
                 node.query(
-                    "SELECT name FROM system.disks WHERE type='" + disk_type + "' ORDER BY name"
+                    "SELECT name FROM system.disks WHERE type='"
+                    + disk_type
+                    + "' ORDER BY name"
                 )
                 == "default\nlocal\n"
             )

@@ -83,9 +83,7 @@ def test_system_tables(start_cluster):
             "path": "/external/",
             "keep_free_space": "0",
         },
-        {
-            "name": "local", "path": "/", "keep_free_space": "0"
-        }
+        {"name": "local", "path": "/", "keep_free_space": "0"},
     ]
 
     click_disk_data = json.loads(
