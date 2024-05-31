@@ -303,8 +303,8 @@ void TCPHandler::runImpl()
                 return chunked_srv;
             };
 
-            bool out_chunked = is_chunked(server.config().getString("proto_caps.send", "notchunked_optional"), proto_recv_chunked_cl, "send");
-            bool in_chunked = is_chunked(server.config().getString("proto_caps.recv", "notchunked_optional"), proto_send_chunked_cl, "recv");
+            bool out_chunked = is_chunked(server.config().getString("proto_caps.send", "chunked"), proto_recv_chunked_cl, "send");
+            bool in_chunked = is_chunked(server.config().getString("proto_caps.recv", "chunked"), proto_send_chunked_cl, "recv");
 
             if (out_chunked)
                 out->enableChunked();
@@ -1645,8 +1645,8 @@ void TCPHandler::sendHello()
         writeVarUInt(VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
     {
-        writeStringBinary(server.config().getString("proto_caps.send", "notchunked_optional"), *out);
-        writeStringBinary(server.config().getString("proto_caps.recv", "notchunked_optional"), *out);
+        writeStringBinary(server.config().getString("proto_caps.send", "chunked"), *out);
+        writeStringBinary(server.config().getString("proto_caps.recv", "chunked"), *out);
     }
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
