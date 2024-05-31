@@ -7052,6 +7052,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo &) const
 {
+    /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
     if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
         if (query_context->getClientInfo().collaborate_with_initiator)
