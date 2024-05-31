@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <Core/BackgroundSchedulePool.h>
@@ -1307,11 +1308,13 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::removeDetachedPermanentlyFlag(const TableMarkedAsDropped & table)
 {
-    auto database = getDatabase(table.table_id.getDatabaseName());
-    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
+    auto database = tryGetDatabase(table.table_id.getDatabaseName());
+    if (!database)
+        return;
 
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
     if (!database_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to remove permanently flag path for table {}", table.table_id.getNameForLogs());
+        return;
 
     database_ptr->removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
 }
@@ -1337,7 +1340,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     fs::remove(fs::path(table.metadata_path));
 
-    removeDetachedPermanentlyFlag(table);
+    if (table.table->is_detached)
+    {
+        LOG_DEBUG(log, "Try remove permanently flag for detached table {}", table.table_id.getNameForLogs());
+        removeDetachedPermanentlyFlag(table);
+    }
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
