@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -13,67 +14,70 @@ class NamedCollectionFactory : boost::noncopyable
 public:
     static NamedCollectionFactory & instance();
 
+    ~NamedCollectionFactory();
+
     bool exists(const std::string & collection_name) const;
 
     NamedCollectionPtr get(const std::string & collection_name) const;
 
     NamedCollectionPtr tryGet(const std::string & collection_name) const;
 
-    MutableNamedCollectionPtr getMutable(const std::string & collection_name) const;
-
-    void add(const std::string & collection_name, MutableNamedCollectionPtr collection);
-
-    void add(NamedCollectionsMap collections);
-
-    void update(NamedCollectionsMap collections);
-
-    void remove(const std::string & collection_name);
-
-    void removeIfExists(const std::string & collection_name);
-
-    void removeById(NamedCollection::SourceId id);
-
     NamedCollectionsMap getAll() const;
-
-    void loadIfNot();
 
     void reloadFromConfig(const Poco::Util::AbstractConfiguration & config);
 
-    void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context);
+    void reloadFromSQL();
 
-    void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context);
+    void createFromSQL(const ASTCreateNamedCollectionQuery & query);
 
-    void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context);
+    void removeFromSQL(const ASTDropNamedCollectionQuery & query);
 
-    /// This method is public only for unit tests.
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void updateFromSQL(const ASTAlterNamedCollectionQuery & query);
 
-private:
-    bool existsUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
+    void loadIfNot();
 
-    MutableNamedCollectionPtr tryGetUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
+    void shutdown();
 
-    void addUnlocked(
-        const std::string & collection_name,
-        MutableNamedCollectionPtr collection,
-        std::lock_guard<std::mutex> & lock);
-
-    bool removeIfExistsUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock);
-
+protected:
     mutable NamedCollectionsMap loaded_named_collections;
-
-    LoggerPtr log = getLogger("NamedCollectionFactory");
     mutable std::mutex mutex;
-    bool is_initialized = false;
-    bool loaded = false;
 
-    void loadFromSQL(const ContextPtr & context);
+    const LoggerPtr log = getLogger("NamedCollectionFactory");
+
+    bool loaded = false;
+    std::atomic<bool> shutdown_called = false;
+    std::unique_ptr<NamedCollectionsMetadataStorage> metadata_storage;
+    BackgroundSchedulePool::TaskHolder update_task;
+
+    bool loadIfNot(std::lock_guard<std::mutex> & lock);
+
+    bool exists(
+        const std::string & collection_name,
+        std::lock_guard<std::mutex> & lock) const;
+
+    MutableNamedCollectionPtr getMutable(const std::string & collection_name, std::lock_guard<std::mutex> & lock) const;
+
+    void add(const std::string & collection_name, MutableNamedCollectionPtr collection, std::lock_guard<std::mutex> & lock);
+
+    void add(NamedCollectionsMap collections, std::lock_guard<std::mutex> & lock);
+
+    void update(NamedCollectionsMap collections, std::lock_guard<std::mutex> & lock);
+
+    void remove(const std::string & collection_name, std::lock_guard<std::mutex> & lock);
+
+    bool removeIfExists(const std::string & collection_name, std::lock_guard<std::mutex> & lock);
+
+    MutableNamedCollectionPtr tryGet(const std::string & collection_name, std::lock_guard<std::mutex> & lock) const;
+
+    void removeById(NamedCollection::SourceId id, std::lock_guard<std::mutex> & lock);
+
+    void loadFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        std::lock_guard<std::mutex> & lock);
+
+    void loadFromSQL(std::lock_guard<std::mutex> & lock);
+
+    void updateFunc();
 };
 
 }

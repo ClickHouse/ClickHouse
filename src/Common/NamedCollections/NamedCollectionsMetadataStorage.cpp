@@ -1,4 +1,4 @@
-#include <Common/NamedCollections/NamedCollectionsMetadata.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static const std::string named_collections_storage_config_path = "named_collections_storage";
+
 namespace
 {
     MutableNamedCollectionPtr createNamedCollectionFromAST(const ASTCreateNamedCollectionQuery & query)
@@ -47,7 +49,7 @@ namespace
     }
 }
 
-class NamedCollectionsMetadata::INamedCollectionsStorage
+class NamedCollectionsMetadataStorage::INamedCollectionsStorage
 {
 public:
     virtual ~INamedCollectionsStorage() = default;
@@ -63,10 +65,12 @@ public:
     virtual void remove(const std::string & path) = 0;
 
     virtual bool removeIfExists(const std::string & path) = 0;
+
+    virtual void waitUpdate(size_t /* timeout */) {}
 };
 
 
-class NamedCollectionsMetadata::LocalStorage : public INamedCollectionsStorage, private WithContext
+class NamedCollectionsMetadataStorage::LocalStorage : public INamedCollectionsStorage, private WithContext
 {
 private:
     std::string root_path;
@@ -181,11 +185,12 @@ private:
 };
 
 
-class NamedCollectionsMetadata::ZooKeeperStorage : public INamedCollectionsStorage, private WithContext
+class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectionsStorage, private WithContext
 {
 private:
     std::string root_path;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
+    mutable zkutil::EventPtr wait_event;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -210,9 +215,17 @@ public:
 
     ~ZooKeeperStorage() override = default;
 
+    void waitUpdate(size_t timeout) override
+    {
+        if (wait_event)
+            wait_event->tryWait(timeout);
+    }
+
     std::vector<std::string> list() const override
     {
-        return getClient()->getChildren(root_path);
+        if (!wait_event)
+            wait_event = std::make_shared<Poco::Event>();
+        return getClient()->getChildren(root_path, nullptr, wait_event);
     }
 
     bool exists(const std::string & path) const override
@@ -277,40 +290,21 @@ private:
     }
 };
 
-std::unique_ptr<NamedCollectionsMetadata> NamedCollectionsMetadata::create(const ContextPtr & context_)
+NamedCollectionsMetadataStorage::NamedCollectionsMetadataStorage(
+    std::shared_ptr<INamedCollectionsStorage> storage_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , storage(std::move(storage_))
 {
-    static const std::string storage_config_path = "named_collections_storage";
-
-    const auto & config = context_->getConfigRef();
-    const auto storage_type = config.getString(storage_config_path + ".type", "local");
-
-    if (storage_type == "local")
-    {
-        const auto path = config.getString(
-            storage_config_path + ".path",
-            std::filesystem::path(context_->getPath()) / "named_collections");
-
-        auto local_storage = std::make_unique<NamedCollectionsMetadata::LocalStorage>(context_, path);
-        return std::make_unique<NamedCollectionsMetadata>(std::move(local_storage), context_);
-    }
-    if (storage_type == "zookeeper")
-    {
-        auto zk_storage = std::make_unique<NamedCollectionsMetadata::ZooKeeperStorage>(context_, config.getString(storage_config_path + ".path"));
-        return std::make_unique<NamedCollectionsMetadata>(std::move(zk_storage), context_);
-    }
-
-    throw Exception(
-        ErrorCodes::INVALID_CONFIG_PARAMETER,
-        "Unknown storage for named collections: {}", storage_type);
 }
 
-MutableNamedCollectionPtr NamedCollectionsMetadata::get(const std::string & collection_name) const
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::get(const std::string & collection_name) const
 {
     const auto query = readCreateQuery(collection_name);
     return createNamedCollectionFromAST(query);
 }
 
-NamedCollectionsMap NamedCollectionsMetadata::getAll() const
+NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
 {
     NamedCollectionsMap result;
     for (const auto & collection_name : listCollections())
@@ -327,23 +321,23 @@ NamedCollectionsMap NamedCollectionsMetadata::getAll() const
     return result;
 }
 
-MutableNamedCollectionPtr NamedCollectionsMetadata::create(const ASTCreateNamedCollectionQuery & query)
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & query)
 {
     writeCreateQuery(query);
     return createNamedCollectionFromAST(query);
 }
 
-void NamedCollectionsMetadata::remove(const std::string & collection_name)
+void NamedCollectionsMetadataStorage::remove(const std::string & collection_name)
 {
     storage->remove(getFileName(collection_name));
 }
 
-bool NamedCollectionsMetadata::removeIfExists(const std::string & collection_name)
+bool NamedCollectionsMetadataStorage::removeIfExists(const std::string & collection_name)
 {
     return storage->removeIfExists(getFileName(collection_name));
 }
 
-void NamedCollectionsMetadata::update(const ASTAlterNamedCollectionQuery & query)
+void NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
 {
     auto create_query = readCreateQuery(query.collection_name);
 
@@ -403,7 +397,7 @@ void NamedCollectionsMetadata::update(const ASTAlterNamedCollectionQuery & query
     writeCreateQuery(create_query, true);
 }
 
-std::vector<std::string> NamedCollectionsMetadata::listCollections() const
+std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() const
 {
     auto paths = storage->list();
     std::vector<std::string> collections;
@@ -413,7 +407,7 @@ std::vector<std::string> NamedCollectionsMetadata::listCollections() const
     return collections;
 }
 
-ASTCreateNamedCollectionQuery NamedCollectionsMetadata::readCreateQuery(const std::string & collection_name) const
+ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(const std::string & collection_name) const
 {
     const auto path = getFileName(collection_name);
     auto query = storage->read(path);
@@ -425,7 +419,7 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadata::readCreateQuery(const st
     return create_query;
 }
 
-void NamedCollectionsMetadata::writeCreateQuery(const ASTCreateNamedCollectionQuery & query, bool replace)
+void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedCollectionQuery & query, bool replace)
 {
     auto normalized_query = query.clone();
     auto & changes = typeid_cast<ASTCreateNamedCollectionQuery *>(normalized_query.get())->changes;
@@ -434,6 +428,53 @@ void NamedCollectionsMetadata::writeCreateQuery(const ASTCreateNamedCollectionQu
         [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
 
     storage->write(getFileName(query.collection_name), serializeAST(*normalized_query), replace);
+}
+
+bool NamedCollectionsMetadataStorage::requiresPeriodicUpdate() const
+{
+    const auto & config = Context::getGlobalContextInstance()->getConfigRef();
+    return config.has(named_collections_storage_config_path + ".update_timeout_ms");
+}
+
+void NamedCollectionsMetadataStorage::waitUpdate()
+{
+    const auto & config = Context::getGlobalContextInstance()->getConfigRef();
+    storage->waitUpdate(config.getUInt(named_collections_storage_config_path + ".update_timeout_ms"));
+}
+
+std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage::create(const ContextPtr & context_)
+{
+    const auto & config = context_->getConfigRef();
+    const auto storage_type = config.getString(named_collections_storage_config_path + ".type", "local");
+
+    if (storage_type == "local")
+    {
+        const auto path = config.getString(
+            named_collections_storage_config_path + ".path",
+            std::filesystem::path(context_->getPath()) / "named_collections");
+
+        LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
+                  "Using local storage for named collections at path: {}", path);
+
+        auto local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorage>(context_, path);
+        return std::unique_ptr<NamedCollectionsMetadataStorage>(
+            new NamedCollectionsMetadataStorage(std::move(local_storage), context_));
+    }
+    if (storage_type == "zookeeper" || storage_type == "keeper")
+    {
+        const auto path = config.getString(named_collections_storage_config_path + ".path");
+        auto zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
+
+        LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
+                  "Using zookeeper storage for named collections at path: {}", path);
+
+        return std::unique_ptr<NamedCollectionsMetadataStorage>(
+            new NamedCollectionsMetadataStorage(std::move(zk_storage), context_));
+    }
+
+    throw Exception(
+        ErrorCodes::INVALID_CONFIG_PARAMETER,
+        "Unknown storage for named collections: {}", storage_type);
 }
 
 }

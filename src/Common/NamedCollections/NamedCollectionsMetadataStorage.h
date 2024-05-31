@@ -3,16 +3,17 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
+class NamedCollectionsMetadataStorage;
+std::unique_ptr<NamedCollectionsMetadataStorage> checkKek(const ContextPtr & context);
 
-class NamedCollectionsMetadata : private WithContext
+class NamedCollectionsMetadataStorage : private WithContext
 {
 public:
-    static std::unique_ptr<NamedCollectionsMetadata> create(const ContextPtr & context);
-
-    ~NamedCollectionsMetadata() = default;
+    static std::unique_ptr<NamedCollectionsMetadataStorage> create(const ContextPtr & context);
 
     NamedCollectionsMap getAll() const;
 
@@ -26,17 +27,20 @@ public:
 
     void update(const ASTAlterNamedCollectionQuery & query);
 
-    class INamedCollectionsStorage;
-    NamedCollectionsMetadata(std::shared_ptr<INamedCollectionsStorage> storage_, ContextPtr context_)
-        : WithContext(context_)
-        , storage(std::move(storage_)) {}
-    /// FIXME: It should be a protected constructor, but I failed make create() method a proper friend.
+    void shutdown();
+
+    void waitUpdate();
+
+    bool requiresPeriodicUpdate() const;
 
 private:
+    class INamedCollectionsStorage;
     class LocalStorage;
     class ZooKeeperStorage;
 
     std::shared_ptr<INamedCollectionsStorage> storage;
+
+    NamedCollectionsMetadataStorage(std::shared_ptr<INamedCollectionsStorage> storage_, ContextPtr context_);
 
     std::vector<std::string> listCollections() const;
 

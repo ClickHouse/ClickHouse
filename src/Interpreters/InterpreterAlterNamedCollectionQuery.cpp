@@ -23,7 +23,7 @@ BlockIO InterpreterAlterNamedCollectionQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
-    NamedCollectionFactory::instance().updateFromSQL(query, current_context);
+    NamedCollectionFactory::instance().updateFromSQL(query);
     return {};
 }
 
