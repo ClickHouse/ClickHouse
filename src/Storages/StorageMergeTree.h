@@ -160,23 +160,6 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
 
-    struct pair_hash
-    {
-        size_t operator() (const std::pair<std::string, UInt64> & p) const
-        {
-            return (std::hash<std::string>()(p.first) ^ std::hash<UInt64>()(p.second));
-        }
-    };
-
-    /// Cache that parts with different versions are equivalent
-    ///   (not affected by mutations because their scope is limited by partititons)
-    /// or not equivalent
-    /// if distance between these versions is meaningful (>= min_cache_mutations)
-    static constexpr size_t min_cache_mutations = 5;
-    using VersionsEquivalenceCache = CacheBase<std::pair<std::string, UInt64>, bool, pair_hash>;
-    using VersionsEquivalenceCachePtr = std::unique_ptr<VersionsEquivalenceCache>;
-    VersionsEquivalenceCachePtr versions_equivalence_cache_ptr;
-
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
