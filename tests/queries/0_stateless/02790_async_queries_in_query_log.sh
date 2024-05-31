@@ -65,6 +65,7 @@ function print_flush_query_logs()
       WHERE
           event_date >= yesterday()
       AND query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
+      ORDER BY table
       FORMAT Vertical"
 }
 
