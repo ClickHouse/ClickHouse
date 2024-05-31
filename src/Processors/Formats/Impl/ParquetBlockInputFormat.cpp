@@ -427,8 +427,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             total_size += row_group_meta->ColumnChunk(column_index)->total_uncompressed_size();
         }
         if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
-        auto average_row_bytes = static_cast<double>(total_size) / row_group_meta->num_rows();
-        const size_t preferred_num_rows = static_cast<size_t>(format_settings.parquet.prefer_block_bytes/average_row_bytes);
+        auto average_row_bytes = floor(static_cast<double>(total_size) / row_group_meta->num_rows());
+        const size_t preferred_num_rows = static_cast<size_t>(floor(format_settings.parquet.prefer_block_bytes/average_row_bytes));
         const size_t MIN_ROW_NUM = 128;
         // size_t != UInt64 in darwin
         return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), static_cast<size_t>(format_settings.parquet.max_block_size));
