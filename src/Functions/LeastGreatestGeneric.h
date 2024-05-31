@@ -111,7 +111,7 @@ public:
             argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
-        if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
+        if (arguments.size() == 2 && isNumber(removeNullable(arguments[0].type)) && isNumber(removeNullable(arguments[1].type)))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
