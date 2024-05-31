@@ -25,13 +25,13 @@ public:
 
     void processOptions();
 
-    bool processQueryText(String text);
+    bool processQueryText(const String & text);
 
     void init(const std::vector<String> & common_arguments);
 
     int main(const std::vector<String> & /*args*/) override;
 
-    CommandPtr getCommandByName(String command) const;
+    CommandPtr getCommandByName(const String & command) const;
 
     void initializeHistoryFile();
 
@@ -45,8 +45,6 @@ public:
 
     std::vector<String> getEmptyCompletion(CommandPtr command_) const;
 
-    size_t getMagicConstant();
-
     ~DisksApp() override;
 
 private:
@@ -57,11 +55,11 @@ private:
     // Fields responsible for the REPL work
     String history_file;
     LineReader::Suggest suggest;
-    LineReader::Patterns query_extenders = {"\\"};
-    LineReader::Patterns query_delimiters = {};
-    String word_break_characters{" \t\v\f\a\b\r\n"};
+    static LineReader::Patterns query_extenders;
+    static LineReader::Patterns query_delimiters;
+    static String word_break_characters;
 
-    // General commang line arguments parsing fields
+    // General command line arguments parsing fields
     ContextMutablePtr global_context;
     ProgramOptionsDescription options_description;
     CommandLineOptions options;
@@ -87,5 +85,4 @@ private:
 
     std::unique_ptr<DisksClient> client{};
 };
-
 }

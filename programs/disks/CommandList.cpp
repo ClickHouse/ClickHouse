@@ -51,7 +51,6 @@ private:
 
     static void listRecursive(const DiskWithPath & disk, const std::string & relative_path, bool show_hidden)
     {
-        // std::cerr << absolute_path << std::endl;
         std::vector<String> file_names = disk.listAllFilesByPath(relative_path);
         std::vector<String> selected_and_sorted_file_names{};
 

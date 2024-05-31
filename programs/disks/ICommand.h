@@ -4,14 +4,13 @@
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
 
+#include <boost/any/bad_any_cast.hpp>
 #include <boost/program_options.hpp>
 
-#include <Parsers/IAST.h>
 #include <Poco/Util/Application.h>
 #include "Common/Exception.h"
 #include <Common/Config/ConfigProcessor.h>
 
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <boost/program_options/positional_options.hpp>
 
 #include "DisksApp.h"
@@ -46,8 +45,6 @@ public:
 
     CommandLineOptions processCommandLineArguments(const Strings & commands);
 
-    void exit() { options_parsed = false; }
-
 protected:
     template <typename T>
     static T getValueFromCommandLineOptions(const CommandLineOptions & options, const String & name)
@@ -56,7 +53,7 @@ protected:
         {
             return options[name].as<T>();
         }
-        catch (...)
+        catch (boost::bad_any_cast)
         {
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' has wrong type and can't be parsed", name);
         }
@@ -111,9 +108,6 @@ public:
 
 protected:
     PositionalProgramOptionsDescription positional_options_description;
-
-private:
-    bool options_parsed{};
 };
 
 DB::CommandPtr makeCommandCopy();

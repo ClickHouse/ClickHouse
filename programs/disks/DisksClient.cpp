@@ -1,17 +1,10 @@
 #include "DisksClient.h"
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
-#include <Parsers/parseQuery.h>
-#include <Poco/Util/HelpFormatter.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/EventNotifier.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/filesystemHelpers.h>
-
 #include <Disks/registerDisks.h>
+#include <Common/Config/ConfigProcessor.h>
 
 #include <Formats/registerFormats.h>
-#include <Common/TerminalSize.h>
 
 namespace ErrorCodes
 {
@@ -22,46 +15,20 @@ extern const int LOGICAL_ERROR;
 namespace DB
 {
 
-std::vector<String> split(const String & text, const String & delimiters)
+DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(disk_)
 {
-    std::vector<String> arguments;
-    auto prev = text.begin();
-    auto pos = std::find_if(text.begin(), text.end(), [&](char x) { return delimiters.contains(x); });
-    while (pos != text.end())
+    if (path_.has_value())
     {
-        if (pos > prev)
+        if (!fs::path{path_.value()}.is_absolute())
         {
-            arguments.push_back({prev, pos});
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
         }
-        prev = ++pos;
-        pos = std::find_if(prev, text.end(), [&](char x) { return delimiters.contains(x); });
+        path = path_.value();
     }
-    if (pos > prev)
+    else
     {
-        arguments.push_back({prev, text.end()});
+        path = String{"/"};
     }
-    return arguments;
-}
-
-DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_)
-    : disk(disk_)
-    , path(
-          [&]()
-          {
-              if (path_.has_value())
-              {
-                  if (!fs::path{path_.value()}.is_absolute())
-                  {
-                      throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
-                  }
-                  return path_.value();
-              }
-              else
-              {
-                  return String{"/"};
-              }
-          }())
-{
     if (!disk->isDirectory(normalizePathAndGetAsRelative(path)))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} at disk {} is not a directory", path, disk->getName());
@@ -82,7 +49,7 @@ std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) co
     }
 }
 
-std::vector<String> DiskWithPath::getAllFilesByPattern(std::string pattern) const
+std::vector<String> DiskWithPath::getAllFilesByPattern(const String & pattern) const
 {
     auto [path_before, path_after] = [&]() -> std::pair<String, String>
     {
@@ -149,17 +116,16 @@ String DiskWithPath::validatePathAndGetAsRelative(const String & path)
     return lexically_normal_path;
 }
 
-std::string DiskWithPath::normalizePathAndGetAsRelative(const std::string & messyPath)
+String DiskWithPath::normalizePathAndGetAsRelative(const String & messyPath)
 {
     std::filesystem::path path(messyPath);
     std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path);
-    std::string npath = canonical_path.make_preferred().string();
+    String npath = canonical_path.make_preferred().string();
     return validatePathAndGetAsRelative(npath);
 }
 
-std::string DiskWithPath::normalizePath(const std::string & messyPath)
+String DiskWithPath::normalizePath(const String & path)
 {
-    std::filesystem::path path(messyPath);
     std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path);
     return canonical_path.make_preferred().string();
 }
@@ -174,7 +140,7 @@ DisksClient::DisksClient(std::vector<std::pair<DiskPtr, std::optional<String>>> 
     {
         begin_disk = disks_with_paths[0].first->getName();
     }
-    bool has_begin_disk = true;
+    bool has_begin_disk = false;
     for (auto & [disk, path] : disks_with_paths)
     {
         addDisk(disk, path);
@@ -265,7 +231,7 @@ std::vector<String> DisksClient::getAllDiskNames() const
     return answer;
 }
 
-std::vector<String> DisksClient::getAllFilesByPatternFromAllDisks(std::string pattern) const
+std::vector<String> DisksClient::getAllFilesByPatternFromAllDisks(const String & pattern) const
 {
     std::vector<String> answer{};
     for (const auto & [_, disk] : disks)

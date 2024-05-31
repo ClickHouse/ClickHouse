@@ -1,13 +1,9 @@
 #include "DisksApp.h"
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
-#include <Parsers/parseQuery.h>
-#include <Poco/Util/HelpFormatter.h>
 #include "Common/Exception.h"
+#include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/EventNotifier.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/filesystemHelpers.h>
 #include "DisksClient.h"
 #include "ICommand.h"
 
@@ -30,19 +26,20 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 };
 
+LineReader::Patterns DisksApp::query_extenders = {"\\"};
+LineReader::Patterns DisksApp::query_delimiters = {""};
+String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
 
-CommandPtr DisksApp::getCommandByName(String command) const
+CommandPtr DisksApp::getCommandByName(const String & command) const
 {
-    auto it = aliases.find(command);
-    if (it != aliases.end())
-    {
-        command = it->second;
-    }
     try
     {
+        if (auto it = aliases.find(command); it != aliases.end())
+            return command_descriptions.at(it->second);
+
         return command_descriptions.at(command);
     }
-    catch (...)
+    catch (std::out_of_range &)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The command `{}` is unknown", command);
     }
@@ -75,7 +72,7 @@ std::vector<String> DisksApp::getEmptyCompletion(CommandPtr command_) const
 
 std::vector<String> DisksApp::getCompletions(const String & prefix) const
 {
-    auto arguments = split(prefix, word_break_characters);
+    auto arguments = po::split_unix(prefix, word_break_characters);
     if (arguments.empty())
     {
         return {};
@@ -171,14 +168,14 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     }
 }
 
-bool DisksApp::processQueryText(String text)
+bool DisksApp::processQueryText(const String & text)
 {
     if (exit_strings.find(text) != exit_strings.end())
         return false;
     CommandPtr command;
     try
     {
-        auto arguments = split(text, word_break_characters);
+        auto arguments = po::split_unix(text, word_break_characters);
         command = getCommandByName(arguments[0]);
         arguments.erase(arguments.begin());
         command->execute(arguments, *client);
@@ -188,7 +185,7 @@ bool DisksApp::processQueryText(String text)
         int code = getCurrentExceptionCode();
         if (code == ErrorCodes::LOGICAL_ERROR)
         {
-            throw std::move(err);
+            throw err;
         }
         else if (code == ErrorCodes::BAD_ARGUMENTS)
         {
@@ -272,6 +269,13 @@ void DisksApp::addOptions()
 #ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
+    for (const auto & [command_name, command_ptr] : command_descriptions)
+    {
+        if (command_name != command_ptr->command_name)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Command name inside map doesn't coincide with actual command name");
+        }
+    }
 }
 
 void DisksApp::processOptions()
@@ -295,63 +299,35 @@ void DisksApp::printEntryHelpMessage()
     std::cout << options_description << '\n';
 }
 
-size_t DisksApp::getMagicConstant()
-{
-    size_t magic_constant = 0;
-    for (const auto & [current_command, _] : command_descriptions)
-    {
-        std::string command_string{};
-        command_string += command_descriptions[current_command]->command_name;
-        bool was = false;
-        for (const auto & [alias_name, alias_command_name] : aliases)
-        {
-            if (alias_command_name == current_command)
-            {
-                if (was)
-                    command_string += ",";
-                else
-                    command_string += "(";
-                command_string += alias_name;
-                was = true;
-            }
-        }
-        command_string += (was ? ")" : "");
-
-        magic_constant = std::max(magic_constant, command_string.size());
-    }
-    return magic_constant + 2;
-}
 
 void DisksApp::printAvailableCommandsHelpMessage()
 {
-    size_t magic_constant = getMagicConstant();
-
     std::cout << "\x1b[1;33mAvailable commands:\x1b[0m\n";
+    std::vector<std::pair<String, String>> commands_with_aliases_and_descrtiptions{};
+    size_t maximal_command_length = 0;
     for (const auto & [current_command, _] : command_descriptions)
     {
-        std::string command_string{};
-        command_string += command_descriptions[current_command]->command_name;
-        bool was = false;
+        std::string command_string = command_descriptions[current_command]->command_name;
+        bool need_comma = false;
         for (const auto & [alias_name, alias_command_name] : aliases)
         {
             if (alias_command_name == current_command)
             {
-                if (was)
+                if (std::exchange(need_comma, true))
                     command_string += ",";
                 else
                     command_string += "(";
                 command_string += alias_name;
-                was = true;
             }
         }
-        command_string += (was ? ")" : "");
-        std::cout << "\x1b[1;32m" << command_string << "\x1b[0m";
-        for (size_t i = command_string.size(); i < magic_constant; ++i)
-        {
-            std::cout << " ";
-        }
-
-        std::cout << command_descriptions[current_command]->description << "\n";
+        command_string += (need_comma ? ")" : "");
+        maximal_command_length = std::max(maximal_command_length, command_string.size());
+        commands_with_aliases_and_descrtiptions.push_back({std::move(command_string), command_descriptions[current_command]->command_name});
+    }
+    for (const auto & [command_with_aliases, description] : commands_with_aliases_and_descrtiptions)
+    {
+        std::cout << "\x1b[1;32m" << command_with_aliases << "\x1b[0m"
+                  << std::string(maximal_command_length + 2 - command_with_aliases.size(), ' ') << description << "\n";
     }
 }
 

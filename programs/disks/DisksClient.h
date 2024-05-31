@@ -36,7 +36,7 @@ public:
 
     std::vector<String> listAllFilesByPath(const String & any_path) const;
 
-    std::vector<String> getAllFilesByPattern(std::string pattern) const;
+    std::vector<String> getAllFilesByPattern(const String & pattern) const;
 
     DiskPtr getDisk() const { return disk; }
 
@@ -74,7 +74,7 @@ public:
 
     std::vector<String> getAllDiskNames() const;
 
-    std::vector<String> getAllFilesByPatternFromAllDisks(std::string pattern) const;
+    std::vector<String> getAllFilesByPatternFromAllDisks(const String & pattern) const;
 
 
 private:
