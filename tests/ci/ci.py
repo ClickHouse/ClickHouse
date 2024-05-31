@@ -275,6 +275,14 @@ class CiCache:
             )
         return self
 
+    @staticmethod
+    def dump_run_config(indata: Dict[str, Any]) -> None:
+        assert indata
+        path = Path(TEMP_PATH) / "ci_config.json"
+        with open(path, "w", encoding="utf-8") as json_file:
+            json.dump(indata, json_file, indent=2)
+        os.environ["CI_CONFIG_PATH"] = str(path)
+
     def update(self):
         """
         Pulls cache records from s3. Only records name w/o content.
@@ -1205,6 +1213,9 @@ def _pre_action(s3, indata, pr_info):
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
     reports_files = ci_cache.download_build_reports(file_prefix=report_prefix)
+
+    ci_cache.dump_run_config(indata)
+
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
 

@@ -57,7 +57,9 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_tsan--> Allow: All with TSAN
 - [ ] <!---ci_include_analyzer--> Allow: All with Analyzer
 - [ ] <!---ci_include_azure --> Allow: All with Azure
-- [ ] <!---ci_include_KEYWORD--> Allow: Add your option here
+- [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
+- [ ] <!---batch_2_3--> Allow: batch 3, 4
+- [ ] <!---batch_4_5--> Allow: batch 5, 6
 ---
 - [ ] <!---ci_exclude_fast--> Exclude: Fast test
 - [ ] <!---ci_exclude_integration--> Exclude: Integration Tests
@@ -71,11 +73,8 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_coverage--> Exclude: All with Coverage
 - [ ] <!---ci_exclude_aarch64--> Exclude: All with Aarch64
 ---
-- [ ] <!---do_not_test--> do not test (only style check)
-- [ ] <!---upload_all--> upload all binary artifacts from build jobs
-- [ ] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
-- [ ] <!---no_ci_cache--> disable CI cache (job reuse)
-- [ ] <!---batch_0_1--> allow: batch 1, 2 for multi-batch jobs
-- [ ] <!---batch_2_3--> allow: batch 3, 4
-- [ ] <!---batch_4_5--> allow: batch 5, 6
+- [ ] <!---do_not_test--> Do not test
+- [ ] <!---upload_all--> Upload binaries for special builds
+- [ ] <!---no_merge_commit--> Disable merge-commit
+- [ ] <!---no_ci_cache--> disable CI cache
 </details>
