@@ -127,12 +127,18 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup).value_or(S3Settings{}))
 {
-    auto & request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = allow_s3_native_copy;
+    auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+        s3_uri.uri.toString(),
+        context_->getUserName(),
+        /*ignore_user=*/is_internal_backup);
+
+    if (endpoint_settings.has_value())
+        s3_settings = endpoint_settings.value();
+
+    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
+    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
@@ -219,13 +225,19 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup).value_or(S3Settings{}))
 {
-    auto & request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = allow_s3_native_copy;
-    request_settings.storage_class_name = storage_class_name;
+    auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+        s3_uri.uri.toString(),
+        context_->getUserName(),
+        /*ignore_user=*/is_internal_backup);
+
+    if (endpoint_settings.has_value())
+        s3_settings = endpoint_settings.value();
+
+    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
+    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+    s3_settings.request_settings.storage_class_name = storage_class_name;
+
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {

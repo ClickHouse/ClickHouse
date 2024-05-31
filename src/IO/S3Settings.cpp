@@ -27,10 +27,12 @@ void S3SettingsByEndpoint::loadFromConfig(
         const auto endpoint_path = key_path + ".endpoint";
         if (config.has(endpoint_path))
         {
-            auto endpoint = config.getString(endpoint_path);
-            auto auth_settings = S3::AuthSettings(config, settings, config_prefix);
-            auto request_settings = S3::RequestSettings(config, settings, config_prefix, settings.s3_validate_request_settings);
-            s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), std::move(request_settings)});
+            auto auth_settings = S3::AuthSettings(config, settings, key_path);
+            auto request_settings = S3::RequestSettings(config, settings, key_path, "", settings.s3_validate_request_settings);
+
+            s3_settings.emplace(
+                config.getString(endpoint_path),
+                S3Settings{std::move(auth_settings), std::move(request_settings)});
         }
     }
 }

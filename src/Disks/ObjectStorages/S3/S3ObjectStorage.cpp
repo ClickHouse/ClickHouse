@@ -262,9 +262,11 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     /// NOTE: For background operations settings are not propagated from session or query. They are taken from
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.
-    if (auto query_context = CurrentThread::getQueryContext(); query_context && !query_context->isBackgroundOperationContext())
+    if (auto query_context = CurrentThread::getQueryContext();
+        query_context && !query_context->isBackgroundOperationContext())
     {
-        request_settings.updateFromSettings(query_context->getSettingsRef(), /* if_changed */true);
+        const auto & settings = query_context->getSettingsRef();
+        request_settings.updateFromSettings(settings, /* if_changed */true, settings.s3_validate_request_settings);
     }
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
@@ -586,7 +588,10 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+    {
         modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
 
     auto current_settings = s3_settings.get();
     if (options.allow_client_change

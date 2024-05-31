@@ -38,8 +38,9 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
     bool validate_settings)
 {
     const auto & settings = context->getSettingsRef();
+
     auto auth_settings = S3::AuthSettings(config, settings, config_prefix);
-    auto request_settings = S3::RequestSettings(config, settings, config_prefix, validate_settings);
+    auto request_settings = S3::RequestSettings(config, settings, config_prefix, "s3_", validate_settings);
 
     request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(S3::URI(endpoint).uri.getScheme()), config_prefix, config);

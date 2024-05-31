@@ -110,9 +110,6 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     auto s3_settings = getSettings(
         config, "s3"/* config_prefix */, context, url.uri_str, settings.s3_validate_request_settings);
 
-    s3_settings->auth_settings.updateIfChanged(auth_settings);
-    s3_settings->request_settings.updateIfChanged(request_settings);
-
     if (!headers_from_ast.empty())
     {
         s3_settings->auth_settings.headers.insert(
@@ -121,7 +118,13 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
+
+    s3_settings->auth_settings.updateIfChanged(auth_settings);
+    s3_settings->request_settings.updateIfChanged(request_settings);
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);

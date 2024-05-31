@@ -144,8 +144,7 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
     AuthSettings(
         const Poco::Util::AbstractConfiguration & config,
         const DB::Settings & settings,
-        const std::string & config_prefix,
-        const std::string & fallback_config_prefix = "");
+        const std::string & config_prefix);
 
     AuthSettings(const DB::Settings & settings);
 
@@ -170,6 +169,7 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
         const Poco::Util::AbstractConfiguration & config,
         const DB::Settings & settings,
         const std::string & config_prefix,
+        const std::string & setting_name_prefix = "",
         bool validate_settings = true);
 
     /// Create request settings from DB::Settings.
@@ -190,14 +190,6 @@ struct RequestSettings : public BaseSettings<RequestSettingsTraits>
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
 private:
-    RequestSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const DB::Settings & settings,
-        const std::string & config_prefix,
-        bool validate_settings,
-        const std::string & setting_name_prefix,
-        const std::string & fallback_config_prefix,
-        const std::string & fallback_setting_name_prefix);
     void finishInit(const DB::Settings & settings, bool validate_settings);
     void normalizeSettings();
 };

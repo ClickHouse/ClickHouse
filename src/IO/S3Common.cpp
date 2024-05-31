@@ -127,22 +127,13 @@ static bool setValueFromConfig(
 AuthSettings::AuthSettings(
     const Poco::Util::AbstractConfiguration & config,
     const DB::Settings & settings,
-    const std::string & config_prefix,
-    const std::string & fallback_config_prefix)
+    const std::string & config_prefix)
 {
-    if (config_prefix.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config path cannot be empty");
-
     for (auto & field : allMutable())
     {
         auto path = fmt::format("{}.{}", config_prefix, field.getName());
-        auto fallback_path = fallback_config_prefix.empty() ? "" : fmt::format("{}.{}", fallback_config_prefix, field.getName());
 
         bool updated = setValueFromConfig<AuthSettings>(config, path, field);
-
-        if (!updated && !fallback_path.empty())
-            updated = setValueFromConfig<AuthSettings>(config, fallback_path, field);
-
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -208,40 +199,14 @@ RequestSettings::RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
     const DB::Settings & settings,
     const std::string & config_prefix,
-    bool validate_settings)
-    : RequestSettings(
-        config,
-        settings,
-        config_prefix,
-        validate_settings,
-        config_prefix == "s3" ? "" : "s3_", /* setting_name_prefix */
-        config_prefix == "s3" ? "" : "s3", /* fallback_config_prefix */
-        "") /* fallback_setting_name_prefix */
-{
-}
-
-RequestSettings::RequestSettings(
-    const Poco::Util::AbstractConfiguration & config,
-    const DB::Settings & settings,
-    const std::string & config_prefix,
-    bool validate_settings,
     const std::string & setting_name_prefix,
-    const std::string & fallback_config_prefix,
-    const std::string & fallback_setting_name_prefix)
+    bool validate_settings)
 {
-    if (config_prefix.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config path cannot be empty");
-
     for (auto & field : allMutable())
     {
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
-        auto fallback_path = fallback_config_prefix.empty() ? "" : fmt::format("{}.{}{}", fallback_config_prefix, fallback_setting_name_prefix, field.getName());
 
         bool updated = setValueFromConfig<RequestSettings>(config, path, field);
-
-        if (!updated && !fallback_path.empty())
-            updated = setValueFromConfig<RequestSettings>(config, fallback_path, field);
-
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
