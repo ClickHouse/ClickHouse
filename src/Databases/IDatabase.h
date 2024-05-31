@@ -272,7 +272,7 @@ public:
         const String & /*name*/,
         bool /*sync*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE (detached) query for Database{}", getEngineName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP DETACHED TABLE query for Database{}", getEngineName());
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
