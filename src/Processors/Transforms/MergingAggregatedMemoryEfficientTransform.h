@@ -2,8 +2,8 @@
 
 #include <Core/SortDescription.h>
 #include <Common/HashTable/HashSet.h>
-#include "Processors/Chunk.h"
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>

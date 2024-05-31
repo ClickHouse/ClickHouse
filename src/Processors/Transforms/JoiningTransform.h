@@ -1,8 +1,7 @@
 #pragma once
-#include <memory>
 #include <Processors/IProcessor.h>
-#include "Processors/Chunk.h"
-
+#include <Processors/Chunk.h>
+#include <memory>
 
 namespace DB
 {

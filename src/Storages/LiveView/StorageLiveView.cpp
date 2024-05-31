@@ -22,12 +22,12 @@ limitations under the License. */
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include "Processors/Transforms/NumberBlocksTransform.h"
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>

@@ -1,15 +1,9 @@
 #pragma once
 
-#include "base/defines.h"
-
 #include <Common/CollectionOfDerived.h>
 #include <Columns/IColumn.h>
 
-#include <algorithm>
-#include <cstddef>
 #include <memory>
-#include <unordered_map>
-#include <utility>
 
 namespace DB
 {

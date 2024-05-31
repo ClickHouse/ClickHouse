@@ -4,8 +4,6 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Access/EnabledQuota.h>
 
-#include <Common/logger_useful.h>
-
 
 namespace DB
 {

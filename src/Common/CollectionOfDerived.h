@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/defines.h>
+
 #include <algorithm>
 #include <memory>
 #include <typeindex>
@@ -41,7 +43,7 @@ private:
     using Records = std::vector<Rec>;
 
 public:
-    void swap(Self & other)
+    void swap(Self & other) noexcept
     {
         records.swap(other.records);
     }

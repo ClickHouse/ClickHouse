@@ -5,7 +5,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Chunk.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -15,7 +17,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <fmt/core.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -24,9 +25,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include "Core/Field.h"
-#include <Processors/Chunk.h>
-#include <Processors/Transforms/NumberBlocksTransform.h>
+#include <Core/Field.h>
 
 #include <atomic>
 #include <chrono>

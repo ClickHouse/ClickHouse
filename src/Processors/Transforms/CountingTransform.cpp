@@ -1,9 +1,9 @@
-
-#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/CountingTransform.h>
+
+#include <IO/Progress.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include "IO/Progress.h"
 
 
 namespace ProfileEvents

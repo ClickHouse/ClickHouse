@@ -1,15 +1,14 @@
 #pragma once
-#include <memory>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include "Processors/Chunk.h"
 
 namespace CurrentMetrics
 {

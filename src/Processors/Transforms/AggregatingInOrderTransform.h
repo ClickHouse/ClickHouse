@@ -5,7 +5,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
-#include "Processors/Chunk.h"
+#include <Processors/Chunk.h>
 
 namespace DB
 {

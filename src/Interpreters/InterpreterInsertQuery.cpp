@@ -27,7 +27,7 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/NumberBlocksTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -309,8 +309,8 @@ Chain InterpreterInsertQuery::buildSink(
     ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
-    LOG_DEBUG(getLogger("InsertQuery"),
-              "called InterpreterInsertQuery::buildSink() engine {} table name {}.{}", table->getName(), table->getStorageID().database_name, table->getStorageID().table_name);
+    // LOG_DEBUG(getLogger("InsertQuery"),
+    //           "called InterpreterInsertQuery::buildSink() engine {} table name {}.{}", table->getName(), table->getStorageID().database_name, table->getStorageID().table_name);
 
     ThreadStatus * thread_status = current_thread;
 
@@ -413,9 +413,9 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 
     for (size_t i = 0; i < sink_streams; ++i)
     {
-        LOG_DEBUG(getLogger("InsertQuery"),
-                    "call buildSink sink_streams table name {}.{}, stream {}/{}",
-                    table->getStorageID().database_name, table->getStorageID().table_name, i, sink_streams);
+        // LOG_DEBUG(getLogger("InsertQuery"),
+        //             "call buildSink sink_streams table name {}.{}, stream {}/{}",
+        //             table->getStorageID().database_name, table->getStorageID().table_name, i, sink_streams);
 
         auto out = buildSink(table, metadata_snapshot, /* thread_status_holder= */ nullptr,
             running_group, /* elapsed_counter_ms= */ nullptr);
@@ -425,9 +425,9 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 
     for (size_t i = 0; i < presink_streams; ++i)
     {
-        LOG_DEBUG(getLogger("InsertQuery"),
-                    "call buildSink presink_streams table name {}.{}, stream {}/{}",
-                    table->getStorageID().database_name, table->getStorageID().table_name, i, presink_streams);
+        // LOG_DEBUG(getLogger("InsertQuery"),
+        //             "call buildSink presink_streams table name {}.{}, stream {}/{}",
+        //             table->getStorageID().database_name, table->getStorageID().table_name, i, presink_streams);
 
         auto out = buildPreSinkChain(sink_chains[0].getInputHeader(), table, metadata_snapshot, query_sample_block);
         presink_chains.emplace_back(std::move(out));
@@ -462,8 +462,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     ContextPtr select_context = getContext();
 
-    LOG_DEBUG(getLogger("InsertQuery"),
-                    "execute() is_trivial_insert_select {} prefersLargeBlocks={} max_insert_threads {}", is_trivial_insert_select, table->prefersLargeBlocks(), settings.max_insert_threads);
+    // LOG_DEBUG(getLogger("InsertQuery"),
+    //                 "execute() is_trivial_insert_select {} prefersLargeBlocks={} max_insert_threads {}", is_trivial_insert_select, table->prefersLargeBlocks(), settings.max_insert_threads);
 
     if (is_trivial_insert_select)
     {
@@ -511,9 +511,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     pipeline.dropTotalsAndExtremes();
 
-    LOG_DEBUG(getLogger("InsertQuery"),
-        "adding transforms, pipline size {}, threads {}, max_insert_threads {}",
-        pipeline.getNumStreams(), pipeline.getNumThreads(), settings.max_insert_threads);
+    // LOG_DEBUG(getLogger("InsertQuery"),
+    //     "adding transforms, pipline size {}, threads {}, max_insert_threads {}",
+    //     pipeline.getNumStreams(), pipeline.getNumThreads(), settings.max_insert_threads);
 
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
@@ -743,13 +743,13 @@ BlockIO InterpreterInsertQuery::execute()
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
-    bool is_table_dist = false;
-    if (auto * dist_storage = dynamic_cast<StorageDistributed *>(table.get()))
-    {
-        is_table_dist = true;
-        LOG_DEBUG(getLogger("InsertQuery"),
-              "dist_storage engine {} table name {}.{}", dist_storage->getName(), dist_storage->getStorageID().database_name, dist_storage->getStorageID().table_name);
-    }
+    // bool is_table_dist = false;
+    // if (auto * dist_storage = dynamic_cast<StorageDistributed *>(table.get()))
+    // {
+    //     is_table_dist = true;
+    //     // LOG_DEBUG(getLogger("InsertQuery"),
+    //     //       "dist_storage engine {} table name {}.{}", dist_storage->getName(), dist_storage->getStorageID().database_name, dist_storage->getStorageID().table_name);
+    // }
 
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
@@ -780,24 +780,24 @@ BlockIO InterpreterInsertQuery::execute()
             auto distributed = table->distributedWrite(query, getContext());
             if (distributed)
             {
-                 LOG_DEBUG(getLogger("InsertQuery"),"as dist pipeline, is_table_dist {}", is_table_dist);
+                 // LOG_DEBUG(getLogger("InsertQuery"),"as dist pipeline, is_table_dist {}", is_table_dist);
                 res.pipeline = std::move(*distributed);
             }
             else
             {
-                LOG_DEBUG(getLogger("InsertQuery"),"as insert select after dist, is_table_dist {}", is_table_dist);
+                // LOG_DEBUG(getLogger("InsertQuery"),"as insert select after dist, is_table_dist {}", is_table_dist);
                 res.pipeline = buildInsertSelectPipeline(query, table);
             }
         }
         else
         {
-            LOG_DEBUG(getLogger("InsertQuery"),"as insert select, is_table_dist {}", is_table_dist);
+            // LOG_DEBUG(getLogger("InsertQuery"),"as insert select, is_table_dist {}", is_table_dist);
             res.pipeline = buildInsertSelectPipeline(query, table);
         }
     }
     else
     {
-        LOG_DEBUG(getLogger("InsertQuery"),"as just insert, is_table_dist {}", is_table_dist);
+        // LOG_DEBUG(getLogger("InsertQuery"),"as just insert, is_table_dist {}", is_table_dist);
         res.pipeline = buildInsertPipeline(query, table);
     }
 

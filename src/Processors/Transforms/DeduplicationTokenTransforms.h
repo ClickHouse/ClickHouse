@@ -14,22 +14,11 @@ namespace DB
         RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, const Block & header_)
                 : ISimpleTransform(header_, header_, true)
                 , chunk_infos(std::move(chunk_infos_))
-        {
-            LOG_TRACE(getLogger("RestoreChunkInfosTransform"), "create RestoreChunkInfosTransform to append {}:{}",
-                chunk_infos.size(), chunk_infos.debug());
-        }
+        {}
 
         String getName() const override { return "RestoreChunkInfosTransform"; }
 
-        void transform(Chunk & chunk) override
-        {
-            LOG_TRACE(getLogger("RestoreChunkInfosTransform"), "chunk infos before: {}:{}, append: {}:{}, chunk has rows {}",
-                chunk.getChunkInfos().size(), chunk.getChunkInfos().debug(),
-                chunk_infos.size(), chunk_infos.debug(),
-                chunk.getNumRows());
-
-            chunk.getChunkInfos().append(chunk_infos.clone());
-        }
+        void transform(Chunk & chunk) override;
 
     private:
         Chunk::ChunkInfoCollection chunk_infos;

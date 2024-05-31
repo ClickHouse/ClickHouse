@@ -1,4 +1,4 @@
-#include <Processors/Transforms/NumberBlocksTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -16,6 +16,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+void RestoreChunkInfosTransform::transform(Chunk & chunk)
+{
+    LOG_TRACE(getLogger("RestoreChunkInfosTransform"), "chunk infos before: {}:{}, append: {}:{}, chunk has rows {}",
+        chunk.getChunkInfos().size(), chunk.getChunkInfos().debug(),
+        chunk_infos.size(), chunk_infos.debug(),
+        chunk.getNumRows());
+
+    chunk.getChunkInfos().append(chunk_infos.clone());
 }
 
 namespace DeduplicationToken

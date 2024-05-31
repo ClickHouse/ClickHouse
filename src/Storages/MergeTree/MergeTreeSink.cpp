@@ -1,12 +1,13 @@
-#include <memory>
+#include <Common/Exception.h>
+#include <Common/ProfileEventsScope.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Interpreters/StorageID.h>
+#include <Interpreters/PartLog.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
-#include <Processors/Transforms/NumberBlocksTransform.h>
-#include <Interpreters/PartLog.h>
-#include <DataTypes/ObjectUtils.h>
-#include "Common/Exception.h"
-#include <Common/ProfileEventsScope.h>
-#include "Interpreters/StorageID.h"
+
+#include <memory>
 
 namespace ProfileEvents
 {

@@ -23,7 +23,6 @@
 
 #include <Columns/ColumnConst.h>
 
-#include "Common/logger_useful.h"
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -107,7 +106,6 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <cstddef>
 #include <memory>
 #include <filesystem>
 #include <cassert>

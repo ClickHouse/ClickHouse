@@ -72,10 +72,10 @@ void SquashingTransform::append(Block && input_block)
         return;
     }
 
-    LOG_DEBUG(getLogger("SquashingTransform"),
-              "input_block rows {}, size {}, columns {}, accumulated_block rows {}, size {}, columns {}, ",
-              input_block.rows(), input_block.bytes(), input_block.columns(),
-              accumulated_block.rows(), accumulated_block.bytes(), accumulated_block.columns());
+    // LOG_DEBUG(getLogger("SquashingTransform"),
+    //           "input_block rows {}, size {}, columns {}, accumulated_block rows {}, size {}, columns {}, ",
+    //           input_block.rows(), input_block.bytes(), input_block.columns(),
+    //           accumulated_block.rows(), accumulated_block.bytes(), accumulated_block.columns());
 
     assert(blocksHaveEqualStructure(input_block, accumulated_block));
 
@@ -86,11 +86,11 @@ void SquashingTransform::append(Block && input_block)
             const auto source_column = std::move(input_block.getByPosition(i).column);
             auto acc_column = std::move(accumulated_block.getByPosition(i).column);
 
-            LOG_DEBUG(getLogger("SquashingTransform"),
-              "column {} {}, acc rows {}, size {}, allocated {}, input rows {} size {} allocated {}",
-                i, source_column->getName(),
-                acc_column->size(), acc_column->byteSize(), acc_column->allocatedBytes(),
-                source_column->size(), source_column->byteSize(), source_column->allocatedBytes());
+            // LOG_DEBUG(getLogger("SquashingTransform"),
+            //   "column {} {}, acc rows {}, size {}, allocated {}, input rows {} size {} allocated {}",
+            //     i, source_column->getName(),
+            //     acc_column->size(), acc_column->byteSize(), acc_column->allocatedBytes(),
+            //     source_column->size(), source_column->byteSize(), source_column->allocatedBytes());
 
 
             auto mutable_column = IColumn::mutate(std::move(acc_column));
