@@ -121,6 +121,9 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
             chunk_left = next_chunk;
             next_chunk = 0;
 
+            if (chunk_left == 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: empty chunk received");
+
             c_pos += sizeof(next_chunk);
 
             if (c_pos >= data_end)
