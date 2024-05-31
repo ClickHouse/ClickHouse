@@ -89,7 +89,7 @@ def test_find_super_nodes(client: KeeperClient):
 
     # The order of the response is not guaranteed, so we need to sort it
     normalized_response = response.strip().split("\n")
-    normalized_response.sort();
+    normalized_response.sort()
 
     assert TSV(normalized_response) == TSV(
         [
