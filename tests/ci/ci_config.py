@@ -47,6 +47,8 @@ class CILabels(metaclass=WithIter):
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
+    # to upload all binaries from build jobs
+    UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_REDUCED = "ci_set_reduced"
     CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
@@ -703,10 +705,7 @@ class CIConfig:
                     elif isinstance(config[job_name], BuildConfig):  # type: ignore
                         pass
                     elif isinstance(config[job_name], BuildReportConfig):  # type: ignore
-                        # add all build jobs as parents for build report check
-                        res.extend(
-                            [job for job in JobNames if job in self.build_config]
-                        )
+                        pass
                     else:
                         assert (
                             False
