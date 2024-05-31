@@ -4,9 +4,9 @@ drop table if exists test;
 drop table if exists file;
 drop table if exists mt;
 
-attach table test from 'some/path' (n UInt8) engine=Memory; -- { serverError 48 }
-attach table test from '/etc/passwd' (s String) engine=File(TSVRaw); -- { serverError 481 }
-attach table test from '../../../../../../../../../etc/passwd' (s String) engine=File(TSVRaw); -- { serverError 481 }
+attach table test from 'some/path' (n UInt8) engine=Memory; -- { serverError NOT_IMPLEMENTED }
+attach table test from '/etc/passwd' (s String) engine=File(TSVRaw); -- { serverError PATH_ACCESS_DENIED }
+attach table test from '../../../../../../../../../etc/passwd' (s String) engine=File(TSVRaw); -- { serverError PATH_ACCESS_DENIED }
 attach table test from 42 (s String) engine=File(TSVRaw); -- { clientError 62 }
 
 insert into table function file('01188_attach/file/data.TSV', 'TSV', 's String, n UInt8') values ('file', 42);
