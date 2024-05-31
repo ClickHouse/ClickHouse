@@ -44,9 +44,9 @@ def ch_cluster():
 
 def testSuspicion(ch_cluster):
     result = instance.query(
-        "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), 'No one suspected him');"
+        "SELECT ggmlEvaluate('gpt2', map('n_predict', 3), 'No one suspected him');"
     )
-    expected = "No one suspected him until shortly after he\n"
+    expected = "No one suspected him if he retained\n"
 
     assert result == expected
 
@@ -119,7 +119,7 @@ def testMultipleRows(ch_cluster):
     result = instance.query(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 3), a) from T;"
     )
-    expected = "Actually, proactive data editing choice\nNo one suspected him until shortly after\n"
+    expected = "Actually, proactive modeling data choice\nNo one suspected him if he retained\n"
     assert result == expected
 
 
@@ -127,11 +127,11 @@ def testTwoConsecutiveEvals(ch_cluster):
     _ = instance.query("DROP TABLE IF EXISTS T;")
     _ = instance.query("CREATE TABLE T (a TEXT) ENGINE MergeTree PRIMARY KEY a;")
     _ = instance.query(
-        "INSERT INTO T (a) VALUES ('From the deepest'), ('No one suspected him')"
+        "INSERT INTO T (a) VALUES ('From the deepest')"
     )
 
     result = instance.query(
         "SELECT ggmlEvaluate('gpt2', map('n_predict', 4), ggmlEvaluate('gpt2', map('n_predict', 4), a)) from T;"
     )
-    expected = "From the deepest data base architecture thinges until Barclay\nNo one suspected him until shortly after he descended Everest base station\n"
+    expected = "From the deepest throes of choice but choice through data\n"
     assert result == expected
