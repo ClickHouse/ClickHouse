@@ -23,8 +23,6 @@ Chunk ends             | 0x00000000      4 zero bytes
                        +=============
 
 
-
-
 Datastream chunk:
                        +=============
 Chunk begins           | 0x12345678
@@ -43,7 +41,6 @@ of packets...              .....
                        +-------------
 Chunk ends             | 0x00000000
                        +=============
-
 
 
 Multipart chunk:
