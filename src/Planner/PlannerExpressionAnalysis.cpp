@@ -1,6 +1,7 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -37,7 +38,7 @@ namespace
   * Actions before filter are added into into actions chain.
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
   */
-FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
+std::optional<FilterAnalysisResult> analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
@@ -45,7 +46,11 @@ FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_no
     FilterAnalysisResult result;
 
     result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context);
-    result.filter_column_name = result.filter_actions->getOutputs().at(0)->result_name;
+    const auto * output = result.filter_actions->getOutputs().at(0);
+    if (output->column && ConstantFilterDescription(*output->column).always_true)
+        return {};
+
+    result.filter_column_name = output->result_name;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
 
     return result;
