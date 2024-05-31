@@ -11,6 +11,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
+- Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)
 - Bug Fix (user-visible misbehavior in an official stable release)
 - CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
@@ -71,10 +72,10 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_aarch64--> Exclude: All with Aarch64
 ---
 - [ ] <!---do_not_test--> do not test (only style check)
+- [ ] <!---upload_all--> upload all binary artifacts from build jobs
 - [ ] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
 - [ ] <!---no_ci_cache--> disable CI cache (job reuse)
-- [ ] <!---batch_0--> allow: batch 1 for multi-batch jobs
-- [ ] <!---batch_1--> allow: batch 2
-- [ ] <!---batch_2--> allow: batch 3
-- [ ] <!---batch_3_4_5--> allow: batch 4, 5 and 6
+- [ ] <!---batch_0_1--> allow: batch 1, 2 for multi-batch jobs
+- [ ] <!---batch_2_3--> allow: batch 3, 4
+- [ ] <!---batch_4_5--> allow: batch 5, 6
 </details>

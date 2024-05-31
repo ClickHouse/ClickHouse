@@ -246,7 +246,6 @@ DockerHub
 DoubleDelta
 Doxygen
 Durre
-doesnt
 ECMA
 Ecto
 EdgeAngle
@@ -1358,6 +1357,7 @@ cond
 conf
 config
 configs
+conformant
 congruential
 conjuction
 conjuctive
@@ -1414,8 +1414,12 @@ cutQueryString
 cutQueryStringAndFragment
 cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
+cutToFirstSignificantSubdomainCustomRFC
 cutToFirstSignificantSubdomainCustomWithWWW
+cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainRFC
 cutToFirstSignificantSubdomainWithWWW
+cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 cyrus
@@ -1502,7 +1506,10 @@ displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
+doesnt
+domainRFC
 domainWithoutWWW
+domainWithoutWWWRFC
 dont
 dotProduct
 downsampling
@@ -1575,8 +1582,11 @@ filesystems
 finalizeAggregation
 fips
 firstLine
+firstSignficantSubdomain
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
+firstSignificantSubdomainCustomRFC
+firstSignificantSubdomainRFC
 fixedstring
 flamegraph
 flatbuffers
@@ -1619,7 +1629,6 @@ generateRandom
 generateRandomStructure
 generateSeries
 generateSnowflakeID
-generateSnowflakeIDThreadMonotonic
 generateULID
 generateUUIDv
 geoDistance
@@ -2157,6 +2166,7 @@ polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
 popcnt
+portRFC
 porthttps
 positionCaseInsensitive
 positionCaseInsensitiveUTF
@@ -2661,6 +2671,9 @@ toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
 toStartOfYear
+toStartOfMicrosecond
+toStartOfMillisecond
+toStartOfNanosecond
 toString
 toStringCutToZero
 toTime
@@ -2691,6 +2704,7 @@ toolset
 topK
 topKWeighted
 topLevelDomain
+topLevelDomainRFC
 topk
 topkweighted
 transactional
@@ -2789,6 +2803,7 @@ urls
 usearch
 userspace
 userver
+UTCTimestamp
 utils
 uuid
 uuidv

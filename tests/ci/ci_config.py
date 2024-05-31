@@ -47,6 +47,8 @@ class CILabels(metaclass=WithIter):
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
+    # to upload all binaries from build jobs
+    UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_REDUCED = "ci_set_reduced"
     CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
@@ -175,8 +177,8 @@ class JobNames(metaclass=WithIter):
     COMPATIBILITY_TEST = "Compatibility check (amd64)"
     COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
-    CLCIKBENCH_TEST = "ClickBench (amd64)"
-    CLCIKBENCH_TEST_ARM = "ClickBench (aarch64)"
+    CLICKBENCH_TEST = "ClickBench (amd64)"
+    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -472,17 +474,18 @@ compatibility_test_common_params = {
 }
 stateless_test_common_params = {
     "digest": stateless_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
+    "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 10800,
 }
 stateful_test_common_params = {
     "digest": stateful_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
+    "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 3600,
 }
 stress_test_common_params = {
     "digest": stress_check_digest,
     "run_command": "stress_check.py",
+    "timeout": 9000,
 }
 upgrade_test_common_params = {
     "digest": upgrade_check_digest,
@@ -531,6 +534,7 @@ clickbench_test_params = {
         docker=["clickhouse/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
+    "timeout": 900,
 }
 install_test_params = JobConfig(
     digest=install_check_digest,
@@ -701,10 +705,7 @@ class CIConfig:
                     elif isinstance(config[job_name], BuildConfig):  # type: ignore
                         pass
                     elif isinstance(config[job_name], BuildReportConfig):  # type: ignore
-                        # add all build jobs as parents for build report check
-                        res.extend(
-                            [job for job in JobNames if job in self.build_config]
-                        )
+                        pass
                     else:
                         assert (
                             False
@@ -1067,6 +1068,7 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
+                Build.BINARY_RELEASE,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -1084,7 +1086,6 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
-                Build.BINARY_RELEASE,
                 Build.FUZZERS,
             ]
         ),
@@ -1111,6 +1112,7 @@ CI_CONFIG = CIConfig(
                     exclude_files=[".md"],
                     docker=["clickhouse/fasttest"],
                 ),
+                timeout=2400,
             ),
         ),
         JobNames.STYLE_CHECK: TestConfig(
@@ -1123,7 +1125,9 @@ CI_CONFIG = CIConfig(
             "",
             # we run this check by label - no digest required
             job_config=JobConfig(
-                run_by_label="pr-bugfix", run_command="bugfix_validate_check.py"
+                run_by_label="pr-bugfix",
+                run_command="bugfix_validate_check.py",
+                timeout=900,
             ),
         ),
     },
@@ -1357,10 +1361,10 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_RELEASE, job_config=sqllogic_test_params
         ),
         JobNames.SQLTEST: TestConfig(Build.PACKAGE_RELEASE, job_config=sql_test_params),
-        JobNames.CLCIKBENCH_TEST: TestConfig(
+        JobNames.CLICKBENCH_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
-        JobNames.CLCIKBENCH_TEST_ARM: TestConfig(
+        JobNames.CLICKBENCH_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
         JobNames.LIBFUZZER_TEST: TestConfig(
@@ -1368,7 +1372,7 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(
                 run_by_label=CILabels.libFuzzer,
                 timeout=10800,
-                run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
+                run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             ),
         ),  # type: ignore
     },
@@ -1386,6 +1390,9 @@ REQUIRED_CHECKS = [
     JobNames.FAST_TEST,
     JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
+    JobNames.STATELESS_TEST_ASAN,
+    JobNames.STATELESS_TEST_FLAKY_ASAN,
+    JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,
     JobNames.UNIT_TEST_ASAN,
     JobNames.UNIT_TEST_MSAN,
@@ -1419,6 +1426,11 @@ class CheckDescription:
 
 
 CHECK_DESCRIPTIONS = [
+    CheckDescription(
+        StatusNames.SYNC,
+        "If it fails, ask a maintainer for help",
+        lambda x: x == StatusNames.SYNC,
+    ),
     CheckDescription(
         "AST fuzzer",
         "Runs randomly generated queries to catch program errors. "
