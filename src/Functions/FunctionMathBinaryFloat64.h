@@ -103,8 +103,7 @@ private:
             if constexpr (is_decimal<LeftType>)
             {
                 Float64 left_src_data[Impl::rows_per_iteration];
-                const auto left_data_column = left_arg->getDataColumnPtr();
-                const auto left_scale = checkAndGetColumn<ColumnDecimal<LeftType>>(*left_data_column).getScale();
+                const auto left_scale = checkAndGetColumn<ColumnDecimal<LeftType>>(*left_arg->getDataColumnPtr()).getScale();
                 std::fill(std::begin(left_src_data), std::end(left_src_data), DecimalUtils::convertTo<Float64>(left_arg->template getValue<LeftType>(), left_scale));
 
                 if constexpr (is_decimal<RightType>)
@@ -208,8 +207,7 @@ private:
             if constexpr (is_decimal<RightType>)
             {
                 Float64 right_src_data[Impl::rows_per_iteration];
-                const auto right_data_column = right_arg_typed->getDataColumnPtr();
-                const auto right_scale = checkAndGetColumn<ColumnDecimal<RightType>>(*right_data_column).getScale();
+                const auto right_scale = checkAndGetColumn<ColumnDecimal<RightType>>(*right_arg_typed->getDataColumnPtr()).getScale();
                 std::fill(std::begin(right_src_data), std::end(right_src_data), DecimalUtils::convertTo<Float64>(right_arg_typed->template getValue<RightType>(), right_scale));
 
                 if constexpr (is_decimal<LeftType>)
