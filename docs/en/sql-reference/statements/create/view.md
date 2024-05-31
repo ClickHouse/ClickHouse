@@ -86,7 +86,11 @@ Also note, that `materialized_views_ignore_errors` set to `true` by default for 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
 
 :::note
-Given that `POPULATE` works like `CREATE TABLE ... AS SELECT ...` it is not supported in ClickHouse Cloud. Instead a separate `INSERT ... SELECT` can be used. 
+Given that `POPULATE` works like `CREATE TABLE ... AS SELECT ...` it has limitations:
+- It is not supported with Replicated database
+- It is not supported in ClickHouse cloud
+
+Instead a separate `INSERT ... SELECT` can be used.  
 :::
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
