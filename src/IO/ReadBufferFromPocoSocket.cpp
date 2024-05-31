@@ -43,6 +43,8 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
         ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
     });
 
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
+
     /// Add more details to exceptions.
     try
     {
