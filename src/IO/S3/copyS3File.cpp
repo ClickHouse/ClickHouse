@@ -154,16 +154,13 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
-            else if (outcome.GetResult().GetUploadId().empty())
+            multipart_upload_id = outcome.GetResult().GetUploadId();
+            if (multipart_upload_id.empty())
             {
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw Exception(ErrorCodes::S3_ERROR, "Invalid CreateMultipartUpload result: missing UploadId.");
             }
-            else
-            {
-                multipart_upload_id = outcome.GetResult().GetUploadId();
-                LOG_TRACE(log, "Multipart upload was created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
-            }
+            LOG_TRACE(log, "Multipart upload was created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
         }
 
         void completeMultipartUpload()
