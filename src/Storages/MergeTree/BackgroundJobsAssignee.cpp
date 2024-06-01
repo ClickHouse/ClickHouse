@@ -94,7 +94,6 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Streaming:
             return "Streaming";
     }
-    UNREACHABLE();
 }
 
 void BackgroundJobsAssignee::start()

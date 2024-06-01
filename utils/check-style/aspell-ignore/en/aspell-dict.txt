@@ -1613,12 +1613,6 @@ freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
-fromReadableSize
-fromReadableSizeOrNull
-fromReadableSizeOrZero
-fromReadableDecimalSize
-fromReadableDecimalSizeOrNull
-fromReadableDecimalSizeOrZero
 fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestampInJodaSyntax

@@ -54,7 +54,7 @@ WHERE (query_id =
     WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
-)) AND (symbol LIKE '%Source%'); -- { serverError 125 }
+)) AND (symbol LIKE '%Source%'); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
 
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
@@ -69,7 +69,7 @@ WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterd
     WHERE current_database = currentDatabase() AND (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
     ORDER BY event_time DESC
     LIMIT 1
-)); -- { serverError 125, 42 }
+)); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY, 42 }
 
 DROP TABLE IF EXISTS trace_log;
 
@@ -92,7 +92,7 @@ WITH (
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
-SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError 43 }
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH (
     (
