@@ -60,6 +60,46 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr cod
 {
 }
 
+ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other)
+{
+    if (this == &other)
+        return *this;
+
+    name = other.name;
+    type = other.type;
+    default_desc = other.default_desc;
+    comment = other.comment;
+    codec = other.codec ? other.codec->clone() : nullptr;
+    settings = other.settings;
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
+    stat = other.stat;
+
+    return *this;
+}
+
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    name = std::move(other.name);
+    type = std::move(other.type);
+    default_desc = std::move(other.default_desc);
+    comment = std::move(other.comment);
+
+    codec = other.codec ? other.codec->clone() : nullptr;
+    other.codec.reset();
+
+    settings = std::move(other.settings);
+
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
+    other.ttl.reset();
+
+    stat = std::move(other.stat);
+
+    return *this;
+}
+
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
