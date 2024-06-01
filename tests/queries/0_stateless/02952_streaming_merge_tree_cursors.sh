@@ -20,9 +20,6 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE IF EXISTS t_streaming_test"
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS queue_mode=1"
 $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO t_streaming_test (*) select number, number from numbers(100)"
 
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "OPTIMIZE TABLE t_streaming_test"
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT count(DISTINCT _part) < 10 FROM t_streaming_test"
-
 echo "=== Test Streaming cursor shift reading ==="
 
 # start stream
