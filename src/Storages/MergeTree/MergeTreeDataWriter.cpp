@@ -460,7 +460,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
-    auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+    MergeTreeIndices indices;
+    if (context->getSettingsRef().materialize_skip_indexes_on_insert)
+        indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+
+    Statistics statistics;
+    if (context->getSettingsRef().materialize_statistics_on_insert)
+        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -592,7 +598,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         metadata_snapshot,
         columns,
         indices,
-        MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
+        statistics,
         compression_codec,
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         false,
