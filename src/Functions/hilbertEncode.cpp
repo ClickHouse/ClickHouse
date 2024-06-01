@@ -54,22 +54,18 @@ public:
             }
         }
 
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
-
         auto col_res = ColumnUInt64::create();
         ColumnUInt64::Container & vec_res = col_res->getData();
         vec_res.resize(input_rows_count);
 
-        const auto expand = [mask](const UInt64 value, const UInt8 column_id)
+        const auto expand = [mask](const UInt64 value, const UInt8 column_num)
         {
             if (mask)
-                return value << mask->getColumn(column_id).getUInt(0);
+                return value << mask->getColumn(column_num).getUInt(0);
             return value;
         };
 
-        const ColumnPtr & col0 = non_const_arguments[0 + vector_start_index].column;
+        const ColumnPtr & col0 = arguments[0 + vector_start_index].column;
         if (num_dimensions == 1)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -79,7 +75,7 @@ public:
             return col_res;
         }
 
-        const ColumnPtr & col1 = non_const_arguments[1 + vector_start_index].column;
+        const ColumnPtr & col1 = arguments[1 + vector_start_index].column;
         if (num_dimensions == 2)
         {
             for (size_t i = 0; i < input_rows_count; ++i)

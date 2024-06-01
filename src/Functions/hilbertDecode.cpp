@@ -28,15 +28,13 @@ public:
             num_dimensions = mask->tupleSize();
         else
             num_dimensions = col_const->getUInt(0);
-        auto non_const_arguments = arguments;
-        non_const_arguments[1].column = non_const_arguments[1].column->convertToFullColumnIfConst();
-        const ColumnPtr & col_code = non_const_arguments[1].column;
+        const ColumnPtr & col_code = arguments[1].column;
         Columns tuple_columns(num_dimensions);
 
-        const auto shrink = [mask](const UInt64 value, const UInt8 column_id)
+        const auto shrink = [mask](const UInt64 value, const UInt8 column_num)
         {
             if (mask)
-                return value >> mask->getColumn(column_id).getUInt(0);
+                return value >> mask->getColumn(column_num).getUInt(0);
             return value;
         };
 
