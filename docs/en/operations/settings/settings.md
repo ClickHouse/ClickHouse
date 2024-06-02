@@ -5550,3 +5550,11 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## mongodb_fail_on_query_build_error
+
+If enabled, MongoDB tables will return an error when a MongoDB query can't be built.
+
+Not applied for the legacy implementation, or if the new analyzer is used.
+
+Default value: `true`.

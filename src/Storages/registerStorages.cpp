@@ -1,5 +1,8 @@
-#include <Storages/registerStorages.h>
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
+
 #include <Storages/StorageFactory.h>
+#include <Storages/registerStorages.h>
 
 #include "config.h"
 
@@ -58,6 +61,7 @@ void registerStorageMySQL(StorageFactory & factory);
 
 #if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
+void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
@@ -155,9 +159,13 @@ void registerStorages()
     #endif
 
     #if USE_MONGODB
-    registerStorageMongoDB(factory);
-    registerStorageRedis(factory);
+    if (Context::getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration)
+        registerStorageMongoDBPocoLegacy(factory);
+    else
+        registerStorageMongoDB(factory);
     #endif
+
+    registerStorageRedis(factory);
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);

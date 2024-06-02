@@ -1,15 +1,15 @@
 #include "config.h"
-#include "MongoDBDictionarySource.h"
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
 
+#include "DictionarySourceFactory.h"
 #if USE_MONGODB
-#include <bsoncxx/builder/basic/array.hpp>
+#include "MongoDBDictionarySource.h"
+#include "DictionaryStructure.h"
 
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MongoDBSource.h>
-#include <Storages/StorageMongoDB.cpp>
 #include <Storages/NamedCollectionsHelpers.h>
+
+#include <bsoncxx/builder/basic/array.hpp>
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;

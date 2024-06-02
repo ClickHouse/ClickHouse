@@ -3029,3 +3029,9 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
+
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Default value: `false`.

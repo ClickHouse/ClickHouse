@@ -1,6 +1,9 @@
 #include "DictionaryFactory.h"
 #include "DictionarySourceFactory.h"
 
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
+
 namespace DB
 {
 
@@ -11,6 +14,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & source_factory);
+void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & source_factory);
 void registerDictionarySourceCassandra(DictionarySourceFactory & source_factory);
 void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
@@ -43,7 +47,12 @@ void registerDictionaries()
         registerDictionarySourceFile(source_factory);
         registerDictionarySourceMysql(source_factory);
         registerDictionarySourceClickHouse(source_factory);
-        registerDictionarySourceMongoDB(source_factory);
+
+        if (Context::getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration)
+            registerDictionarySourceMongoDBPocoLegacy(source_factory);
+        else
+            registerDictionarySourceMongoDB(source_factory);
+
         registerDictionarySourceRedis(source_factory);
         registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);

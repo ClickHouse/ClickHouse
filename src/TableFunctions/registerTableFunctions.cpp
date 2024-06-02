@@ -1,6 +1,8 @@
 #include "registerTableFunctions.h"
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -23,7 +25,10 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
 #if USE_MONGODB
-    registerTableFunctionMongoDB(factory);
+    if (Context::getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration)
+        registerTableFunctionMongoDBPocoLegacy(factory);
+    else
+        registerTableFunctionMongoDB(factory);
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);

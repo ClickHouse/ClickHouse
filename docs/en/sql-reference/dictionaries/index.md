@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-#### Mongodb
+#### MongoDB
 
 Example of settings:
 
@@ -1746,6 +1746,8 @@ Setting fields:
 
 - 'uri' - URI for establish the connection.
 - `collection` – Name of the collection.
+
+[More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
 
 #### Redis

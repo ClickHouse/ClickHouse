@@ -1109,3 +1109,36 @@ def test_uuid(started_cluster):
 
     node.query("DROP TABLE uuid_table")
     uuid_mongo_table.drop()
+
+
+def test_no_fail_on_unsupported_clauses(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    unsupported_clauses_table = db["unsupported_clauses"]
+
+    node = started_cluster.instances["node"]
+    node.query(
+        """
+        CREATE OR REPLACE TABLE unsupported_clauses(
+        a UInt64,
+        b UInt64
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'unsupported_clauses', 'root', 'clickhouse')
+        """
+    )
+    node.query(
+        f"SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_fail_on_query_build_error = false"
+    )
+    node.query(
+        f"SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_fail_on_query_build_error = false"
+    )
+    node.query(
+        f"SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_fail_on_query_build_error = false"
+    )
+
+    node.query(
+        f"SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_fail_on_query_build_error = false"
+    )
+
+    node.query("DROP TABLE unsupported_clauses")
+    unsupported_clauses_table.drop()

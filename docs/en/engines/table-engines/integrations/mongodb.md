@@ -6,9 +6,12 @@ sidebar_label: MongoDB
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data from remote MongoDB collection.
+MongoDB engine is read-only table engine which allows to read data from remote [MongoDB](https://www.mongodb.com/) collection.
 
 Only MongoDB v3.6+ servers are supported.
+
+**If you're facing troubles, please report the issue, and try to use [the legacy implementation](../../../operations/server-configuration-parameters/settings.md#use_legacy_mongodb_integration).
+Keep in mind that it is deprecated, and will be removed in next releases.**
 
 ## Types mappings
 
@@ -28,6 +31,8 @@ Only MongoDB v3.6+ servers are supported.
 If key not found in MongoDB document, default value or null(if the column is nullable) will be inserted.
 
 ## Supported clauses
+**You can disable all these restriction, see [mongodb_fail_on_query_build_error](../../../operations/settings/settings.md#mongodb_fail_on_query_build_error).**
+
 *Hint: you can use MongoDB table in CTE to perform any clauses, but be aware, that in some cases, performance will be significantly degraded.*
 
 ### WHERE

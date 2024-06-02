@@ -3,11 +3,11 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Storages/StorageMongoDB.h>
-#include <Core/Block.h>
-
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
+
+#include <Core/Block.h>
+#include <Storages/StorageMongoDB.h>
 
 namespace DB
 {

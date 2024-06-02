@@ -13,12 +13,6 @@
 
 namespace DB
 {
-/* Implements storage in the MongoDB database.
- * Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
- *              MongoDB(uri, collection);
- * Read only.
- * One stream only.
- */
 
 inline mongocxx::instance inst{};
 
@@ -35,6 +29,12 @@ struct MongoDBConfiguration
     }
 };
 
+/** Implements storage in the MongoDB database.
+ *  Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
+ *               MongoDB(uri, collection);
+ *  Read only.
+ *  One stream only.
+ */
 class StorageMongoDB final : public IStorage
 {
 public:

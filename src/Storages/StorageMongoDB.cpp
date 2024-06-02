@@ -9,12 +9,9 @@
 #include <Analyzer/SortNode.h>
 #include <Formats/BSONTypes.h>
 #include <DataTypes/FieldToDataType.h>
-#include <IO/Operators.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -322,46 +319,67 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(ContextPtr context, m
 {
     auto & query_tree = query.query_tree->as<QueryNode &>();
 
-    if (query_tree.hasHaving())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HAVING section is not supported");
-    if (query_tree.hasGroupBy())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUP BY section is not supported");
-    if (query_tree.hasWindow())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WINDOW section is not supported");
-    if (query_tree.hasPrewhere())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PREWHERE section is not supported");
-    if (query_tree.hasLimitBy())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY section is not supported");
-    if (query_tree.hasOffset())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET section is not supported");
+    if (context->getSettingsRef().mongodb_fail_on_query_build_error)
+    {
+        if (query_tree.hasHaving())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HAVING section is not supported");
+        if (query_tree.hasGroupBy())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUP BY section is not supported");
+        if (query_tree.hasWindow())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WINDOW section is not supported");
+        if (query_tree.hasPrewhere())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PREWHERE section is not supported");
+        if (query_tree.hasLimitBy())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY section is not supported");
+        if (query_tree.hasOffset())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET section is not supported");
+    }
 
     if (query_tree.hasLimit())
     {
-        if (const auto & limit = query_tree.getLimit()->as<ConstantNode>())
-            options.limit(limit->getValue().safeGet<UInt64>());
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown LIMIT AST");
+        try
+        {
+            if (const auto & limit = query_tree.getLimit()->as<ConstantNode>())
+                options.limit(limit->getValue().safeGet<UInt64>());
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown LIMIT AST");
+        }
+        catch (...)
+        {
+            if (context->getSettingsRef().mongodb_fail_on_query_build_error)
+                throw;
+            tryLogCurrentException(log);
+        }
     }
 
     if (query_tree.hasOrderBy())
     {
-        document sort{};
-        for (const auto & child : query_tree.getOrderByNode()->getChildren())
+        try
         {
-            if (const auto & sort_node = child->as<SortNode>())
+            document sort{};
+            for (const auto & child : query_tree.getOrderByNode()->getChildren())
             {
-                if (sort_node->withFill() || sort_node->hasFillTo() || sort_node->hasFillFrom() || sort_node->hasFillStep())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only simple sort is supported");
-                if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
-                    sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
+                if (const auto & sort_node = child->as<SortNode>())
+                {
+                    if (sort_node->withFill() || sort_node->hasFillTo() || sort_node->hasFillFrom() || sort_node->hasFillStep())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only simple sort is supported");
+                    if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
+                        sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
+                    else
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only simple sort is supported");
+                }
                 else
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only simple sort is supported");
             }
-            else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only simple sort is supported");
+            LOG_DEBUG(log, "MongoDB sort has built: '{}'", bsoncxx::to_json(sort));
+            options.sort(sort.extract());
         }
-        LOG_DEBUG(log, "MongoDB sort has built: '{}'", bsoncxx::to_json(sort));
-        options.sort(sort.extract());
+        catch (...)
+        {
+            if (context->getSettingsRef().mongodb_fail_on_query_build_error)
+                throw;
+            tryLogCurrentException(log);
+        }
     }
 
     document projection{};
@@ -372,12 +390,21 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(ContextPtr context, m
 
     if (query_tree.hasWhere())
     {
-        auto ast = query_tree.getWhere()->toAST();
-        if (const auto & func = ast->as<ASTFunction>())
+        try
         {
-            auto filter = visitWhereFunction(context, func);
-            LOG_DEBUG(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
-            return filter;
+            auto ast = query_tree.getWhere()->toAST();
+            if (const auto & func = ast->as<ASTFunction>())
+            {
+                auto filter = visitWhereFunction(context, func);
+                LOG_DEBUG(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
+                return filter;
+            }
+        }
+        catch (...)
+        {
+            if (context->getSettingsRef().mongodb_fail_on_query_build_error)
+                throw;
+            tryLogCurrentException(log);
         }
     }
 
