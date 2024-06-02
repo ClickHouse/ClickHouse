@@ -12,6 +12,6 @@ INSERT INTO cast_enums SELECT 2 AS type, toDate('2017-01-01') AS date, number AS
 
 SELECT type, date, id FROM cast_enums ORDER BY type, id;
 
-INSERT INTO cast_enums VALUES ('wrong_value', '2017-01-02', 7); -- { clientError 691 }
+INSERT INTO cast_enums VALUES ('wrong_value', '2017-01-02', 7); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 
 DROP TABLE IF EXISTS cast_enums;
