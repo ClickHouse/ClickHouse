@@ -193,12 +193,11 @@ struct AggregateFunctionSumData
             Impl::add(sum, local_sum);
             return;
         }
-        else if constexpr (is_floating_point<T>)
+        else if constexpr (is_floating_point<T> && (sizeof(Value) == 4 || sizeof(Value) == 8))
         {
-            /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
+            /// For floating point we use a similar trick as above, except that now we reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
-            static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
-            using equivalent_integer = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
+            using EquivalentInteger = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
 
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
@@ -209,11 +208,11 @@ struct AggregateFunctionSumData
             {
                 for (size_t i = 0; i < unroll_count; ++i)
                 {
-                    equivalent_integer value;
-                    std::memcpy(&value, &ptr[i], sizeof(Value));
+                    EquivalentInteger value;
+                    memcpy(&value, &ptr[i], sizeof(Value));
                     value &= (!condition_map[i] != add_if_zero) - 1;
                     Value d;
-                    std::memcpy(&d, &value, sizeof(Value));
+                    memcpy(&d, &value, sizeof(Value));
                     Impl::add(partial_sums[i], d);
                 }
                 ptr += unroll_count;

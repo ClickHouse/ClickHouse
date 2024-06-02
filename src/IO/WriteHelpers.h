@@ -155,7 +155,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
     Int64 result = 0;
 
-    if constexpr (std::is_same_v<T, double>)
+    if constexpr (std::is_same_v<T, Float64>)
     {
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
@@ -165,10 +165,16 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
-    else
+    else if constexpr (std::is_same_v<T, Float32>)
     {
-        /// This will support 16-bit floats as well.
-        float f32 = x;
+        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
+            result = itoa(Int32(x), buffer) - buffer;
+        else
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+    }
+    else if constexpr (std::is_same_v<T, BFloat16>)
+    {
+        Float32 f32 = BFloat16ToFloat32(x);
 
         if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
             result = itoa(Int32(f32), buffer) - buffer;

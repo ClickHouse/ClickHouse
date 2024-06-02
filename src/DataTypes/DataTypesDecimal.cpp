@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -262,15 +263,19 @@ FOR_EACH_ARITHMETIC_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result)
+ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & /*value*/, UInt32 /*scale*/, typename ToDataType::FieldType & /*result*/)
 {
-    using FromFieldType = typename FromDataType::FieldType;
+/*    using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
     using ToNativeType = typename ToFieldType::NativeType;
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if constexpr (is_floating_point<FromFieldType>)
+    if constexpr (std::is_same_v<typename FromDataType::FieldType, BFloat16>)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from BFloat16 to Decimal is not implemented");
+    }
+    else if constexpr (is_floating_point<FromFieldType>)
     {
         if (!isFinite(value))
         {
@@ -302,7 +307,9 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal128>, ToDataType, ReturnType>(static_cast<Int128>(value), 0, scale, result));
         else
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal64>, ToDataType, ReturnType>(static_cast<Int64>(value), 0, scale, result));
-    }
+    }*/
+
+    return ReturnType();
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \

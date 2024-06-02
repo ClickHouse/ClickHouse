@@ -579,7 +579,8 @@ public:
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
+            if constexpr ((IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
+                && !std::is_same_v<DataType, DataTypeBFloat16>)
             {
                 using FieldType = typename DataType::FieldType;
                 res = Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);
