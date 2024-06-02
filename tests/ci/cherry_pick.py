@@ -33,9 +33,10 @@ from subprocess import CalledProcessError
 from typing import List, Optional
 
 import __main__
+
 from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
-from git_helper import git_runner, is_shallow
+from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from lambda_shared_package.lambda_shared.pr import Labels
 from ssh import SSHKey
@@ -104,10 +105,6 @@ close it.
 
         self.backport_created_label = backport_created_label
 
-        self.git_prefix = (  # All commits to cherrypick are done as robot-clickhouse
-            "git -c user.email=robot-clickhouse@users.noreply.github.com "
-            "-c user.name=robot-clickhouse -c commit.gpgsign=false"
-        )
         self.pre_check()
 
     def pre_check(self):
@@ -190,17 +187,17 @@ close it.
     def create_cherrypick(self):
         # First, create backport branch:
         # Checkout release branch with discarding every change
-        git_runner(f"{self.git_prefix} checkout -f {self.name}")
+        git_runner(f"{GIT_PREFIX} checkout -f {self.name}")
         # Create or reset backport branch
-        git_runner(f"{self.git_prefix} checkout -B {self.backport_branch}")
+        git_runner(f"{GIT_PREFIX} checkout -B {self.backport_branch}")
         # Merge all changes from PR's the first parent commit w/o applying anything
         # It will allow to create a merge commit like it would be a cherry-pick
         first_parent = git_runner(f"git rev-parse {self.pr.merge_commit_sha}^1")
-        git_runner(f"{self.git_prefix} merge -s ours --no-edit {first_parent}")
+        git_runner(f"{GIT_PREFIX} merge -s ours --no-edit {first_parent}")
 
         # Second step, create cherrypick branch
         git_runner(
-            f"{self.git_prefix} branch -f "
+            f"{GIT_PREFIX} branch -f "
             f"{self.cherrypick_branch} {self.pr.merge_commit_sha}"
         )
 
@@ -209,7 +206,7 @@ close it.
         # manually to the release branch already
         try:
             output = git_runner(
-                f"{self.git_prefix} merge --no-commit --no-ff {self.cherrypick_branch}"
+                f"{GIT_PREFIX} merge --no-commit --no-ff {self.cherrypick_branch}"
             )
             # 'up-to-date', 'up to date', who knows what else (╯°v°)╯ ^┻━┻
             if output.startswith("Already up") and output.endswith("date."):
@@ -223,14 +220,14 @@ close it.
                 return
         except CalledProcessError:
             # There are most probably conflicts, they'll be resolved in PR
-            git_runner(f"{self.git_prefix} reset --merge")
+            git_runner(f"{GIT_PREFIX} reset --merge")
         else:
             # There are changes to apply, so continue
-            git_runner(f"{self.git_prefix} reset --merge")
+            git_runner(f"{GIT_PREFIX} reset --merge")
 
         # Push, create the cherrypick PR, lable and assign it
         for branch in [self.cherrypick_branch, self.backport_branch]:
-            git_runner(f"{self.git_prefix} push -f {self.REMOTE} {branch}:{branch}")
+            git_runner(f"{GIT_PREFIX} push -f {self.REMOTE} {branch}:{branch}")
 
         self.cherrypick_pr = self.repo.create_pull(
             title=f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}",
@@ -245,6 +242,10 @@ close it.
         )
         self.cherrypick_pr.add_to_labels(Labels.PR_CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
+        if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
+            self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
+        elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
+            self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
         self.cherrypick_pr.update()
@@ -254,21 +255,19 @@ close it.
         # Checkout the backport branch from the remote and make all changes to
         # apply like they are only one cherry-pick commit on top of release
         logging.info("Creating backport for PR #%s", self.pr.number)
-        git_runner(f"{self.git_prefix} checkout -f {self.backport_branch}")
-        git_runner(
-            f"{self.git_prefix} pull --ff-only {self.REMOTE} {self.backport_branch}"
-        )
+        git_runner(f"{GIT_PREFIX} checkout -f {self.backport_branch}")
+        git_runner(f"{GIT_PREFIX} pull --ff-only {self.REMOTE} {self.backport_branch}")
         merge_base = git_runner(
-            f"{self.git_prefix} merge-base "
+            f"{GIT_PREFIX} merge-base "
             f"{self.REMOTE}/{self.name} {self.backport_branch}"
         )
-        git_runner(f"{self.git_prefix} reset --soft {merge_base}")
+        git_runner(f"{GIT_PREFIX} reset --soft {merge_base}")
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
-        git_runner(f"{self.git_prefix} commit --allow-empty -F -", input=title)
+        git_runner(f"{GIT_PREFIX} commit --allow-empty -F -", input=title)
 
         # Push with force, create the backport PR, lable and assign it
         git_runner(
-            f"{self.git_prefix} push -f {self.REMOTE} "
+            f"{GIT_PREFIX} push -f {self.REMOTE} "
             f"{self.backport_branch}:{self.backport_branch}"
         )
         self.backport_pr = self.repo.create_pull(
@@ -280,6 +279,10 @@ close it.
             head=self.backport_branch,
         )
         self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
+        if Labels.PR_CRITICAL_BUGFIX in [label.name for label in self.pr.labels]:
+            self.backport_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
+        elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
+            self.backport_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.backport_pr)
 
     def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
@@ -660,9 +663,11 @@ def main():
         args.repo,
         args.from_repo,
         args.dry_run,
-        args.must_create_backport_label
-        if isinstance(args.must_create_backport_label, list)
-        else [args.must_create_backport_label],
+        (
+            args.must_create_backport_label
+            if isinstance(args.must_create_backport_label, list)
+            else [args.must_create_backport_label]
+        ),
         args.backport_created_label,
     )
     # https://github.com/python/mypy/issues/3004

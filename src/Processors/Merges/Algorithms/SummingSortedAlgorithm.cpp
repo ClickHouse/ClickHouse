@@ -387,9 +387,6 @@ static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::Columns
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    for (auto & column : columns)
-        column = column->convertToFullColumnIfConst();
-
     for (const auto & desc : def.columns_to_aggregate)
     {
         if (desc.nested_type)
@@ -704,6 +701,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
+    removeConstAndSparse(inputs);
     merged_data.initialize(header, inputs);
 
     for (auto & input : inputs)
@@ -715,6 +713,7 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }
