@@ -17,7 +17,7 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
+from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, CIConfig
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_UPSTREAM_REPOSITORY,
@@ -447,7 +447,7 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
         pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
-        or not is_required(check_name)
+        or not CIConfig.is_required(check_name)
         or pr_info.release_pr
         or pr_info.number == 0
     )
@@ -469,7 +469,9 @@ def trigger_mergeable_check(
     workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update StatusNames.MERGEABLE"""
-    required_checks = [status for status in statuses if is_required(status.context)]
+    required_checks = [
+        status for status in statuses if CIConfig.is_required(status.context)
+    ]
 
     mergeable_status = None
     for status in statuses:
