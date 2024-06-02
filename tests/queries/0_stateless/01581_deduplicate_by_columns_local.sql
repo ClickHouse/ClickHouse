@@ -32,10 +32,10 @@ OPTIMIZE TABLE full_duplicates DEDUPLICATE BY * EXCEPT(pk); -- { serverError THE
 OPTIMIZE TABLE full_duplicates DEDUPLICATE BY * EXCEPT(sk); -- { serverError THERE_IS_NO_COLUMN } -- sorting key column is missing [1]
 OPTIMIZE TABLE full_duplicates DEDUPLICATE BY * EXCEPT(partition_key); -- { serverError THERE_IS_NO_COLUMN } -- partitioning column is missing [1]
 
-OPTIMIZE TABLE full_duplicates DEDUPLICATE BY; -- { clientError 62 } -- empty list is a syntax error
-OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk,sk,val,mat EXCEPT mat; -- { clientError 62 } -- invalid syntax
-OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk APPLY(pk + 1); -- { clientError 62 } -- APPLY column transformer is not supported
-OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk REPLACE(pk + 1); -- { clientError 62 } -- REPLACE column transformer is not supported
+OPTIMIZE TABLE full_duplicates DEDUPLICATE BY; -- { clientError SYNTAX_ERROR } -- empty list is a syntax error
+OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk,sk,val,mat EXCEPT mat; -- { clientError SYNTAX_ERROR } -- invalid syntax
+OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk APPLY(pk + 1); -- { clientError SYNTAX_ERROR } -- APPLY column transformer is not supported
+OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk REPLACE(pk + 1); -- { clientError SYNTAX_ERROR } -- REPLACE column transformer is not supported
 
 -- Valid cases
 -- NOTE: here and below we need FINAL to force deduplication in such a small set of data in only 1 part.
