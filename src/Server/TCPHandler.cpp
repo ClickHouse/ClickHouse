@@ -2268,15 +2268,25 @@ void TCPHandler::sendData(const Block & block)
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
-        /// Send external table name (empty name is the main table)
-        writeStringBinary("", *out);
 
         /// For testing hedged requests
         if (block.rows() > 0 && query_context->getSettingsRef().sleep_in_send_data_ms.totalMilliseconds())
         {
+            /// This strange sequence is needed in case of chunked protocol is enabled, in order for client not to
+            /// hang on recieving of at least packet type - chunk will not be processed unless either chunk footer
+            /// or chunk continuation header is recieved - first 'next' is sending starting chunk containing packet type
+            /// and second 'next' is sending chunk continuation header.
+            out->next();
+            /// Send external table name (empty name is the main table)
+            writeStringBinary("", *out);
             out->next();
             std::chrono::milliseconds ms(query_context->getSettingsRef().sleep_in_send_data_ms.totalMilliseconds());
             std::this_thread::sleep_for(ms);
+        }
+        else
+        {
+            /// Send external table name (empty name is the main table)
+            writeStringBinary("", *out);
         }
 
         state.block_out->write(block);
