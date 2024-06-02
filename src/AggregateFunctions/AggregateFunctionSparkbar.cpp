@@ -50,7 +50,7 @@ struct AggregateFunctionSparkbarData
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
         {
-            if constexpr (is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
             {
                 it->getMapped() += y;
                 return it->getMapped();
@@ -197,7 +197,7 @@ private:
 
             Y res;
             bool has_overfllow = false;
-            if constexpr (is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
                 res = histogram[index] + point.getMapped();
             else
                 has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
@@ -246,7 +246,7 @@ private:
             }
 
             constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
-            if constexpr (is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
             {
                 y = y / (y_max / levels_num) + 1;
             }

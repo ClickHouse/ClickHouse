@@ -154,7 +154,7 @@ struct common_type<wide::integer<Bits, Signed>, Arithmetic>
     static_assert(wide::ArithmeticConcept<Arithmetic>());
 
     using type = std::conditional_t<
-        is_floating_point_v<Arithmetic>,
+        std::is_floating_point_v<Arithmetic> || std::is_same_v<Arithmetic, __bf16>,
         Arithmetic,
         std::conditional_t<
             sizeof(Arithmetic) * 8 < Bits,

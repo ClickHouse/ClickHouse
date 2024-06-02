@@ -1382,7 +1382,7 @@ inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, 
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
 
 template <typename T>
-requires is_floating_point_v<T>
+requires is_floating_point<T>
 inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }

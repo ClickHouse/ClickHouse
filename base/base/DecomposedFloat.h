@@ -96,6 +96,15 @@ struct DecomposedFloat
                 && ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0));
     }
 
+    bool isFinite() const
+    {
+        return exponent() != ((1ull << Traits::exponent_bits) - 1);
+    }
+
+    bool isNaN() const
+    {
+        return !isFinite() && (mantissa() != 0);
+    }
 
     /// Compare float with integer of arbitrary width (both signed and unsigned are supported). Assuming two's complement arithmetic.
     /// This function is generic, big integers (128, 256 bit) are supported as well.

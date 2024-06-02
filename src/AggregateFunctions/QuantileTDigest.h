@@ -379,7 +379,7 @@ public:
     ResultType getImpl(Float64 level)
     {
         if (centroids.empty())
-            return is_floating_point_v<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
+            return is_floating_point<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
 
         compress();
 

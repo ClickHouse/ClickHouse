@@ -150,7 +150,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-requires is_floating_point_v<T>
+requires is_floating_point<T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
     Int64 result = 0;
@@ -182,7 +182,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 }
 
 template <typename T>
-requires is_floating_point_v<T>
+requires is_floating_point<T>
 inline void writeFloatText(T x, WriteBuffer & buf)
 {
     using Converter = DoubleConverter<false>;
@@ -530,7 +530,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     bool is_finite = isFinite(x);
 
     const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite) || (is_floating_point_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
+        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
 
     if (need_quote)
         writeChar('"', ostr);
@@ -541,7 +541,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeCString("null", ostr);
     else
     {
-        if constexpr (is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
             if (std::signbit(x))
             {
@@ -1065,7 +1065,7 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
 }
 
 template <typename T>
-requires is_floating_point_v<T>
+requires is_floating_point<T>
 inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }

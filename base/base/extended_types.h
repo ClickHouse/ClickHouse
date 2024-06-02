@@ -43,7 +43,7 @@ template <> struct is_unsigned<UInt256> { static constexpr bool value = true; };
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
-template <class T> concept is_integer =
+template <typename T> concept is_integer =
     std::is_integral_v<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, UInt128>
@@ -65,16 +65,10 @@ template <> struct is_arithmetic<BFloat16> { static constexpr bool value = true;
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
 
-template <typename T>
-struct is_floating_point // NOLINT(readability-identifier-naming)
-{
-    static constexpr bool value = std::is_floating_point_v<T>;
-};
+template <typename T> concept is_floating_point =
+    std::is_floating_point_v<T>
+    || std::is_same_v<T, BFloat16>;
 
-template <> struct is_floating_point<BFloat16> { static constexpr bool value = true; };
-
-template <typename T>
-inline constexpr bool is_floating_point_v = is_floating_point<T>::value;
 
 #define FOR_EACH_ARITHMETIC_TYPE(M) \
     M(DataTypeDate) \
