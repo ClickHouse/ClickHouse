@@ -1,7 +1,7 @@
 #include <IO/S3Common.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
@@ -174,8 +174,11 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     if (!from.session_token.empty())
         session_token = from.session_token;
 
-    headers = from.headers;
-    region = from.region;
+    if (!from.headers.empty())
+        headers = from.headers;
+    if (!from.region.empty())
+        region = from.region;
+
     server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
     server_side_encryption_kms_config = from.server_side_encryption_kms_config;
 

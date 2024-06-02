@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
@@ -111,61 +112,15 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be Variant or array of Variants. Actual {}", getName(), input_arg.type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
+        auto variant_discr = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
 
-        if (!variant_global_discr.has_value())
+        if (!variant_discr)
             return arguments[2].column;
 
-        const auto & variant_type = input_type_as_variant->getVariant(*variant_global_discr);
-        const auto & variant_column = input_col_as_variant->getVariantPtrByGlobalDiscriminator(*variant_global_discr);
-
-        /// If Variant has only NULLs or our variant doesn't have any real values,
-        /// just create column with default values and create null mask with 1.
-        if (input_col_as_variant->hasOnlyNulls() || variant_column->empty())
-        {
-            auto res = variant_type->createColumn();
-
-            if (variant_type->lowCardinality())
-                assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
-
-            res->insertManyDefaults(input_col_as_variant->size());
-            if (!variant_type->canBeInsideNullable())
-                return wrapInArraysAndConstIfNeeded(std::move(res), array_offsets, input_arg_is_const, input_rows_count);
-
-            auto null_map = ColumnUInt8::create();
-            auto & null_map_data = null_map->getData();
-            null_map_data.resize_fill(input_col_as_variant->size(), 1);
-            return wrapInArraysAndConstIfNeeded(ColumnNullable::create(std::move(res), std::move(null_map)), array_offsets, input_arg_is_const, input_rows_count);
-        }
-
-        /// If we extract single non-empty column and have no NULLs, then just return this variant.
-        if (auto non_empty_local_discr = input_col_as_variant->getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-        {
-            /// If we were trying to extract some other variant,
-            /// it would be empty and we would already processed this case above.
-            chassert(input_col_as_variant->globalDiscriminatorByLocal(*non_empty_local_discr) == variant_global_discr);
-            return wrapInArraysAndConstIfNeeded(makeNullableOrLowCardinalityNullableSafe(variant_column), array_offsets, input_arg_is_const, input_rows_count);
-        }
-
-        /// In general case we should calculate null-mask for variant
-        /// according to the discriminators column and expand
-        /// variant column by this mask to get a full column (with default values on NULLs)
-        const auto & local_discriminators = input_col_as_variant->getLocalDiscriminators();
-        auto null_map = ColumnUInt8::create();
-        auto & null_map_data = null_map->getData();
-        null_map_data.reserve(local_discriminators.size());
-        auto variant_local_discr = input_col_as_variant->localDiscriminatorByGlobal(*variant_global_discr);
-        for (auto local_discr : local_discriminators)
-            null_map_data.push_back(local_discr != variant_local_discr);
-
-        auto expanded_variant_column = IColumn::mutate(variant_column);
-        if (variant_type->lowCardinality())
-            expanded_variant_column = assert_cast<ColumnLowCardinality &>(*expanded_variant_column).cloneNullable();
-        expanded_variant_column->expand(null_map_data, /*inverted = */ true);
-        if (variant_type->canBeInsideNullable())
-            return wrapInArraysAndConstIfNeeded(ColumnNullable::create(std::move(expanded_variant_column), std::move(null_map)), array_offsets, input_arg_is_const, input_rows_count);
-        return wrapInArraysAndConstIfNeeded(std::move(expanded_variant_column), array_offsets, input_arg_is_const, input_rows_count);
+        auto variant_column = input_type_as_variant->getSubcolumn(input_type_as_variant->getVariant(*variant_discr)->getName(), input_col_as_variant->getPtr());
+        return wrapInArraysAndConstIfNeeded(std::move(variant_column), array_offsets, input_arg_is_const, input_rows_count);
     }
+
 private:
     std::optional<size_t> getVariantGlobalDiscriminator(const ColumnPtr & index_column, const DataTypeVariant & variant_type, size_t argument_size) const
     {
@@ -175,20 +130,16 @@ private:
                             "Second argument to {} with Variant argument must be a constant String",
                             getName());
 
-        String variant_element_name = name_col->getValue<String>();
-        auto variant_element_type = DataTypeFactory::instance().tryGet(variant_element_name);
-        if (variant_element_type)
+        auto variant_element_name = name_col->getValue<String>();
+        if (auto variant_element_type = DataTypeFactory::instance().tryGet(variant_element_name))
         {
-            const auto & variants = variant_type.getVariants();
-            for (size_t i = 0; i != variants.size(); ++i)
-            {
-                if (variants[i]->getName() == variant_element_type->getName())
-                    return i;
-            }
+            if (auto discr = variant_type.tryGetVariantDiscriminator(variant_element_type->getName()))
+                return discr;
         }
 
         if (argument_size == 2)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} doesn't contain variant with type {}", variant_type.getName(), variant_element_name);
+
         return std::nullopt;
     }
 
@@ -213,10 +164,10 @@ REGISTER_FUNCTION(VariantElement)
 Extracts a column with specified type from a `Variant` column.
 )",
         .syntax{"variantElement(variant, type_name, [, default_value])"},
-        .arguments{{
+        .arguments{
             {"variant", "Variant column"},
             {"type_name", "The name of the variant type to extract"},
-            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}}},
+            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}},
         .examples{{{
             "Example",
             R"(

@@ -1,8 +1,7 @@
-from contextlib import contextmanager
 import os
-import signal
-from typing import Any, List, Union, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Iterator, List, Union
 
 
 class WithIter(type):
@@ -49,14 +48,3 @@ class GHActions:
         for line in lines:
             print(line)
         print("::endgroup::")
-
-
-def set_job_timeout():
-    def timeout_handler(_signum, _frame):
-        print("Timeout expired")
-        raise TimeoutError("Job's KILL_TIMEOUT expired")
-
-    kill_timeout = int(os.getenv("KILL_TIMEOUT", "0"))
-    assert kill_timeout > 0, "kill timeout must be provided in KILL_TIMEOUT env"
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(kill_timeout)

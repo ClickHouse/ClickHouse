@@ -15,11 +15,11 @@ SELECT 70 = 10 * sum(t1.id) + sum(t2.id) AND count() == 4 FROM t1 JOIN t2 ON toL
 SELECT 70 = 10 * sum(t1.id) + sum(t2.id) AND count() == 4 FROM t1 JOIN t2 ON toLowCardinality(toNullable(1));
 SELECT 70 = 10 * sum(t1.id) + sum(t2.id) AND count() == 4 FROM t1 JOIN t2 ON toNullable(toLowCardinality(1));
 
-SELECT * FROM t1 JOIN t2 ON toUInt16(1); -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON toInt8(1); -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON 256; -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON -1; -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON toString(1); -- { serverError 403 }
+SELECT * FROM t1 JOIN t2 ON toUInt16(1); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON toInt8(1); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON 256; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON -1; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON toString(1); -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 SELECT '- ON NULL -';
 

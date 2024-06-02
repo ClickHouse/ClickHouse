@@ -124,5 +124,7 @@ private:
     bool read_only;
 
     void initDB();
+
+    LoggerPtr log;
 };
 }

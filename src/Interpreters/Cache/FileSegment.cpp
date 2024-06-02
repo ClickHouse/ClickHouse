@@ -799,7 +799,6 @@ String FileSegment::stateToString(FileSegment::State state)
         case FileSegment::State::DETACHED:
             return "DETACHED";
     }
-    UNREACHABLE();
 }
 
 bool FileSegment::assertCorrectness() const

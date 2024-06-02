@@ -1,8 +1,8 @@
 set allow_experimental_analyzer = true;
 
-select count; -- { serverError 47 }
+select count; -- { serverError UNKNOWN_IDENTIFIER }
 
-select conut(); -- { serverError 46 }
+select conut(); -- { serverError UNKNOWN_FUNCTION }
 
 system flush logs;
 

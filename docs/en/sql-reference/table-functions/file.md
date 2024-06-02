@@ -169,7 +169,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 **Example**
 
-Query the total number of rows in files named `file000`, `file001`, … , `file999`:
+Query the total number of rows in files named `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');

@@ -173,13 +173,13 @@ private:
         return arithmetic_function_clone;
     }
 
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const QueryTreeNodePtr & argument, const String & aggregate_function_name)
+    static void resolveAggregateFunctionNode(FunctionNode & function_node, const QueryTreeNodePtr & argument, const String & aggregate_function_name)
     {
         auto function_aggregate_function = function_node.getAggregateFunction();
 

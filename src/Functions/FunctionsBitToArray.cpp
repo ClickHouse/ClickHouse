@@ -79,7 +79,7 @@ public:
 
 private:
     template <typename T>
-    inline static void writeBitmask(T x, WriteBuffer & out)
+    static void writeBitmask(T x, WriteBuffer & out)
     {
         using UnsignedT = make_unsigned_t<T>;
         UnsignedT u_x = x;

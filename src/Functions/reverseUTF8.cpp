@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include "reverse.h"
 
@@ -27,7 +28,7 @@ struct ReverseUTF8Impl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        bool all_ascii = UTF8::isAllASCII(data.data(), data.size());
+        bool all_ascii = isAllASCII(data.data(), data.size());
         if (all_ascii)
         {
             ReverseImpl::vector(data, offsets, res_data, res_offsets);

@@ -37,6 +37,7 @@ Standard aggregate functions:
 
 ClickHouse-specific aggregate functions:
 
+- [analysisOfVariance](/docs/en/sql-reference/aggregate-functions/reference/analysis_of_variance.md)
 - [any](/docs/en/sql-reference/aggregate-functions/reference/any_respect_nulls.md)
 - [anyHeavy](/docs/en/sql-reference/aggregate-functions/reference/anyheavy.md)
 - [anyLast](/docs/en/sql-reference/aggregate-functions/reference/anylast.md)

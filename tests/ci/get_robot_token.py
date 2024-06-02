@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 from dataclasses import dataclass
+import random
 from typing import Any, Dict, List, Optional, Union
 
 import boto3  # type: ignore
@@ -69,10 +70,15 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
     }
     assert tokens
 
-    for name, value in tokens.items():
+    token_items = list(tokens.items())
+    random.shuffle(token_items)
+
+    best_token: Optional[Token] = None
+
+    for name, value in token_items:
         gh = Github(value, per_page=100)
         try:
-            # Do not spend additional request to API by accessin user.login unless
+            # Do not spend additional request to API by accessing user.login unless
             # the token is chosen by the remaining requests number
             user = gh.get_user()
             rest, _ = gh.rate_limiting
@@ -84,13 +90,14 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
             )
             continue
         logging.info("Get token with %s remaining requests", rest)
-        if ROBOT_TOKEN is None:
-            ROBOT_TOKEN = Token(user, value, rest)
-            continue
-        if ROBOT_TOKEN.rest < rest:
-            ROBOT_TOKEN.user, ROBOT_TOKEN.value, ROBOT_TOKEN.rest = user, value, rest
-
-    assert ROBOT_TOKEN
+        if best_token is None:
+            best_token = Token(user, value, rest)
+        elif best_token.rest < rest:
+            best_token = Token(user, value, rest)
+        if best_token.rest > 300:
+            break
+    assert best_token
+    ROBOT_TOKEN = best_token
     logging.info(
         "User %s with %s remaining requests is used",
         ROBOT_TOKEN.user.login,

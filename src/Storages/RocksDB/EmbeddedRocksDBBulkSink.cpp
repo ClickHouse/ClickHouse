@@ -155,7 +155,7 @@ std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
     return {};
 }
 
-std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(const std::vector<Chunk> & input_chunks) const
+std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(std::vector<Chunk> && input_chunks) const
 {
     auto serialized_key_column = ColumnString::create();
     auto serialized_value_column = ColumnString::create();
@@ -168,7 +168,7 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
 
-        for (const auto & chunk : input_chunks)
+        for (auto && chunk : input_chunks)
         {
             const auto & columns = chunk.getColumns();
             auto rows = chunk.getNumRows();
@@ -193,13 +193,14 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
 
 void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
 {
-    std::vector<Chunk> to_written = squash(std::move(chunk_));
+    std::vector<Chunk> chunks_to_write = squash(std::move(chunk_));
 
-    if (to_written.empty())
+    if (chunks_to_write.empty())
         return;
 
-    auto [serialized_key_column, serialized_value_column] = serializeChunks(to_written);
+    auto [serialized_key_column, serialized_value_column] = serializeChunks(std::move(chunks_to_write));
     auto sst_file_path = getTemporarySSTFilePath();
+    LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows to SST file {}", serialized_key_column->size(), sst_file_path);
     if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
@@ -209,6 +210,7 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
     if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
+    LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "SST file {} has been ingested", sst_file_path);
     if (fs::exists(sst_file_path))
         (void)fs::remove(sst_file_path);
 }
@@ -237,4 +239,5 @@ bool EmbeddedRocksDBBulkSink::isEnoughSize(const Chunk & chunk) const
 {
     return chunk.getNumRows() >= min_block_size_rows;
 }
+
 }

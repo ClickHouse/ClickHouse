@@ -13,7 +13,7 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/Types.h>
 

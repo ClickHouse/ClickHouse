@@ -9,7 +9,7 @@
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
 

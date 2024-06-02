@@ -38,7 +38,8 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
+ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+    bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
@@ -46,8 +47,16 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     LoggerPtr log,
     const DistributedSettings * distributed_settings)
 {
+    ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
+
+    /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.
+    if (is_remote_function)
+    {
+        const auto & address = cluster.getShardsAddresses().front().front();
+        new_client_info.initial_user = address.user;
+    }
 
     /// If "secret" (in remote_servers) is not in use,
     /// user on the shard is not the same as the user on the initiator,
@@ -168,8 +177,22 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
+    new_context->setClientInfo(new_client_info);
     return new_context;
 }
+
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table)
+{
+    return updateSettingsAndClientInfoForCluster(cluster,
+        /* is_remote_function= */ false,
+        context,
+        settings,
+        main_table,
+        /* additional_filter_ast= */ {},
+        /* log= */ {},
+        /* distributed_settings= */ {});
+}
+
 
 static ThrottlerPtr getThrottler(const ContextPtr & context)
 {
@@ -209,7 +232,8 @@ void executeQuery(
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    AdditionalShardFilterGenerator shard_filter_generator,
+    bool is_remote_function)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -222,8 +246,8 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log,
-        &distributed_settings);
+    auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
+        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
     if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
         && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
            != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
@@ -379,6 +403,10 @@ void executeQueryWithParallelReplicas(
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
 {
+    auto logger = getLogger("executeQueryWithParallelReplicas");
+    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
+        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
+
     const auto & settings = context->getSettingsRef();
 
     /// check cluster for parallel replicas

@@ -80,7 +80,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -91,7 +91,8 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override;
 
@@ -123,6 +124,13 @@ public:
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
     {
         return object_storage->getAzureBlobStorageClient();
+    }
+#endif
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() override
+    {
+        return object_storage->getS3StorageClient();
     }
 #endif
 

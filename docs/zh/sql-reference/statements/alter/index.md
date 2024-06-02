@@ -38,7 +38,7 @@ sidebar_label: ALTER
 
 ## Mutations 突变 {#mutations}
 
-用来操作表数据的ALTER查询是通过一种叫做“突变”的机制来实现的，最明显的是[ALTER TABLE … DELETE](../../../sql-reference/statements/alter/delete.md)和[ALTER TABLE … UPDATE](../../../sql-reference/statements/alter/update.md)。它们是异步的后台进程，类似于[MergeTree](../../../engines/table-engines/mergetree-family/index.md)表的合并，产生新的“突变”版本的部件。
+用来操作表数据的ALTER查询是通过一种叫做“突变”的机制来实现的，最明显的是[ALTER TABLE ... DELETE](../../../sql-reference/statements/alter/delete.md)和[ALTER TABLE ... UPDATE](../../../sql-reference/statements/alter/update.md)。它们是异步的后台进程，类似于[MergeTree](../../../engines/table-engines/mergetree-family/index.md)表的合并，产生新的“突变”版本的部件。
 
 
 

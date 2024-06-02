@@ -572,6 +572,34 @@ bool ColumnTuple::isCollationSupported() const
     return false;
 }
 
+bool ColumnTuple::hasDynamicStructure() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->hasDynamicStructure())
+            return true;
+    }
+    return false;
+}
+
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+{
+    std::vector<Columns> nested_source_columns;
+    nested_source_columns.resize(columns.size());
+    for (size_t i = 0; i != columns.size(); ++i)
+        nested_source_columns[i].reserve(source_columns.size());
+
+    for (const auto & source_column : source_columns)
+    {
+        const auto & nsource_columns = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+        for (size_t i = 0; i != nsource_columns.size(); ++i)
+            nested_source_columns[i].push_back(nsource_columns[i]);
+    }
+
+    for (size_t i = 0; i != columns.size(); ++i)
+        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
+}
+
 
 ColumnPtr ColumnTuple::compress() const
 {

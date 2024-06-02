@@ -41,13 +41,13 @@ struct MergeTreeBlockSizePredictor
     void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
 
     /// Return current block size (after update())
-    inline size_t getBlockSize() const
+    size_t getBlockSize() const
     {
         return block_size_bytes;
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per column
-    inline size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
+    size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
         double max_size_per_row = std::max<double>(std::max<size_t>(max_size_per_row_fixed, 1), max_size_per_row_dynamic);
         return (bytes_quota > block_size_rows * max_size_per_row)
@@ -56,14 +56,14 @@ struct MergeTreeBlockSizePredictor
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per block
-    inline size_t estimateNumRows(size_t bytes_quota) const
+    size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
             ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, static_cast<size_t>(bytes_per_row_current)))
             : 0;
     }
 
-    inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
+    void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
         double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));

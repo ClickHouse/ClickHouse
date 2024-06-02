@@ -30,9 +30,7 @@ At least four data points are required in `series` to detect outliers.
 
 **Returned value**
 
-- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -81,10 +79,7 @@ seriesPeriodDetectFFT(series);
 
 **Returned value**
 
-- A real value equal to the period of series data
-- Returns NAN when number of data points are less than four.
-
-Type: [Float64](../../sql-reference/data-types/float.md).
+- A real value equal to the period of series data. NaN when number of data points are less than four. [Float64](../data-types/float.md).
 
 **Examples**
 
@@ -134,9 +129,7 @@ The number of data points in `series` should be at least twice the value of `per
 **Returned value**
 
 - An array of four arrays where the first array include seasonal components, the second array - trend,
-the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
-
-Type: [Array](../../sql-reference/data-types/array.md).
+the third array - residue component, and the fourth array - baseline(seasonal + trend) component. [Array](../data-types/array.md).
 
 **Examples**
 

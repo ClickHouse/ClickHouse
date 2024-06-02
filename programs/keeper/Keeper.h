@@ -65,6 +65,8 @@ protected:
 
     std::string getDefaultConfigFileName() const override;
 
+    bool allowTextLog() const override;
+
 private:
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 

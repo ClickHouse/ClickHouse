@@ -63,6 +63,7 @@ struct AzureObjectStorageSettings
     bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
     size_t max_inflight_parts_for_one_file = 20;
+    size_t max_blocks_in_multipart_upload = 50000;
     size_t strict_upload_part_size = 0;
     size_t upload_part_size_multiply_factor = 2;
     size_t upload_part_size_multiply_parts_count_threshold = 500;
@@ -84,9 +85,9 @@ public:
         const String & object_namespace_,
         const String & description_);
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -143,7 +144,8 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override { return object_namespace ; }
 

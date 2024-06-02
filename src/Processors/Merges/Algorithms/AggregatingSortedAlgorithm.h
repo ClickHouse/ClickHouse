@@ -102,10 +102,11 @@ private:
 
     public:
         AggregatingMergedData(
-            MutableColumns columns_,
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
             ColumnsDefinition & def_);
+
+        void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
         /// Group is a group of rows with the same sorting key. It represents single row in result.
         /// Algorithm is: start group, add several rows, finish group.

@@ -5,7 +5,7 @@ import time
 import pytest
 import logging
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
 
@@ -17,6 +17,10 @@ from kafka.admin import NewTopic
 from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 import socket
+
+if is_arm():
+    # skip due to no arm support for clickhouse/kerberos-kdc docker image
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

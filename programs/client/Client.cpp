@@ -1178,7 +1178,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    setDefaultFormatsFromConfiguration();
+    setDefaultFormatsAndCompressionFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();

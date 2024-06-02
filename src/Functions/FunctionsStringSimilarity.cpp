@@ -275,7 +275,7 @@ struct NgramDistanceImpl
     }
 
     template <class Callback, class... Args>
-    static inline auto dispatchSearcher(Callback callback, Args &&... args)
+    static auto dispatchSearcher(Callback callback, Args &&... args)
     {
         if constexpr (!UTF8)
             return callback(std::forward<Args>(args)..., readASCIICodePoints, calculateASCIIHash);

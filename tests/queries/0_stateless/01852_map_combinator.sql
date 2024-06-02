@@ -34,16 +34,16 @@ select minMap(val) from values ('val Map(Int256, Int256)',  (map(1, 1)), (map(1,
 select minMap(val) from values ('val Map(UInt128, UInt128)',  (map(1, 1)), (map(1, 2)));
 select minMap(val) from values ('val Map(UInt256, UInt256)',  (map(1, 1)), (map(1, 2)));
 
-select sumMap(map(1,2), 1, 2); -- { serverError 42 }
-select sumMap(map(1,2), map(1,3)); -- { serverError 42 }
+select sumMap(map(1,2), 1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select sumMap(map(1,2), map(1,3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- array and tuple arguments
-select avgMap([1,1,1], [2,2,2]); -- { serverError 43 }
-select minMap((1,1)); -- { serverError 43 }
-select minMap(([1,1,1],1)); -- { serverError 43 }
-select minMap([1,1,1],1); -- { serverError 43 }
-select minMap([1,1,1]); -- { serverError 43 }
-select minMap(([1,1,1])); -- { serverError 43 }
+select avgMap([1,1,1], [2,2,2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap((1,1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap(([1,1,1],1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap([1,1,1],1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap([1,1,1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap(([1,1,1])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS sum_map_decimal;
 

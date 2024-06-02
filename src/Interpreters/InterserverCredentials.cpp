@@ -1,6 +1,6 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Common/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {

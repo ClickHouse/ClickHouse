@@ -30,7 +30,7 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
@@ -583,6 +583,8 @@ void readString(String & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf);
 
+void readEscapedStringCRLF(String & s, ReadBuffer & buf);
+
 void readQuotedString(String & s, ReadBuffer & buf);
 void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
@@ -645,7 +647,7 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <typename Vector, bool support_crlf>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -1901,6 +1903,7 @@ void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & se
 bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
 
 void readTSVField(String & s, ReadBuffer & buf);
+void readTSVFieldCRLF(String & s, ReadBuffer & buf);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol

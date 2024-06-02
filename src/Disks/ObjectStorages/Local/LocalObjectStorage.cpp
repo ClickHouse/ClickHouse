@@ -172,7 +172,7 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
     return object_metadata;
 }
 
-void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int /* max_keys */) const
+void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
     for (const auto & entry : fs::directory_iterator(path))
     {
@@ -182,8 +182,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        auto metadata = getObjectMetadata(entry.path());
-        children.emplace_back(entry.path(), std::move(metadata));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path())));
     }
 }
 
@@ -221,11 +220,6 @@ std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
     const std::string & /* config_prefix */, ContextPtr /* context */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
-}
-
-void LocalObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
-{
 }
 
 ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const

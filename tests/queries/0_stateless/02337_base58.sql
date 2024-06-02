@@ -1,8 +1,8 @@
 -- Tags: no-fasttest
 
 SELECT base58Encode('Hold my beer...');
-SELECT base58Encode('Hold my beer...', 'Second arg'); -- { serverError 42 }
-SELECT base58Decode('Hold my beer...'); -- { serverError 36 }
+SELECT base58Encode('Hold my beer...', 'Second arg'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT base58Decode('Hold my beer...'); -- { serverError BAD_ARGUMENTS }
 
 SELECT base58Decode(encoded) FROM (SELECT base58Encode(val) as encoded FROM (select arrayJoin(['', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar', 'Hello world!']) val));
 SELECT tryBase58Decode(encoded) FROM (SELECT base58Encode(val) as encoded FROM (select arrayJoin(['', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar', 'Hello world!']) val));

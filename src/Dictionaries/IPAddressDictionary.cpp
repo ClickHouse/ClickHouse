@@ -66,7 +66,7 @@ namespace
             return buf;
         }
 
-        inline UInt8 prefixIPv6() const
+        UInt8 prefixIPv6() const
         {
             return isv6 ? prefix : prefix + 96;
         }

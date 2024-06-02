@@ -104,9 +104,9 @@ void SerializationObject<Parser>::deserializeWholeText(IColumn & column, ReadBuf
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, [&](String & s) { readEscapedString(s, istr); });
+    deserializeTextImpl(column, [&](String & s) { settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr); });
 }
 
 template <typename Parser>
@@ -210,7 +210,8 @@ void SerializationObject<Parser>::serializeBinaryBulkStateSuffix(
 template <typename Parser>
 void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     checkSerializationIsSupported(settings);
     if (state)
@@ -258,7 +259,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectData);
-    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state);
+    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state, cache);
     settings.path.pop_back();
 
     state = std::move(state_object);

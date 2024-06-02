@@ -284,7 +284,7 @@ public:
     }
 
     template <typename It1, typename It2>
-    inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
+    void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
     {
 #if !defined(NDEBUG)
         const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);

@@ -266,4 +266,4 @@ CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE full_text(3, 123))
                          SELECT
                          number,
                          format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
-                         FROM numbers(1024);  -- { serverError 80 }
+                         FROM numbers(1024);  -- { serverError INCORRECT_QUERY }

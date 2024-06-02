@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-debug, no-asan, no-tsan, no-msan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

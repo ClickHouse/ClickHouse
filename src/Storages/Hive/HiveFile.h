@@ -14,7 +14,7 @@
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Hive/HiveSettings.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
@@ -65,8 +65,8 @@ public:
         {ORC_INPUT_FORMAT, FileFormat::ORC},
     };
 
-    static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
-    static inline FileFormat toFileFormat(const String & format_class)
+    static bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
+    static FileFormat toFileFormat(const String & format_class)
     {
         if (isFormatClass(format_class))
         {

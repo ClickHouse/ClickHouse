@@ -38,7 +38,7 @@ FROM normalize_test
 ORDER BY id;
 
 
-SELECT char(228) AS value, normalizeUTF8NFC(value); -- { serverError 621 }
-SELECT char(228) AS value, normalizeUTF8NFD(value); -- { serverError 621 }
-SELECT char(228) AS value, normalizeUTF8NFKC(value); -- { serverError 621 }
-SELECT char(228) AS value, normalizeUTF8NFKD(value); -- { serverError 621 }
+SELECT char(228) AS value, normalizeUTF8NFC(value); -- { serverError CANNOT_NORMALIZE_STRING }
+SELECT char(228) AS value, normalizeUTF8NFD(value); -- { serverError CANNOT_NORMALIZE_STRING }
+SELECT char(228) AS value, normalizeUTF8NFKC(value); -- { serverError CANNOT_NORMALIZE_STRING }
+SELECT char(228) AS value, normalizeUTF8NFKD(value); -- { serverError CANNOT_NORMALIZE_STRING }

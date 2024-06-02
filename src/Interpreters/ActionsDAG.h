@@ -324,8 +324,9 @@ public:
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
 
-    /// Merge current nodes with specified dag nodes
-    void mergeNodes(ActionsDAG && second);
+    /// Merge current nodes with specified dag nodes.
+    /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
+    void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
 
     struct SplitResult
     {

@@ -24,13 +24,13 @@ SET allow_experimental_bigint_types=1;
 CREATE TABLE dist (n Int128) ENGINE=Distributed(test_cluster_two_shards, currentDatabase(), mv);
 
 INSERT INTO src SELECT number, toString(number) FROM numbers(1000);
-INSERT INTO mv SELECT toString(number + 1000) FROM numbers(1000); -- { serverError 53 }
-INSERT INTO mv SELECT arrayJoin(['42', 'test']); -- { serverError 53 }
+INSERT INTO mv SELECT toString(number + 1000) FROM numbers(1000); -- { serverError TYPE_MISMATCH }
+INSERT INTO mv SELECT arrayJoin(['42', 'test']); -- { serverError TYPE_MISMATCH }
 
 SELECT count(), sum(n), sum(toInt64(s)), max(n), min(n) FROM src;
 SELECT count(), sum(n), sum(toInt64(s)), max(n), min(n) FROM dst;
 SELECT count(), sum(toInt64(n)), max(n), min(n) FROM mv;
-SELECT count(), sum(toInt64(n)), max(n), min(n) FROM dist; -- { serverError 70 }
+SELECT count(), sum(toInt64(n)), max(n), min(n) FROM dist; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count(), sum(toInt64(n)), max(toUInt32(n)), min(toInt128(n)) FROM dist;
 
 DROP TABLE test_table;

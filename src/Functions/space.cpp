@@ -27,7 +27,7 @@ private:
     static constexpr auto space = ' ';
 
     /// Safety threshold against DoS.
-    static inline void checkRepeatTime(size_t repeat_time)
+    static void checkRepeatTime(size_t repeat_time)
     {
         static constexpr auto max_repeat_times = 1'000'000uz;
         if (repeat_time > max_repeat_times)

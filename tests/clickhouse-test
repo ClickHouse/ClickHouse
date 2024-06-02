@@ -1223,12 +1223,9 @@ class TestCase:
             return FailureReason.S3_STORAGE
         elif (
             tags
-            and ("no-s3-storage-with-slow-build" in tags)
+            and "no-s3-storage-with-slow-build" in tags
             and args.s3_storage
-            and (
-                BuildFlags.THREAD in args.build_flags
-                or BuildFlags.DEBUG in args.build_flags
-            )
+            and BuildFlags.RELEASE not in args.build_flags
         ):
             return FailureReason.S3_STORAGE
 
@@ -2410,6 +2407,17 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
         parallel_tests_array = []
         for _ in range(jobs):
             parallel_tests_array.append((None, batch_size, test_suite))
+
+        # If we don't do random shuffling then there will be always
+        # nearly the same groups of test suites running concurrently.
+        # Thus, if there is a test within group which appears to be broken
+        # then it will affect all other tests in a non-random form.
+        # So each time a bad test fails - other tests from the group will also fail
+        # and this process will be more or less stable.
+        # It makes it more difficult to detect real flaky tests,
+        # because the distribution and the amount
+        # of failures will be nearly the same for all tests from the group.
+        random.shuffle(test_suite.parallel_tests)
 
         try:
             with closing(multiprocessing.Pool(processes=jobs)) as pool:

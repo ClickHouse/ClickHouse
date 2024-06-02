@@ -1,7 +1,7 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
 #include <boost/algorithm/string/split.hpp>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <DataTypes/DataTypeFactory.h>
 

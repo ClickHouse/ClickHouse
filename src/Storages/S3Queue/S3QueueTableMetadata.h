@@ -3,7 +3,8 @@
 #if USE_AWS_S3
 
 #include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/StorageS3.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <base/types.h>
 
 namespace DB
@@ -27,7 +28,10 @@ struct S3QueueTableMetadata
     UInt64 s3queue_processing_threads_num = 1;
 
     S3QueueTableMetadata() = default;
-    S3QueueTableMetadata(const StorageS3::Configuration & configuration, const S3QueueSettings & engine_settings, const StorageInMemoryMetadata & storage_metadata);
+    S3QueueTableMetadata(
+        const StorageObjectStorage::Configuration & configuration,
+        const S3QueueSettings & engine_settings,
+        const StorageInMemoryMetadata & storage_metadata);
 
     void read(const String & metadata_str);
     static S3QueueTableMetadata parse(const String & metadata_str);
