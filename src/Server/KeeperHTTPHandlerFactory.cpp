@@ -107,12 +107,12 @@ void addStorageHandlersToFactory(
     auto creator = [&server, keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPStorageHandler>
     { return std::make_unique<KeeperHTTPStorageHandler>(server, keeper_dispatcher); };
 
-    auto commads_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
-    commads_handler->attachNonStrictPath("/api/v1/storage");
-    commads_handler->allowGetHeadAndPostRequest();
+    auto storage_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
+    storage_handler->attachNonStrictPath("/api/v1/storage");
+    storage_handler->allowGetHeadAndPostRequest();
 
     factory.addPathToHints("/api/v1/storage");
-    factory.addHandler(commads_handler);
+    factory.addHandler(storage_handler);
 }
 
 void addDefaultHandlersToFactory(
