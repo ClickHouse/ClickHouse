@@ -3,7 +3,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <algorithm>
-#include <Common/logger_useful.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
