@@ -165,6 +165,21 @@ class ClickHouseVersion:
         self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
 
+    def copy(self) -> "ClickHouseVersion":
+        copy = ClickHouseVersion(
+            self.major,
+            self.minor,
+            self.patch,
+            self.revision,
+            self._git,
+            str(self.tweak),
+        )
+        try:
+            copy.with_description(self.description)
+        except ValueError:
+            pass
+        return copy
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(self, type(other)):
             return NotImplemented
@@ -357,8 +372,9 @@ def update_contributors(
 
     # format: "  1016  Alexey Arno"
     shortlog = git_runner.run("git shortlog HEAD --summary")
+    escaping = str.maketrans({"\\": "\\\\", '"': '\\"'})
     contributors = sorted(
-        [c.split(maxsplit=1)[-1].replace('"', r"\"") for c in shortlog.split("\n")],
+        [c.split(maxsplit=1)[-1].translate(escaping) for c in shortlog.split("\n")],
     )
     contributors = [f'    "{c}",' for c in contributors]
 

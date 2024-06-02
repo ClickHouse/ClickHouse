@@ -60,14 +60,14 @@ namespace ErrorCodes
 
 /** This parameter controls the behavior of the rounding functions.
   */
-enum class ScaleMode
+enum class ScaleMode : uint8_t
 {
     Positive,   // round to a number with N decimal places after the decimal point
     Negative,   // round to an integer with N zero characters
     Zero,       // round to an integer
 };
 
-enum class RoundingMode
+enum class RoundingMode : uint8_t
 {
 #ifdef __SSE4_1__
     Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
@@ -82,7 +82,7 @@ enum class RoundingMode
 #endif
 };
 
-enum class TieBreakingMode
+enum class TieBreakingMode : uint8_t
 {
     Auto, // use banker's rounding for floating point numbers, round up otherwise
     Bankers, // use banker's rounding
@@ -149,8 +149,6 @@ struct IntegerRoundingComputation
                 return x;
             }
         }
-
-        UNREACHABLE();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -163,8 +161,6 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
         }
-
-        UNREACHABLE();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
@@ -247,8 +243,6 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
     }
-
-    UNREACHABLE();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -260,8 +254,6 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
     }
-
-    UNREACHABLE();
 }
 
 template <typename T>
@@ -296,7 +288,7 @@ class FloatRoundingComputation : public BaseFloatRoundingComputation<T>
     using Base = BaseFloatRoundingComputation<T>;
 
 public:
-    static inline void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
+    static void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
     {
         auto val = Base::load(in);
 
@@ -467,28 +459,28 @@ struct Dispatcher
 
     static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
     {
-        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_general);
+        const auto & col = checkAndGetColumn<ColumnVector<T>>(*col_general);
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
-        vec_res.resize(col->getData().size());
+        vec_res.resize(col.getData().size());
 
         if (!vec_res.empty())
         {
             if (scale_arg == 0)
             {
                 size_t scale = 1;
-                FunctionRoundingImpl<ScaleMode::Zero>::apply(col->getData(), scale, vec_res);
+                FunctionRoundingImpl<ScaleMode::Zero>::apply(col.getData(), scale, vec_res);
             }
             else if (scale_arg > 0)
             {
                 size_t scale = intExp10(scale_arg);
-                FunctionRoundingImpl<ScaleMode::Positive>::apply(col->getData(), scale, vec_res);
+                FunctionRoundingImpl<ScaleMode::Positive>::apply(col.getData(), scale, vec_res);
             }
             else
             {
                 size_t scale = intExp10(-scale_arg);
-                FunctionRoundingImpl<ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
+                FunctionRoundingImpl<ScaleMode::Negative>::apply(col.getData(), scale, vec_res);
             }
         }
 
@@ -502,14 +494,14 @@ struct Dispatcher<T, rounding_mode, tie_breaking_mode>
 public:
     static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
     {
-        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
-        const typename ColumnDecimal<T>::Container & vec_src = col->getData();
+        const auto & col = checkAndGetColumn<ColumnDecimal<T>>(*col_general);
+        const typename ColumnDecimal<T>::Container & vec_src = col.getData();
 
-        auto col_res = ColumnDecimal<T>::create(vec_src.size(), col->getScale());
+        auto col_res = ColumnDecimal<T>::create(vec_src.size(), col.getScale());
         auto & vec_res = col_res->getData();
 
         if (!vec_res.empty())
-            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), col->getScale(), vec_res, scale_arg);
+            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col.getData(), col.getScale(), vec_res, scale_arg);
 
         return col_res;
     }

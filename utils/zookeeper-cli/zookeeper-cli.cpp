@@ -69,7 +69,7 @@ int main(int argc, char ** argv)
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
 
-        zkutil::ZooKeeper zk{zkutil::ZooKeeperArgs(argv[1])};
+        auto zk = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zkutil::ZooKeeperArgs(argv[1]));
         DB::LineReader lr({}, false, {"\\"}, {});
 
         do
@@ -96,7 +96,7 @@ int main(int argc, char ** argv)
                     ss >> w;
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
-                    std::vector<std::string> v = zk.getChildren(path, nullptr, event);
+                    std::vector<std::string> v = zk->getChildren(path, nullptr, event);
                     for (const auto & child : v)
                         std::cout << child << std::endl;
                     if (watch)
@@ -132,15 +132,15 @@ int main(int argc, char ** argv)
                         std::cout << "Bad create mode" << std::endl;
                         continue;
                     }
-                    std::cout << zk.create(path, data, m) << std::endl;
+                    std::cout << zk->create(path, data, m) << std::endl;
                 }
                 else if (cmd == "remove")
                 {
-                    zk.remove(path);
+                    zk->remove(path);
                 }
                 else if (cmd == "rmr")
                 {
-                    zk.removeRecursive(path);
+                    zk->removeRecursive(path);
                 }
                 else if (cmd == "exists")
                 {
@@ -149,7 +149,7 @@ int main(int argc, char ** argv)
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
                     Coordination::Stat stat;
-                    bool e = zk.exists(path, &stat, event);
+                    bool e = zk->exists(path, &stat, event);
                     if (e)
                         printStat(stat);
                     else
@@ -164,7 +164,7 @@ int main(int argc, char ** argv)
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
                     Coordination::Stat stat;
-                    std::string data = zk.get(path, &stat, event);
+                    std::string data = zk->get(path, &stat, event);
                     std::cout << "Data: " << data << std::endl;
                     printStat(stat);
                     if (watch)
@@ -188,7 +188,7 @@ int main(int argc, char ** argv)
                         DB::readText(version, in);
 
                     Coordination::Stat stat;
-                    zk.set(path, data, version, &stat);
+                    zk->set(path, data, version, &stat);
                     printStat(stat);
                 }
                 else if (!cmd.empty())

@@ -178,7 +178,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--password` – The password. Default value: empty string.
 - `--ask-password` - Prompt the user to enter a password.
 - `--query, -q` – The query to process when using non-interactive mode. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
+- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--queries-file  queries1.sql --queries-file  queries2.sql`. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 - `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
@@ -195,6 +195,29 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
+
+
+## Aliases {#cli_aliases}
+
+- `\l` - SHOW DATABASES
+- `\d` - SHOW TABLES
+- `\c <DATABASE>` - USE DATABASE
+- `.` - repeat the last query
+
+
+## Shortkeys {#shortkeys_aliases}
+
+- `Alt (Option) + Shift + e` - open editor with current query. It is possible to set up an environment variable - `EDITOR`, by default vim is used.
+- `Alt (Option) + #` - comment line.
+- `Ctrl + r` - fuzzy history search.
+
+:::tip
+To configure the correct work of meta key (Option) on MacOS:
+
+iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
+:::
+
+The full list with all available shortkeys - [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
 
 
 ## Connection string {#connection_string}
@@ -220,7 +243,7 @@ If no database is specified, the `default` database will be used.
 
 If the user name, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
-The host component can either be an a host name and IP address. Put an IPv6 address in square brackets to specify it:
+The host component can either be a host name and IP address. Put an IPv6 address in square brackets to specify it:
 
 ```text
 clickhouse://[2001:db8::1234]

@@ -23,10 +23,10 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    static constexpr inline auto FORMAT = "RowBinary";
+    static constexpr auto FORMAT = "RowBinary";
 
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -40,7 +40,7 @@ public:
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -69,7 +69,7 @@ public:
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -83,7 +83,7 @@ public:
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

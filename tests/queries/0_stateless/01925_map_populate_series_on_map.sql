@@ -31,6 +31,6 @@ select mapPopulateSeries(map(toInt32(-10), toInt32(1), 2, 1)) as res, toTypeName
 select mapPopulateSeries(map(toInt64(-10), toInt64(1), 2, 1)) as res, toTypeName(res);
 select mapPopulateSeries(map(toInt64(-10), toInt64(1), 2, 1), toInt64(-5)) as res, toTypeName(res);
 
-select mapPopulateSeries(); -- { serverError 42 }
-select mapPopulateSeries('asdf'); -- { serverError 43 }
-select mapPopulateSeries(map('1', 1, '2', 1)) as res, toTypeName(res); -- { serverError 43 }
+select mapPopulateSeries(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select mapPopulateSeries('asdf'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select mapPopulateSeries(map('1', 1, '2', 1)) as res, toTypeName(res); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -63,7 +63,7 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0 or 1", getName());
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {

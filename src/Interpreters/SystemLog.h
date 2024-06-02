@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
 
-#include <Interpreters/StorageID.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -131,7 +132,7 @@ public:
     void stopFlushThread() override;
 
 protected:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     using ISystemLog::is_shutdown;
     using ISystemLog::saving_thread;

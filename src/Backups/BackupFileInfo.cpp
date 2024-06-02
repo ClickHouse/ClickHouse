@@ -7,6 +7,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/ProcessList.h>
+
 #include <base/hex.h>
 
 
@@ -25,7 +27,7 @@ namespace
         return std::nullopt;
     }
 
-    enum class CheckBackupResult
+    enum class CheckBackupResult : uint8_t
     {
         HasPrefix,
         HasFull,
@@ -100,7 +102,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto adjusted_path = removeLeadingSlash(file_name);
 
@@ -127,7 +129,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     }
 
     if (!log)
-        log = &Poco::Logger::get("FileInfoFromBackupEntry");
+        log = getLogger("FileInfoFromBackupEntry");
 
     std::optional<SizeAndChecksum> base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
 
@@ -203,72 +205,44 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
+    std::atomic_bool failed = false;
 
-    auto thread_group = CurrentThread::getGroup();
-    Poco::Logger * log = &Poco::Logger::get("FileInfosFromBackupEntries");
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
 
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        {
-            std::lock_guard lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
+        if (failed)
+            break;
 
-        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log]()
+        runner([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
         {
-            SCOPE_EXIT_SAFE({
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                CurrentThread::detachFromGroupIfNotDetached();
-            });
-
+            if (failed)
+                return;
             try
             {
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                if (thread_group)
-                    CurrentThread::attachToGroup(thread_group);
-
-                setThreadName("BackupWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }
             catch (...)
             {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
+                failed = true;
+                throw;
             }
-        };
-
-        thread_pool.scheduleOrThrowOnError(job);
+        });
     }
 
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     return infos;
 }

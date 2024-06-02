@@ -6,6 +6,7 @@
 #include <Parsers/Kusto/ParserKQLMakeSeries.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
@@ -33,13 +34,13 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
          "variance"});
 
     Expected expected;
-    ParserKeyword s_default("default");
+    ParserKeyword s_default(Keyword::DEFAULT);
     ParserToken equals(TokenType::Equals);
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     ParserToken comma(TokenType::Comma);
 
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         String alias;
         String aggregation_fun;
@@ -96,7 +97,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     auto step_pos = begin;
     auto end_pos = begin;
 
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (String(pos->begin, pos->end) == "from")
             from_pos = pos;
@@ -141,7 +142,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
         || ParserKQLDateTypeTimespan().parseConstKQLTimespan(from_to_step.step_str))
     {
         from_to_step.is_timespan = true;
-        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos.max_depth));
+        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos.max_depth, pos.max_backtracks));
     }
     else
         from_to_step.step = std::stod(from_to_step.step_str);
@@ -149,7 +150,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     return true;
 }
 
-bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const uint32_t & max_depth)
+bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
 {
     const uint64_t era_diff
         = 62135596800; // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
@@ -165,17 +166,17 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto step = from_to_step.step;
 
     if (!kql_make_series.from_to_step.from_str.empty())
-        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, max_depth);
+        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, max_depth, max_backtracks);
 
     if (!kql_make_series.from_to_step.to_str.empty())
-        end_str = getExprFromToken(from_to_step.to_str, max_depth);
+        end_str = getExprFromToken(from_to_step.to_str, max_depth, max_backtracks);
 
     auto date_type_cast = [&](String & src)
     {
         Tokens tokens(src.c_str(), src.c_str() + src.size());
-        IParser::Pos pos(tokens, max_depth);
+        IParser::Pos pos(tokens, max_depth, max_backtracks);
         String res;
-        while (!pos->isEnd())
+        while (isValidKQLPos(pos))
         {
             String tmp = String(pos->begin, pos->end);
             if (tmp == "parseDateTime64BestEffortOrNull")
@@ -200,8 +201,8 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     {
         std::vector<String> group_expression_tokens;
         Tokens tokens(group_expression.c_str(), group_expression.c_str() + group_expression.size());
-        IParser::Pos pos(tokens, max_depth);
-        while (!pos->isEnd())
+        IParser::Pos pos(tokens, max_depth, max_backtracks);
+        while (isValidKQLPos(pos))
         {
             if (String(pos->begin, pos->end) == "AS")
             {
@@ -295,7 +296,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     ASTPtr sub_query_node;
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, max_depth))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, max_depth, max_backtracks))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -350,7 +351,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     else
         main_query = std::format("{},{}", group_expression_alias, final_axis_agg_alias_list);
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, max_depth))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, max_depth, max_backtracks))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -363,8 +364,8 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
-    ParserKeyword s_on("on");
-    ParserKeyword s_by("by");
+    ParserKeyword s_on(Keyword::ON);
+    ParserKeyword s_by(Keyword::BY);
 
     ParserToken equals(TokenType::Equals);
     ParserToken comma(TokenType::Comma);
@@ -410,10 +411,10 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             subquery_columns += ", " + column_str;
     }
 
-    makeSeries(kql_make_series, node, pos.max_depth);
+    makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
 
     Tokens token_main_query(kql_make_series.main_query.c_str(), kql_make_series.main_query.c_str() + kql_make_series.main_query.size());
-    IParser::Pos pos_main_query(token_main_query, pos.max_depth);
+    IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))
         return false;

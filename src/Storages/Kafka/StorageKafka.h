@@ -19,7 +19,9 @@
 namespace DB
 {
 
+class ReadFromStorageKafka;
 class StorageSystemKafkaConsumers;
+class ThreadStatus;
 
 struct StorageKafkaInterceptors;
 
@@ -41,6 +43,8 @@ public:
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 
+    ~StorageKafka() override;
+
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
@@ -48,7 +52,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -72,8 +77,6 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-    Names getVirtualColumnNames() const;
     StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
@@ -86,6 +89,8 @@ public:
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
 private:
+    friend class ReadFromStorageKafka;
+
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -97,7 +102,7 @@ private:
     const size_t max_rows_per_message;
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
-    Poco::Logger * log;
+    LoggerPtr log;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
@@ -130,18 +135,30 @@ private:
     SettingsChanges createSettingsAdjustments();
     /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
-    /// Returns consumer configuration with all changes that had been overwritten in config
+    /// Returns full consumer related configuration, also the configuration
+    /// contains global kafka properties.
     cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    /// Returns full producer related configuration, also the configuration
+    /// contains global kafka properties.
+    cppkafka::Configuration getProducerConfiguration();
 
     /// If named_collection is specified.
     String collection_name;
 
     std::atomic<bool> shutdown_called = false;
 
-    // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka global configuration
+    // https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md#global-configuration-properties
+    void updateGlobalConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from consumer configuration
+    // NOTE: librdkafka allow to set a consumer property to a producer and vice versa,
+    //       but a warning will be generated e.g:
+    //       "Configuration property session.timeout.ms is a consumer property and
+    //        will be ignored by this producer instance"
+    void updateConsumerConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from producer configuration
+    void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
 
-    String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
@@ -155,6 +172,8 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     void cleanConsumers();
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

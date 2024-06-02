@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
     CREATE TABLE input (key Int) Engine=Null;
     CREATE TABLE output AS input Engine=Null;
-    CREATE MATERIALIZED VIEW mv TO output AS SELECT * FROM input;
+    CREATE MATERIALIZED VIEW mv TO output SQL SECURITY NONE AS SELECT * FROM input;
 "
 
 for allow_experimental_analyzer in 0 1; do

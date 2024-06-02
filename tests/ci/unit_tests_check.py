@@ -3,35 +3,17 @@
 import json
 import logging
 import os
-import sys
 import subprocess
-import atexit
+import sys
 from pathlib import Path
-from typing import List, Tuple
-
-from github import Github
+from typing import Tuple
 
 from build_download_helper import download_unit_tests
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    post_commit_status,
-    update_mergeable_check,
-)
-from docker_images_helper import pull_image, get_docker_image
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from report import ERROR, FAILURE, FAIL, OK, SUCCESS, TestResults, TestResult
-from s3_helper import S3Helper
+from report import ERROR, FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
-
 
 IMAGE_NAME = "clickhouse/unit-test"
 
@@ -41,7 +23,7 @@ def get_test_name(line):
     for element in elements:
         if "(" not in element and ")" not in element:
             return element
-    raise Exception(f"No test name in line '{line}'")
+    raise ValueError(f"No test name in line '{line}'")
 
 
 def process_results(
@@ -122,7 +104,7 @@ def process_results(
             if "failures" in test_case:
                 raw_logs = ""
                 for failure in test_case["failures"]:
-                    raw_logs += failure["failure"]
+                    raw_logs += failure[FAILURE]
                 if (
                     "Segmentation fault" in raw_logs  # type: ignore
                     and SEGFAULT not in description
@@ -182,21 +164,9 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    pr_info = PRInfo()
-
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
-    atexit.register(update_mergeable_check, commit, pr_info, check_name)
-
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
-    download_unit_tests(check_name, REPORT_PATH, TEMP_PATH)
+    download_unit_tests(check_name, REPORT_PATH, temp_path)
 
     tests_binary = temp_path / "unit_tests_dbms"
     os.chmod(tests_binary, 0o777)
@@ -206,6 +176,7 @@ def main():
 
     run_command = (
         f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--volume={test_output}:/test_output {docker_image}"
     )
 
@@ -222,37 +193,20 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
-    s3_helper = S3Helper()
     state, description, test_results = process_results(test_output)
+    additional_files = [run_log_path] + [
+        p for p in test_output.iterdir() if not p.is_dir()
+    ]
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_files,
+    ).dump()
 
-    ch_helper = ClickHouseHelper()
-
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        [run_log_path] + [p for p in test_output.iterdir() if not p.is_dir()],
-        check_name,
-    )
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
-    )
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "failure":
+    if state == FAILURE:
         sys.exit(1)
 
 

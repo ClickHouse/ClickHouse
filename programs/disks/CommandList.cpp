@@ -84,7 +84,7 @@ private:
 
         for (const auto & file_name : file_names)
         {
-            auto path = relative_path + "/" + file_name;
+            auto path = relative_path.empty() ? file_name : (relative_path + "/" + file_name);
             if (disk->isDirectory(path))
                 listRecursive(disk, path);
         }

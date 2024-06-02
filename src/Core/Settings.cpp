@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_PROFILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
@@ -114,7 +115,11 @@ std::vector<String> Settings::getAllRegisteredNames() const
 void Settings::set(std::string_view name, const Field & value)
 {
     if (name == "compatibility")
+    {
+        if (value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.get<String>());
+    }
     /// If we change setting that was changed by compatibility setting before
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting

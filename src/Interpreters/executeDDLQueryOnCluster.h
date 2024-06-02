@@ -5,7 +5,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 
 namespace zkutil

@@ -27,7 +27,7 @@ namespace DB
 
 class Context;
 
-enum class MySQLDataTypesSupport;
+enum class MySQLDataTypesSupport : uint8_t;
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
@@ -58,7 +58,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 

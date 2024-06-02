@@ -226,7 +226,13 @@ private:
                       * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                       */
                     if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
-                        rpn_elements.emplace_back(std::move(element));
+                        rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
+                }
+
+                if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
+                {
+                    element.function = RPNElement::ALWAYS_TRUE;
+                    rpn_elements.emplace_back(std::move(element));
                 }
 
                 return;

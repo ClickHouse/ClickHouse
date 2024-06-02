@@ -32,7 +32,7 @@ namespace
 #endif
 
 
-    /// Get the host name. Is is constant on single server, but is not constant in distributed queries.
+    /// Get the host name. It is constant on single server, but is not constant in distributed queries.
     class FunctionHostName : public FunctionConstantBase<FunctionHostName, String, DataTypeString>
     {
     public:
@@ -51,12 +51,12 @@ namespace
     };
 
 
-    class FunctionTcpPort : public FunctionConstantBase<FunctionTcpPort, UInt16, DataTypeUInt16>
+    class FunctionTCPPort : public FunctionConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
     {
     public:
         static constexpr auto name = "tcpPort";
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTcpPort>(context); }
-        explicit FunctionTcpPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTCPPort>(context); }
+        explicit FunctionTCPPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
     };
 
 
@@ -153,9 +153,9 @@ REGISTER_FUNCTION(ServerUUID)
     factory.registerFunction<FunctionServerUUID>();
 }
 
-REGISTER_FUNCTION(TcpPort)
+REGISTER_FUNCTION(TCPPort)
 {
-    factory.registerFunction<FunctionTcpPort>();
+    factory.registerFunction<FunctionTCPPort>();
 }
 
 REGISTER_FUNCTION(Timezone)

@@ -49,7 +49,7 @@ DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, Conte
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , config(config_)
-    , log(&Poco::Logger::get("DatabaseS3(" + name_ + ")"))
+    , log(getLogger("DatabaseS3(" + name_ + ")"))
 {
 }
 
@@ -191,7 +191,7 @@ ASTPtr DatabaseS3::getCreateDatabaseQuery() const
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -303,7 +303,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseS3::getTablesForBackup(const 
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
