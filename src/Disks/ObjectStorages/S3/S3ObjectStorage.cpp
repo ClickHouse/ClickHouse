@@ -597,7 +597,7 @@ void S3ObjectStorage::applyNewSettings(
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
     {
-        auto new_client = getClient(uri, *settings_from_config, context, for_disk_s3);
+        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(modified_settings));

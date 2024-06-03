@@ -192,7 +192,10 @@ void AuthSettings::updateIfChanged(const AuthSettings & settings)
     if (!settings.users.empty())
         users.insert(settings.users.begin(), settings.users.end());
 
-    server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
+    if (settings.server_side_encryption_kms_config.key_id.has_value()
+        || settings.server_side_encryption_kms_config.encryption_context.has_value()
+        || settings.server_side_encryption_kms_config.key_id.has_value())
+        server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
 }
 
 RequestSettings::RequestSettings(
@@ -390,6 +393,26 @@ void RequestSettings::validateUploadSettings()
     /// We can check that max possible object size is not too small.
 }
 
+bool operator==(const AuthSettings & left, const AuthSettings & right)
+{
+    if (left.headers != right.headers)
+        return false;
+
+    if (left.users != right.users)
+        return false;
+
+    if (left.server_side_encryption_kms_config != right.server_side_encryption_kms_config)
+        return false;
+
+    auto l = left.begin();
+    for (const auto & r : right)
+    {
+        if ((l == left.end()) || (*l != r))
+            return false;
+        ++l;
+    }
+    return l == left.end();
+}
 }
 
 IMPLEMENT_SETTINGS_TRAITS(S3::AuthSettingsTraits, CLIENT_SETTINGS_LIST)

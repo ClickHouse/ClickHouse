@@ -146,9 +146,9 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
         const DB::Settings & settings,
         const std::string & config_prefix);
 
-    AuthSettings(const DB::Settings & settings);
+    explicit AuthSettings(const DB::Settings & settings);
 
-    AuthSettings(const DB::NamedCollection & collection);
+    explicit AuthSettings(const DB::NamedCollection & collection);
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed);
     bool hasUpdates(const AuthSettings & other) const;
@@ -158,7 +158,10 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
     HTTPHeaderEntries headers;
     std::unordered_set<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+    /// Note: if you add any field, do not forget to update operator ==.
 };
+
+bool operator==(const AuthSettings & left, const AuthSettings & right);
 
 struct RequestSettings : public BaseSettings<RequestSettingsTraits>
 {
