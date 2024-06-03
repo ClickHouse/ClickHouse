@@ -65,10 +65,10 @@ bool ReadBufferFromPocoSocketChunked::load_next_chunk(Position c_pos, bool cont)
     if (next_chunk)
     {
         if (cont)
-            LOG_TEST(log, "Packet receive continued. Size {}", next_chunk);
+            LOG_TEST(log, "{} <- {} Chunk receive continued. Size {}", ourAddress().toString(), peerAddress().toString(), next_chunk);
     }
     else
-        LOG_TEST(log, "Packet receive ended.");
+        LOG_TEST(log, "{} <- {} Chunk receive ended.", ourAddress().toString(), peerAddress().toString());
 
     return true;
 }
@@ -134,7 +134,7 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
                 c_pos = buffer().begin();
             }
 
-            LOG_TEST(log, "Packet receive started. Message {}, size {}", static_cast<unsigned int>(*c_pos), chunk_left);
+            LOG_TEST(log, "{} <- {} Chunk receive started. Message {}, size {}", ourAddress().toString(), peerAddress().toString(), static_cast<unsigned int>(*c_pos), chunk_left);
         }
         else
         {

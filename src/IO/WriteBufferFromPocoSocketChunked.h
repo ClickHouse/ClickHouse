@@ -30,7 +30,7 @@ public:
         if (finished)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: attempt to send empty chunk");
 
-        LOG_TEST(log, "Packet send ended.");
+        LOG_TEST(log, "{} -> {} Chunk send ended.", ourAddress().toString(), peerAddress().toString());
         finished = true;
 
         UInt32 s = 0;
@@ -43,9 +43,9 @@ protected:
         {
             UInt32 s = static_cast<UInt32>(offset());
             if (finished)
-                LOG_TEST(log, "Packet send started. Message {}, size {}", static_cast<unsigned int>(*buffer().begin()), s);
+                LOG_TEST(log, "{} -> {} Chunk send started. Message {}, size {}", ourAddress().toString(), peerAddress().toString(), static_cast<unsigned int>(*buffer().begin()), s);
             else
-                LOG_TEST(log, "Packet send continued. Size {}", s);
+                LOG_TEST(log, "{} -> {} Chunk send continued. Size {}", ourAddress().toString(), peerAddress().toString(), s);
 
             finished = false;
             s = toLittleEndian(s);
