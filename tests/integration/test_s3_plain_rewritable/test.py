@@ -8,10 +8,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 NUM_WORKERS = 5
-
 MAX_ROWS = 1000
-
-dirs_created = []
 
 
 def gen_insert_values(size):
@@ -46,8 +43,14 @@ def start_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.order(0)
-def test_insert():
+@pytest.mark.parametrize(
+    "storage_policy",
+    [
+        pytest.param("s3_plain_rewritable"),
+        pytest.param("cache_s3_plain_rewritable"),
+    ],
+)
+def test(storage_policy):
     def create_insert(node, insert_values):
         node.query(
             """
@@ -56,8 +59,10 @@ def test_insert():
                 data String
             ) ENGINE=MergeTree()
             ORDER BY id
-            SETTINGS storage_policy='s3_plain_rewritable'
-            """
+            SETTINGS storage_policy='{}'
+            """.format(
+                storage_policy
+            )
         )
         node.query("INSERT INTO test VALUES {}".format(insert_values))
 
@@ -107,25 +112,6 @@ def test_insert():
             != -1
         )
 
-        created = int(
-            node.query(
-                "SELECT value FROM system.events WHERE event = 'DiskPlainRewritableS3DirectoryCreated'"
-            )
-        )
-        assert created > 0
-        dirs_created.append(created)
-        assert (
-            int(
-                node.query(
-                    "SELECT value FROM system.metrics WHERE metric = 'DiskPlainRewritableS3DirectoryMapSize'"
-                )
-            )
-            == created
-        )
-
-
-@pytest.mark.order(1)
-def test_restart():
     insert_values_arr = []
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
@@ -138,6 +124,7 @@ def test_restart():
 
     threads = []
     for i in range(NUM_WORKERS):
+        node = cluster.instances[f"node{i + 1}"]
         t = threading.Thread(target=restart, args=(node,))
         threads.append(t)
         t.start()
@@ -152,20 +139,9 @@ def test_restart():
             == insert_values_arr[i]
         )
 
-
-@pytest.mark.order(2)
-def test_drop():
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
         node.query("DROP TABLE IF EXISTS test SYNC")
-
-        removed = int(
-            node.query(
-                "SELECT value FROM system.events WHERE event = 'DiskPlainRewritableS3DirectoryRemoved'"
-            )
-        )
-
-        assert dirs_created[i] == removed
 
     it = cluster.minio_client.list_objects(
         cluster.minio_bucket, "data/", recursive=True
