@@ -2995,8 +2995,6 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
         case ALWAYS_TRUE:
             return "true";
     }
-
-    UNREACHABLE();
 }
 
 

@@ -22,6 +22,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
+StatisticDescription & StatisticDescription::operator=(const StatisticDescription & other)
+{
+    if (this == &other)
+        return *this;
+
+    type = other.type;
+    column_name = other.column_name;
+    ast = other.ast ? other.ast->clone() : nullptr;
+
+    return *this;
+}
+
+StatisticDescription & StatisticDescription::operator=(StatisticDescription && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    type = std::exchange(other.type, StatisticType{});
+    column_name = std::move(other.column_name);
+    ast = other.ast ? other.ast->clone() : nullptr;
+    other.ast.reset();
+
+    return *this;
+}
+
 StatisticType stringToType(String type)
 {
     if (type == "tdigest")
@@ -55,15 +80,7 @@ std::vector<StatisticDescription> StatisticDescription::getStatisticsFromAST(con
 
         const auto & column = columns.getPhysical(column_name);
         stat.column_name = column.name;
-
-        auto function_node = std::make_shared<ASTFunction>();
-        function_node->name = "STATISTIC";
-        function_node->arguments = std::make_shared<ASTExpressionList>();
-        function_node->arguments->children.push_back(std::make_shared<ASTIdentifier>(stat_definition->type));
-        function_node->children.push_back(function_node->arguments);
-
-        stat.ast = function_node;
-
+        stat.ast = makeASTFunction("STATISTIC", std::make_shared<ASTIdentifier>(stat_definition->type));
         stats.push_back(stat);
     }
 
@@ -80,6 +97,7 @@ StatisticDescription StatisticDescription::getStatisticFromColumnDeclaration(con
     const auto & stat_type_list_ast = column.stat_type->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect only one statistic type for column {}", queryToString(column));
+
     const auto & stat_type = stat_type_list_ast->children[0]->as<ASTFunction &>().name;
 
     StatisticDescription stat;

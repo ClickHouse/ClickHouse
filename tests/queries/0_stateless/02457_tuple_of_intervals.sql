@@ -18,12 +18,12 @@ SELECT '---';
 SELECT '2022-10-11'::Date + tuple(INTERVAL 1 DAY);
 SELECT '2022-10-11'::Date - tuple(INTERVAL 1 DAY);
 SELECT tuple(INTERVAL 1 DAY) + '2022-10-11'::Date;
-SELECT tuple(INTERVAL 1 DAY) - '2022-10-11'::Date; -- { serverError 43 }
+SELECT tuple(INTERVAL 1 DAY) - '2022-10-11'::Date; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH tuple(INTERVAL 1 SECOND) + INTERVAL 1 SECOND as expr SELECT expr, toTypeName(expr);
 WITH tuple(INTERVAL 1 SECOND) - INTERVAL 1 SECOND as expr SELECT expr, toTypeName(expr);
-WITH INTERVAL 1 SECOND + tuple(INTERVAL 1 SECOND) as expr SELECT expr, toTypeName(expr); -- { serverError 43 }
-WITH INTERVAL 1 SECOND - tuple(INTERVAL 1 SECOND) as expr SELECT expr, toTypeName(expr); -- { serverError 43 }
+WITH INTERVAL 1 SECOND + tuple(INTERVAL 1 SECOND) as expr SELECT expr, toTypeName(expr); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH INTERVAL 1 SECOND - tuple(INTERVAL 1 SECOND) as expr SELECT expr, toTypeName(expr); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '---';
 

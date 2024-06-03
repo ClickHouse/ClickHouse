@@ -1613,12 +1613,6 @@ freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
-fromReadableSize
-fromReadableSizeOrNull
-fromReadableSizeOrZero
-fromReadableDecimalSize
-fromReadableDecimalSizeOrNull
-fromReadableDecimalSizeOrZero
 fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestampInJodaSyntax
@@ -1741,6 +1735,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
+hilbertEncode
+hilbertDecode
 hiveHash
 holistics
 homebrew
