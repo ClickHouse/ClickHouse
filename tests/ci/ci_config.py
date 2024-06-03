@@ -50,14 +50,10 @@ class CILabels(metaclass=WithIter):
     # to upload all binaries from build jobs
     UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_REDUCED = "ci_set_reduced"
-    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
-    CI_SET_INTEGRATION = "ci_set_integration"
+    CI_SET_REQUIRED = "ci_set_required"
+    CI_SET_NON_REQUIRED = "ci_set_non_required"
     CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
-    CI_SET_STATELESS = "ci_set_stateless"
-    CI_SET_STATEFUL = "ci_set_stateful"
-    CI_SET_STATELESS_ASAN = "ci_set_stateless_asan"
-    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
 
@@ -833,15 +829,34 @@ class CIConfig:
             raise KeyError("config contains errors", errors)
 
 
+# checks required by Mergeable Check
+REQUIRED_CHECKS = [
+    "PR Check",
+    StatusNames.SYNC,
+    JobNames.BUILD_CHECK,
+    JobNames.BUILD_CHECK_SPECIAL,
+    JobNames.DOCS_CHECK,
+    JobNames.FAST_TEST,
+    JobNames.STATEFUL_TEST_RELEASE,
+    JobNames.STATELESS_TEST_RELEASE,
+    JobNames.STATELESS_TEST_ASAN,
+    JobNames.STATELESS_TEST_FLAKY_ASAN,
+    JobNames.STATEFUL_TEST_ASAN,
+    JobNames.STYLE_CHECK,
+    JobNames.UNIT_TEST_ASAN,
+    JobNames.UNIT_TEST_MSAN,
+    JobNames.UNIT_TEST,
+    JobNames.UNIT_TEST_TSAN,
+    JobNames.UNIT_TEST_UBSAN,
+    JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+    JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
+]
+
+BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
+
 CI_CONFIG = CIConfig(
     label_configs={
         CILabels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        CILabels.CI_SET_FAST: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-            ]
-        ),
         CILabels.CI_SET_ARM: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
@@ -849,12 +864,9 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        CILabels.CI_SET_INTEGRATION: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                Build.PACKAGE_RELEASE,
-                JobNames.INTEGRATION_TEST,
-            ]
+        CILabels.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
+        CILabels.CI_SET_NON_REQUIRED: LabelConfig(
+            run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
         ),
         CILabels.CI_SET_OLD_ANALYZER: LabelConfig(
             run_jobs=[
@@ -864,38 +876,6 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_ASAN,
                 JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
                 JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-            ]
-        ),
-        CILabels.CI_SET_STATELESS: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_RELEASE,
-                JobNames.STATELESS_TEST_RELEASE,
-            ]
-        ),
-        CILabels.CI_SET_STATELESS_ASAN: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_ASAN,
-            ]
-        ),
-        CILabels.CI_SET_STATEFUL: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_RELEASE,
-                JobNames.STATEFUL_TEST_RELEASE,
-            ]
-        ),
-        CILabels.CI_SET_STATEFUL_ASAN: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_ASAN,
-                JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
         CILabels.CI_SET_REDUCED: LabelConfig(
@@ -1378,32 +1358,6 @@ CI_CONFIG = CIConfig(
     },
 )
 CI_CONFIG.validate()
-
-
-# checks required by Mergeable Check
-REQUIRED_CHECKS = [
-    "PR Check",
-    StatusNames.SYNC,
-    JobNames.BUILD_CHECK,
-    JobNames.BUILD_CHECK_SPECIAL,
-    JobNames.DOCS_CHECK,
-    JobNames.FAST_TEST,
-    JobNames.STATEFUL_TEST_RELEASE,
-    JobNames.STATELESS_TEST_RELEASE,
-    JobNames.STATELESS_TEST_ASAN,
-    JobNames.STATELESS_TEST_FLAKY_ASAN,
-    JobNames.STATEFUL_TEST_ASAN,
-    JobNames.STYLE_CHECK,
-    JobNames.UNIT_TEST_ASAN,
-    JobNames.UNIT_TEST_MSAN,
-    JobNames.UNIT_TEST,
-    JobNames.UNIT_TEST_TSAN,
-    JobNames.UNIT_TEST_UBSAN,
-    JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-    JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-]
-
-BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
 
 
 def is_required(check_name: str) -> bool:
