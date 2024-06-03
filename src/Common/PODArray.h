@@ -20,11 +20,6 @@
 #include <sys/mman.h>
 #endif
 
-#if USE_GWP_ASAN
-#    include <gwp_asan/platform_specific/guarded_pool_allocator_tls.h>
-
-#endif
-
 /** Whether we can use memcpy instead of a loop with assignment to T from U.
   * It is Ok if types are the same. And if types are integral and of the same size,
   *  example: char, signed char, unsigned char.

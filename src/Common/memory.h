@@ -162,10 +162,10 @@ requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(ptr)))
     {
         ProfileEvents::increment(ProfileEvents::GWPAsanFree);
-        GuardedAlloc.deallocate(ptr);
+        GWPAsan::GuardedAlloc.deallocate(ptr);
         return;
     }
 #endif
