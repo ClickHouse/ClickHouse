@@ -19,14 +19,9 @@ struct BoolMask
 
     /// Check if mask is no longer changeable under BoolMask::combine.
     /// We use this condition to early-exit KeyConditions::checkInRange methods.
-    bool isComplete(const BoolMask & initial_mask) const
+    bool isComplete() const
     {
-        if (initial_mask == consider_only_can_be_true)
-            return can_be_true;
-        else if (initial_mask == consider_only_can_be_false)
-            return can_be_false;
-        else
-            return can_be_true && can_be_false;
+        return can_be_true && can_be_false;
     }
 
     /// Combine check result in different hyperrectangles.

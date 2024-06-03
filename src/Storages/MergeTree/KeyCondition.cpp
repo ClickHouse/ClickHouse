@@ -2302,7 +2302,7 @@ static BoolMask forAnyHyperrectangle(
 
     /// There are several early-exit conditions (like the one below) hereinafter.
     /// They provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
-    if (result.isComplete(initial_mask))
+    if (result.isComplete())
         return result;
 
     /// [x1]       × [y1 .. +inf)
@@ -2315,7 +2315,7 @@ static BoolMask forAnyHyperrectangle(
             forAnyHyperrectangle(
                 key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
 
-        if (result.isComplete(initial_mask))
+        if (result.isComplete())
             return result;
     }
 
