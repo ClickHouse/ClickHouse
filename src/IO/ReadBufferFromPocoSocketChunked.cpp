@@ -101,7 +101,7 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
     if (!chunked)
         return ReadBufferFromPocoSocketBase::nextImpl();
 
-    auto c_pos = pos;
+    auto * c_pos = pos;
 
     if (chunk_left == 0)
     {
