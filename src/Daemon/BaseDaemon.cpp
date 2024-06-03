@@ -511,7 +511,7 @@ private:
                     LOG_FATAL(log, "ClickHouse version {} is old and should be upgraded to the latest version.", VERSION_STRING);
                 }
             }
-            else if constexpr (std::string_view(VERSION_OFFICIAL).contains("altinity build"))
+            else if (std::string_view(VERSION_OFFICIAL).contains("altinity build"))
             {
                 LOG_FATAL(log, "You are using an Altinity Stable Build. Please log issues at https://github.com/Altinity/ClickHouse/issues. Thank you!");
             }
