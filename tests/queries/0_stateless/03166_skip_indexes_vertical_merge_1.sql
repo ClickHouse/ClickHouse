@@ -1,9 +1,12 @@
 DROP TABLE IF EXISTS t_ind_merge_1;
 
+SET allow_experimental_analyzer = 1;
+
 CREATE TABLE t_ind_merge_1 (a UInt64, b UInt64, c UInt64, d UInt64, INDEX idx_b b TYPE minmax)
 ENGINE = MergeTree
 ORDER BY a SETTINGS
     index_granularity = 64,
+    merge_max_block_size = 8192,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     min_bytes_for_wide_part = 0;

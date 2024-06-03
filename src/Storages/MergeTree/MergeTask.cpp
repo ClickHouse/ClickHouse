@@ -95,7 +95,7 @@ static void addMissedColumnsToSerializationInfos(
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns()
+void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns() const
 {
     const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
@@ -233,12 +233,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    extractMergingAndGatheringColumns();
 
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
-
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
+
+    extractMergingAndGatheringColumns();
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());

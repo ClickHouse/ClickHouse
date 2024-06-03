@@ -259,7 +259,7 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
-        void extractMergingAndGatheringColumns();
+        void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
