@@ -2668,7 +2668,7 @@ static Aggregator::Params getAggregatorParams(
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(query_ptr),
         settings.collect_hash_table_stats_during_aggregation,
-        settings.max_entries_for_hash_table_stats,
+        context.getServerSettings().max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
     return Aggregator::Params

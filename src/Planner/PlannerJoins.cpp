@@ -807,7 +807,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
             StatsCollectingParams params{
                 calculateCacheKey(table_join, right_table_expression),
                 settings.collect_hash_table_stats_during_aggregation,
-                settings.max_entries_for_hash_table_stats,
+                query_context->getServerSettings().max_entries_for_hash_table_stats,
                 settings.max_size_to_preallocate_for_aggregation};
             return std::make_shared<ConcurrentHashJoin>(
                 query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header, params);

@@ -366,7 +366,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(select_query_info.query),
         settings.collect_hash_table_stats_during_aggregation,
-        settings.max_entries_for_hash_table_stats,
+        query_context->getServerSettings().max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;
