@@ -127,7 +127,6 @@ class Git:
         self.run = git_runner.run
         self.latest_tag = ""
         self.new_tag = ""
-        self.new_branch = ""
         self.branch = ""
         self.sha = ""
         self.sha_short = ""

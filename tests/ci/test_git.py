@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-from unittest.mock import patch
 import os.path as p
 import unittest
+from unittest.mock import patch
 
-from git_helper import Git, Runner, CWD
+from git_helper import CWD, Git, Runner
 
 
 class TestRunner(unittest.TestCase):
@@ -45,7 +45,6 @@ class TestGit(unittest.TestCase):
         update_mock.assert_called_once()
         self.git.run("test")
         self.run_mock.assert_called_once()
-        self.git.new_branch = "NEW_BRANCH_NAME"
         self.git.new_tag = "v21.12.333.22222-stable"
         self.git.branch = "old_branch"
         self.git.sha = ""
