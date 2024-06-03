@@ -147,10 +147,22 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
         while (i < size && isPrintableASCII(data[i]))
         {
-            if (!isEscapeSequence)
+            auto isParameterByte = isCSIParameterByte(data[i]);
+            auto isIntermediateByte = isCSIIntermediateByte(data[i]);
+            auto ignore_width = isEscapeSequence & (isParameterByte || isIntermediateByte);
+
+            if (ignore_width || (data[i] == '[' && isEscapeSequence))
+            {
+                /// don't count the width
+            }
+            else if (isEscapeSequence && isCSIFinalByte(data[i]))
+            {
+                isEscapeSequence = false;
+            }
+            else
+            {
                 ++width;
-            else if (isCSIFinalByte(data[i]) && data[i - 1] != '\x1b')
-                isEscapeSequence = false; /// end of CSI escape sequence reached
+            }
             ++i;
         }
 
