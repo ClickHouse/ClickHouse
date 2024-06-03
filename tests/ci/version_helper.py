@@ -114,6 +114,10 @@ class ClickHouseVersion:
     def tweak(self) -> int:
         return self._tweak
 
+    @tweak.setter
+    def tweak(self, tweak: int) -> None:
+        self._tweak = tweak
+
     @property
     def revision(self) -> int:
         return self._revision
@@ -190,7 +194,9 @@ class ClickHouseVersion:
             and self.tweak == other.tweak
         )
 
-    def __lt__(self, other: "ClickHouseVersion") -> bool:
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(self, type(other)):
+            return NotImplemented
         for part in ("major", "minor", "patch", "tweak"):
             if getattr(self, part) < getattr(other, part):
                 return True
@@ -220,10 +226,11 @@ ClickHouseVersions = List[ClickHouseVersion]
 
 class VersionType:
     LTS = "lts"
+    NEW = "new"
     PRESTABLE = "prestable"
     STABLE = "stable"
     TESTING = "testing"
-    VALID = (TESTING, PRESTABLE, STABLE, LTS)
+    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS)
 
 
 def validate_version(version: str) -> None:
@@ -263,14 +270,29 @@ def get_version_from_repo(
     versions_path: str = FILE_WITH_VERSION_PATH,
     git: Optional[Git] = None,
 ) -> ClickHouseVersion:
+    """Get a ClickHouseVersion from FILE_WITH_VERSION_PATH. When the `git` parameter is
+    present, a proper `tweak` version part is calculated for case if the latest tag has
+    a `new` type and greater than version in `FILE_WITH_VERSION_PATH`"""
     versions = read_versions(versions_path)
-    return ClickHouseVersion(
+    cmake_version = ClickHouseVersion(
         versions["major"],
         versions["minor"],
         versions["patch"],
         versions["revision"],
         git,
     )
+    # Since 24.5 we have tags like v24.6.1.1-new, and we must check if the release
+    # branch already has it's own commit. It's necessary for a proper tweak version
+    if git is not None and git.latest_tag:
+        version_from_tag = get_version_from_tag(git.latest_tag)
+        if (
+            version_from_tag.description == VersionType.NEW
+            and cmake_version < version_from_tag
+        ):
+            # We are in a new release branch without existing release.
+            # We should change the tweak version to a `tweak_to_new`
+            cmake_version.tweak = git.tweak_to_new
+    return cmake_version
 
 
 def get_version_from_string(
