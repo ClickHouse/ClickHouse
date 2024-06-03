@@ -5,7 +5,14 @@ sidebar_position: 36
 
 # covarPopStable
 
-Calculates the value of `Σ((x - x̅)(y - y̅)) / n`. It is similar to [covarPop](../reference/covarpop.md) but works slower while providing a lower computational error.
+Calculates the value of the population covariance:
+
+$$
+\frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n}
+$$
+
+It is similar to the [covarPop](../reference/covarpop.md) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
+
 
 **Syntax**
 
