@@ -1360,24 +1360,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead() const
 {
-    return selectRangesToReadImpl(
-        prepared_parts,
-        alter_conversions_for_parts,
-        metadata_for_reading,
-        query_info,
-        context,
-        requested_num_streams,
-        max_block_numbers_to_read,
-        data,
-        all_column_names,
-        log,
-        indexes);
+    return selectRangesToRead(prepared_parts, alter_conversions_for_parts, false /* find_exact_ranges */);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges) const
 {
-    return selectRangesToReadImpl(
+    return selectRangesToRead(
         std::move(parts),
         std::move(alter_conversions),
         metadata_for_reading,
