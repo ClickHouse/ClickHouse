@@ -17,6 +17,7 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 @pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
 def test_distributed_table_with_alias(start_cluster, prefer_localhost_replica):
     node.query(
