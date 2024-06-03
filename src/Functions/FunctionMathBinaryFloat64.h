@@ -62,7 +62,6 @@ private:
 
             LeftType left_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
-
             const auto & right_src_data = right_arg_typed->getData();
             const auto src_size = right_src_data.size();
             auto & dst_data = dst->getData();
@@ -79,8 +78,11 @@ private:
                 RightType right_src_remaining[Impl::rows_per_iteration];
                 memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
                 memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+                Float64 dst_remaining[Impl::rows_per_iteration];
 
-                Impl::execute(left_src_data, right_src_remaining, &dst_data[rows_size]);
+                Impl::execute(left_src_data, right_src_remaining, dst_remaining);
+
+                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
             return dst;
@@ -118,7 +120,11 @@ private:
                 memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
                 memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
 
-                Impl::execute(left_src_remaining, right_src_remaining, &dst_data[rows_size]);
+                Float64 dst_remaining[Impl::rows_per_iteration];
+
+                Impl::execute(left_src_remaining, right_src_remaining, dst_remaining);
+
+                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
             return dst;
@@ -146,7 +152,11 @@ private:
                 memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
                 memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 
-                Impl::execute(left_src_remaining, right_src_data, &dst_data[rows_size]);
+                Float64 dst_remaining[Impl::rows_per_iteration];
+
+                Impl::execute(left_src_remaining, right_src_data, dst_remaining);
+
+                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
             return dst;
