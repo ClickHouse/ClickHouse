@@ -7,9 +7,9 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include "S3QueueIFileMetadata.h"
-#include "S3QueueOrderedFileMetadata.h"
-#include "S3QueueSettings.h"
+#include <Storages/S3Queue/S3QueueIFileMetadata.h>
+#include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
+#include <Storages/S3Queue/S3QueueSettings.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
@@ -64,7 +64,7 @@ public:
     FileMetadataPtr getFileMetadata(const std::string & path, S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
 
     FileStatusPtr getFileStatus(const std::string & path);
-    FileStatuses getFileStateses() const;
+    FileStatuses getFileStatuses() const;
 
     /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;

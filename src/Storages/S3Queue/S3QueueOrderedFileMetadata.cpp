@@ -1,4 +1,4 @@
-#include "S3QueueOrderedFileMetadata.h"
+#include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -40,6 +40,53 @@ namespace
     }
 }
 
+S3QueueOrderedFileMetadata::BucketHolder::BucketHolder(
+    const Bucket & bucket_,
+    int bucket_version_,
+    const std::string & bucket_lock_path_,
+    const std::string & bucket_lock_id_path_,
+    zkutil::ZooKeeperPtr zk_client_)
+    : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
+        .bucket = bucket_,
+        .bucket_version = bucket_version_,
+        .bucket_lock_path = bucket_lock_path_,
+        .bucket_lock_id_path = bucket_lock_id_path_}))
+    , zk_client(zk_client_)
+{
+}
+
+void S3QueueOrderedFileMetadata::BucketHolder::release()
+{
+    if (released)
+        return;
+
+    released = true;
+    LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}", bucket_info->bucket);
+
+    Coordination::Requests requests;
+    /// Check that bucket lock version has not changed
+    /// (which could happen if session had expired as bucket_lock_path is ephemeral node).
+    requests.push_back(zkutil::makeCheckRequest(bucket_info->bucket_lock_id_path, bucket_info->bucket_version));
+    /// Remove bucket lock.
+    requests.push_back(zkutil::makeRemoveRequest(bucket_info->bucket_lock_path, -1));
+
+    Coordination::Responses responses;
+    const auto code = zk_client->tryMulti(requests, responses);
+    zkutil::KeeperMultiException::check(code, requests, responses);
+}
+
+S3QueueOrderedFileMetadata::BucketHolder::~BucketHolder()
+{
+    try
+    {
+        release();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 S3QueueOrderedFileMetadata::S3QueueOrderedFileMetadata(
     const std::filesystem::path & zk_path_,
     const std::string & path_,
@@ -73,6 +120,30 @@ std::vector<std::string> S3QueueOrderedFileMetadata::getMetadataPaths(size_t buc
     }
     else
         return {"failed", "processing"};
+}
+
+bool S3QueueOrderedFileMetadata::getMaxProcessedFile(
+    NodeMetadata & result,
+    Coordination::Stat * stat,
+    const zkutil::ZooKeeperPtr & zk_client)
+{
+    return getMaxProcessedFile(result, stat, processed_node_path, zk_client);
+}
+
+bool S3QueueOrderedFileMetadata::getMaxProcessedFile(
+    NodeMetadata & result,
+    Coordination::Stat * stat,
+    const std::string & processed_node_path_,
+    const zkutil::ZooKeeperPtr & zk_client)
+{
+    std::string data;
+    if (zk_client->tryGet(processed_node_path_, data, stat))
+    {
+        if (!data.empty())
+            result = NodeMetadata::fromString(data);
+        return true;
+    }
+    return false;
 }
 
 S3QueueOrderedFileMetadata::Bucket S3QueueOrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
@@ -130,7 +201,7 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
     if (Coordination::isHardwareError(code))
         return nullptr;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", code);
 }
 
 std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueOrderedFileMetadata::setProcessingImpl()

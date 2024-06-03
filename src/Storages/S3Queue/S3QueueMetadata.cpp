@@ -156,7 +156,7 @@ S3QueueMetadata::FileStatusPtr S3QueueMetadata::getFileStatus(const std::string 
     return local_file_statuses->get(path, /* create */false);
 }
 
-S3QueueMetadata::FileStatuses S3QueueMetadata::getFileStateses() const
+S3QueueMetadata::FileStatuses S3QueueMetadata::getFileStatuses() const
 {
     return local_file_statuses->getAll();
 }
@@ -391,59 +391,38 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
     /// Ordered in ascending order of timestamps.
     std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
 
-    for (const auto & node : processed_nodes)
+    auto fetch_nodes = [&](const Strings & nodes, const fs::path & base_path)
     {
-        const std::string path = zookeeper_processed_path / node;
-        try
+        for (const auto & node : nodes)
         {
-            std::string metadata_str;
-            if (zk_client->tryGet(path, metadata_str))
+            const std::string path = base_path / node;
+            try
             {
-                sorted_nodes.emplace(path, S3QueueIFileMetadata::NodeMetadata::fromString(metadata_str));
-                LOG_TEST(log, "Fetched metadata for node {}", path);
+                std::string metadata_str;
+                if (zk_client->tryGet(path, metadata_str))
+                {
+                    sorted_nodes.emplace(path, S3QueueIFileMetadata::NodeMetadata::fromString(metadata_str));
+                    LOG_TEST(log, "Fetched metadata for node {}", path);
+                }
+                else
+                    LOG_ERROR(log, "Failed to fetch node metadata {}", path);
             }
-            else
-                LOG_ERROR(log, "Failed to fetch node metadata {}", path);
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
+            catch (const zkutil::KeeperException & e)
             {
-                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                chassert(false);
-            }
+                if (!Coordination::isHardwareError(e.code))
+                {
+                    LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+                    chassert(false);
+                }
 
-            /// Will retry with a new zk connection.
-            throw;
-        }
-    }
-
-    for (const auto & node : failed_nodes)
-    {
-        const std::string path = zookeeper_failed_path / node;
-        try
-        {
-            std::string metadata_str;
-            if (zk_client->tryGet(path, metadata_str))
-            {
-                sorted_nodes.emplace(path, S3QueueIFileMetadata::NodeMetadata::fromString(metadata_str));
-                LOG_TEST(log, "Fetched metadata for node {}", path);
+                /// Will retry with a new zk connection.
+                throw;
             }
-            else
-                LOG_ERROR(log, "Failed to fetch node metadata {}", path);
         }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
-            {
-                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                chassert(false);
-            }
+    };
 
-            /// Will retry with a new zk connection.
-            throw;
-        }
-    }
+    fetch_nodes(processed_nodes, zookeeper_processed_path);
+    fetch_nodes(failed_nodes, zookeeper_failed_path);
 
     auto get_nodes_str = [&]()
     {
@@ -475,7 +454,7 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
             if (node_age >= settings.s3queue_tracked_file_ttl_sec)
             {
-                LOG_TRACE(log, "Removing node at path {} ({}) because file is reached",
+                LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);
 
                 local_file_statuses->remove(node.metadata.file_path, /* if_exists */true);

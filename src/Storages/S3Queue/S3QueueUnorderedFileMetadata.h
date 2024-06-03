@@ -1,5 +1,5 @@
 #pragma once
-#include "S3QueueIFileMetadata.h"
+#include <Storages/S3Queue/S3QueueIFileMetadata.h>
 #include <filesystem>
 #include <Common/logger_useful.h>
 

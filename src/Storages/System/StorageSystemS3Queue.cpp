@@ -45,7 +45,7 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
 {
     for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
     {
-        for (const auto & [file_name, file_status] : metadata->getFileStateses())
+        for (const auto & [file_name, file_status] : metadata->getFileStatuses())
         {
             size_t i = 0;
             res_columns[i++]->insert(zookeeper_path);

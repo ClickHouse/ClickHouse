@@ -1,4 +1,4 @@
-#include "S3QueueIFileMetadata.h"
+#include <Storages/S3Queue/S3QueueIFileMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -80,6 +80,7 @@ S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::NodeMetadata::fromStrin
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
+    chassert(json);
 
     NodeMetadata metadata;
     metadata.file_path = json->getValue<String>("file_path");
@@ -268,15 +269,20 @@ void S3QueueIFileMetadata::setFailedNonRetriable()
         return;
     }
 
-    if (responses[0]->error != Coordination::Error::ZOK)
+    if (Coordination::isHardwareError(responses[0]->error))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot create a persistent node in /failed since it already exists");
+        LOG_WARNING(log, "Cannot set file as failed: lost connection to keeper");
+        return;
     }
 
-    LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
-                "does not exist with expected processing id does not exist, "
-                "this could be a result of expired zookeeper session", path);
+    if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+    {
+        LOG_WARNING(log, "Cannot create a persistent node in /failed since it already exists");
+        chassert(false);
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error while setting file as failed: {}", code);
 }
 
 void S3QueueIFileMetadata::setFailedRetriable()
