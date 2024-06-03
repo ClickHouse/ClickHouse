@@ -1,4 +1,4 @@
-SELECT '-- generateSnowflakeID';
+-- Test SQL function 'generateSnowflakeID'
 
 SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeID()), 63), 1) = 0; -- check first bit is zero
 
@@ -12,18 +12,5 @@ SELECT count(*)
 FROM
 (
     SELECT DISTINCT generateSnowflakeID()
-    FROM numbers(100)
-);
-
-SELECT '-- generateSnowflakeIDThreadMonotonic';
-
-SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeIDThreadMonotonic()), 63), 1) = 0; -- check first bit is zero
-
-SELECT generateSnowflakeIDThreadMonotonic(1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
-SELECT count(*)
-FROM
-(
-    SELECT DISTINCT generateSnowflakeIDThreadMonotonic()
     FROM numbers(100)
 );

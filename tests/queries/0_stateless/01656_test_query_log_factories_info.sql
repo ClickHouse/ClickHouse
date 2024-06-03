@@ -20,7 +20,7 @@ FROM numbers(100);
 SELECT repeat('aa', number)
 FROM numbers(10e3)
 SETTINGS max_memory_usage=4e6, max_block_size=100
-FORMAT Null; -- { serverError 241 }
+FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 SELECT '';
 

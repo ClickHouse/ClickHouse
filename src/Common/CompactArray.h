@@ -116,7 +116,7 @@ public:
 
     /** Return the current cell number and the corresponding content.
       */
-    inline std::pair<BucketIndex, UInt8> get() const
+    std::pair<BucketIndex, UInt8> get() const
     {
         if ((current_bucket_index == 0) || is_eof)
             throw Exception(ErrorCodes::NO_AVAILABLE_DATA, "No available data.");
