@@ -96,6 +96,7 @@ RUN python3 -m pip install --no-cache-dir \
     pytz~=2023.3.post1 \
     pyyaml~=5.3.1 \
     redis~=5.0.1 \
+    requests~=2.31.0 \
     requests-kerberos \
     tzlocal~=2.1 \
     retry~=0.9.2 \
