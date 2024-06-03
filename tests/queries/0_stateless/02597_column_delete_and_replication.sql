@@ -16,7 +16,7 @@ ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.3)) where 1;
 
 ALTER TABLE test ADD COLUMN x UInt32 default 0;
 ALTER TABLE test UPDATE d = d || '1' where x = 42;
-ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync = 2; --{serverError 36}
+ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync = 2; --{serverError BAD_ARGUMENTS}
 
 ALTER TABLE test UPDATE x = x + 1 where 1 SETTINGS mutations_sync = 2;
 

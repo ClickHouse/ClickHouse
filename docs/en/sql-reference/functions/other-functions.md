@@ -735,8 +735,6 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
-The opposite operations of this function are [fromReadableDecimalSize](#fromReadableDecimalSize), [fromReadableDecimalSizeOrZero](#fromReadableDecimalSizeOrZero), and [fromReadableDecimalSizeOrNull](#fromReadableDecimalSizeOrNull).
-
 **Syntax**
 
 ```sql
@@ -767,8 +765,6 @@ Result:
 ## formatReadableSize
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
-
-The opposite operations of this function are [fromReadableSize](#fromReadableSize), [fromReadableSizeOrZero](#fromReadableSizeOrZero), and [fromReadableSizeOrNull](#fromReadableSizeOrNull).
 
 **Syntax**
 
