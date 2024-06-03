@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 std::optional<HashTablesStatistics::Entry> HashTablesStatistics::getSizeHint(const Params & params)
 {
     if (!params.isCollectionAndUseEnabled())

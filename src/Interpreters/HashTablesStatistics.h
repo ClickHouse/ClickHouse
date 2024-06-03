@@ -2,7 +2,6 @@
 
 #include <Common/CacheBase.h>
 
-
 namespace DB
 {
 
