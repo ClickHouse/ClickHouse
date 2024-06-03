@@ -63,10 +63,10 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 RUN python3 -m pip install --no-cache-dir \
     PyMySQL~=1.1.0 \
-    aerospike~=11.1.0 \
     asyncio~=3.4.3\
     avro~=1.10.2 \
     azure-storage-blob~=12.19.0\
+    boto3~=1.34.24 \
     cassandra-driver~=3.28.0\
     confluent-kafka~=1.9.2 \
     delta-spark~=2.3.0 \
@@ -79,7 +79,6 @@ RUN python3 -m pip install --no-cache-dir \
     kafka-python~=2.0.2 \
     kazoo~=2.9.0 \
     lz4~=4.3.2 \
-    meilisearch~=0.18.3 \
     minio~=7.2.0 \
     nats-py~=2.6.0 \
     protobuf~=4.25.1 \
@@ -91,6 +90,7 @@ RUN python3 -m pip install --no-cache-dir \
     pytest-order~=1.0.0 \
     pytest-random~=0.2 \
     pytest-repeat~=0.9.3 \
+    pytest-reportlog==0.4.0 \
     pytest-timeout~=2.2.0 \
     pytest-xdist~=3.5.0 \
     pytz~=2023.3.post1 \
@@ -102,7 +102,8 @@ RUN python3 -m pip install --no-cache-dir \
     retry~=0.9.2 \
     bs4~=0.0.1 \
     lxml~=4.9.3 \
-    urllib3~=2.1.0
+    urllib3~=2.1.0 \
+    jwcrypto==1.5.6
 # bs4, lxml are for cloud tests, do not delete
 
 # Hudi supports only spark 3.3.*, not 3.4
