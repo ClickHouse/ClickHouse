@@ -89,13 +89,13 @@ CREATE TABLE columns_with_multiple_streams_bad_case (
   field0 Nullable(String) CODEC(Delta, LZ4)
 )
 ENGINE = MergeTree
-ORDER BY tuple(); --{serverError 36}
+ORDER BY tuple(); --{serverError BAD_ARGUMENTS}
 
 CREATE TABLE columns_with_multiple_streams_bad_case (
   field0 Tuple(Array(UInt64), String) CODEC(T64, LZ4)
 )
 ENGINE = MergeTree
-ORDER BY tuple(); --{serverError 431}
+ORDER BY tuple(); --{serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE}
 
 SET allow_suspicious_codecs = 1;
 

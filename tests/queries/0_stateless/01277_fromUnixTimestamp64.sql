@@ -1,15 +1,15 @@
 -- -- Error cases
-SELECT fromUnixTimestamp64Milli();  -- {serverError 42}
-SELECT fromUnixTimestamp64Micro();  -- {serverError 42}
-SELECT fromUnixTimestamp64Nano();  -- {serverError 42}
+SELECT fromUnixTimestamp64Milli();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT fromUnixTimestamp64Micro();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT fromUnixTimestamp64Nano();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 
-SELECT fromUnixTimestamp64Milli('abc');  -- {serverError 43}
-SELECT fromUnixTimestamp64Micro('abc');  -- {serverError 43}
-SELECT fromUnixTimestamp64Nano('abc');  -- {serverError 43}
+SELECT fromUnixTimestamp64Milli('abc');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT fromUnixTimestamp64Micro('abc');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT fromUnixTimestamp64Nano('abc');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
-SELECT fromUnixTimestamp64Milli('abc', 123);  -- {serverError 43}
-SELECT fromUnixTimestamp64Micro('abc', 123);  -- {serverError 43}
-SELECT fromUnixTimestamp64Nano('abc', 123);  -- {serverError 43}
+SELECT fromUnixTimestamp64Milli('abc', 123);  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT fromUnixTimestamp64Micro('abc', 123);  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT fromUnixTimestamp64Nano('abc', 123);  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 SELECT 'const column';
 WITH

@@ -29,6 +29,7 @@
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
