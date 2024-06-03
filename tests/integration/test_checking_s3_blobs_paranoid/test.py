@@ -205,6 +205,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     [
         ("slow_down", "DB::Exception: Slow Down."),
         ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
+        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
         (
             "connection_refused",
             "Poco::Exception. Code: 1000, e.code() = 111, Connection refused",

@@ -260,6 +260,8 @@ class IColumn;
     M(Bool, force_primary_key, false, "Throw an exception if there is primary key in a table, and it is not used.", 0) \
     M(Bool, use_skip_indexes, true, "Use data skipping indexes during query execution.", 0) \
     M(Bool, use_skip_indexes_if_final, false, "If query has FINAL, then skipping data based on indexes may produce incorrect result, hence disabled by default.", 0) \
+    M(Bool, materialize_skip_indexes_on_insert, true, "If true skip indexes are calculated on inserts, otherwise skip indexes will be calculated only during merges", 0) \
+    M(Bool, materialize_statistics_on_insert, true, "If true statistics are calculated on inserts, otherwise statistics will be calculated only during merges", 0) \
     M(String, ignore_data_skipping_indices, "", "Comma separated list of strings or literals with the name of the data skipping indices that should be excluded during query execution.", 0) \
     \
     M(String, force_data_skipping_indices, "", "Comma separated list of strings or literals with the name of the data skipping indices that should be used during query execution, otherwise an exception will be thrown.", 0) \
@@ -394,7 +396,7 @@ class IColumn;
     M(Bool, allow_experimental_analyzer, true, "Allow experimental analyzer.", 0) \
     M(Bool, analyzer_compatibility_join_using_top_level_identifier, false, "Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).", 0) \
     M(Bool, prefer_global_in_and_join, false, "If enabled, all IN/JOIN operators will be rewritten as GLOBAL IN/JOIN. It's useful when the to-be-joined tables are only available on the initiator and we need to always scatter their data on-the-fly during distributed processing with the GLOBAL keyword. It's also useful to reduce the need to access the external sources joining external tables.", 0) \
-    M(Bool, enable_vertical_final, true, "If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows", 0) \
+    M(Bool, enable_vertical_final, false, "Not recommended. If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows", 0) \
     \
     \
     /** Limits during query execution are part of the settings. \
