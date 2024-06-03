@@ -17,21 +17,17 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-
-def test_distributed_table_with_alias(start_cluster):
-    node.query("")
+@pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
+def test_distributed_table_with_alias(start_cluster, prefer_localhost_replica):
     node.query(
         """
-        drop table IF EXISTS local;
-        drop table IF EXISTS dist;
+        DROP TABLE IF EXISTS local;
+        DROP TABLE IF EXISTS dist;
         CREATE TABLE local(`dummy` UInt8) ENGINE = MergeTree ORDER BY tuple();
         CREATE TABLE dist AS local ENGINE = Distributed(localhost_cluster, currentDatabase(), local);
-        SET prefer_localhost_replica = 1;
     """
     )
-    try:
-        # Attempt to execute the query
-        node.query("WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;")
-    except QueryRuntimeException as e:
-        # If an exception occurs, fail the test
-        pytest.fail(f"Query raised an exception: {e}")
+
+    node.query(f"SET prefer_localhost_replica = {prefer_localhost_replica};")
+
+    node.query("WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;")
