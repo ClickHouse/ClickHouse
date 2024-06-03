@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/NaNUtils.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -63,7 +64,7 @@ public:
 
         const IDataType & type = *arguments[0];
 
-        if (!isNativeNumber(type))
+        if (!isNativeNumber(type) && !isInterval(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() >= 2)
@@ -143,11 +144,13 @@ public:
         offsets_to.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
+        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
+        Float64 seconds_in_interval = interval_type ? interval_type->getKind().toSeconds() : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = arguments[0].column->getFloat64(i);
+            Float64 value = interval_type ? arguments[0].column->getFloat64(i) * seconds_in_interval : arguments[0].column->getFloat64(i);
 
             if (!isFinite(value))
             {
