@@ -327,7 +327,7 @@ private:
     const NameSet key_subexpr_names;
 
     /// Space-filling curves in the key
-    enum class SpaceFillingCurveType 
+    enum class SpaceFillingCurveType
     {
         Unknown = 0,
         Morton,
