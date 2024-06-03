@@ -63,9 +63,9 @@ private:
             LeftType left_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
 
-            auto & dst_data = dst->getData();
             const auto & right_src_data = right_arg_typed->getData();
             const auto src_size = right_src_data.size();
+            auto & dst_data = dst->getData();
             dst_data.resize(src_size);
 
             const auto rows_remaining = src_size % Impl::rows_per_iteration;
@@ -98,8 +98,8 @@ private:
 
             const auto & left_src_data = left_arg->getData();
             const auto & right_src_data = right_arg_typed->getData();
-            auto & dst_data = dst->getData();
             const auto src_size = left_src_data.size();
+            auto & dst_data = dst->getData();
             dst_data.resize(src_size);
 
             const auto rows_remaining = src_size % Impl::rows_per_iteration;
@@ -128,12 +128,11 @@ private:
             auto dst = ColumnVector<Float64>::create();
 
             const auto & left_src_data = left_arg->getData();
-            auto & dst_data = dst->getData();
-            const auto src_size = left_src_data.size();
-            dst_data.resize(src_size);
-
             RightType right_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
+            const auto src_size = left_src_data.size();
+            auto & dst_data = dst->getData();
+            dst_data.resize(src_size);
 
             const auto rows_remaining = src_size % Impl::rows_per_iteration;
             const auto rows_size = src_size - rows_remaining;
@@ -186,11 +185,10 @@ private:
             using Types = std::decay_t<decltype(types)>;
             using LeftType = typename Types::LeftType;
             using RightType = typename Types::RightType;
+            using ColVecLeft = ColumnVector<LeftType>;
 
             const IColumn * left_arg = col_ptr_left.get();
             const IColumn * right_arg = col_ptr_right.get();
-
-            using ColVecLeft = ColumnVector<LeftType>;
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
