@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/castColumn.h>
 
 #include "config.h"
 
@@ -53,89 +54,33 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    static void executeInIterations(const LeftType * left_src_data, size_t left_src_size, const RightType * right_src_data, size_t right_src_size, Float64 * dst_data)
-    {
-        if (left_src_size == 0 || right_src_size == 0)
-            return; // empty column (ex, for dry run)
-
-        const auto left_rows_remaining = left_src_size % Impl::rows_per_iteration;
-        const auto right_rows_remaining = right_src_size % Impl::rows_per_iteration;
-
-        const auto left_rows_size = left_src_size - left_rows_remaining;
-        const auto right_rows_size = right_src_size - right_rows_remaining;
-
-        const auto rows_size = std::max(left_rows_size, right_rows_size);
-
-        for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
-            Impl::execute(&left_src_data[i % left_rows_size], &right_src_data[i % right_rows_size], &dst_data[i]);
-
-        if (left_rows_remaining != 0 || right_rows_remaining != 0)
-        {
-            LeftType left_src_remaining[Impl::rows_per_iteration];
-            memcpy(left_src_remaining, &left_src_data[left_rows_size % left_src_size], left_rows_remaining * sizeof(LeftType));
-            memset(left_src_remaining + left_rows_remaining, 0, (Impl::rows_per_iteration - left_rows_remaining) * sizeof(LeftType));
-
-            RightType right_src_remaining[Impl::rows_per_iteration];
-            memcpy(right_src_remaining, &right_src_data[right_rows_size % right_src_size], right_rows_remaining * sizeof(RightType));
-            memset(right_src_remaining + right_rows_remaining, 0, (Impl::rows_per_iteration - right_rows_remaining) * sizeof(RightType));
-
-            Float64 dst_remaining[Impl::rows_per_iteration];
-
-            Impl::execute(left_src_remaining, right_src_remaining, dst_remaining);
-
-            const auto rows_remaining = std::max(left_rows_remaining, right_rows_remaining);
-
-            memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
-        }
-    }
-
-    template <typename LeftType, typename RightType>
     static ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg)
     {
-        if (const auto right_arg_typed = checkAndGetColumn<ColumnVectorOrDecimal<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
+
+            LeftType left_src_data[Impl::rows_per_iteration];
+            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
+
             auto & dst_data = dst->getData();
             const auto & right_src_data = right_arg_typed->getData();
             const auto src_size = right_src_data.size();
             dst_data.resize(src_size);
 
-            if constexpr (is_decimal<LeftType>)
+            const auto rows_remaining = src_size % Impl::rows_per_iteration;
+            const auto rows_size = src_size - rows_remaining;
+
+            for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
+                Impl::execute(left_src_data, &right_src_data[i], &dst_data[i]);
+
+            if (rows_remaining != 0)
             {
-                Float64 left_src_data[Impl::rows_per_iteration];
-                const auto left_scale = checkAndGetColumn<ColumnDecimal<LeftType>>(*left_arg->getDataColumnPtr()).getScale();
-                std::fill(std::begin(left_src_data), std::end(left_src_data), DecimalUtils::convertTo<Float64>(left_arg->template getValue<LeftType>(), left_scale));
+                RightType right_src_remaining[Impl::rows_per_iteration];
+                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
+                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
 
-                if constexpr (is_decimal<RightType>)
-                {
-                    const auto right_scale = right_arg_typed->getScale();
-                    for (size_t i = 0; i < src_size; ++i)
-                        dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
-
-                    executeInIterations(left_src_data, std::size(left_src_data), dst_data.data(), src_size, dst_data.data());
-                }
-                else
-                {
-                    executeInIterations(left_src_data, std::size(left_src_data), right_src_data.data(), src_size, dst_data.data());
-                }
-            }
-            else
-            {
-                LeftType left_src_data[Impl::rows_per_iteration];
-                std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
-
-                if constexpr (is_decimal<RightType>)
-                {
-                    const auto right_scale = right_arg_typed->getScale();
-                    for (size_t i = 0; i < src_size; ++i)
-                        dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
-
-                    executeInIterations(left_src_data, std::size(left_src_data), dst_data.data(), src_size, dst_data.data());
-                }
-                else
-                {
-                    executeInIterations(left_src_data, std::size(left_src_data), right_src_data.data(), src_size, dst_data.data());
-                }
+                Impl::execute(left_src_data, right_src_remaining, &dst_data[rows_size]);
             }
 
             return dst;
@@ -145,9 +90,9 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    static ColumnPtr executeTyped(const ColumnVectorOrDecimal<LeftType> * left_arg, const IColumn * right_arg)
+    static ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg)
     {
-        if (const auto right_arg_typed = checkAndGetColumn<ColumnVectorOrDecimal<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
@@ -157,45 +102,28 @@ private:
             const auto src_size = left_src_data.size();
             dst_data.resize(src_size);
 
-            if constexpr (is_decimal<LeftType> && is_decimal<RightType>)
-            {
-                auto left = ColumnVector<Float64>::create();
-                auto & left_data = left->getData();
-                left_data.resize(src_size);
-                const auto left_scale = left_arg->getScale();
-                const auto right_scale = right_arg_typed->getScale();
-                for (size_t i = 0; i < src_size; ++i)
-                {
-                    left_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
-                    dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
-                }
+            const auto rows_remaining = src_size % Impl::rows_per_iteration;
+            const auto rows_size = src_size - rows_remaining;
 
-                executeInIterations(left_data.data(), src_size, dst_data.data(), src_size, dst_data.data());
-            }
-            else if constexpr (!is_decimal<LeftType> && is_decimal<RightType>)
-            {
-                const auto right_scale = right_arg_typed->getScale();
-                for (size_t i = 0; i < src_size; ++i)
-                    dst_data[i] = DecimalUtils::convertTo<Float64>(right_src_data[i], right_scale);
+            for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
+                Impl::execute(&left_src_data[i], &right_src_data[i], &dst_data[i]);
 
-                executeInIterations(left_src_data.data(), src_size, dst_data.data(), src_size, dst_data.data());
-            }
-            else if constexpr (is_decimal<LeftType> && !is_decimal<RightType>)
+            if (rows_remaining != 0)
             {
-                const auto left_scale = left_arg->getScale();
-                for (size_t i = 0; i < src_size; ++i)
-                    dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
+                LeftType left_src_remaining[Impl::rows_per_iteration];
+                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
+                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 
-                executeInIterations(dst_data.data(), src_size, right_src_data.data(), src_size, dst_data.data());
-            }
-            else
-            {
-                executeInIterations(left_src_data.data(), src_size, right_src_data.data(), src_size, dst_data.data());
+                RightType right_src_remaining[Impl::rows_per_iteration];
+                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
+                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+
+                Impl::execute(left_src_remaining, right_src_remaining, &dst_data[rows_size]);
             }
 
             return dst;
         }
-        if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVectorOrDecimal<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
@@ -204,42 +132,22 @@ private:
             const auto src_size = left_src_data.size();
             dst_data.resize(src_size);
 
-            if constexpr (is_decimal<RightType>)
+            RightType right_src_data[Impl::rows_per_iteration];
+            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
+
+            const auto rows_remaining = src_size % Impl::rows_per_iteration;
+            const auto rows_size = src_size - rows_remaining;
+
+            for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
+                Impl::execute(&left_src_data[i], right_src_data, &dst_data[i]);
+
+            if (rows_remaining != 0)
             {
-                Float64 right_src_data[Impl::rows_per_iteration];
-                const auto right_scale = checkAndGetColumn<ColumnDecimal<RightType>>(*right_arg_typed->getDataColumnPtr()).getScale();
-                std::fill(std::begin(right_src_data), std::end(right_src_data), DecimalUtils::convertTo<Float64>(right_arg_typed->template getValue<RightType>(), right_scale));
+                LeftType left_src_remaining[Impl::rows_per_iteration];
+                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
+                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 
-                if constexpr (is_decimal<LeftType>)
-                {
-                    const auto left_scale = left_arg->getScale();
-                    for (size_t i = 0; i < src_size; ++i)
-                        dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
-
-                    executeInIterations(dst_data.data(), src_size, right_src_data, std::size(right_src_data), dst_data.data());
-                }
-                else
-                {
-                    executeInIterations(left_src_data.data(), src_size, right_src_data, std::size(right_src_data), dst_data.data());
-                }
-            }
-            else
-            {
-                RightType right_src_data[Impl::rows_per_iteration];
-                std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
-
-                if constexpr (is_decimal<LeftType>)
-                {
-                    const auto left_scale = left_arg->getScale();
-                    for (size_t i = 0; i < src_size; ++i)
-                        dst_data[i] = DecimalUtils::convertTo<Float64>(left_src_data[i], left_scale);
-
-                    executeInIterations(dst_data.data(), src_size, right_src_data, std::size(right_src_data), dst_data.data());
-                }
-                else
-                {
-                    executeInIterations(left_src_data.data(), src_size, right_src_data, std::size(right_src_data), dst_data.data());
-                }
+                Impl::execute(left_src_remaining, right_src_data, &dst_data[rows_size]);
             }
 
             return dst;
@@ -252,6 +160,25 @@ private:
     {
         const ColumnWithTypeAndName & col_left = arguments[0];
         const ColumnWithTypeAndName & col_right = arguments[1];
+
+        ColumnPtr col_ptr_left = col_left.column;
+        ColumnPtr col_ptr_right = col_right.column;
+
+        TypeIndex left_index = col_left.type->getTypeId();
+        TypeIndex right_index = col_right.type->getTypeId();
+
+        if (WhichDataType(col_left.type).isDecimal())
+        {
+            col_ptr_left = castColumn(col_left, std::make_shared<DataTypeFloat64>());
+            left_index = TypeIndex::Float64;
+        }
+
+        if (WhichDataType(col_right.type).isDecimal())
+        {
+            col_ptr_right = castColumn(col_right, std::make_shared<DataTypeFloat64>());
+            right_index = TypeIndex::Float64;
+        }
+
         ColumnPtr res;
 
         auto call = [&](const auto & types) -> bool
@@ -259,12 +186,13 @@ private:
             using Types = std::decay_t<decltype(types)>;
             using LeftType = typename Types::LeftType;
             using RightType = typename Types::RightType;
-            using ColVecOrDecimalLeft = ColumnVectorOrDecimal<LeftType>;
 
-            const IColumn * left_arg = col_left.column.get();
-            const IColumn * right_arg = col_right.column.get();
+            const IColumn * left_arg = col_ptr_left.get();
+            const IColumn * right_arg = col_ptr_right.get();
 
-            if (const auto left_arg_typed = checkAndGetColumn<ColVecOrDecimalLeft>(left_arg))
+            using ColVecLeft = ColumnVector<LeftType>;
+
+            if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
                 if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
@@ -272,7 +200,7 @@ private:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
                     right_arg->getName(), getName());
             }
-            if (const auto left_arg_typed = checkAndGetColumnConst<ColVecOrDecimalLeft>(left_arg))
+            if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
                 if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
@@ -284,10 +212,7 @@ private:
             return false;
         };
 
-        TypeIndex left_index = col_left.type->getTypeId();
-        TypeIndex right_index = col_right.type->getTypeId();
-
-        if (!callOnBasicTypes<true, true, true, false>(left_index, right_index, call))
+        if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 col_left.column->getName(), getName());
 
@@ -303,9 +228,9 @@ struct BinaryFunctionVectorized
     static constexpr auto rows_per_iteration = 1;
 
     template <typename T1, typename T2>
-    static void execute(const T1 * __restrict src_left, const T2 * __restrict src_right, Float64 * __restrict dst)
+    static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
-        *dst = Function(static_cast<Float64>(*src_left), static_cast<Float64>(*src_right));
+        dst[0] = Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0]));
     }
 };
 
