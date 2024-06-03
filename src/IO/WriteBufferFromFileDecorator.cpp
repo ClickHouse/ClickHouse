@@ -14,13 +14,22 @@ WriteBufferFromFileDecorator::WriteBufferFromFileDecorator(std::unique_ptr<Write
 
 void WriteBufferFromFileDecorator::finalizeImpl()
 {
-
-    /// In case of exception in preFinalize as a part of finalize call
-    /// WriteBufferFromFileDecorator.finalized is set as true
-    /// but impl->finalized is remain false
-    /// That leads to situation when the destructor of impl is called with impl->finalized equal false.
     if (!is_prefinalized)
-        WriteBufferFromFileDecorator::preFinalize();
+    {
+        try
+        {
+            WriteBufferFromFileDecorator::preFinalize();
+        }
+        catch (...)
+        {
+            /// In case of exception in preFinalize as a part of finalize call
+            /// WriteBufferFromFileDecorator.finalized is set as true
+            /// but impl->finalized is remain false
+            /// That leads to situation when the destructor of impl is called with impl->finalized equal false.
+            impl->finalizeFailed();
+            throw;
+        }
+    }
 
     {
         SwapHelper swap(*this, *impl);
