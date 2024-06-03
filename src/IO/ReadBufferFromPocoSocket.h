@@ -43,7 +43,7 @@ class ReadBufferFromPocoSocket : public ReadBufferFromPocoSocketBase
 {
 public:
     explicit ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-        : ReadBufferFromPocoSocketBase(socket_, buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+        : ReadBufferFromPocoSocketBase(socket_, buf_size)
     {}
     explicit ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
         : ReadBufferFromPocoSocketBase(socket_, read_event_, buf_size)

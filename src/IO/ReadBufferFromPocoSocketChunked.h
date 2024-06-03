@@ -96,7 +96,6 @@ protected:
     bool process_chunk_left(Position c_pos);
     bool nextImpl() override;
 
-protected:
     Poco::Net::SocketAddress our_address;
 
 private:
