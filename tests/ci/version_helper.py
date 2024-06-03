@@ -22,7 +22,7 @@ VERSIONS = Dict[str, Union[int, str]]
 
 VERSIONS_TEMPLATE = """# This variables autochanged by tests/ci/version_helper.py:
 
-# NOTE: has nothing common with DBMS_TCP_PROTOCOL_VERSION,
+# NOTE: VERSION_REVISION has nothing common with DBMS_TCP_PROTOCOL_VERSION,
 # only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.
 SET(VERSION_REVISION {revision})
 SET(VERSION_MAJOR {major})
@@ -47,7 +47,7 @@ class ClickHouseVersion:
         patch: Union[int, str],
         revision: Union[int, str],
         git: Optional[Git],
-        tweak: Optional[str] = None,
+        tweak: Optional[Union[int, str]] = None,
     ):
         self._major = int(major)
         self._minor = int(minor)
@@ -95,7 +95,7 @@ class ClickHouseVersion:
         if self._git is not None:
             self._git.update()
         return ClickHouseVersion(
-            self.major, self.minor, self.patch, self.revision, self._git, "1"
+            self.major, self.minor, self.patch, self.revision, self._git, 1
         )
 
     @property
@@ -172,7 +172,7 @@ class ClickHouseVersion:
             self.patch,
             self.revision,
             self._git,
-            str(self.tweak),
+            self.tweak,
         )
         try:
             copy.with_description(self.description)
