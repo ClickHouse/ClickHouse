@@ -39,17 +39,18 @@ namespace HilbertDetails
     │               │                │
     └────────────────────────────────┘
     Imagine a square, one side of which is a x-axis, other is a y-axis.
-    First approximation of the Hilbert curve is on the picture - U curve
-    So we divide Hilbert Code Interval on 4 parts each of which is represented by a square:
+    First approximation of the Hilbert curve is on the picture - U curve.
+    So we divide Hilbert Code Interval on 4 parts each of which is represented by a square
+    and look where the given interval [start, finish] is located:
     [00xxxxxx      |      01xxxxxx      |      10xxxxxx      |      11xxxxxx      ]
     1:     [                                                ]
            start = 0010111                                  end = 10111110
     2:     [       ]                    [                   ]
-    And look where the given interval [start, end] is located. If it contains whole sector (that represents a domain=square),
-    then we take this range. int he example above - it is a sector [01000000, 01111111]
-    Then we dig into the recursion and check the remaing ranges
-    Note that after first call all other ranges in the recursion will have either start or end on the end of a range,
-    so the comlexity of the algorithm will be O(logN), not O(N), where N is the maximum of hilbert code.
+    If it contains a whole sector (that represents a domain=square),
+    then we take this range. In the example above - it is a sector [01000000, 01111111]
+    Then we dig into the recursion and check the remaining ranges.
+    Note that after the first call all other ranges in the recursion will have either start or finish on the end of a range,
+    so the complexity of the algorithm will be O(logN), where N is the maximum of hilbert code.
 */
 template <typename F>
 void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F && callback)
@@ -110,8 +111,8 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
 }
 
 // Given 2 points representing ends of the range of Hilbert Curve that lies in a whole domain.
-// The are neighboor corners of some square - and the function returns ranges of both sides of this square
-std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1, UInt64 y1, UInt64 x2, UInt64 y2)
+// The are neighbour corners of some square - and the function returns ranges of both sides of this square
+inline std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1, UInt64 y1, UInt64 x2, UInt64 y2)
 {
     UInt64 dist_x = x1 > x2 ? x1 - x2 : x2 - x1;
     UInt64 dist_y = y1 > y2 ? y1 - y2 : y2 - y1;
