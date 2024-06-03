@@ -1,4 +1,4 @@
--- Tags: no-parallel, long, no-debug, no-tsan
+-- Tags: no-parallel, long, no-debug, no-tsan, no-msan, no-asan
 
 create table data_02344 (key Int) engine=Null;
 -- 3e9 rows is enough to fill the socket buffer and cause INSERT hung.

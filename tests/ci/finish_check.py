@@ -15,7 +15,7 @@ from commit_status_helper import (
 )
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import PENDING, SUCCESS
+from report import PENDING, SUCCESS, FAILURE
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 
@@ -59,16 +59,40 @@ def main():
                 can_set_green_mergeable_status=True,
             )
 
-        statuses = [s for s in statuses if s.context == StatusNames.CI]
-        if not statuses:
+        ci_running_statuses = [s for s in statuses if s.context == StatusNames.CI]
+        if not ci_running_statuses:
             return
         # Take the latest status
-        status = statuses[-1]
-        if status.state == PENDING:
+        ci_status = ci_running_statuses[-1]
+
+        has_failure = False
+        has_pending = False
+        for status in statuses:
+            if status.context in (StatusNames.MERGEABLE, StatusNames.CI):
+                # do not account these statuses
+                continue
+            if status.state == PENDING:
+                if status.context == StatusNames.SYNC:
+                    # do not account sync status if pending - it's a different WF
+                    continue
+                has_pending = True
+            elif status.state == SUCCESS:
+                continue
+            else:
+                has_failure = True
+
+        ci_state = SUCCESS
+        if has_failure:
+            ci_state = FAILURE
+        elif has_pending:
+            print("ERROR: CI must not have pending jobs by the time of finish check")
+            ci_state = FAILURE
+
+        if ci_status.state == PENDING:
             post_commit_status(
                 commit,
-                SUCCESS,
-                status.target_url,
+                ci_state,
+                ci_status.target_url,
                 "All checks finished",
                 StatusNames.CI,
                 pr_info,
