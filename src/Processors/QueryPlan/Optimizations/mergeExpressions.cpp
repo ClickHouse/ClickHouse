@@ -81,7 +81,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         const auto & child_actions = child_filter->getExpression();
         const auto & parent_actions = parent_filter->getExpression();
 
-        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
+        if (child_actions->hasArrayJoin())
             return 0;
 
         auto actions = child_actions->clone();
