@@ -12,7 +12,7 @@
 1.00 TB
 1.00 PB
 1.00 EB
-1.00 MB
+1.00 MiB
 1024
 3072
 1024
@@ -37,7 +37,7 @@
 1 EiB	1152921504606846976
 invalid	\N
 1 Joe	\N
-1KB	\N
+1KB	1000
  1 GiB	\N
 1 TiB with fries	\N
 NaN KiB	\N
@@ -52,7 +52,7 @@ Inf KiB	\N
 1 EiB	1152921504606846976
 invalid	0
 1 Joe	0
-1KB	0
+1KB	1000
  1 GiB	0
 1 TiB with fries	0
 NaN KiB	0
