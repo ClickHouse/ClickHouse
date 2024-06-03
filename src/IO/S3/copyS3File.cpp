@@ -185,7 +185,7 @@ namespace
 
             request.SetMultipartUpload(multipart_upload);
 
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
+            size_t max_retries = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);

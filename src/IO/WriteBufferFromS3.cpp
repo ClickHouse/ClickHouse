@@ -610,7 +610,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 
     req.SetMultipartUpload(multipart_upload);
 
-    size_t max_retry = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
+    size_t max_retry = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
