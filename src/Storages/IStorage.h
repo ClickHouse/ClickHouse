@@ -20,7 +20,6 @@
 #include <Common/TypePromotion.h>
 
 #include <optional>
-#include <compare>
 
 
 namespace DB

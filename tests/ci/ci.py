@@ -47,6 +47,7 @@ from env_helper import (
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
+    CI_CONFIG_PATH,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
@@ -274,6 +275,13 @@ class CiCache:
                 f"Cache records: [{record_type}]", list(self.records[record_type])
             )
         return self
+
+    @staticmethod
+    def dump_run_config(indata: Dict[str, Any]) -> None:
+        assert indata
+        assert CI_CONFIG_PATH
+        with open(CI_CONFIG_PATH, "w", encoding="utf-8") as json_file:
+            json.dump(indata, json_file, indent=2)
 
     def update(self):
         """
@@ -618,11 +626,11 @@ class CiCache:
 
     def download_build_reports(self, file_prefix: str = "") -> List[str]:
         """
-        not ideal class for this method,
+        not an ideal class for this method,
         but let it be as we store build reports in CI cache directory on s3
         and CiCache knows where exactly
 
-        @file_prefix allows to filter out reports by git head_ref
+        @file_prefix allows filtering out reports by git head_ref
         """
         report_path = Path(REPORT_PATH)
         report_path.mkdir(exist_ok=True, parents=True)
@@ -754,6 +762,7 @@ class CiOptions:
 
     do_not_test: bool = False
     no_ci_cache: bool = False
+    upload_all: bool = False
     no_merge_commit: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
@@ -783,7 +792,9 @@ class CiOptions:
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
         )
 
-        pattern = r"(#|- \[x\] +<!---)(\w+)"
+        # CI setting example we need to match with re:
+        # - [x] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
+        pattern = r"(#|- \[x\] +<!---)([|\w]+)"
         matches = [match[-1] for match in re.findall(pattern, message)]
         print(f"CI tags from commit message: [{matches}]")
 
@@ -817,12 +828,16 @@ class CiOptions:
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
-                res.exclude_keywords.append(
-                    normalize_check_name(match.removeprefix("ci_exclude_"))
-                )
+                keywords = match.removeprefix("ci_exclude_").split("|")
+                res.exclude_keywords += [
+                    normalize_check_name(keyword) for keyword in keywords
+                ]
             elif match == CILabels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
+            elif match == CILabels.UPLOAD_ALL_ARTIFACTS:
+                res.upload_all = True
+                print("NOTE: All binary artifacts will be uploaded")
             elif match == CILabels.DO_NOT_TEST_LABEL:
                 res.do_not_test = True
             elif match == CILabels.NO_MERGE_COMMIT:
@@ -891,14 +906,14 @@ class CiOptions:
                     for job in job_with_parents:
                         if job in jobs_to_do and job not in jobs_to_do_requested:
                             jobs_to_do_requested.append(job)
-            print(
-                f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
-            )
+            if not jobs_to_do_requested:
+                print(
+                    f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+                )
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
 
-        # FIXME: to be removed in favor of include/exclude
         # 1. Handle "ci_set_" tags if any
         if self.ci_sets:
             for tag in self.ci_sets:
@@ -907,7 +922,12 @@ class CiOptions:
                 print(
                     f"NOTE: CI Set's tag: [{tag}], add jobs: [{label_config.run_jobs}]"
                 )
-                jobs_to_do_requested += label_config.run_jobs
+                # match against @jobs_to_do and @jobs_to_skip to remove non-relevant entries from @label_config.run_jobs
+                jobs_to_do_requested += [
+                    job
+                    for job in label_config.run_jobs
+                    if job in jobs_to_do or job in jobs_to_skip
+                ]
 
         # FIXME: to be removed in favor of include/exclude
         # 2. Handle "job_" tags if any
@@ -1194,12 +1214,17 @@ def _pre_action(s3, indata, pr_info):
     BuildResult.cleanup()
     ci_cache = CiCache(s3, indata["jobs_data"]["digests"])
 
-    # for release/master branches reports must be from the same branches
-    report_prefix = normalize_string(pr_info.head_ref) if pr_info.number == 0 else ""
+    # for release/master branches reports must be from the same branch
+    report_prefix = ""
+    if pr_info.is_master or pr_info.is_release:
+        report_prefix = normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
     reports_files = ci_cache.download_build_reports(file_prefix=report_prefix)
+
+    ci_cache.dump_run_config(indata)
+
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
 
@@ -1351,7 +1376,12 @@ def _configure_jobs(
 
     # FIXME: find better place for these config variables
     DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
-    MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
+    MQ_JOBS = [
+        JobNames.STYLE_CHECK,
+        JobNames.FAST_TEST,
+        Build.BINARY_RELEASE,
+        JobNames.UNIT_TEST,
+    ]
     # Must always calculate digest for these jobs for CI Cache to function (they define s3 paths where records are stored)
     REQUIRED_DIGESTS = [JobNames.DOCS_CHECK, Build.PACKAGE_RELEASE]
     if pr_info.has_changes_in_documentation_only():
@@ -1367,6 +1397,9 @@ def _configure_jobs(
             and job not in REQUIRED_DIGESTS
         ):
             # We still need digest for JobNames.DOCS_CHECK since CiCache depends on it (FIXME)
+            continue
+        if pr_info.is_master and job in MQ_JOBS:
+            # On master - skip jobs that run in MQ
             continue
         if (
             pr_info.has_changes_in_documentation_only()
@@ -1612,6 +1645,7 @@ def _upload_build_artifacts(
     job_report: JobReport,
     s3: S3Helper,
     s3_destination: str,
+    upload_binary: bool,
 ) -> str:
     # There are ugly artifacts for the performance test. FIXME:
     s3_performance_path = "/".join(
@@ -1625,25 +1659,29 @@ def _upload_build_artifacts(
     performance_urls = []
     assert job_report.build_dir_for_upload, "Must be set for build job"
     performance_path = Path(job_report.build_dir_for_upload) / "performance.tar.zst"
-    if performance_path.exists():
-        performance_urls.append(
-            s3.upload_build_file_to_s3(performance_path, s3_performance_path)
+    if upload_binary:
+        if performance_path.exists():
+            performance_urls.append(
+                s3.upload_build_file_to_s3(performance_path, s3_performance_path)
+            )
+            print(
+                "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
+                performance_urls[0],
+            )
+            performance_path.unlink()
+        build_urls = (
+            s3.upload_build_directory_to_s3(
+                Path(job_report.build_dir_for_upload),
+                s3_destination,
+                keep_dirs_in_s3_path=False,
+                upload_symlinks=False,
+            )
+            + performance_urls
         )
-        print(
-            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
-            performance_urls[0],
-        )
-        performance_path.unlink()
-    build_urls = (
-        s3.upload_build_directory_to_s3(
-            Path(job_report.build_dir_for_upload),
-            s3_destination,
-            keep_dirs_in_s3_path=False,
-            upload_symlinks=False,
-        )
-        + performance_urls
-    )
-    print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+        print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+    else:
+        build_urls = []
+        print("::notice ::No binaries will be uploaded for this job")
     log_path = Path(job_report.additional_files[0])
     log_url = ""
     if log_path.exists():
@@ -1652,7 +1690,7 @@ def _upload_build_artifacts(
         )
     print(f"::notice ::Log URL: {log_url}")
 
-    # generate and upload build report
+    # generate and upload a build report
     build_result = BuildResult(
         build_name,
         log_url,
@@ -2180,6 +2218,15 @@ def main() -> int:
                 assert (
                     indata
                 ), f"--infile with config must be provided for POST action of a build type job [{args.job_name}]"
+
+                # upload binaries only for normal builds in PRs
+                upload_binary = (
+                    not pr_info.is_pr
+                    or args.job_name
+                    not in CI_CONFIG.get_builds_for_report(JobNames.BUILD_CHECK_SPECIAL)
+                    or CiOptions.create_from_run_config(indata).upload_all
+                )
+
                 build_name = args.job_name
                 s3_path_prefix = "/".join(
                     (
@@ -2195,10 +2242,12 @@ def main() -> int:
                     job_report=job_report,
                     s3=s3,
                     s3_destination=s3_path_prefix,
+                    upload_binary=upload_binary,
                 )
-                _upload_build_profile_data(
-                    pr_info, build_name, job_report, git_runner, ch_helper
-                )
+                # FIXME: profile data upload does not work
+                # _upload_build_profile_data(
+                #     pr_info, build_name, job_report, git_runner, ch_helper
+                # )
                 check_url = log_url
             else:
                 # test job
