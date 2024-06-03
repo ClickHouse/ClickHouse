@@ -1735,6 +1735,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
+hilbertEncode
+hilbertDecode
 hiveHash
 holistics
 homebrew
