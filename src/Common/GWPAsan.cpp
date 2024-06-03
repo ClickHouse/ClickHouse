@@ -12,9 +12,10 @@
 #    include <Common/StackTrace.h>
 #    include <Common/logger_useful.h>
 
+#    include <atomic>
 #    include <iostream>
 
-namespace Memory
+namespace GWPAsan
 {
 
 namespace
@@ -53,6 +54,7 @@ static bool guarded_alloc_initialized = []
 
     auto & opts = gwp_asan::options::getOptions();
     opts.Backtrace = getBackTrace;
+    opts.MaxSimultaneousAllocations = 256; /// for testing
     GuardedAlloc.init(opts);
 
     ///std::cerr << "GwpAsan is initialized, the options are { Enabled: " << opts.Enabled
@@ -155,7 +157,7 @@ void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan:
 
 }
 
-void printGWPAsanReport([[maybe_unused]] uintptr_t fault_address)
+void printReport([[maybe_unused]] uintptr_t fault_address)
 {
     const auto logger = getLogger("GWPAsan");
     const auto * state = GuardedAlloc.getAllocatorState();
@@ -212,5 +214,13 @@ void printGWPAsanReport([[maybe_unused]] uintptr_t fault_address)
         reinterpret_cast<void **>(trace.data()), 0, trace_length, [&](const auto line) { LOG_FATAL(logger, fmt::runtime(line)); });
 }
 
+std::atomic<double> force_sample_probability = 0.0;
+
+void setForceSampleProbability(double value)
+{
+    force_sample_probability.store(value, std::memory_order_relaxed);
 }
+
+}
+
 #endif

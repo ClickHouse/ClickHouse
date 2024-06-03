@@ -37,11 +37,11 @@ requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
         if constexpr (sizeof...(TAlign) == 1)
         {
-            if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align...)))
+            if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignToSizeT(align...)))
             {
                 ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
@@ -53,7 +53,7 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
         }
         else
         {
-            if (void * ptr = GuardedAlloc.allocate(size))
+            if (void * ptr = GWPAsan::GuardedAlloc.allocate(size))
             {
                 ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
@@ -83,9 +83,9 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
-        if (void * ptr = GuardedAlloc.allocate(size))
+        if (void * ptr = GWPAsan::GuardedAlloc.allocate(size))
         {
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
@@ -102,9 +102,9 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
-        if (void * ptr = GuardedAlloc.allocate(size, alignToSizeT(align)))
+        if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignToSizeT(align)))
         {
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
@@ -121,10 +121,10 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align)
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(ptr)))
     {
         ProfileEvents::increment(ProfileEvents::GWPAsanFree);
-        GuardedAlloc.deallocate(ptr);
+        GWPAsan::GuardedAlloc.deallocate(ptr);
         return;
     }
 #endif
@@ -141,10 +141,10 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... al
         return;
 
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(ptr)))
     {
         ProfileEvents::increment(ProfileEvents::GWPAsanFree);
-        GuardedAlloc.deallocate(ptr);
+        GWPAsan::GuardedAlloc.deallocate(ptr);
         return;
     }
 #endif
@@ -217,10 +217,10 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
     std::size_t actual_size = 0;
 
 #if USE_GWP_ASAN
-    if (unlikely(GuardedAlloc.pointerIsMine(ptr)))
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(ptr)))
     {
         if (!size)
-            size = GuardedAlloc.getSize(ptr);
+            size = GWPAsan::GuardedAlloc.getSize(ptr);
         trace = CurrentMemoryTracker::free(size);
         return size;
     }

@@ -159,8 +159,8 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
 #if USE_GWP_ASAN
     if (const auto fault_address = reinterpret_cast<uintptr_t>(info->si_addr);
-        ::Memory::isGWPAsanError(fault_address))
-        ::Memory::printGWPAsanReport(fault_address);
+        GWPAsan::isGWPAsanError(fault_address))
+        GWPAsan::printReport(fault_address);
 #endif
 
     writeBinary(sig, out);

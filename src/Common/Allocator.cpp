@@ -68,9 +68,9 @@ void * allocNoTrack(size_t size, size_t alignment)
 {
     void * buf;
 #if USE_GWP_ASAN
-    if (unlikely(Memory::GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
-        if (void * ptr = Memory::GuardedAlloc.allocate(size, alignment))
+        if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignment))
         {
             if constexpr (clear_memory)
                 memset(ptr, 0, size);
@@ -120,10 +120,10 @@ void * allocNoTrack(size_t size, size_t alignment)
 void freeNoTrack(void * buf)
 {
 #if USE_GWP_ASAN
-    if (unlikely(Memory::GuardedAlloc.pointerIsMine(buf)))
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
     {
         ProfileEvents::increment(ProfileEvents::GWPAsanFree);
-        Memory::GuardedAlloc.deallocate(buf);
+        GWPAsan::GuardedAlloc.deallocate(buf);
         return;
     }
 #endif
@@ -185,9 +185,9 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     }
 
 #if USE_GWP_ASAN
-    if (unlikely(Memory::GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
-        if (void * ptr = Memory::GuardedAlloc.allocate(new_size, alignment))
+        if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))
         {
             auto trace_free = CurrentMemoryTracker::free(old_size);
             auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
@@ -213,7 +213,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         }
     }
 
-    if (unlikely(Memory::GuardedAlloc.pointerIsMine(buf)))
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
     {
         /// Big allocs that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
         void * new_buf = alloc(new_size, alignment);

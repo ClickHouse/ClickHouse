@@ -2,17 +2,19 @@
 
 #include "config.h"
 
-#include <Common/Allocator.h>
-#include <Common/BitHelpers.h>
-#include <Common/memcpySmall.h>
-#include <Common/PODArray_fwd.h>
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
+#include <Common/Allocator.h>
+#include <Common/BitHelpers.h>
+#include <Common/GWPAsan.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/memcpySmall.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <cstddef>
-#include <cassert>
-#include <algorithm>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -119,7 +121,8 @@ protected:
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
 #if USE_GWP_ASAN
-        gwp_asan::getThreadLocals()->NextSampleCounter = 1;
+        if (unlikely(GWPAsan::shouldForceSample()))
+            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
 #endif
 
         char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
@@ -152,7 +155,8 @@ protected:
         }
 
 #if USE_GWP_ASAN
-        gwp_asan::getThreadLocals()->NextSampleCounter = 1;
+        if (unlikely(GWPAsan::shouldForceSample()))
+            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
 #endif
 
         unprotect();
