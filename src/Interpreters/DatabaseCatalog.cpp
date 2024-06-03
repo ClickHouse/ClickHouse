@@ -1068,7 +1068,8 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
     return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
-void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
+void DatabaseCatalog::enqueueDroppedTableCleanup(
+    StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay, bool is_detached_table)
 {
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
@@ -1117,7 +1118,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        if (isTableExist(table_id, getContext()))
+        if (!is_detached_table)
             addUUIDMapping(table_id.uuid);
         drop_time = FS::getModificationTime(dropped_metadata_path);
     }

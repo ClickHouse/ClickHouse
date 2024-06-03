@@ -98,28 +98,56 @@ def test_drop_replicated_table(start_cluster):
 
     zk = cluster.get_kazoo_client("zoo1")
 
-    exists_replica_1_1 = check_exists(
+    exists_replica = check_exists(
         zk,
         "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
             table_name="test_replicated_table", replica=replica1.name
         ),
     )
-    assert exists_replica_1_1 != None
+    assert exists_replica != None
 
     replica1.query(
-        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table ON CLUSTER test_cluster SYNC;"
+        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table SYNC;"
+    )
+
+    exists_replica = check_exists(
+        zk,
+        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
+            table_name="test_replicated_table", replica=replica1.name
+        ),
+    )
+    assert exists_replica == None
+
+    exists_replica = check_exists(
+        zk,
+        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
+            table_name="test_replicated_table", replica=replica2.name
+        ),
+    )
+    assert exists_replica != None
+
+    replica2.query(
+        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table SYNC;"
     )
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
 
-    exists_node = check_exists(
+    exists_replica = check_exists(
         zk,
-        "/clickhouse/tables/shard1/{table_name}/".format(
-            table_name="test_replicated_table"
+        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
+            table_name="test_replicated_table", replica=replica1.name
         ),
     )
-    assert exists_node == None
+    assert exists_replica == None
+
+    exists_replica = check_exists(
+        zk,
+        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
+            table_name="test_replicated_table", replica=replica2.name
+        ),
+    )
+    assert exists_replica == None
 
 
 def test_drop_s3_table(start_cluster):

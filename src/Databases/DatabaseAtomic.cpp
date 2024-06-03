@@ -194,7 +194,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     }
 
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, table_metadata_path_drop, sync);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, table_metadata_path_drop, sync, true);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
