@@ -56,7 +56,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(const QueryTreeNodePtr & filte
     return result;
 }
 
-bool isDeterministicConstant(const ConstantNode & root)
+bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
 {
     const auto & source_expression = root.getSourceExpression();
     if (!source_expression)
@@ -69,15 +69,20 @@ bool isDeterministicConstant(const ConstantNode & root)
         const auto * node = nodes.top();
         nodes.pop();
 
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            /// Allow removing constants from scalar subqueries. We send them to all the shards.
+            continue;
+
         const auto * constant_node = node->as<ConstantNode>();
         const auto * function_node = node->as<FunctionNode>();
         if (constant_node)
         {
-            if (!isDeterministicConstant(*constant_node))
+            if (!canRemoveConstantFromGroupByKey(*constant_node))
                 return false;
         }
         else if (function_node)
         {
+            /// Do not allow removing constants like `hostName()`
             if (!function_node->getFunctionOrThrow()->isDeterministic())
                 return false;
 
@@ -127,7 +132,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
     bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
-    bool check_deterministic_constants = is_secondary_query || is_distributed_query;
+    bool check_constants_for_group_by_key = is_secondary_query || is_distributed_query;
 
     if (query_node.hasGroupBy())
     {
@@ -144,7 +149,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                     const auto * constant_key = grouping_set_key_node->as<ConstantNode>();
                     group_by_with_constant_keys |= (constant_key != nullptr);
 
-                    if (constant_key && !aggregates_descriptions.empty() && (!check_deterministic_constants || isDeterministicConstant(*constant_key)))
+                    if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                         continue;
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
@@ -196,7 +201,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
-                if (constant_key && !aggregates_descriptions.empty() && (!check_deterministic_constants || isDeterministicConstant(*constant_key)))
+                if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                     continue;
 
                 auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, group_by_key_node);
