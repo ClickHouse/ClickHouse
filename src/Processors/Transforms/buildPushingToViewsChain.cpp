@@ -367,13 +367,16 @@ std::optional<Chain> generateViewChain(
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
         out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
-        bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
-        const auto & settings = insert_context->getSettingsRef();
+        if (interpreter.shouldAddSquashingFroStorage(inner_table))
+        {
+            bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
+            const auto & settings = insert_context->getSettingsRef();
 
-        out.addSource(std::make_shared<SquashingTransform>(
-            out.getInputHeader(),
-            table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+            out.addSource(std::make_shared<SquashingTransform>(
+                out.getInputHeader(),
+                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+        }
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
         counting->setProcessListElement(insert_context->getProcessListElement());
