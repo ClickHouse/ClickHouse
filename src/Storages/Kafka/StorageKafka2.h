@@ -99,7 +99,6 @@ private:
         KafkaConsumer2Ptr consumer; /// available consumers
         size_t consume_from_topic_partition_index{0};
         TopicPartitions topic_partitions;
-        // TODO(antaljanosbenjamin): maybe recreate the ephemeral node
         zkutil::ZooKeeperPtr keeper;
         TopicPartitionLocks locks;
     };
@@ -200,10 +199,8 @@ private:
     void dropReplica();
 
     // Takes lock over topic partitions and set's the committed offset in topic_partitions
-    void createKeeperNodes(const KafkaConsumer2Ptr & consumer);
-
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper& keeper_to_use, const TopicPartitions & topic_partitions);
-    void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t committed_offset);
+    void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t last_read_offset);
     void saveIntent(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t intent);
 
     PolledBatchInfo pollConsumer(
