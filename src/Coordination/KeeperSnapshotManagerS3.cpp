@@ -147,7 +147,7 @@ std::shared_ptr<KeeperSnapshotManagerS3::S3Configuration> KeeperSnapshotManagerS
 
 void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info)
 {
-    const auto & [snapshot_path, snapshot_disk] = snapshot_file_info;
+    const auto & [snapshot_path, snapshot_disk, snapshot_size] = snapshot_file_info;
     try
     {
         auto s3_client = getSnapshotS3Client();

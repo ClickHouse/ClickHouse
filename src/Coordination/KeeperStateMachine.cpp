@@ -733,7 +733,7 @@ int KeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const auto & [path, disk] = latest_snapshot_info;
+    const auto & [path, disk, size] = latest_snapshot_info;
     if (isLocalDisk(*disk))
     {
         auto full_path = fs::path(disk->getPath()) / path;
@@ -862,12 +862,16 @@ uint64_t KeeperStateMachine::getKeyArenaSize() const
     return storage->getArenaDataSize();
 }
 
-uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
+uint64_t KeeperStateMachine::getLatestSnapshotSize() const
 {
     std::lock_guard lock(snapshots_lock);
-    if (latest_snapshot_buf)
-        return latest_snapshot_buf->size();
-    return 0;
+    if (latest_snapshot_info.disk == nullptr)
+        return 0;
+
+    if (!latest_snapshot_info.size.has_value())
+        latest_snapshot_info.size = latest_snapshot_info.disk->getFileSize(latest_snapshot_info.path);
+
+    return *latest_snapshot_info.size;
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const

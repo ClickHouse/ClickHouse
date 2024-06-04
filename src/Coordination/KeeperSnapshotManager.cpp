@@ -690,7 +690,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
         }
         catch (const DB::Exception &)
         {
-            const auto & [path, disk] = latest_itr->second;
+            const auto & [path, disk, size] = latest_itr->second;
             disk->removeFile(path);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -702,7 +702,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
 
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
-    const auto & [snapshot_path, snapshot_disk] = existing_snapshots.at(up_to_log_idx);
+    const auto & [snapshot_path, snapshot_disk, size] = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_disk->readFile(snapshot_path);
     copyData(*reader, writer);
@@ -817,7 +817,7 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    const auto & [path, disk] = itr->second;
+    const auto & [path, disk, size] = itr->second;
     disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);
 }
@@ -873,7 +873,7 @@ SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
 {
     if (!existing_snapshots.empty())
     {
-        const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
+        const auto & [path, disk, size] = existing_snapshots.at(getLatestSnapshotIndex());
 
         try
         {

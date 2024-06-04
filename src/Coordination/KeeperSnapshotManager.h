@@ -95,6 +95,7 @@ struct SnapshotFileInfo
 {
     std::string path;
     DiskPtr disk;
+    mutable std::optional<size_t> size = std::nullopt;
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;

@@ -124,7 +124,7 @@ public:
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
     uint64_t getKeyArenaSize() const;
-    uint64_t getLatestSnapshotBufSize() const;
+    uint64_t getLatestSnapshotSize() const;
 
     void recalculateStorageStats();
 
