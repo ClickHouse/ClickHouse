@@ -596,6 +596,34 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
 }
 
+
+void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
+{
+    const auto & filter_node = findInOutputs(filter_name);
+    std::stack<Node *> stack;
+    stack.push(const_cast<Node *>(&filter_node));
+
+    std::unordered_set<const Node *> visited;
+    visited.insert(stack.top());
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+        for (auto & child : node->children)
+        {
+            while (child->type == ActionType::ALIAS)
+                child = child->children.front();
+
+            if (!visited.contains(child))
+            {
+                stack.push(const_cast<Node *>(child));
+                visited.insert(child);
+            }
+        }
+    }
+}
+
 ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
     auto actions = std::make_shared<ActionsDAG>();
@@ -1830,7 +1858,8 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                                 input_node.result_name = child->result_name;
                                 child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                                new_inputs.push_back(child);
+                                if (child->type != ActionType::INPUT)
+                                    new_inputs.push_back(child);
                             }
                         }
 
