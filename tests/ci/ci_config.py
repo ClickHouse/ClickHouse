@@ -227,7 +227,7 @@ class JobConfig:
     # label that enables job in CI, if set digest won't be used
     run_by_label: str = ""
     # to run always regardless of the job digest or/and label
-    run_always: bool = False
+    run_always: bool = True
     # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
     # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
     required_on_release_branch: bool = False
@@ -455,22 +455,20 @@ compatibility_test_common_params = {
     "digest": compatibility_check_digest,
     "run_command": "compatibility_check.py",
 }
-statless_test_common_params = {
+stateless_test_common_params = {
     "digest": stateless_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
+    "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 10800,
-    "run_always": True,
 }
 stateful_test_common_params = {
     "digest": stateful_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
+    "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 3600,
-    "run_always": True,
 }
 stress_test_common_params = {
     "digest": stress_check_digest,
     "run_command": "stress_check.py",
-    "run_always": True,
+    "timeout": 9000,
 }
 upgrade_test_common_params = {
     "digest": upgrade_check_digest,
@@ -484,7 +482,6 @@ astfuzzer_test_common_params = {
 integration_test_common_params = {
     "digest": integration_check_digest,
     "run_command": 'integration_test_check.py "$CHECK_NAME"',
-    "run_always": True,
 }
 unit_test_common_params = {
     "digest": unit_check_digest,
@@ -520,6 +517,7 @@ clickbench_test_params = {
         docker=["altinityinfra/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
+    "timeout": 900,
 }
 install_test_params = JobConfig(
     digest=install_check_digest,
