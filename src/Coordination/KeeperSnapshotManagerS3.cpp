@@ -145,9 +145,9 @@ std::shared_ptr<KeeperSnapshotManagerS3::S3Configuration> KeeperSnapshotManagerS
     return snapshot_s3_client;
 }
 
-void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfoPtr & snapshot_file_info)
+void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info)
 {
-    const auto & [snapshot_path, snapshot_disk, snapshot_size] = *snapshot_file_info;
+    const auto & [snapshot_path, snapshot_disk, snapshot_size] = snapshot_file_info;
     try
     {
         auto s3_client = getSnapshotS3Client();
@@ -268,12 +268,14 @@ void KeeperSnapshotManagerS3::snapshotS3Thread()
         if (shutdown_called)
             break;
 
-        uploadSnapshotImpl(snapshot_file_info);
+        uploadSnapshotImpl(*snapshot_file_info);
     }
 }
 
 void KeeperSnapshotManagerS3::uploadSnapshot(const SnapshotFileInfoPtr & file_info, bool async_upload)
 {
+    chassert(file_info);
+
     if (getSnapshotS3Client() == nullptr)
         return;
 
@@ -285,7 +287,7 @@ void KeeperSnapshotManagerS3::uploadSnapshot(const SnapshotFileInfoPtr & file_in
         return;
     }
 
-    uploadSnapshotImpl(file_info);
+    uploadSnapshotImpl(*file_info);
 }
 
 void KeeperSnapshotManagerS3::startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
