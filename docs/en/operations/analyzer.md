@@ -47,9 +47,45 @@ The previous query analyzer fixed this query by moving the `number > 5` filter f
 
 ### Known incompatibilities of JOIN clause
 
-* Using expression from `SELECT` list in `JOIN` key as an expression from LEFT table. Example.  Fix (best effort, should be under compatibility flag).
-* Similar issue ^. Alias for column (in select list) now applied to JOIN result (and not to left table). Example from Denny Crane. New behavior is the correct one. Will try to add best-effort compatibility setting.
-* Columns names are changed for some queries. This might breaks some scripts.  Example.
+#### Join using column from projection
+
+Alias from the `SELECT` list can not be used as a `JOIN USING` key  by default.
+
+A new setting, `analyzer_compatibility_join_using_top_level_identifier`, when enabled, alters the behavior of `JOIN USING` to prefer to resolve identifiers based on expressions from the projection list of the SELECT query, rather than using the columns from left table directly.
+
+*Example:*
+
+```sql
+SELECT a + 1 AS b, t2.s
+FROM Values('a UInt64, b UInt64', (1, 1)) AS t1
+JOIN Values('b UInt64, s String', (1, 'one'), (2, 'two')) t2
+USING (b);
+```
+
+With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of earlier versions. So, the result will be `2, 'two'`
+When the setting is `false`, the join condition defaults to `t1.b = t2.b`, and the query will return `2, 'one'`.
+In case then `b` is not present in `t1`, the query will fail with an error.
+
+#### Changes in Behavior with `JOIN USING` and `ALIAS/MATERIALIZED` Columns
+
+In the new analyzer, using `*` in a `JOIN USING` query that involves `ALIAS` or `MATERIALIZED` columns will include that columns in the result set by default.
+
+*Example:*
+
+```sql
+CREATE TABLE t1 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 VALUES (1), (2);
+
+CREATE TABLE t2 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t2 VALUES (2), (3);
+
+SELECT * FROM t1
+FULL JOIN t2 USING (payload);
+```
+
+In the new analyzer, the result of this query will include the `payload` column along with `id` from both tables. In contrast, the previous analyzer would only include these `ALIAS` columns if specific settings (`asterisk_include_alias_columns` or `asterisk_include_materialized_columns`) were enabled, and the columns might appear in a different order.
+
+To ensure consistent and expected results, especially when migrating old queries to the new analyzer, it is advisable to specify columns explicitly in the `SELECT` clause rather than using `*`.
 
 
 ### Projection column names changes
