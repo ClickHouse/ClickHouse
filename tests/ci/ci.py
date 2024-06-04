@@ -41,6 +41,7 @@ from commit_status_helper import (
 from digest_helper import DockerDigester
 from env_helper import (
     CI,
+    CI_CONFIG_PATH,
     GITHUB_JOB_API_URL,
     GITHUB_REPOSITORY,
     GITHUB_RUN_ID,
@@ -657,149 +658,146 @@ def _upload_build_profile_data(
     ch_helper: ClickHouseHelper,
 ) -> None:
     ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
-    if ci_logs_credentials.host:
-        instance_type = get_instance_type()
-        instance_id = get_instance_id()
-        query = f"""INSERT INTO build_time_trace
-            (
-                pull_request_number,
-                commit_sha,
-                check_start_time,
-                check_name,
-                instance_type,
-                instance_id,
-                file,
-                library,
-                time,
-                pid,
-                tid,
-                ph,
-                ts,
-                dur,
-                cat,
-                name,
-                detail,
-                count,
-                avgMs,
-                args_name
-            )
-            SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}', *
-            FROM input('
-                file String,
-                library String,
-                time DateTime64(6),
-                pid UInt32,
-                tid UInt32,
-                ph String,
-                ts UInt64,
-                dur UInt64,
-                cat String,
-                name String,
-                detail String,
-                count UInt64,
-                avgMs UInt64,
-                args_name String')
-            FORMAT JSONCompactEachRow"""
+    if not ci_logs_credentials.host:
+        logging.info("Unknown CI logs host, skip uploading build profile data")
+        return
 
-        auth = {
-            "X-ClickHouse-User": "ci",
-            "X-ClickHouse-Key": ci_logs_credentials.password,
-        }
-        url = f"https://{ci_logs_credentials.host}/"
-        profiles_dir = Path(TEMP_PATH) / "profiles_source"
-        profiles_dir.mkdir(parents=True, exist_ok=True)
-        print(
-            "Processing profile JSON files from %s",
-            Path(REPO_COPY) / "build_docker",
-        )
-        git_runner(
-            "./utils/prepare-time-trace/prepare-time-trace.sh "
-            f"build_docker {profiles_dir.absolute()}"
-        )
-        profile_data_file = Path(TEMP_PATH) / "profile.json"
-        with open(profile_data_file, "wb") as profile_fd:
-            for profile_source in profiles_dir.iterdir():
-                if profile_source.name not in (
-                    "binary_sizes.txt",
-                    "binary_symbols.txt",
-                ):
-                    with open(profiles_dir / profile_source, "rb") as ps_fd:
-                        profile_fd.write(ps_fd.read())
+    if not pr_info.number == 0:
+        logging.info("Skipping uploading build profile data for PRs")
+        return
 
-        print(
-            "::notice ::Log Uploading profile data, path: %s, size: %s, query: %s",
+    instance_type = get_instance_type()
+    instance_id = get_instance_id()
+    auth = {
+        "X-ClickHouse-User": "ci",
+        "X-ClickHouse-Key": ci_logs_credentials.password,
+    }
+    url = f"https://{ci_logs_credentials.host}/"
+    profiles_dir = Path(TEMP_PATH) / "profiles_source"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    print(
+        "Processing profile JSON files from %s",
+        Path(REPO_COPY) / "build_docker",
+    )
+    git_runner(
+        "./utils/prepare-time-trace/prepare-time-trace.sh "
+        f"build_docker {profiles_dir.absolute()}"
+    )
+    profile_data_file = Path(TEMP_PATH) / "profile.json"
+    with open(profile_data_file, "wb") as profile_fd:
+        for profile_source in profiles_dir.iterdir():
+            if profile_source.name not in (
+                "binary_sizes.txt",
+                "binary_symbols.txt",
+            ):
+                with open(profiles_dir / profile_source, "rb") as ps_fd:
+                    profile_fd.write(ps_fd.read())
+
+    @dataclass
+    class FileQuery:
+        file: Path
+        query: str
+
+    profile_query = f"""INSERT INTO build_time_trace
+    (
+        pull_request_number,
+        commit_sha,
+        check_start_time,
+        check_name,
+        instance_type,
+        instance_id,
+        file,
+        library,
+        time,
+        pid,
+        tid,
+        ph,
+        ts,
+        dur,
+        cat,
+        name,
+        detail,
+        count,
+        avgMs,
+        args_name
+    )
+    SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}', *
+    FROM input('
+        file String,
+        library String,
+        time DateTime64(6),
+        pid UInt32,
+        tid UInt32,
+        ph String,
+        ts UInt64,
+        dur UInt64,
+        cat String,
+        name String,
+        detail String,
+        count UInt64,
+        avgMs UInt64,
+        args_name String')
+    FORMAT JSONCompactEachRow"""
+    binary_sizes_query = f"""INSERT INTO binary_sizes
+    (
+        pull_request_number,
+        commit_sha,
+        check_start_time,
+        check_name,
+        instance_type,
+        instance_id,
+        file,
+        size
+    )
+    SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}', file, size
+    FROM input('size UInt64, file String')
+    SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
+    FORMAT Regexp"""
+    binary_symbols_query = f"""INSERT INTO binary_symbols
+    (
+        pull_request_number,
+        commit_sha,
+        check_start_time,
+        check_name,
+        instance_type,
+        instance_id,
+        file,
+        address,
+        size,
+        type,
+        symbol
+    )
+    SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}',
+    file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol
+    FROM input('file String, address String, size String, type String, symbol String')
+    SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
+    FORMAT Regexp"""
+
+    files_queries = (
+        FileQuery(
             profile_data_file,
-            profile_data_file.stat().st_size,
-            query,
+            profile_query,
+        ),
+        FileQuery(
+            profiles_dir / "binary_sizes.txt",
+            binary_sizes_query,
+        ),
+        FileQuery(
+            profiles_dir / "binary_symbols.txt",
+            binary_symbols_query,
+        ),
+    )
+    for fq in files_queries:
+        logging.info(
+            "Uploading profile data, path: %s, size: %s, query:\n%s",
+            fq.file,
+            fq.file.stat().st_size,
+            fq.query,
         )
         try:
-            ch_helper.insert_file(url, auth, query, profile_data_file)
+            ch_helper.insert_file(url, auth, fq.query, fq.file, timeout=5)
         except InsertException:
             logging.error("Failed to insert profile data for the build, continue")
-
-        query = f"""INSERT INTO binary_sizes
-            (
-                pull_request_number,
-                commit_sha,
-                check_start_time,
-                check_name,
-                instance_type,
-                instance_id,
-                file,
-                size
-            )
-            SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}', file, size
-            FROM input('size UInt64, file String')
-            SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
-            FORMAT Regexp"""
-
-        binary_sizes_file = profiles_dir / "binary_sizes.txt"
-
-        print(
-            "::notice ::Log Uploading binary sizes data, path: %s, size: %s, query: %s",
-            binary_sizes_file,
-            binary_sizes_file.stat().st_size,
-            query,
-        )
-        try:
-            ch_helper.insert_file(url, auth, query, binary_sizes_file)
-        except InsertException:
-            logging.error("Failed to insert binary_sizes_file for the build, continue")
-
-        query = f"""INSERT INTO binary_symbols
-            (
-                pull_request_number,
-                commit_sha,
-                check_start_time,
-                check_name,
-                instance_type,
-                instance_id,
-                file,
-                address,
-                size,
-                type,
-                symbol
-            )
-            SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}',
-                file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol
-            FROM input('file String, address String, size String, type String, symbol String')
-            SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
-            FORMAT Regexp"""
-
-        binary_symbols_file = profiles_dir / "binary_symbols.txt"
-
-        print(
-            "::notice ::Log Uploading binary symbols data, path: %s, size: %s, query: %s",
-            binary_symbols_file,
-            binary_symbols_file.stat().st_size,
-            query,
-        )
-        try:
-            ch_helper.insert_file(url, auth, query, binary_symbols_file)
-        except InsertException:
-            logging.error(
-                "Failed to insert binary_symbols_file for the build, continue"
-            )
 
 
 def _add_build_to_version_history(
@@ -1132,10 +1130,9 @@ def main() -> int:
                     s3_destination=s3_path_prefix,
                     upload_binary=upload_binary,
                 )
-                # FIXME: profile data upload does not work
-                # _upload_build_profile_data(
-                #     pr_info, build_name, job_report, git_runner, ch_helper
-                # )
+                _upload_build_profile_data(
+                    pr_info, build_name, job_report, git_runner, ch_helper
+                )
                 check_url = log_url
             else:
                 # test job

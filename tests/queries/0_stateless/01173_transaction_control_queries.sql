@@ -54,7 +54,7 @@ begin transaction;
 insert into mt1 values (6);
 insert into mt2 values (60);
 select 'on session close', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
-insert into mt1 values ([1]); -- { clientError 43 }
+insert into mt1 values ([1]); -- { clientError ILLEGAL_TYPE_OF_ARGUMENT }
 -- INSERT failures does not produce client reconnect anymore, so rollback can be done
 rollback;
 
