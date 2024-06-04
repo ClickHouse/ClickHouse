@@ -17,6 +17,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
+#include <numeric>
 
 
 namespace ProfileEvents
