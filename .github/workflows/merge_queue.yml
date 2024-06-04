@@ -80,11 +80,27 @@ jobs:
       run_command: |
           python3 fast_test_check.py
 
+  Builds_1:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
+    # using callable wf (reusable_stage.yml) allows grouping all nested jobs under a tab
+    uses: ./.github/workflows/reusable_build_stage.yml
+    with:
+      stage: Builds_1
+      data: ${{ needs.RunConfig.outputs.data }}
+  Tests_1:
+    needs: [RunConfig, Builds_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_1
+      data: ${{ needs.RunConfig.outputs.data }}
+
   ################################# Stage Final #################################
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Tests_1]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
