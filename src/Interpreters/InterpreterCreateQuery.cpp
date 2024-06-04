@@ -148,7 +148,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     if (auto max_db = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw; max_db > 0)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
-        // there's an invisiable system database _temporary_and_external_tables, so we need to subtract 1
+        // there's an invisible system database _temporary_and_external_tables, so we need to subtract 1
         if (db_count > 0)
             db_count--;
         if (db_count >= max_db)
