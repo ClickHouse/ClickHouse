@@ -60,8 +60,7 @@ struct UsefulSkipIndexes
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-
-    enum class IndexType
+    enum class IndexType : uint8_t
     {
         None,
         MinMax,
@@ -162,11 +161,13 @@ public:
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
-        std::optional<Indexes> & indexes);
+        std::optional<Indexes> & indexes,
+        bool find_exact_ranges);
 
     AnalysisResultPtr selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions) const;
+        MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges = false) const;
+
+    AnalysisResultPtr selectRangesToRead() const;
 
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
@@ -195,19 +196,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
-    static AnalysisResultPtr selectRangesToReadImpl(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-        const MergeTreeData & data,
-        const Names & all_column_names,
-        LoggerPtr log,
-        std::optional<Indexes> & indexes);
-
     int getSortDirection() const
     {
         if (query_info.input_order_info)

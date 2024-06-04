@@ -31,7 +31,7 @@ print '-- Query has second Column selection --';
 Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName;
 
 print '-- Query has second Column selection with extra column --';
-Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;-- { serverError 47 }
+Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;-- { serverError UNKNOWN_IDENTIFIER }
 
 print '-- Query with desc sort --';
 Customers | project FirstName | take 5 | sort by FirstName desc;
@@ -89,5 +89,5 @@ StormEvents | where startswith "W" | summarize Count=count() by State; -- { clie
 
 SET max_query_size = 55;
 SET dialect='kusto';
-Customers | where Education contains 'degree' | order by LastName; -- { serverError 62 }
+Customers | where Education contains 'degree' | order by LastName; -- { serverError SYNTAX_ERROR }
 SET max_query_size=262144;

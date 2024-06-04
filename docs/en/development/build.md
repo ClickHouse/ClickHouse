@@ -109,7 +109,7 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: clang-17 or newer
+- Compiler: clang-18 or newer
 - Linker: lld-17 or newer
 - Ninja
 - Yasm

@@ -37,11 +37,11 @@ protected:
     void socketSendBytes(const char * ptr, size_t size);
     void socketSendStr(const std::string & str)
     {
-        return socketSendBytes(str.data(), str.size());
+        socketSendBytes(str.data(), str.size());
     }
     void socketSendStr(const char * ptr)
     {
-        return socketSendBytes(ptr, strlen(ptr));
+        socketSendBytes(ptr, strlen(ptr));
     }
 
     Poco::Net::Socket & socket;

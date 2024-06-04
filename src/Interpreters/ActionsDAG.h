@@ -51,7 +51,7 @@ class ActionsDAG
 {
 public:
 
-    enum class ActionType
+    enum class ActionType : uint8_t
     {
         /// Column which must be in input.
         INPUT,
@@ -272,7 +272,7 @@ public:
     ///
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(Block header) const;
+    Block updateHeader(const Block & header) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -288,7 +288,7 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
-    enum class MatchColumnsMode
+    enum class MatchColumnsMode : uint8_t
     {
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
@@ -324,8 +324,9 @@ public:
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
 
-    /// Merge current nodes with specified dag nodes
-    void mergeNodes(ActionsDAG && second);
+    /// Merge current nodes with specified dag nodes.
+    /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
+    void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
 
     struct SplitResult
     {

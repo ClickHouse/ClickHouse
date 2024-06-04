@@ -46,8 +46,8 @@ public:
         ColumnString::Offsets & res_offsets)
     {
         size_t size = offsets.size();
-        res_offsets.resize(size);
-        res_data.reserve(data.size());
+        res_offsets.resize_exact(size);
+        res_data.reserve_exact(data.size());
 
         size_t prev_offset = 0;
         size_t res_offset = 0;

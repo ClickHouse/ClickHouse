@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 struct ProxyConfiguration
 {
-    enum class Protocol
+    enum class Protocol : uint8_t
     {
         HTTP,
         HTTPS

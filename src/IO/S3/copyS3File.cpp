@@ -149,16 +149,18 @@ namespace
                                            dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
                                            outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
-            if (outcome.IsSuccess())
-            {
-                multipart_upload_id = outcome.GetResult().GetUploadId();
-                LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
-            }
-            else
+            if (!outcome.IsSuccess())
             {
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
+            multipart_upload_id = outcome.GetResult().GetUploadId();
+            if (multipart_upload_id.empty())
+            {
+                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+                throw Exception(ErrorCodes::S3_ERROR, "Invalid CreateMultipartUpload result: missing UploadId.");
+            }
+            LOG_TRACE(log, "Multipart upload was created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
         }
 
         void completeMultipartUpload()
@@ -316,23 +318,23 @@ namespace
                 num_parts = (total_size + part_size - 1) / part_size;
             }
 
-            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
-            {
-                String msg;
-                if (num_parts < 1)
-                    msg = "Number of parts is zero";
-                else if (num_parts > max_part_number)
-                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
-                else if (part_size < min_upload_part_size)
-                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
-                else
-                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
+            String error;
+            if (num_parts < 1)
+                error = "Number of parts is zero";
+            else if (num_parts > max_part_number)
+                error = fmt::format("Number of parts exceeds {}/{}", num_parts, max_part_number);
+            else if (part_size < min_upload_part_size)
+                error = fmt::format("Size of a part is less than {}/{}", part_size, min_upload_part_size);
+            else if (part_size > max_upload_part_size)
+                error = fmt::format("Size of a part exceeds {}/{}", part_size, max_upload_part_size);
 
+            if (!error.empty())
+            {
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "{} while writing {} bytes to S3. Check max_part_number = {}, "
                     "min_upload_part_size = {}, max_upload_part_size = {}",
-                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+                    error, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
             }
 
             /// We've calculated the size of a normal part (the final part can be smaller).
@@ -652,14 +654,25 @@ namespace
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
-            BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
+            BlobStorageLogWriterPtr blob_storage_log_,
+            std::function<void()> fallback_method_)
+            : UploadHelper(
+                client_ptr_,
+                dest_bucket_,
+                dest_key_,
+                request_settings_,
+                object_metadata_,
+                schedule_,
+                for_disk_s3_,
+                blob_storage_log_,
+                getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , read_settings(read_settings_)
+            , fallback_method(std::move(fallback_method_))
         {
         }
 
@@ -682,14 +695,7 @@ namespace
         size_t size;
         bool supports_multipart_copy;
         const ReadSettings read_settings;
-
-        CreateReadBuffer getSourceObjectReadBuffer()
-        {
-            return [&]
-            {
-                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, read_settings);
-            };
-        }
+        std::function<void()> fallback_method;
 
         void performSingleOperationCopy()
         {
@@ -744,28 +750,21 @@ namespace
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
                     outcome.GetError().GetExceptionName() == "InvalidArgument" ||
+                    outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     (outcome.GetError().GetExceptionName() == "InternalError" &&
                         outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT &&
                         outcome.GetError().GetMessage().contains("use the Rewrite method in the JSON API")))
                 {
-                    if (!supports_multipart_copy)
+                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
-                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: {}",
-                                dest_bucket,
-                                dest_key,
-                                size);
-                        copyDataToS3File(
-                            getSourceObjectReadBuffer(),
-                            offset,
-                            size,
-                            client_ptr,
+                        LOG_INFO(
+                            log,
+                            "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
+                            "{}",
                             dest_bucket,
                             dest_key,
-                            request_settings,
-                            blob_storage_log,
-                            object_metadata,
-                            schedule,
-                            for_disk_s3);
+                            size);
+                        fallback_method();
                         break;
                     }
                     else
@@ -859,17 +858,29 @@ void copyDataToS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
-    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
+    CopyDataToFileHelper helper{
+        create_read_buffer,
+        offset,
+        size,
+        dest_s3_client,
+        dest_bucket,
+        dest_key,
+        settings,
+        object_metadata,
+        schedule,
+        for_disk_s3,
+        blob_storage_log};
     helper.performCopy();
 }
 
 
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & s3_client,
+    const std::shared_ptr<const S3::Client> & src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
+    std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
@@ -879,19 +890,50 @@ void copyS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
-    if (settings.allow_native_copy)
+    if (!dest_s3_client)
+        dest_s3_client = src_s3_client;
+
+    std::function<void()> fallback_method = [&]
     {
-        CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, read_settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
-        helper.performCopy();
-    }
-    else
+        auto create_read_buffer
+            = [&] { return std::make_unique<ReadBufferFromS3>(src_s3_client, src_bucket, src_key, "", settings, read_settings); };
+
+        copyDataToS3File(
+            create_read_buffer,
+            src_offset,
+            src_size,
+            dest_s3_client,
+            dest_bucket,
+            dest_key,
+            settings,
+            blob_storage_log,
+            object_metadata,
+            schedule,
+            for_disk_s3);
+    };
+
+    if (!settings.allow_native_copy)
     {
-        auto create_read_buffer = [&]
-        {
-            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, read_settings);
-        };
-        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, blob_storage_log, object_metadata, schedule, for_disk_s3);
+        fallback_method();
+        return;
     }
+
+    CopyFileHelper helper{
+        src_s3_client,
+        src_bucket,
+        src_key,
+        src_offset,
+        src_size,
+        dest_bucket,
+        dest_key,
+        settings,
+        read_settings,
+        object_metadata,
+        schedule,
+        for_disk_s3,
+        blob_storage_log,
+        std::move(fallback_method)};
+    helper.performCopy();
 }
 
 }

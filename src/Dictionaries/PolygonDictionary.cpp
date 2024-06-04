@@ -475,7 +475,11 @@ void IPolygonDictionary::getItemsShortCircuitImpl(
             default_mask[requested_key_index] = 0;
         }
         else
+        {
+            auto value = AttributeType{};
+            set_value(value);
             default_mask[requested_key_index] = 1;
+        }
     }
 
     query_count.fetch_add(requested_key_size, std::memory_order_relaxed);
