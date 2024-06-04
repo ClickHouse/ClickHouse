@@ -208,8 +208,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
-
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 if (NOT BUILD_STANDALONE_KEEPER)
     option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
