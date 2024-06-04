@@ -29,4 +29,7 @@ def test_distributed_table_with_alias(start_cluster, prefer_localhost_replica):
     """
     )
 
-    node.query("WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;", settings={"prefer_localhost_replica": prefer_localhost_replica})
+    node.query(
+        "WITH 'Hello' AS `alias` SELECT `alias` FROM dist GROUP BY `alias`;",
+        settings={"prefer_localhost_replica": prefer_localhost_replica},
+    )
