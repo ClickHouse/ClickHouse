@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -188,6 +189,7 @@ namespace ErrorCodes
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -469,7 +471,8 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return storage_policy;
 }
 
-ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
+ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(
+    const StorageSnapshotPtr & storage_snapshot, const ActionsDAGPtr & filter_dag, ContextPtr local_context) const
 {
     if (!local_context->getSettings().allow_statistic_optimize)
         return {};
@@ -484,7 +487,7 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
     ASTPtr expression_ast;
 
     ConditionEstimator result;
-    PartitionPruner partition_pruner(storage_snapshot->metadata, query_info, local_context, true /* strict */);
+    PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
 
     if (partition_pruner.isUseless())
     {
@@ -1175,8 +1178,6 @@ String MergeTreeData::MergingParams::getModeName() const
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
     }
-
-    UNREACHABLE();
 }
 
 Int64 MergeTreeData::getMaxBlockNumber() const
@@ -3873,7 +3874,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);
-        if (!storage_column.type->hasDynamicSubcolumns())
+        if (!storage_column.type->hasDynamicSubcolumnsDeprecated())
             continue;
 
         auto concrete_storage_column = object_columns.getPhysical(part_column.name);
@@ -6133,6 +6134,21 @@ bool MergeTreeData::supportsLightweightDelete() const
     return true;
 }
 
+bool MergeTreeData::hasProjection() const
+{
+    auto lock = lockParts();
+    for (const auto & part : data_parts_by_info)
+    {
+        if (part->getState() == MergeTreeDataPartState::Outdated
+            || part->getState() == MergeTreeDataPartState::Deleting)
+            continue;
+
+        if (part->hasProjection())
+            return true;
+    }
+    return false;
+}
+
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
@@ -7202,28 +7218,30 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnSameDisk(
+/// must_on_same_disk=false is used only when attach partition; Both for same disk and different disk.
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPart(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
     const StorageMetadataPtr & metadata_snapshot,
     const IDataPartStorage::ClonePartParams & params,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
+    const WriteSettings & write_settings,
+    bool must_on_same_disk)
 {
     chassert(!isStaticStorage());
 
     /// Check that the storage policy contains the disk where the src_part is located.
-    bool does_storage_policy_allow_same_disk = false;
+    bool on_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
         if (disk->getName() == src_part->getDataPartStorage().getDiskName())
         {
-            does_storage_policy_allow_same_disk = true;
+            on_same_disk = true;
             break;
         }
     }
-    if (!does_storage_policy_allow_same_disk)
+    if (!on_same_disk && must_on_same_disk)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Could not clone and load part {} because disk does not belong to storage policy",
@@ -7233,7 +7251,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
     auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
-    /// Why it is needed if we only hardlink files?
     auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
     auto src_part_storage = src_part->getDataPartStoragePtr();
 
@@ -7244,13 +7261,32 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    auto dst_part_storage = src_part_storage->freeze(
-        relative_data_path,
-        tmp_dst_part_name,
-        read_settings,
-        write_settings,
-        /* save_metadata_callback= */ {},
-        params);
+    std::shared_ptr<IDataPartStorage> dst_part_storage{};
+    if (on_same_disk)
+    {
+        dst_part_storage = src_part_storage->freeze(
+            relative_data_path,
+            tmp_dst_part_name,
+            read_settings,
+            write_settings,
+            /* save_metadata_callback= */ {},
+            params);
+    }
+    else
+    {
+        auto reservation_on_dst = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
+        if (!reservation_on_dst)
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
+        dst_part_storage = src_part_storage->freezeRemote(
+            relative_data_path,
+            tmp_dst_part_name,
+            /* dst_disk = */reservation_on_dst->getDisk(),
+            read_settings,
+            write_settings,
+            /* save_metadata_callback= */ {},
+            params
+        );
+    }
 
     if (params.metadata_version_to_write.has_value())
     {
@@ -8475,7 +8511,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         Statistics{},
-        compression_codec, txn);
+        compression_codec, txn ? txn->tid : Tx::PrehistoricTID);
 
     bool sync_on_insert = settings->fsync_after_insert;
 
@@ -8535,6 +8571,16 @@ void MergeTreeData::unloadPrimaryKeys()
     for (auto & part : getAllDataPartsVector())
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+    }
+}
+
+void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
+{
+    /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
+    for (const auto & data_type : sorting_key.data_types)
+    {
+        if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
 }
 

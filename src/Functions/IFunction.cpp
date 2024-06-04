@@ -110,7 +110,6 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
-
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -277,6 +276,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
             size_t new_input_rows_count = columns_without_low_cardinality.empty()
                                         ? input_rows_count
                                         : columns_without_low_cardinality.front().column->size();
+            checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
@@ -311,6 +311,8 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
     /// ColumnFunction does not support getting specific values.
