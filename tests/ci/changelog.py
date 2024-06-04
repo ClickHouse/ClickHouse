@@ -7,7 +7,7 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 from subprocess import DEVNULL
-from typing import Dict, List, Optional, TextIO
+from typing import Any, Dict, List, Optional, TextIO
 
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
@@ -84,10 +84,10 @@ class Description:
         )
 
     # Sort PR descriptions by numbers
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(self, type(other)):
-            return NotImplemented
-        return self.number == other.number
+            raise NotImplementedError
+        return bool(self.number == other.number)
 
     def __lt__(self, other: "Description") -> bool:
         return self.number < other.number
@@ -331,7 +331,7 @@ def write_changelog(
             fd.write("\n")
 
 
-def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool):
+def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) -> None:
     global FROM_REF, TO_REF
     TO_REF = to_ref
 
