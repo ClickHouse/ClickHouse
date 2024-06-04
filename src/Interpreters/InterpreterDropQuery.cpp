@@ -139,13 +139,26 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    if (query.detached)
-    {
-        if (!context_->getSettingsRef().allow_experimental_drop_detached_table)
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
+    // if (query.detached)
+    // {
+    //     if (!context_->getSettingsRef().allow_experimental_drop_detached_table)
+    //         throw Exception(
+    //             ErrorCodes::SUPPORT_IS_DISABLED,
+    //             "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
 
+    //     auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
+    //     const auto table_name = table_id.getTableName();
+
+    //     if (isTableDetached(context_, database, table_name))
+    //     {
+    //         database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
+    //         return {};
+    //     }
+    //     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Failed to drop detached table {} that was attached previously", table_name);
+    // }
+
+    if (context_->getSettingsRef().allow_experimental_drop_detached_table)
+    {
         auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
         const auto table_name = table_id.getTableName();
 
@@ -154,7 +167,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
             return {};
         }
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Failed to drop detached table {} that was attached previously", table_name);
+        // throw Exception(ErrorCodes::UNKNOWN_TABLE, "Failed to drop detached table {} that was attached previously", table_name);
     }
 
     /// If table was already dropped by anyone, an exception will be thrown
