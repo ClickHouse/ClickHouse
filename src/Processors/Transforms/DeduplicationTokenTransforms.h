@@ -38,7 +38,8 @@ namespace DeduplicationToken
         bool empty() const { return parts.empty(); }
         bool tokenInitialized() const { return stage != INITIAL && stage != SOURCE_BLOCK_NUMBER; }
 
-        void setInitialToken(String part);
+        void addPieceToInitialToken(String part);
+        void closeInitialToken();
         void setUserToken(const String & token);
         void setSourceBlockNumber(size_t sbn);
         void setViewID(const String & id);

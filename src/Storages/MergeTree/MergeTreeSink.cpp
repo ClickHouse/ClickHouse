@@ -147,7 +147,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!token_info->tokenInitialized())
         {
             chassert(temp_part.part);
-            token_info->setInitialToken(temp_part.part->getPartBlockIDHash());
+            token_info->addPieceToInitialToken(temp_part.part->getPartBlockIDHash());
         }
 
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
@@ -192,6 +192,11 @@ void MergeTreeSink::consume(Chunk & chunk)
             .block_dedup_token = std::move(block_dedup_token),
             .part_counters = std::move(part_counters),
         });
+    }
+
+    if (!token_info->tokenInitialized())
+    {
+        token_info->closeInitialToken();
     }
 
     finishDelayedChunk();

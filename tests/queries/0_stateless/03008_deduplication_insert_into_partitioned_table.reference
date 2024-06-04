@@ -1,0 +1,35 @@
+no user deduplication token
+partitioned_table:
+1	A
+1	D
+2	B
+2	C
+mv_table:
+1	A
+1	A
+1	D
+2	B
+2	B
+2	C
+with user deduplication token
+partitioned_table:
+1	A
+1	A
+1	D
+2	B
+2	B
+2	C
+mv_table:
+1	A
+1	A
+1	D
+2	B
+2	B
+2	C
+with incorrect ussage of user deduplication token
+partitioned_table:
+1	A
+2	B
+mv_table:
+1	A
+2	B

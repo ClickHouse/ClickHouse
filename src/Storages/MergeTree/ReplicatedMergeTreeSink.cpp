@@ -393,7 +393,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             if (!token_info->tokenInitialized())
             {
                 chassert(temp_part.part);
-                token_info->setInitialToken(temp_part.part->getPartBlockIDHash());
+                token_info->addPieceToInitialToken(temp_part.part->getPartBlockIDHash());
             }
         }
 
@@ -438,6 +438,11 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             std::move(unmerged_block),
             std::move(part_counters) /// profile_events_scope must be reset here.
         ));
+    }
+
+    if (!token_info->tokenInitialized())
+    {
+        token_info->closeInitialToken();
     }
 
     finishDelayedChunk(zookeeper);

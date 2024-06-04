@@ -39,15 +39,24 @@ String DB::DeduplicationToken::TokenInfo::getToken(bool enable_assert) const
     result.reserve(getTotalSize());
 
     for (const auto & part : parts)
+    {
+        if (!result.empty())
+            result.append(":");
         result.append(part);
+    }
 
     return result;
 }
 
-void DB::DeduplicationToken::TokenInfo::setInitialToken(String part)
+void DB::DeduplicationToken::TokenInfo::addPieceToInitialToken(String part)
 {
     chassert(stage == INITIAL);
     addTokenPart(std::move(part));
+}
+
+void DB::DeduplicationToken::TokenInfo::closeInitialToken()
+{
+    chassert(stage == INITIAL);
     stage = VIEW_ID;
 }
 
@@ -61,7 +70,7 @@ void TokenInfo::setUserToken(const String & token)
 void TokenInfo::setSourceBlockNumber(size_t sbn)
 {
     chassert(stage == SOURCE_BLOCK_NUMBER);
-    addTokenPart(fmt::format(":source-number-{}", sbn));
+    addTokenPart(fmt::format("source-number-{}", sbn));
     stage = VIEW_ID;
 }
 
@@ -71,14 +80,14 @@ void TokenInfo::setViewID(const String & id)
         "token: {}, stage: {}, view id: {}",
         getToken(false), stage, id);
     chassert(stage == VIEW_ID);
-    addTokenPart(fmt::format(":view-id-{}", id));
+    addTokenPart(fmt::format("view-id-{}", id));
     stage = VIEW_BLOCK_NUMBER;
 }
 
 void TokenInfo::setViewBlockNumber(size_t mvbn)
 {
     chassert(stage == VIEW_BLOCK_NUMBER);
-    addTokenPart(fmt::format(":view-block-{}", mvbn));
+    addTokenPart(fmt::format("view-block-{}", mvbn));
     stage = VIEW_ID;
 }
 
@@ -96,10 +105,14 @@ void TokenInfo::addTokenPart(String part)
 
 size_t TokenInfo::getTotalSize() const
 {
+    if (parts.empty())
+        return 0;
+
     size_t size = 0;
     for (const auto & part : parts)
         size += part.size();
-    return size;
+
+    return size + parts.size() - 1;
 }
 
 void CheckTokenTransform::transform(Chunk & chunk)
@@ -143,7 +156,8 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
     if (token_info->tokenInitialized())
         return;
 
-    token_info->setInitialToken(getInitialToken(chunk));
+    token_info->addPieceToInitialToken(getInitialToken(chunk));
+    token_info->closeInitialToken();
 }
 
 void SetUserTokenTransform::transform(Chunk & chunk)
