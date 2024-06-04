@@ -129,7 +129,7 @@ public:
 private:
 
     UInt64 parseReadableFormat(
-        
+
     ) const
     {
         static const ScaleFactors scale_factors =
