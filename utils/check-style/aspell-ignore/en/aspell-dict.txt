@@ -2150,6 +2150,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
