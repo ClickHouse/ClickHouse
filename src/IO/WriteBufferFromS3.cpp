@@ -693,7 +693,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
         auto & request = std::get<0>(*worker_data);
         size_t content_length = request.GetContentLength();
 
-        size_t max_retry = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
+        size_t max_retry = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
         for (size_t i = 0; i < max_retry; ++i)
         {
             ProfileEvents::increment(ProfileEvents::S3PutObject);

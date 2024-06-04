@@ -524,7 +524,7 @@ namespace
 
         void processPutRequest(S3::PutObjectRequest & request)
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
+            size_t max_retries = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
@@ -726,7 +726,7 @@ namespace
 
         void processCopyRequest(S3::CopyObjectRequest & request)
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries.value, 1UL);
+            size_t max_retries = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CopyObject);
