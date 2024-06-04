@@ -84,7 +84,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: StatusType,
+    state: Union[StatusType, str],
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
