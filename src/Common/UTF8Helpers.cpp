@@ -116,6 +116,11 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
         while (i + 15 < size)
         {
+            if (isEscapeSequence)
+            {
+                break;
+            }
+
             __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
 
             const uint16_t non_regular_width_mask = _mm_movemask_epi8(
@@ -132,15 +137,8 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
             }
             else
             {
-                if (isEscapeSequence)
-                {
-                    break;
-                }
-                else
-                {
-                    i += 16;
-                    width += 16;
-                }
+                i += 16;
+                width += 16;
             }
         }
 #endif
@@ -149,7 +147,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
         {
             auto isParameterByte = isCSIParameterByte(data[i]);
             auto isIntermediateByte = isCSIIntermediateByte(data[i]);
-            auto ignore_width = isEscapeSequence & (isParameterByte || isIntermediateByte);
+            auto ignore_width = isEscapeSequence && (isParameterByte || isIntermediateByte);
 
             if (ignore_width || (data[i] == '[' && isEscapeSequence))
             {
