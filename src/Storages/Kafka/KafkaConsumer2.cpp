@@ -45,9 +45,9 @@ namespace ErrorCodes
 }
 
 using namespace std::chrono_literals;
-const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
-const auto POLL_TIMEOUT_WO_ASSIGNMENT = 50ms;
-const auto DRAIN_TIMEOUT_MS = 5000ms;
+static constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
+static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
+static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
@@ -201,17 +201,21 @@ void KafkaConsumer2::drainConsumerQueue()
 
 void KafkaConsumer2::pollEvents()
 {
-    // POLL_TIMEOUT_WO_ASSIGNMENT_MS (50ms) is 100% enough just to check if we got assignment
-    //  (see https://github.com/ClickHouse/ClickHouse/issues/11218)
-    auto msg = consumer->poll(POLL_TIMEOUT_WO_ASSIGNMENT);
-
+    static constexpr int64_t max_tries = 5;
+    auto consumer_has_subscription = !consumer->get_subscription().empty();
+    for(auto i = 0; i < max_tries && !consumer_has_subscription; ++i)
+    {
+        consumer->subscribe(topics);
+        consumer_has_subscription = !consumer->get_subscription().empty();
+    }
+    auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
+    LOG_TRACE(log, "Consumer has subscription: {}", consumer_has_subscription);
     // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
     chassert(!msg && "Consumer returned a message when it was not expected");
 
     auto consumer_queue = consumer->get_consumer_queue();
-    // There should be events in the queue, so let's consume them all
-    while (consumer_queue.get_length() > 0)
-        consumer->poll();
+    for(auto i = 0; i < max_tries && consumer_queue.get_length() > 0; ++i)
+        consumer->poll(EVENT_POLL_TIMEOUT);
 };
 
 KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
