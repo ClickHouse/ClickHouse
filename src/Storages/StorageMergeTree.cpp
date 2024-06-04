@@ -959,31 +959,34 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
-bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, const DataPartPtr & right, std::unique_lock<std::mutex> & lock)
+bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, const DataPartPtr & right, std::unique_lock<std::mutex> &)
 {
     /// Serialized by currently_processing_in_background_mutex
 
-    auto leftMutationVersion = getCurrentMutationVersion(left, lock);
-    auto rightMutationVersion = getCurrentMutationVersion(right, lock);
+    auto leftDataVersion = left->info.getDataVersion();
+    auto rightDataVersion = right->info.getDataVersion();
 
-    if (leftMutationVersion != rightMutationVersion)
+    auto leftIt = current_mutations_by_version.upper_bound(leftDataVersion);
+    auto rightIt = current_mutations_by_version.upper_bound(rightDataVersion);
+
+    // auto leftMutationVersion = getCurrentMutationVersion(left, lock);
+    // auto rightMutationVersion = getCurrentMutationVersion(right, lock);
+
+    if (leftIt != rightIt)
     {
         assert(left->info.partition_id == right->info.partition_id);
 
         auto partition_id = left->info.partition_id;
-        auto [from, to] = leftMutationVersion < rightMutationVersion
-            ? std::make_tuple(leftMutationVersion, rightMutationVersion)
-            : std::make_tuple(rightMutationVersion, leftMutationVersion);
-
-        auto mutations_it = current_mutations_by_version.upper_bound(from);
-        auto mutations_end_it = current_mutations_by_version.upper_bound(to);
+        auto [mutations_it, mutations_end_it] = leftDataVersion < rightDataVersion
+            ? std::make_tuple(leftIt, rightIt)
+            : std::make_tuple(rightIt, leftIt);
 
         for (; mutations_it != mutations_end_it; ++mutations_it)
         {
             if (mutations_it->second.affectsPartition(partition_id))
             {
                 LOG_TRACE(log, "In partition {} parts with versions {} and {} cannot be merged because of mutation {}",
-                    partition_id, from, to, mutations_it->first);
+                    partition_id, leftDataVersion, rightDataVersion, mutations_it->first);
                 return false;
             }
         }
@@ -1537,16 +1540,16 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return scheduled;
 }
 
-UInt64 StorageMergeTree::getCurrentMutationVersion(
-    const DataPartPtr & part,
-    std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
-{
-    auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-    if (it == current_mutations_by_version.begin())
-        return 0;
-    --it;
-    return it->first;
-}
+// UInt64 StorageMergeTree::getCurrentMutationVersion(
+//     const DataPartPtr & part,
+//     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
+// {
+//     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+//     if (it == current_mutations_by_version.begin())
+//         return 0;
+//     --it;
+//     return it->first;
+// }
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
