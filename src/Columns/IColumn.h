@@ -408,7 +408,8 @@ public:
     }
 
     /// Estimate the cardinality (number of unique values) of the values in 'equal_range' after permutation, formally: |{ column[permutation[r]] : r in equal_range }|.
-    virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
+    /// Don't take flag "precise" literally, it works in a best-effort manner: with precise = true the result may still be imprecise.
+    virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range, bool precise) const;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)

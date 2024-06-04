@@ -83,7 +83,7 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
     return res;
 }
 
-size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
+size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range, bool /*precise*/) const
 {
     return equal_range.size();
 }

@@ -974,7 +974,7 @@ Default value: false
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
-### allow_experimental_optimized_row_order
+### allow_experimental_optimized_row_order {#allow_experimental_optimized_row_order}
 
 Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
 
@@ -1017,3 +1017,20 @@ Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
 This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
+
+Possible values:
+
+- true, false
+
+Default: false
+
+### calculate_precise_cardinalities_for_optimized_row_order
+
+Controls if precise or estimated cardinalities are used for [row order optimization](#allow_experimental_optimized_row_order).
+This is an expert-level setting which should not be changed without good reason.
+
+Possible values:
+
+- true, false
+
+Default: true

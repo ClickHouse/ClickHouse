@@ -2,6 +2,7 @@
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/HyperLogLogCounter.h>
 #include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
@@ -662,30 +663,52 @@ void ColumnNullable::updatePermutationWithCollation(const Collator & collator, I
 }
 
 
-size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range, bool precise) const
 {
     const size_t range_size = equal_range.size();
     if (range_size <= 1)
         return range_size;
 
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool has_null = false;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    if (precise)
     {
-        size_t permuted_i = permutation[i];
-        if (isNullAt(permuted_i))
+        StringHashSet elements;
+        bool has_null = false;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
         {
-            has_null = true;
+            size_t permuted_i = permutation[i];
+            if (isNullAt(permuted_i))
+            {
+                has_null = true;
+            }
+            else
+            {
+                StringRef value = getDataAt(permuted_i);
+                bool inserted;
+                elements.emplace(value, inserted);
+            }
         }
-        else
-        {
-            StringRef value = getDataAt(permuted_i);
-            elements.emplace(value, inserted);
-        }
+        return elements.size() + (has_null ? 1 : 0);
     }
-    return elements.size() + (has_null ? 1 : 0);
+    else
+    {
+        HyperLogLogCounter<8> counter;
+        bool has_null = false;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            size_t permuted_i = permutation[i];
+            if (isNullAt(permuted_i))
+            {
+                has_null = true;
+            }
+            else
+            {
+                StringRef value = getDataAt(permuted_i);
+                UInt64 hash = sipHash64(value);
+                counter.insertHash(static_cast<UInt32>(hash));
+            }
+        }
+        return counter.size() + (has_null ? 1 : 0);
+    }
 }
 
 void ColumnNullable::reserve(size_t n)

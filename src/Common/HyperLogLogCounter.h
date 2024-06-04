@@ -301,6 +301,17 @@ public:
         update(bucket, rank);
     }
 
+    void ALWAYS_INLINE insertHash(HashValueType hash)
+    {
+        /// Divide hash to two sub-values. First is bucket number, second will be used to calculate rank.
+        HashValueType bucket = extractBitSequence(hash, 0, precision);
+        HashValueType tail = extractBitSequence(hash, precision, sizeof(HashValueType) * 8);
+        UInt8 rank = calculateRank(tail);
+
+        /// Update maximum rank for current bucket.
+        update(bucket, rank);
+    }
+
     UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.

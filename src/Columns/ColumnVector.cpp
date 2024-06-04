@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
+#include <Common/HyperLogLogCounter.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
@@ -415,22 +416,36 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 }
 
 template<typename T>
-size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
+size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range, bool precise) const
 {
     const size_t range_size = equal_range.size();
     if (range_size <= 1)
         return range_size;
 
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    if (precise)
     {
-        size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
-        elements.emplace(value, inserted);
+        StringHashSet elements;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            size_t permuted_i = permutation[i];
+            StringRef value = getDataAt(permuted_i);
+            bool inserted;
+            elements.emplace(value, inserted);
+        }
+        return elements.size();
     }
-    return elements.size();
+    else
+    {
+        HyperLogLogCounter<8> counter;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            size_t permuted_i = permutation[i];
+            UInt64 value = get64(permuted_i);
+            UInt64 hash = sipHash64(value);
+            counter.insertHash(static_cast<UInt32>(hash));
+        }
+        return counter.size();
+    }
 }
 
 template <typename T>

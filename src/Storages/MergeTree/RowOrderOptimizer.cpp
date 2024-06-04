@@ -105,14 +105,15 @@ std::vector<size_t> getCardinalitiesInPermutedRange(
     const Block & block,
     const std::vector<size_t> & other_column_indexes,
     const IColumn::Permutation & permutation,
-    const EqualRange & equal_range)
+    const EqualRange & equal_range,
+    bool calculate_precise_cardinalities)
 {
     std::vector<size_t> cardinalities(other_column_indexes.size());
     for (size_t i = 0; i < other_column_indexes.size(); ++i)
     {
         const size_t column_id = other_column_indexes[i];
         const ColumnPtr & column = block.getByPosition(column_id).column;
-        cardinalities[i] = column->estimateCardinalityInPermutedRange(permutation, equal_range);
+        cardinalities[i] = column->estimateCardinalityInPermutedRange(permutation, equal_range, calculate_precise_cardinalities);
     }
     return cardinalities;
 }
@@ -149,7 +150,11 @@ void updatePermutationInEqualRange(
 
 }
 
-void RowOrderOptimizer::optimize(const Block & block, const SortDescription & sort_description, IColumn::Permutation & permutation)
+void RowOrderOptimizer::optimize(
+    const Block & block,
+    const SortDescription & sort_description,
+    IColumn::Permutation & permutation,
+    bool calculate_precise_cardinalities)
 {
     LoggerPtr log = getLogger("RowOrderOptimizer");
 
@@ -174,7 +179,7 @@ void RowOrderOptimizer::optimize(const Block & block, const SortDescription & so
     {
         if (equal_range.size() <= 1)
             continue;
-        const std::vector<size_t> cardinalities = getCardinalitiesInPermutedRange(block, other_columns_indexes, permutation, equal_range);
+        const std::vector<size_t> cardinalities = getCardinalitiesInPermutedRange(block, other_columns_indexes, permutation, equal_range, calculate_precise_cardinalities);
         updatePermutationInEqualRange(block, other_columns_indexes, permutation, equal_range, cardinalities);
     }
 

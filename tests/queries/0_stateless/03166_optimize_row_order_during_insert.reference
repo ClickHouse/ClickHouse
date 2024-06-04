@@ -4,6 +4,15 @@ Egor	2
 Igor	1
 Igor	2
 Igor	3
+Precise/imprecise cardinality estimation
+Egor	1	2	Say	Hello	2.1	Say	Hello
+Egor	5	6	Say	Hello	1.2	ClickHouse	Test
+Igor	3	4	Hello	World	3.2	Hello	World
+Igor	3	4	Hello	World	3.2	Hello	World
+Egor	1	2	Say	Hello	2.1	Say	Hello
+Egor	5	6	Say	Hello	1.2	ClickHouse	Test
+Igor	3	4	Hello	World	3.2	Hello	World
+Igor	3	4	Hello	World	3.2	Hello	World
 Cardinalities test
 Alex	1	63	0
 Alex	1	65	0

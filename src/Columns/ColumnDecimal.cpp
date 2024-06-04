@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HyperLogLogCounter.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -266,20 +267,33 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 }
 
 template <is_decimal T>
-size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
+size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range, bool precise) const
 {
     const size_t range_size = equal_range.size();
     if (range_size <= 1)
         return range_size;
 
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    HashSet<T> elements;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    if (precise)
     {
-        size_t permuted_i = permutation[i];
-        elements.insert(data[permuted_i]);
+        HashSet<T> elements;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            size_t permuted_i = permutation[i];
+            elements.insert(data[permuted_i]);
+        }
+        return elements.size();
     }
-    return elements.size();
+    else
+    {
+        HyperLogLogCounter<8> counter;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            size_t permuted_i = permutation[i];
+            UInt64 hash = sipHash64(data[permuted_i]);
+            counter.insertHash(static_cast<UInt32>(hash));
+        }
+        return counter.size();
+    }
 }
 
 template <is_decimal T>

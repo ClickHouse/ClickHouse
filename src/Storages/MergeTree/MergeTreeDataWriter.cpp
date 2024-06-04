@@ -505,7 +505,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     if (data.getSettings()->allow_experimental_optimized_row_order)
     {
-        RowOrderOptimizer::optimize(block, sort_description, perm);
+        RowOrderOptimizer::optimize(block, sort_description, perm, data.getSettings()->calculate_precise_cardinalities_for_optimized_row_order);
         perm_ptr = &perm;
     }
 
@@ -732,7 +732,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     if (data.getSettings()->allow_experimental_optimized_row_order)
     {
-        RowOrderOptimizer::optimize(block, sort_description, perm);
+        RowOrderOptimizer::optimize(block, sort_description, perm, data.getSettings()->calculate_precise_cardinalities_for_optimized_row_order);
         perm_ptr = &perm;
     }
 

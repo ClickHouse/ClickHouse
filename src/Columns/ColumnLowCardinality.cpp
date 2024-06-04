@@ -5,6 +5,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HyperLogLogCounter.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include "Storages/IndicesDescription.h"
@@ -489,19 +490,33 @@ void ColumnLowCardinality::updatePermutationWithCollation(const Collator & colla
     updatePermutationImpl(limit, res, equal_ranges, comparator, equal_comparator, DefaultSort(), DefaultPartialSort());
 }
 
-size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range, bool precise) const
 {
     const size_t range_size = equal_range.size();
     if (range_size <= 1)
         return range_size;
 
-    HashSet<UInt64> elements;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    if (precise)
     {
-        UInt64 index = getIndexes().getUInt(permutation[i]);
-        elements.insert(index);
+        HashSet<UInt64> elements;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            UInt64 index = getIndexes().getUInt(permutation[i]);
+            elements.insert(index);
+        }
+        return elements.size();
     }
-    return elements.size();
+    else
+    {
+        HyperLogLogCounter<8> counter;
+        for (size_t i = equal_range.from; i < equal_range.to; ++i)
+        {
+            UInt64 index = getIndexes().getUInt(permutation[i]);
+            UInt64 hash = sipHash64(index);
+            counter.insertHash(static_cast<UInt32>(hash));
+        }
+        return counter.size();
+    }
 }
 
 std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const
