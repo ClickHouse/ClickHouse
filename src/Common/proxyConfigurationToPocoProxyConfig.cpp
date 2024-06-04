@@ -1,8 +1,7 @@
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 
-#include <sstream>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
 
 #pragma clang diagnostic push
