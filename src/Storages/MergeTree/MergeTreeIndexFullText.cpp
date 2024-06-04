@@ -594,7 +594,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        token_extractor->stringStartsWithToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
     else if (function_name == "endsWith")
@@ -603,7 +603,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        token_extractor->stringEndsWithToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
     else if (function_name == "multiSearchAny")
