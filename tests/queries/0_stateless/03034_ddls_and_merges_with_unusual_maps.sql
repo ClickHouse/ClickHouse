@@ -9,7 +9,8 @@ CREATE TABLE tab (m1 Map(Nothing, String)) ENGINE = MergeTree ORDER BY m1; -- { 
 
 SELECT 'But Map(Nothing, ...) can be a non-primary-key, it is quite useless though ...';
 CREATE TABLE tab (m3 Map(Nothing, String)) ENGINE = MergeTree ORDER BY tuple();
--- INSERT INTO tab VALUES (map('', 'd')); -- { serverError NOT_IMPLEMENTED } -- <-- for some weird reason the test won't let me set an expected error
+-- INSERT INTO tab VALUES (map('', 'd')); -- { serverError NOT_IMPLEMENTED } -- The client can't serialize the data and fails. The query
+                                                                             -- doesn't reach the server and we can't check via 'serverError' :-/
 DROP TABLE tab;
 
 SELECT 'Map(Float32, ...) and Map(LC(String)) are okay as primary key';
