@@ -9,8 +9,6 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse_common_zookeeper
         daemon
         dbms
-
-    ${LINK_RESOURCE_LIB}
 )
 
 clickhouse_program_add(keeper)
@@ -210,8 +208,6 @@ if (BUILD_STANDALONE_KEEPER)
             loggers_no_text_log
             clickhouse_common_io
             clickhouse_parsers # Otherwise compression will not built. FIXME.
-
-        ${LINK_RESOURCE_LIB_STANDALONE_KEEPER}
     )
 
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)

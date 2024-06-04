@@ -1400,7 +1400,7 @@ public:
                                                     divide_result.type, input_rows_count);
 
         auto minus_elem = minus->build({one, divide_result});
-        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), {});
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count);
     }
 };
 
