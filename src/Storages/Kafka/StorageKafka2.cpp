@@ -60,6 +60,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <librdkafka/rdkafka.h>
 
+#include <filesystem>
 #include <string>
 
 namespace CurrentMetrics
@@ -84,18 +85,22 @@ extern const Event KafkaWrites;
 namespace DB
 {
 
+namespace fs = std::filesystem;
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int QUERY_NOT_ALLOWED;
+extern const int REPLICA_ALREADY_EXISTS;
+extern const int TABLE_IS_DROPPED;
+extern const int TABLE_WAS_NOT_DROPPED;
 }
 
 namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 }
-// TODO(antaljanosbenjamin): check performance
 
 StorageKafka2::StorageKafka2(
     const StorageID & table_id_,
@@ -119,7 +124,7 @@ StorageKafka2::StorageKafka2(
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
-    , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageKafka2 (" + table_id_.table_name + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
@@ -145,6 +150,39 @@ StorageKafka2::StorageKafka2(
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
+
+    for (size_t i = 0; i < num_consumers; ++i)
+    {
+        try
+        {
+            consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = keeper});
+            ++num_created_consumers;
+        }
+        catch (const cppkafka::Exception &)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+    for (auto try_count = 0; try_count < 5; ++try_count)
+    {
+        bool all_had_assignment = true;
+        for (auto & consumer_info : consumers)
+        {
+            if (nullptr == consumer_info.consumer->getKafkaAssignment())
+            {
+                all_had_assignment = false;
+                consumer_info.consumer->pollEvents();
+            }
+        }
+
+        if (all_had_assignment)
+            break;
+    }
+
+    const auto first_replica = createTableIfNotExists(consumers.front().consumer);
+
+    if (!first_replica)
+        createReplica();
 }
 
 VirtualColumnsDescription StorageKafka2::createVirtuals(StreamingHandleErrorMode handle_error_mode)
@@ -257,31 +295,6 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
 void StorageKafka2::startup()
 {
-    for (size_t i = 0; i < num_consumers; ++i)
-    {
-        try
-        {
-            consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = keeper});
-            ++num_created_consumers;
-        }
-        catch (const cppkafka::Exception &)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-
-    try
-    {
-        createKeeperNodes(consumers.front().consumer);
-    }
-    catch (const Exception & ex)
-    {
-        if (ex.code() == ErrorCodes::LOGICAL_ERROR)
-            throw;
-
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-    }
-
     // Start the reader thread
     for (auto & task : tasks)
         task->holder->activateAndSchedule();
@@ -306,7 +319,7 @@ void StorageKafka2::shutdown(bool)
 
 void StorageKafka2::drop()
 {
-    getZooKeeper()->removeRecursive(kafka_settings->kafka_keeper_path);
+    dropReplica();
 }
 
 KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
@@ -548,48 +561,244 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const std::string &
 }
 }
 
-void StorageKafka2::createKeeperNodes(const KafkaConsumer2Ptr & consumer)
+bool StorageKafka2::createTableIfNotExists(const KafkaConsumer2Ptr & consumer)
 {
-    // TODO(antaljanosbenjamin): check config with other StorageKafkas
-    // TODO(antaljanosbenjamin): maybe also create a node in `keeper_path/replicas/<uuid>` to note that this replica has the table?
-    const auto & keeper_path = kafka_settings->kafka_keeper_path.value;
+    const auto & keeper_path = fs::path(kafka_settings->kafka_keeper_path.value);
 
-    if (keeper->exists(keeper_path))
-        return;
+    const auto & replicas_path = keeper_path / "replicas";
 
-    keeper->createAncestors(keeper_path);
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(keeper_path, "", zkutil::CreateMode::Persistent));
-
-    ops.emplace_back(zkutil::makeCreateRequest(keeper_path + "/topics", "", zkutil::CreateMode::Persistent));
-
-    const auto topics_prefix = keeper_path + "/topics/";
-
-    const auto topic_partition_counts = consumer->getPartitionCounts();
-    for (const auto & topic_partition_count : topic_partition_counts)
+    for (auto i = 0; i < 1000; ++i)
     {
-        ops.emplace_back(zkutil::makeCreateRequest(topics_prefix + topic_partition_count.topic, "", zkutil::CreateMode::Persistent));
+        if (keeper->exists(replicas_path))
+        {
+            LOG_DEBUG(log, "This table {} is already created, will add new replica", String(keeper_path));
+            return false;
+        }
+
+        /// There are leftovers from incompletely dropped table.
+        if (keeper->exists(keeper_path / "dropped"))
+        {
+            /// This condition may happen when the previous drop attempt was not completed
+            ///  or when table is dropped by another replica right now.
+            /// This is Ok because another replica is definitely going to drop the table.
+
+            LOG_WARNING(log, "Removing leftovers from table {} (this might take several minutes)", String(keeper_path));
+            String drop_lock_path = keeper_path / "dropped" / "lock";
+            Coordination::Error code = keeper->tryCreate(drop_lock_path, "", zkutil::CreateMode::Ephemeral);
+
+            if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+            {
+                LOG_WARNING(log, "The leftovers from table {} were removed by another replica", String(keeper_path));
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                throw Coordination::Exception::fromPath(code, drop_lock_path);
+            }
+            else
+            {
+                auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *keeper);
+                if (!removeTableNodesFromZooKeeper(metadata_drop_lock))
+                {
+                    /// Someone is recursively removing table right now, we cannot create new table until old one is removed
+                    continue;
+                }
+            }
+        }
+
+        keeper->createAncestors(keeper_path);
+        Coordination::Requests ops;
+
+        ops.emplace_back(zkutil::makeCreateRequest(keeper_path, "", zkutil::CreateMode::Persistent));
+
+        const auto topics_path = keeper_path / "topics";
+        ops.emplace_back(zkutil::makeCreateRequest(topics_path, "", zkutil::CreateMode::Persistent));
+
+
+        const auto topic_partition_counts = consumer->getPartitionCounts();
+        for (const auto & topic_partition_count : topic_partition_counts)
+        {
+            LOG_DEBUG(
+                log,
+                "Creating path in keeper for topic {} with {} partitions",
+                topic_partition_count.topic,
+                topic_partition_count.partition_count);
+            ops.emplace_back(zkutil::makeCreateRequest(topics_path / topic_partition_count.topic, "", zkutil::CreateMode::Persistent));
+
+            const auto partitions_path = topics_path / topic_partition_count.topic / "partitions";
+            ops.emplace_back(zkutil::makeCreateRequest(partitions_path, "", zkutil::CreateMode::Persistent));
+            // TODO(antaljanosbenjamin): handle changing number of partitions
+            for (auto partition_id{0U}; partition_id < topic_partition_count.partition_count; ++partition_id)
+                ops.emplace_back(zkutil::makeCreateRequest(partitions_path / toString(partition_id), "", zkutil::CreateMode::Persistent));
+        }
+
+        // Create the first replica
+        ops.emplace_back(zkutil::makeCreateRequest(replicas_path, "", zkutil::CreateMode::Persistent));
         ops.emplace_back(
-            zkutil::makeCreateRequest(topics_prefix + topic_partition_count.topic + "/partitions", "", zkutil::CreateMode::Persistent));
-        const auto partitions_prefix = topics_prefix + topic_partition_count.topic + "/partitions/";
-        // TODO(antaljanosbenjamin): handle changing number of partitions
-        for (auto partition_id{0U}; partition_id < topic_partition_count.partition_count; ++partition_id)
-            ops.emplace_back(zkutil::makeCreateRequest(partitions_prefix + toString(partition_id), "", zkutil::CreateMode::Persistent));
+            zkutil::makeCreateRequest(replicas_path / kafka_settings->kafka_replica_name.value, "", zkutil::CreateMode::Persistent));
+
+
+        Coordination::Responses responses;
+        const auto code = keeper->tryMulti(ops, responses);
+        if (code == Coordination::Error::ZNODEEXISTS)
+        {
+            LOG_INFO(log, "It looks like the table {} was created by another replica at the same moment, will retry", String(keeper_path));
+            continue;
+        }
+        else if (code != Coordination::Error::ZOK)
+        {
+            zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+
+        LOG_INFO(log, "Table {} created successfully ", String(keeper_path));
+
+        return true;
     }
 
+    throw Exception(
+        ErrorCodes::REPLICA_ALREADY_EXISTS,
+        "Cannot create table, because it is created concurrently every time or because "
+        "of wrong zookeeper_path or because of logical error");
+}
 
+
+bool StorageKafka2::removeTableNodesFromZooKeeper(const zkutil::EphemeralNodeHolder::Ptr & drop_lock)
+{
+    bool completely_removed = false;
+
+    Strings children;
+    if (const auto code = keeper->tryGetChildren(kafka_settings->kafka_keeper_path.value, children); code == Coordination::Error::ZNONODE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
+
+    const auto keeper_path = fs::path(kafka_settings->kafka_keeper_path.value);
+    for (const auto & child : children)
+        if (child != "dropped")
+            keeper->tryRemoveRecursive(keeper_path / child);
+
+    Coordination::Requests ops;
     Coordination::Responses responses;
-    const auto code = keeper->tryMulti(ops, responses);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+    ops.emplace_back(zkutil::makeRemoveRequest(drop_lock->getPath(), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(keeper_path / "dropped", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(keeper_path, -1));
+    const auto code = keeper->tryMulti(ops, responses, /* check_session_valid */ true);
+
+    if (code == Coordination::Error::ZNONODE)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+    }
+    else if (code == Coordination::Error::ZNOTEMPTY)
+    {
+        LOG_ERROR(
+            log,
+            "Table was not completely removed from Keeper, {} still exists and may contain some garbage,"
+            "but someone is removing it right now.",
+            kafka_settings->kafka_keeper_path.value);
+    }
+    else if (code != Coordination::Error::ZOK)
+    {
+        /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
         zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+    else
+    {
+        drop_lock->setAlreadyRemoved();
+        completely_removed = true;
+        LOG_INFO(log, "Table {} was successfully removed from ZooKeeper", kafka_settings->kafka_keeper_path.value);
+    }
+
+    return completely_removed;
+}
+
+void StorageKafka2::createReplica()
+{
+    const auto replica_path = kafka_settings->kafka_keeper_path.value + "/replicas/" + kafka_settings->kafka_replica_name.value;
+    const auto code = keeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZNODEEXISTS)
+        throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Replica {} already exists", replica_path);
+    else if (code == Coordination::Error::ZNONODE)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} was suddenly removed", kafka_settings->kafka_keeper_path.value);
+    else if (code != Coordination::Error::ZOK)
+        throw Coordination::Exception::fromPath(code, replica_path);
+
+    LOG_INFO(log, "Replica {} created", replica_path);
+}
+
+
+void StorageKafka2::dropReplica()
+{
+    if (keeper->expired())
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table was not dropped because ZooKeeper session has expired.");
+
+    auto replica_path = kafka_settings->kafka_keeper_path.value + "/replicas/" + kafka_settings->kafka_replica_name.value;
+
+    LOG_INFO(log, "Removing replica {}", replica_path);
+
+    if (!keeper->exists(replica_path))
+    {
+        LOG_INFO(log, "Removing replica {} does not exist", replica_path);
+        return;
+    }
+
+    {
+        keeper->tryRemoveChildrenRecursive(replica_path);
+
+        if (keeper->tryRemove(replica_path) != Coordination::Error::ZOK)
+            LOG_ERROR(log, "Replica was not completely removed from Keeper, {} still exists and may contain some garbage.", replica_path);
+    }
+
+    /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
+    Strings replicas;
+    if (Coordination::Error::ZOK != keeper->tryGetChildren(kafka_settings->kafka_keeper_path.value + "/replicas", replicas)
+        || !replicas.empty())
+        return;
+
+    LOG_INFO(log, "{} is the last replica, will remove table", replica_path);
+
+    /** At this moment, another replica can be created and we cannot remove the table.
+      * Try to remove /replicas node first. If we successfully removed it,
+      * it guarantees that we are the only replica that proceed to remove the table
+      * and no new replicas can be created after that moment (it requires the existence of /replicas node).
+      * and table cannot be recreated with new /replicas node on another servers while we are removing data,
+      * because table creation is executed in single transaction that will conflict with remaining nodes.
+      */
+
+    /// Node /dropped works like a lock that protects from concurrent removal of old table and creation of new table.
+    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so
+    /// we remove it on table creation if there is /dropped node. Creating thread may remove /dropped node created by
+    /// removing thread, and it causes race condition if removing thread is not finished yet.
+    /// To avoid this we also create ephemeral child before starting recursive removal.
+    /// (The existence of child node does not allow to remove parent node).
+    Coordination::Requests ops;
+    Coordination::Responses responses;
+    String drop_lock_path = kafka_settings->kafka_keeper_path.value + "/dropped/lock";
+    ops.emplace_back(zkutil::makeRemoveRequest(kafka_settings->kafka_keeper_path.value + "/replicas", -1));
+    ops.emplace_back(zkutil::makeCreateRequest(kafka_settings->kafka_keeper_path.value + "/dropped", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
+    Coordination::Error code = keeper->tryMulti(ops, responses);
+
+    if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+    {
+        LOG_WARNING(log, "Table {} is already started to be removing by another replica right now", replica_path);
+    }
+    else if (code == Coordination::Error::ZNOTEMPTY)
+    {
+        LOG_WARNING(log, "Another replica was suddenly created, will keep the table {}", replica_path);
+    }
+    else if (code != Coordination::Error::ZOK)
+    {
+        zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+    else
+    {
+        auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *keeper);
+        LOG_INFO(log, "Removing table {} (this might take several minutes)", kafka_settings->kafka_keeper_path.value);
+        removeTableNodesFromZooKeeper(drop_lock);
+    }
 }
 
 std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
-    // TODO(antaljanosbenjamin): Review this function with somebody who knows keeper better than me
-    const auto uuid_as_string = toString(uuid);
-
     std::vector<std::string> topic_partition_paths;
     topic_partition_paths.reserve(topic_partitions.size());
     for (const auto & topic_partition : topic_partitions)
@@ -598,8 +807,11 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
     Coordination::Requests ops;
 
     for (const auto & topic_partition_path : topic_partition_paths)
-        ops.push_back(zkutil::makeCreateRequest(topic_partition_path + lock_file_name, uuid_as_string, zkutil::CreateMode::Ephemeral));
-
+    {
+        LOG_TRACE(log, "Creating locking ops for: {}", topic_partition_path + lock_file_name);
+        ops.push_back(zkutil::makeCreateRequest(
+            topic_partition_path + lock_file_name, kafka_settings->kafka_replica_name.value, zkutil::CreateMode::Ephemeral));
+    }
     Coordination::Responses responses;
 
     if (const auto code = keeper_to_use.tryMulti(ops, responses); code != Coordination::Error::ZOK)

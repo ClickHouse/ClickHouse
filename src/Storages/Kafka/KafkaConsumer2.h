@@ -10,8 +10,6 @@
 #include <cppkafka/topic_partition.h>
 #include <cppkafka/topic_partition_list.h>
 
-#include <compare>
-
 namespace CurrentMetrics
 {
 extern const Metric KafkaConsumers;
@@ -80,7 +78,7 @@ public:
 
     KafkaConsumer2(
         ConsumerPtr consumer_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         size_t max_batch_size,
         size_t poll_timeout_,
         const std::atomic<bool> & stopped_,
@@ -110,7 +108,6 @@ public:
 
     /// Polls batch of messages from Kafka and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
-    /// TODO(antaljanosbenjamin): add batch size param
     ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count);
 
     // Return values for the message that's being read.
@@ -136,7 +133,7 @@ private:
     };
 
     ConsumerPtr consumer;
-    Poco::Logger * log;
+    LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
 

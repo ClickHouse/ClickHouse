@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -139,7 +138,7 @@ private:
     const size_t max_rows_per_message;
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
-    Poco::Logger * log;
+    LoggerPtr log;
     Poco::Semaphore semaphore;
     const SettingsChanges settings_adjustments;
     std::atomic<bool> mv_attached = false;
@@ -176,8 +175,6 @@ private:
     // Load Kafka properties from producer configuration
     void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
 
-    UUID uuid{UUIDHelpers::generateV4()};
-
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
@@ -193,6 +190,14 @@ private:
     std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info);
 
     bool checkDependencies(const StorageID & table_id);
+
+    // Returns true if this is the first replica
+    bool createTableIfNotExists(const KafkaConsumer2Ptr & consumer);
+    // Returns true if all of the nodes were cleaned up
+    bool removeTableNodesFromZooKeeper(const zkutil::EphemeralNodeHolder::Ptr & drop_lock);
+    // Creates only the replica in ZooKeeper. Shouldn't be called on the first replica as it is created in createTableIfNotExists
+    void createReplica();
+    void dropReplica();
 
     // Takes lock over topic partitions and set's the committed offset in topic_partitions
     void createKeeperNodes(const KafkaConsumer2Ptr & consumer);

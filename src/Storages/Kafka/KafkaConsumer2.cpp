@@ -58,7 +58,7 @@ bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) con
 
 KafkaConsumer2::KafkaConsumer2(
     ConsumerPtr consumer_,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     size_t max_batch_size,
     size_t poll_timeout_,
     const std::atomic<bool> & stopped_,
