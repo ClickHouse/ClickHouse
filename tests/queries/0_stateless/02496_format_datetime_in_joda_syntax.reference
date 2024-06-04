@@ -147,3 +147,5 @@ with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT form
 550000000
 with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSSSS');
 550000000
+150
+300
