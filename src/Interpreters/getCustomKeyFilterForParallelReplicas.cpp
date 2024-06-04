@@ -40,7 +40,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         return equals_function;
     }
 
-    assert(filter.filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
+    chassert(filter.filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
 
     KeyDescription custom_key_description
         = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
@@ -134,7 +134,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     if (upper_limit_rational < range_upper)
         has_upper_limit = true;
 
-    assert(has_lower_limit || has_upper_limit);
+    chassert(has_lower_limit || has_upper_limit);
 
     /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
     std::shared_ptr<ASTFunction> lower_function;
@@ -156,7 +156,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
             return upper_function;
     }
 
-    assert(upper_function && lower_function);
+    chassert(upper_function && lower_function);
 
     return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
 }
