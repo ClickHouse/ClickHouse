@@ -200,7 +200,7 @@ private:
 
     // Takes lock over topic partitions and set's the committed offset in topic_partitions
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper& keeper_to_use, const TopicPartitions & topic_partitions);
-    void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t last_read_offset);
+    void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t intent);
 
     PolledBatchInfo pollConsumer(

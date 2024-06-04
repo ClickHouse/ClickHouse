@@ -852,14 +852,13 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
 
 
 void StorageKafka2::saveCommittedOffset(
-    zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, const int64_t last_read_offset)
+    zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
 {
-    const auto committed_offset = last_read_offset + 1;
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    keeper_to_use.createOrUpdate(partition_prefix + commit_file_name, toString(committed_offset), zkutil::CreateMode::Persistent);
+    keeper_to_use.createOrUpdate(partition_prefix + commit_file_name, toString(topic_partition.offset), zkutil::CreateMode::Persistent);
     // This is best effort, if it fails we will try to remove in the next round
     keeper_to_use.tryRemove(partition_prefix + intent_file_name, -1);
-    LOG_TEST(log, "Saved offset {} for topic-partition [{}:{}]", committed_offset, topic_partition.topic, topic_partition.partition_id);
+    LOG_TEST(log, "Saved offset {} for topic-partition [{}:{}]", topic_partition.offset, topic_partition.topic, topic_partition.partition_id);
 }
 
 void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent)
@@ -1199,9 +1198,10 @@ bool StorageKafka2::streamToViews(size_t idx)
                 TopicPartition topic_partition_copy{topic_partition};
                 if (const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset;
                     maybe_committed_offset.has_value())
+                {
                     topic_partition_copy.offset = *maybe_committed_offset;
-                else
-                    topic_partition_copy.offset = KafkaConsumer2::BEGINNING_OFFSET;
+                }
+                // in case no saved offset, we will get the offset from Kafka as a best effort. This is important to not to duplicate message when recreating the table.
 
                 consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
             }
@@ -1303,11 +1303,11 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
-
-    saveCommittedOffset(keeper_to_use, topic_partition, last_read_offset);
-    lock_info.intent_size.reset();
-    lock_info.committed_offset = last_read_offset;
+    lock_info.committed_offset = last_read_offset + 1;
     topic_partition.offset = last_read_offset + 1;
+    consumer_info.consumer->commit(topic_partition);
+    saveCommittedOffset(keeper_to_use, topic_partition);
+    lock_info.intent_size.reset();
     needs_offset_reset = false;
 
     return rows;

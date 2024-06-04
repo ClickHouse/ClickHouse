@@ -95,7 +95,8 @@ KafkaConsumer2::KafkaConsumer2(
             needs_offset_update = true;
             for (const auto & topic_partition : topic_partitions)
             {
-                assignment->push_back(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), INVALID_OFFSET});
+                assignment->push_back(
+                    TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), topic_partition.get_offset()});
             }
 
             // We need to initialize the queues here in order to detach them from the consumer queue. Otherwise `pollEvents` might eventually poll actual messages also.
@@ -376,6 +377,67 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
     return getNextMessage();
 }
 
+void KafkaConsumer2::commit(const TopicPartition & topic_partition)
+{
+    static constexpr auto max_retries = 5;
+    bool committed = false;
+
+    LOG_TEST(
+        log,
+        "Trying to commit offset {} to Kafka for topic-partition [{}:{}]",
+        topic_partition.offset,
+        topic_partition.topic,
+        topic_partition.partition_id);
+
+    const auto topic_partition_list = std::vector{cppkafka::TopicPartition{
+        topic_partition.topic,
+        topic_partition.partition_id,
+        topic_partition.offset,
+    }};
+    for (auto try_count = 0; try_count < max_retries && !committed; ++try_count)
+    {
+        try
+        {
+            // See https://github.com/edenhill/librdkafka/issues/1470
+            // broker may reject commit if during offsets.commit.timeout.ms (5000 by default),
+            // there were not enough replicas available for the __consumer_offsets topic.
+            // also some other temporary issues like client-server connectivity problems are possible
+
+            consumer->commit(topic_partition_list);
+            committed = true;
+            LOG_INFO(
+                log,
+                "Committed offset {} to Kafka for topic-partition [{}:{}]",
+                topic_partition.offset,
+                topic_partition.topic,
+                topic_partition.partition_id);
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            // If there were actually no offsets to commit, return. Retrying won't solve
+            // anything here
+            if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
+                committed = true;
+            else
+                LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
+        }
+    }
+
+    if (!committed)
+    {
+        // The failure is not the biggest issue, it only counts when a table is dropped and recreated, otherwise the offsets are taken from keeper.
+        ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
+        LOG_INFO(
+            log,
+            "All commit attempts failed. Last block was already written to target table(s), "
+            "but was not committed to Kafka.");
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::KafkaCommits);
+    }
+}
+
 ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
     while (current != messages.end())
@@ -417,8 +479,6 @@ size_t KafkaConsumer2::filterMessageErrors()
 
 void KafkaConsumer2::resetIfStopped()
 {
-    // we can react on stop only during fetching data
-    // after block is formed (i.e. during copying data to MV / committing)  we ignore stop attempts
     if (stopped)
     {
         stalled_status = StalledStatus::CONSUMER_STOPPED;

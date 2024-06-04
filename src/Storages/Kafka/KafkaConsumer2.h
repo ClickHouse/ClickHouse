@@ -110,6 +110,8 @@ public:
     /// nullptr when there are no messages to process.
     ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count);
 
+    void commit(const TopicPartition& topic_partition);
+
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
     String currentKey() const { return current[-1].get_key(); }
