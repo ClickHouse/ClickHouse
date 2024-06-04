@@ -429,12 +429,10 @@ void ProtobufReader::ignoreGroup()
 
 [[noreturn]] void ProtobufReader::throwUnknownFormat() const
 {
-    throw Exception::createDeprecated(
-        std::string("Protobuf messages are corrupted or don't match the provided schema.")
-            + (root_message_has_length_delimiter
-                   ? " Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint."
-                   : ""),
-        ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
+    throw Exception(ErrorCodes::UNKNOWN_PROTOBUF_FORMAT, "Protobuf messages are corrupted or don't match the provided schema.{}",
+            root_message_has_length_delimiter
+            ? " Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint."
+            : "");
 }
 }
 

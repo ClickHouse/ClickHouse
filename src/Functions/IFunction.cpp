@@ -4,6 +4,7 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Core/Block.h>
+#include <Core/TypeId.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -93,8 +94,8 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
-            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
-            column.type = removeLowCardinality(column.type);
+            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            column.type = recursiveRemoveLowCardinality(column.type);
         }
     }
 
@@ -109,7 +110,6 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
-
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -276,6 +276,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
             size_t new_input_rows_count = columns_without_low_cardinality.empty()
                                         ? input_rows_count
                                         : columns_without_low_cardinality.front().column->size();
+            checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
@@ -310,7 +311,12 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
-    if (useDefaultImplementationForSparseColumns())
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+
+    bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
+    /// DataTypeFunction does not support obtaining default (isDefaultAt())
+    /// ColumnFunction does not support getting specific values.
+    if (result_type->getTypeId() != TypeIndex::Function && use_default_implementation_for_sparse_columns)
     {
         size_t num_sparse_columns = 0;
         size_t num_full_columns = 0;
@@ -361,10 +367,10 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             /// If default of sparse column is changed after execution of function, convert to full column.
             /// If there are any default in non-zero position after execution of function, convert to full column.
             /// Currently there is no easy way to rebuild sparse column with new offsets.
-            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
+            if (!result_type->canBeInsideSparseColumns() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
-                return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
+                return res->createWithOffsets(offsets_data, *createColumnConst(res, 0), input_rows_count, /*shift=*/ 1);
             }
 
             return ColumnSparse::create(res, sparse_offsets, input_rows_count);
@@ -373,8 +379,14 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-
-    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+    else if (use_default_implementation_for_sparse_columns)
+    {
+        auto columns_without_sparse = arguments;
+        convertSparseColumnsToFull(columns_without_sparse);
+        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+    }
+    else
+        return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
@@ -444,7 +456,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
 {
     checkNumberOfArguments(arguments.size());
-    return getLambdaArgumentTypesImpl(arguments);
+    getLambdaArgumentTypesImpl(arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const

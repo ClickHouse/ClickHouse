@@ -1,3 +1,5 @@
+# Generates a separate file with debug symbols while stripping it from the main binary.
+# This is needed for Debian packages.
 macro(clickhouse_split_debug_symbols)
    set(oneValueArgs TARGET DESTINATION_DIR BINARY_PATH)
 
@@ -22,8 +24,9 @@ macro(clickhouse_split_debug_symbols)
        # Splits debug symbols into separate file, leaves the binary untouched:
        COMMAND "${OBJCOPY_PATH}" --only-keep-debug "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        COMMAND chmod 0644 "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
-       # Strips binary, sections '.note' & '.comment' are removed in line with Debian's stripping policy: www.debian.org/doc/debian-policy/ch-files.html, section '.clickhouse.hash' is needed for integrity check:
-       COMMAND "${STRIP_PATH}" --remove-section=.comment --remove-section=.note --keep-section=.clickhouse.hash "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+       # Strips binary, sections '.note' & '.comment' are removed in line with Debian's stripping policy: www.debian.org/doc/debian-policy/ch-files.html, section '.clickhouse.hash' is needed for integrity check.
+       # Also, after we disabled the export of symbols for dynamic linking, we still to keep a static symbol table for good stack traces.
+       COMMAND "${STRIP_PATH}" --strip-debug --remove-section=.comment --remove-section=.note "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
        # Associate stripped binary with debug symbols:
        COMMAND "${OBJCOPY_PATH}" --add-gnu-debuglink "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
        COMMENT "Stripping clickhouse binary" VERBATIM

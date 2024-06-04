@@ -64,7 +64,7 @@ public:
 
         if (arguments.size() > 1)
         {
-            if (!isUnsignedInteger(arguments[1].type))
+            if (!isUInt(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Second argument (shingle size) of function {} must be unsigned integer, got {}",
                                 getName(), arguments[1].type->getName());
@@ -85,7 +85,7 @@ public:
                                 "Function {} expect no more than two arguments (text, shingle size), got {}",
                                 getName(), arguments.size());
 
-            if (!isUnsignedInteger(arguments[2].type))
+            if (!isUInt(arguments[2].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Third argument (num hashes) of function {} must be unsigned integer, got {}",
                                 getName(), arguments[2].type->getName());
@@ -153,8 +153,8 @@ public:
             auto col_res = ColumnVector<UInt64>::create();
             auto & vec_res = col_res->getData();
             vec_res.resize(column->size());
-            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, vec_res);
+            const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, vec_res);
             return col_res;
         }
         else if constexpr (is_arg) // Min hash arg
@@ -170,8 +170,8 @@ public:
             auto min_tuple = ColumnTuple::create(std::move(min_columns));
             auto max_tuple = ColumnTuple::create(std::move(max_columns));
 
-            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get());
+            const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get());
 
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(min_tuple));
@@ -186,8 +186,8 @@ public:
             auto & vec_h2 = col_h2->getData();
             vec_h1.resize(column->size());
             vec_h2.resize(column->size());
-            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, &vec_h1, &vec_h2, nullptr, nullptr);
+            const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, &vec_h1, &vec_h2, nullptr, nullptr);
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(col_h1));
             tuple_columns.emplace_back(std::move(col_h2));

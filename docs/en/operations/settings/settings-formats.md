@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -212,6 +212,8 @@ Possible values:
 
 Default value: `'basic'`.
 
+Cloud default value: `'best_effort'`.
+
 See also:
 
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
@@ -321,6 +323,10 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
 
+## output_format_schema {#output-format-schema}
+
+The path to the file where the automatically generated schema will be saved in [Cap’n Proto](../../interfaces/formats.md#capnproto-capnproto) or [Protobuf](../../interfaces/formats.md#protobuf-protobuf) formats.
+
 ## output_format_enable_streaming {#output_format_enable_streaming}
 
 Enable streaming in output formats that support it.
@@ -373,9 +379,22 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
+## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+
+Allow parsing bools as strings in JSON input formats.
+
+Enabled by default.
+
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
+
+Enabled by default.
+
+## input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
+
+If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
+It can be useful if JSON data contains quoted UInt64 numbers.
 
 Disabled by default.
 
@@ -400,7 +419,76 @@ Result:
 └────┴──────────────────────────┴────────────┘
 ```
 
-Disabled by default.
+Enabled by default.
+
+## input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
+
+If enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
+The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
+
+Example:
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+Result:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Enabled by default.
+
+## input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
+
+Allow parsing JSON arrays as strings in JSON input formats.
+
+Example:
+
+```sql
+SET input_format_json_read_arrays_as_strings = 1;
+SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
+```
+
+Result:
+```
+┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
+│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
+└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
+```
+
+Enabled by default.
+
+## input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
+
+Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
+In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
+by using String type for keys with unknown types.
+
+Example:
+
+```sql
+SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
+DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+```
+
+Result:
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+┌─obj────────────────────────────┐
+│ ([1,2,3],'hello',NULL,'{}',[]) │
+└────────────────────────────────┘
+```
+
+Enabled by default.
 
 ## input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
 
@@ -563,6 +651,12 @@ This setting works only when setting `input_format_json_named_tuples_as_objects`
 
 Enabled by default.
 
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+
+Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
+
+Enabled by default.
+
 ## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
@@ -622,6 +716,30 @@ The name of column that will be used for storing/writing object names in [JSONOb
 Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
 
 Default value: ''.
+
+### input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
+
+### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
+
+When enabled, escape special characters in Markdown.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
+
+Default value: 0.
 
 ## TSV format settings {#tsv-format-settings}
 
@@ -713,7 +831,13 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
+
+Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
 
 Disabled by default.
 
@@ -760,6 +884,13 @@ When enabled, trailing empty lines at the end of TSV file will be skipped.
 
 Disabled by default.
 
+### input_format_tsv_allow_variable_number_of_columns {#input_format_tsv_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in TSV input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
+
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -772,7 +903,7 @@ Default value: `,`.
 
 If it is set to true, allow strings in single quotes.
 
-Enabled by default.
+Disabled by default.
 
 ### format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
 
@@ -783,6 +914,12 @@ Enabled by default.
 ### output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
+
+If it is set true, CR(\\r) will be allowed at end of line not followed by LF(\\n)
 
 Disabled by default.
 
@@ -951,9 +1088,11 @@ Result
 ```text
 "  string  "
 ```
+
 ### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
-ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+Allow variable number of columns in rows in CSV input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
 
 Disabled by default.
 
@@ -988,6 +1127,35 @@ Result
 ```text
 a  b
 ```
+
+### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
+
+Allow to set default value to column when CSV field deserialization failed on bad value
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
+echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  0  1971-01-01
+```
+
+## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
+
+If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
+It can be useful if CSV data contains quoted UInt64 numbers.
+
+Disabled by default.
 
 ## Values format settings {#values-format-settings}
 
@@ -1086,17 +1254,6 @@ Default value: 1.
 
 ## Arrow format settings {#arrow-format-settings}
 
-### input_format_arrow_import_nested {#input_format_arrow_import_nested}
-
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
-
-Possible values:
-
-- 0 — Data can not be inserted into `Nested` columns as an array of structs.
-- 1 — Data can be inserted into `Nested` columns as an array of structs.
-
-Default value: `0`.
-
 ### input_format_arrow_case_insensitive_column_matching {#input_format_arrow_case_insensitive_column_matching}
 
 Ignore case when matching Arrow column names with ClickHouse column names.
@@ -1126,6 +1283,28 @@ Possible values:
 
 Default value: `0`.
 
+### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
+
+Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
+- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
+
+Default value: `1`.
+
+### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
+
+Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
+- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
+
+Default value: `0`.
+
 ### output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 Use Arrow String type instead of Binary for String columns.
@@ -1142,20 +1321,9 @@ Enabled by default.
 
 Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
 
-Default value: `none`.
+Default value: `lz4_frame`.
 
 ## ORC format settings {#orc-format-settings}
-
-### input_format_orc_import_nested {#input_format_orc_import_nested}
-
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
-
-Possible values:
-
-- 0 — Data can not be inserted into `Nested` columns as an array of structs.
-- 1 — Data can be inserted into `Nested` columns as an array of structs.
-
-Default value: `0`.
 
 ### input_format_orc_row_batch_size {#input_format_orc_row_batch_size}
 
@@ -1195,17 +1363,6 @@ Default value: `none`.
 
 ## Parquet format settings {#parquet-format-settings}
 
-### input_format_parquet_import_nested {#input_format_parquet_import_nested}
-
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
-
-Possible values:
-
-- 0 — Data can not be inserted into `Nested` columns as an array of structs.
-- 1 — Data can be inserted into `Nested` columns as an array of structs.
-
-Default value: `0`.
-
 ### input_format_parquet_case_insensitive_column_matching {#input_format_parquet_case_insensitive_column_matching}
 
 Ignore case when matching Parquet column names with ClickHouse column names.
@@ -1222,13 +1379,19 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
 Allow skipping columns with unsupported types while schema inference for format Parquet.
 
 Disabled by default.
+
+### input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
+
+min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format.
+
+Default value - `8192`.
 
 ### output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
@@ -1308,6 +1471,11 @@ When serializing Nullable columns with Google wrappers, serialize default values
 
 Disabled by default.
 
+### format_protobuf_use_autogenerated_schema {#format_capn_proto_use_autogenerated_schema}
+
+Use autogenerated Protobuf schema when [format_schema](#formatschema-format-schema) is not set.
+The schema is generated from ClickHouse table structure using function [structureToProtobufSchema](../../sql-reference/functions/other-functions.md#structure_to_protobuf_schema)
+
 ## Avro format settings {#avro-format-settings}
 
 ### input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
@@ -1324,6 +1492,17 @@ Default value: 0.
 ### format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md/#data-format-avro-confluent) format.
+
+Format:
+``` text
+http://[user:password@]machine[:port]"
+```
+
+Examples:
+``` text
+http://registry.example.com:8081
+http://admin:secret@registry.example.com:8081
+```
 
 Default value: `Empty`.
 
@@ -1432,7 +1611,13 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-Enabled by default.
+possible values:
+
+-   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
+-   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
+-   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
+
+Default value is `auto`.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
@@ -1463,7 +1648,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
@@ -1483,11 +1668,42 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
+### output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
+
+Print a readable number tip on the right side of the table if the block consists of a single number which exceeds
+this value (except 0).
+
+Possible values:
+
+- 0 — The readable number tip will not be printed.
+- Positive integer — The readable number tip will be printed if the single number exceeds this value.
+
+Default value: `1000000`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT 1000000000 as a;
+```
+
+Result:
+```text
+┌──────────a─┐
+│ 1000000000 │ -- 1.00 billion
+└────────────┘
+```
+
 ## Template format settings {#template-format-settings}
 
 ### format_template_resultset {#format_template_resultset}
 
 Path to file which contains format string for result set (for Template format).
+
+### format_template_resultset_format {#format_template_resultset_format}
+
+Format string for result set (for Template format)
 
 ### format_template_row {#format_template_row}
 
@@ -1496,6 +1712,10 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
+
+### format_template_row_format {#format_template_row_format}
+
+Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 
@@ -1556,6 +1776,13 @@ When enabled, trailing empty lines at the end of file in CustomSeparated format 
 
 Disabled by default.
 
+### input_format_custom_allow_variable_number_of_columns {#input_format_custom_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in CustomSeparated input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
+
 ## Regexp format settings {#regexp-format-settings}
 
 ### format_regexp_escaping_rule {#format_regexp_escaping_rule}
@@ -1592,6 +1819,11 @@ Possible values:
 - `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
 
 Default value: `'by_values'`.
+
+### format_capn_proto_use_autogenerated_schema {#format_capn_proto_use_autogenerated_schema}
+
+Use autogenerated CapnProto schema when [format_schema](#formatschema-format-schema) is not set.
+The schema is generated from ClickHouse table structure using function [structureToCapnProtoSchema](../../sql-reference/functions/other-functions.md#structure_to_capnproto_schema)
 
 ## MySQLDump format settings {#musqldump-format-settings}
 

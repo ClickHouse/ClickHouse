@@ -8,7 +8,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ENV LANG=C.UTF-8
-ENV TZ=Europe/Moscow
+ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update \
@@ -29,7 +29,7 @@ RUN apt-get update \
             wget \
     && apt-get autoremove --yes \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 RUN pip3 install Jinja2
 

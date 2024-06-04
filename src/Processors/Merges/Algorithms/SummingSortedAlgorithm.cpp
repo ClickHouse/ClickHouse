@@ -6,12 +6,13 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
 namespace DB
@@ -54,7 +55,8 @@ struct SummingSortedAlgorithm::AggregateDescription
     void init(const char * function_name, const DataTypes & argument_types)
     {
         AggregateFunctionProperties properties;
-        init(AggregateFunctionFactory::instance().get(function_name, argument_types, {}, properties));
+        auto action = NullsAction::EMPTY;
+        init(AggregateFunctionFactory::instance().get(function_name, action, argument_types, {}, properties));
     }
 
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
@@ -222,6 +224,12 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
+        if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
+        {
+            def.column_numbers_not_to_aggregate.push_back(i);
+            continue;
+        }
+
         /// Discover nested Maps and find columns for summation
         if (typeid_cast<const DataTypeArray *>(column.type.get()) && !simple)
         {
@@ -374,46 +382,10 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     return def;
 }
 
-static MutableColumns getMergedDataColumns(
-    const Block & header,
-    const SummingSortedAlgorithm::ColumnsDefinition & def)
-{
-    MutableColumns columns;
-    size_t num_columns = def.column_numbers_not_to_aggregate.size() + def.columns_to_aggregate.size();
-    columns.reserve(num_columns);
-
-    for (const auto & desc : def.columns_to_aggregate)
-    {
-        // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
-        {
-            size_t tuple_size = desc.column_numbers.size();
-            MutableColumns tuple_columns(tuple_size);
-            for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column->cloneEmpty();
-
-            columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-        }
-        else
-        {
-            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
-            columns.emplace_back(type->createColumn());
-        }
-    }
-
-    for (const auto & column_number : def.column_numbers_not_to_aggregate)
-        columns.emplace_back(header.safeGetByPosition(column_number).type->createColumn());
-
-    return columns;
-}
-
 static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::ColumnsDefinition & def)
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-
-    for (auto & column : columns)
-        column = column->convertToFullColumnIfConst();
 
     for (const auto & desc : def.columns_to_aggregate)
     {
@@ -496,11 +468,44 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
 }
 
 
-SummingSortedAlgorithm::SummingMergedData::SummingMergedData(
-    MutableColumns columns_, UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, ColumnsDefinition & def_)
-    : MergedData(std::move(columns_), false, max_block_size_rows_, max_block_size_bytes_)
+SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, ColumnsDefinition & def_)
+    : MergedData(false, max_block_size_rows_, max_block_size_bytes_)
     , def(def_)
 {
+}
+
+void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & header, const IMergingAlgorithm::Inputs & inputs)
+{
+    MergedData::initialize(header, inputs);
+
+    MutableColumns new_columns;
+    size_t num_columns = def.column_numbers_not_to_aggregate.size() + def.columns_to_aggregate.size();
+    new_columns.reserve(num_columns);
+
+    for (const auto & desc : def.columns_to_aggregate)
+    {
+        // Wrap aggregated columns in a tuple to match function signature
+        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        {
+            size_t tuple_size = desc.column_numbers.size();
+            MutableColumns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
+
+            new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
+        }
+        else
+        {
+            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
+            new_columns.emplace_back(type->createColumn());
+        }
+    }
+
+    for (const auto & column_number : def.column_numbers_not_to_aggregate)
+        new_columns.emplace_back(std::move(columns[column_number]));
+
+    columns = std::move(new_columns);
+
     current_row.resize(def.column_names.size());
     initAggregateDescription();
 
@@ -690,12 +695,15 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(defineColumns(header_, description, column_names_to_sum, partition_key_columns))
-    , merged_data(getMergedDataColumns(header_, columns_definition), max_block_size_rows, max_block_size_bytes, columns_definition)
+    , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
+    removeConstAndSparse(inputs);
+    merged_data.initialize(header, inputs);
+
     for (auto & input : inputs)
         if (input.chunk)
             preprocessChunk(input.chunk, columns_definition);
@@ -705,6 +713,7 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }
@@ -729,9 +738,9 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
 
         {
             detail::RowRef current_key;
-            current_key.set(current);
+            setRowRef(current_key, current);
 
-            key_differs = last_key.empty() || !last_key.hasEqualSortColumnsWith(current_key);
+            key_differs = last_key.empty() || rowsHaveDifferentSortColumns(last_key, current_key);
 
             last_key = current_key;
             last_chunk_sort_columns.clear();

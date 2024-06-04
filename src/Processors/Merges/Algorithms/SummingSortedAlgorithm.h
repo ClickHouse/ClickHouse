@@ -25,6 +25,7 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes);
 
+    const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -64,7 +65,9 @@ public:
         using MergedData::insertRow;
 
     public:
-        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
+        SummingMergedData(UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
+
+        void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
         void startGroup(ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();

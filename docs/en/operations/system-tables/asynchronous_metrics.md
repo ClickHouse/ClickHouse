@@ -32,6 +32,10 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 └─────────────────────────────────────────┴────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<!--- Unlike with system.events and system.metrics, the asynchronous metrics are not gathered in a simple list in a source code file - they
+      are mixed with logic in src/Interpreters/ServerAsynchronousMetrics.cpp.
+      Listing them here explicitly for reader convenience. --->
+
 ## Metric descriptions
 
 
@@ -235,6 +239,10 @@ The amount of virtual memory mapped for the pages of machine code of the server 
 
 The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes. It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call. This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring.
 
+### MemoryResidentMax
+
+Maximum amount of physical memory used by the server process, in bytes.
+
 ### MemoryResident
 
 The amount of physical memory used by the server process, in bytes.
@@ -289,11 +297,11 @@ Total number of databases on the server.
 
 ### NumberOfDetachedByUserParts
 
-The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed.
+The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts, and they can be removed.
 
 ### NumberOfDetachedParts
 
-The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed.
+The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts, and they can be removed.
 
 ### NumberOfTables
 
@@ -385,7 +393,7 @@ The amount of free memory plus OS page cache memory on the host system, in bytes
 
 ### OSMemoryFreeWithoutCached
 
-The amount of free memory on the host system, in bytes. This does not include the memory used by the OS page cache memory, in bytes. The page cache memory is also available for usage by programs, so the value of this metric can be confusing. See the `OSMemoryAvailable` metric instead. For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable. See also https://www.linuxatemyram.com/. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
+The amount of free memory on the host system, in bytes. This does not include the memory used by the OS page cache memory, in bytes. The page cache memory is also available for usage by programs, so the value of this metric can be confusing. See the `OSMemoryAvailable` metric instead. For convenience, we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable. See also https://www.linuxatemyram.com/. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
 ### OSMemoryTotal
 
@@ -483,6 +491,14 @@ The value is similar to `OSUserTime` but divided to the number of CPU cores to b
 
 Number of threads in the server of the PostgreSQL compatibility protocol.
 
+### QueryCacheBytes
+
+Total size of the query cache in bytes.
+
+### QueryCacheEntries
+
+Total number of entries in the query cache.
+
 ### ReplicasMaxAbsoluteDelay
 
 Maximum difference in seconds between the most fresh replicated part and the most fresh data part still to be replicated, across Replicated tables. A very high value indicates a replica with no data.
@@ -533,7 +549,15 @@ Total amount of bytes (compressed, including data and indices) stored in all tab
 
 ### TotalPartsOfMergeTreeTables
 
-Total amount of data parts in all tables of MergeTree family. Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key.
+Total amount of data parts in all tables of MergeTree family. Numbers larger than 10 000 will negatively affect the server startup time, and it may indicate unreasonable choice of the partition key.
+
+### TotalPrimaryKeyBytesInMemory
+
+The total amount of memory (in bytes) used by primary key values (only takes active parts into account).
+
+### TotalPrimaryKeyBytesInMemoryAllocated
+
+The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account).
 
 ### TotalRowsOfMergeTreeTables
 

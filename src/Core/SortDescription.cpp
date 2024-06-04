@@ -108,10 +108,9 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
     return buffer.str();
 }
 
-static Poco::Logger * getLogger()
+static LoggerPtr getLogger()
 {
-    static Poco::Logger & logger = Poco::Logger::get("SortDescription");
-    return &logger;
+    return ::getLogger("SortDescription");
 }
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
@@ -133,8 +132,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     SipHash sort_description_dump_hash;
     sort_description_dump_hash.update(description_dump);
 
-    UInt128 sort_description_hash_key;
-    sort_description_dump_hash.get128(sort_description_hash_key);
+    const auto sort_description_hash_key = sort_description_dump_hash.get128();
 
     {
         std::lock_guard lock(mutex);

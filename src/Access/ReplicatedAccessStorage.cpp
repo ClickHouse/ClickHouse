@@ -108,17 +108,7 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
-{
-    const UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
-        return id;
-
-    return std::nullopt;
-}
-
-
-bool ReplicatedAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
@@ -619,14 +609,14 @@ AccessEntityPtr ReplicatedAccessStorage::tryReadEntityFromZooKeeper(const zkutil
 void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)
 {
     LOG_DEBUG(getLogger(), "Setting id {} to entity named {}", toString(id), entity->getName());
-    memory_storage.insertWithID(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+    memory_storage.insert(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
 }
 
 
 void ReplicatedAccessStorage::removeEntityNoLock(const UUID & id)
 {
     LOG_DEBUG(getLogger(), "Removing entity with id {}", toString(id));
-    memory_storage.remove(id, /* throw_if_not_exists= */ false);
+    memory_storage.remove(id, /* throw_if_not_exists= */ false); // NOLINT
 }
 
 
@@ -664,7 +654,7 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;
@@ -711,7 +701,7 @@ void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
         for (const auto & [id, entity] : my_entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+            insert(id, entity, replace_if_exists, throw_if_exists);
     });
 }
 

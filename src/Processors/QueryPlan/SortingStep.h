@@ -11,7 +11,7 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
-    enum class Type
+    enum class Type : uint8_t
     {
         Full,
         FinishSorting,
@@ -27,6 +27,7 @@ public:
         size_t max_bytes_before_external_sort = 0;
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
+        size_t max_block_bytes = 0;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
@@ -36,6 +37,15 @@ public:
     SortingStep(
         const DataStream & input_stream,
         SortDescription description_,
+        UInt64 limit_,
+        const Settings & settings_,
+        bool optimize_sorting_by_input_stream_properties_);
+
+    /// Full with partitioning
+    SortingStep(
+        const DataStream & input_stream,
+        const SortDescription & description_,
+        const SortDescription & partition_by_description_,
         UInt64 limit_,
         const Settings & settings_,
         bool optimize_sorting_by_input_stream_properties_);
@@ -83,14 +93,24 @@ public:
         bool skip_partial_sort = false);
 
 private:
+    void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputStream() override;
 
-    static void
-    mergeSorting(QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_);
+    static void mergeSorting(
+        QueryPipelineBuilder & pipeline,
+        const Settings & sort_settings,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_);
 
-    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
+    void mergingSorted(
+        QueryPipelineBuilder & pipeline,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_);
     void finishSorting(
-        QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, UInt64 limit_);
+        QueryPipelineBuilder & pipeline,
+        const SortDescription & input_sort_desc,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_);
     void fullSort(
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
@@ -101,6 +121,9 @@ private:
 
     SortDescription prefix_description;
     const SortDescription result_description;
+
+    SortDescription partition_by_description;
+
     UInt64 limit;
     bool always_read_till_end = false;
 

@@ -7,6 +7,7 @@ block_numbers
 blocks
 columns
 columns
+creator_info
 failed_parts
 flags
 host
@@ -49,6 +50,7 @@ block_numbers
 blocks
 columns
 columns
+creator_info
 failed_parts
 flags
 host

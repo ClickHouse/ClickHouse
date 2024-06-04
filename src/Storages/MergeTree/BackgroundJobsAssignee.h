@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+
 #include <pcg_random.hpp>
 
 
@@ -53,7 +55,7 @@ public:
     /// e.g. merges, mutations and fetches. The same will be for Plain MergeTree except there is no
     /// replication queue, so we will just scan parts and decide what to do.
     /// Moving operations are the same for all types of MergeTree and also have their own timetable.
-    enum class Type
+    enum class Type : uint8_t
     {
         DataProcessing,
         Moving
@@ -66,9 +68,9 @@ public:
     void finish();
 
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
-    void scheduleFetchTask(ExecutableTaskPtr fetch_task);
-    void scheduleMoveTask(ExecutableTaskPtr move_task);
-    void scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
+    bool scheduleFetchTask(ExecutableTaskPtr fetch_task);
+    bool scheduleMoveTask(ExecutableTaskPtr move_task);
+    bool scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
 
     /// Just call finish
     ~BackgroundJobsAssignee();

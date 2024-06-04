@@ -7,7 +7,7 @@ keywords: [udf, user defined function, clickhouse, executable, table, function]
 
 # executable Table Function for UDFs
 
-The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**. The executable script is stored in the `users_scripts` directory and can read data from any source.
+The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**. The executable script is stored in the `users_scripts` directory and can read data from any source. Make sure your ClickHouse server has all the required packages to run the executable script. For example, if it is a Python script, ensure that the server has the necessary Python packages installed.
 
 You can optionally include one or more input queries that stream their results to **stdin** for the script to read.
 
@@ -63,7 +63,7 @@ if __name__ == "__main__":
 Let's invoke the script and have it generate 10 random strings:
 
 ```sql
-SELECT * FROM executable('my_script.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
 ```
 
 The response looks like:

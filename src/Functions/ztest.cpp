@@ -57,7 +57,7 @@ public:
     {
         for (size_t i = 0; i < 4; ++i)
         {
-            if (!isUnsignedInteger(arguments[i].type))
+            if (!isUInt(arguments[i].type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -98,23 +98,23 @@ public:
         static const auto uint64_data_type = std::make_shared<DataTypeNumber<UInt64>>();
 
         auto column_successes_x = castColumnAccurate(arguments[0], uint64_data_type);
-        const auto & data_successes_x = checkAndGetColumn<ColumnVector<UInt64>>(column_successes_x.get())->getData();
+        const auto & data_successes_x = checkAndGetColumn<ColumnVector<UInt64>>(*column_successes_x).getData();
 
         auto column_successes_y = castColumnAccurate(arguments[1], uint64_data_type);
-        const auto & data_successes_y = checkAndGetColumn<ColumnVector<UInt64>>(column_successes_y.get())->getData();
+        const auto & data_successes_y = checkAndGetColumn<ColumnVector<UInt64>>(*column_successes_y).getData();
 
         auto column_trials_x = castColumnAccurate(arguments[2], uint64_data_type);
-        const auto & data_trials_x = checkAndGetColumn<ColumnVector<UInt64>>(column_trials_x.get())->getData();
+        const auto & data_trials_x = checkAndGetColumn<ColumnVector<UInt64>>(*column_trials_x).getData();
 
         auto column_trials_y = castColumnAccurate(arguments[3], uint64_data_type);
-        const auto & data_trials_y = checkAndGetColumn<ColumnVector<UInt64>>(column_trials_y.get())->getData();
+        const auto & data_trials_y = checkAndGetColumn<ColumnVector<UInt64>>(*column_trials_y).getData();
 
         static const auto float64_data_type = std::make_shared<DataTypeNumber<Float64>>();
 
         auto column_confidence_level = castColumnAccurate(arguments[4], float64_data_type);
-        const auto & data_confidence_level = checkAndGetColumn<ColumnVector<Float64>>(column_confidence_level.get())->getData();
+        const auto & data_confidence_level = checkAndGetColumn<ColumnVector<Float64>>(*column_confidence_level).getData();
 
-        String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
+        String usevar = checkAndGetColumnConst<ColumnString>(*arguments[5].column).getValue<String>();
 
         if (usevar != UNPOOLED && usevar != POOLED)
             throw Exception{ErrorCodes::BAD_ARGUMENTS,

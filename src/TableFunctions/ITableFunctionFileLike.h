@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include "Core/Names.h"
 #include "Parsers/IAST_fwd.h"
 
 namespace DB
@@ -27,11 +28,13 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
-    bool supportsReadingSubsetOfColumns() override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
+
+    NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
 
     static size_t getMaxNumberOfArguments() { return 4; }
 
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr &);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr &);
 
 protected:
 
@@ -39,7 +42,7 @@ protected:
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 
     virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
-    virtual String getFormatFromFirstArgument();
+    virtual std::optional<String> tryGetFormatFromFirstArgument();
 
     String filename;
     String format = "auto";
@@ -48,7 +51,7 @@ protected:
     ColumnsDescription structure_hint;
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     virtual StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, ContextPtr global_context,

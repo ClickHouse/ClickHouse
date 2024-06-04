@@ -1,5 +1,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -37,7 +38,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query requires data to insert, but it is not INSERT query");
 
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
@@ -47,7 +48,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: INSERT query requires format to be set");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
@@ -105,7 +106,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query requires data to insert, but it is not INSERT query");
 
     if (insert_query->infile)
     {

@@ -134,9 +134,9 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-    :::note "Примечание"
-    Оценка стоимости выполнения шага и запроса не поддерживается.
-    :::
+:::note Примечание
+Оценка стоимости выполнения шага и запроса не поддерживается.
+:::
 При `json = 1` шаги выполнения запроса выводятся в формате JSON. Каждый узел — это словарь, в котором всегда есть ключи `Node Type` и `Plans`. `Node Type` — это строка с именем шага. `Plans` — это массив с описаниями дочерних шагов. Другие дополнительные ключи могут быть добавлены в зависимости от типа узла и настроек.
 
 Пример:
@@ -371,7 +371,7 @@ ExpressionTransform
         ExpressionTransform × 2
           (SettingQuotaAndLimits)
             (ReadFromStorage)
-            NumbersMt × 2 0 → 1
+            NumbersRange × 2 0 → 1
 ```
 
 ### EXPLAIN ESTIMATE {#explain-estimate}

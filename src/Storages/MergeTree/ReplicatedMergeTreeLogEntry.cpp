@@ -28,7 +28,7 @@ enum FormatVersion : UInt8
     FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
     FORMAT_WITH_LOG_ENTRY_ID = 7,
 
-    FORMAT_LAST
+    FORMAT_LAST = 8,
 };
 
 
@@ -48,7 +48,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
 
     out << "format version: " << format_version << "\n"
-        << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
+        << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
 

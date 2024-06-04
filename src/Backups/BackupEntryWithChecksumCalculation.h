@@ -11,8 +11,8 @@ template <typename Base>
 class BackupEntryWithChecksumCalculation : public Base
 {
 public:
-    UInt128 getChecksum() const override;
-    std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override;
+    UInt128 getChecksum(const ReadSettings & read_settings) const override;
+    std::optional<UInt128> getPartialChecksum(size_t prefix_length, const ReadSettings & read_settings) const override;
 
 private:
     mutable std::optional<UInt128> calculated_checksum;

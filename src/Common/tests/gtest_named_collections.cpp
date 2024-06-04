@@ -1,5 +1,5 @@
 #include <Common/tests/gtest_global_context.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
@@ -77,7 +77,7 @@ key5:	5
 key6:	6.6
 )CONFIG");
 
-    collection2_copy->setOrUpdate<String>("key4", "value44");
+    collection2_copy->setOrUpdate<String>("key4", "value44", {});
     ASSERT_EQ(collection2_copy->get<String>("key4"), "value44");
     ASSERT_EQ(collection2->get<String>("key4"), "value4");
 
@@ -85,7 +85,7 @@ key6:	6.6
     ASSERT_EQ(collection2_copy->getOrDefault<String>("key4", "N"), "N");
     ASSERT_EQ(collection2->getOrDefault<String>("key4", "N"), "value4");
 
-    collection2_copy->setOrUpdate<String>("key4", "value45");
+    collection2_copy->setOrUpdate<String>("key4", "value45", {});
     ASSERT_EQ(collection2_copy->getOrDefault<String>("key4", "N"), "value45");
 
     NamedCollectionFactory::instance().remove("collection2_copy");

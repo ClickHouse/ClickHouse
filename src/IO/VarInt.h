@@ -1,10 +1,12 @@
 #pragma once
 
-#include <iostream>
 #include <base/types.h>
 #include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+
+#include <istream>
+#include <ostream>
 
 
 namespace DB
@@ -80,7 +82,7 @@ inline char * writeVarInt(Int64 x, char * ostr)
     return writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
 
-namespace impl
+namespace varint_impl
 {
 
 template <bool check_eof>
@@ -93,7 +95,7 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
             if (istr.eof()) [[unlikely]]
                 throwReadAfterEOF();
 
-        UInt64 byte = *istr.position();
+        UInt64 byte = static_cast<unsigned char>(*istr.position());
         ++istr.position();
         x |= (byte & 0x7F) << (7 * i);
 
@@ -107,8 +109,9 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     if (istr.buffer().end() - istr.position() >= 10)
-        return impl::readVarUInt<false>(x, istr);
-    return impl::readVarUInt<true>(x, istr);
+        varint_impl::readVarUInt<false>(x, istr);
+    else
+        varint_impl::readVarUInt<true>(x, istr);
 }
 
 inline void readVarUInt(UInt64 & x, std::istream & istr)
@@ -134,7 +137,7 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
         if (istr == end) [[unlikely]]
             throwReadAfterEOF();
 
-        UInt64 byte = *istr;
+        UInt64 byte = static_cast<unsigned char>(*istr);
         ++istr;
         x |= (byte & 0x7F) << (7 * i);
 

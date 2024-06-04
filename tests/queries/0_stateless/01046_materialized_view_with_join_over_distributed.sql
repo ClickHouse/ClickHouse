@@ -2,7 +2,7 @@
 
 -- from https://github.com/ClickHouse/ClickHouse/issues/5142
 
-set insert_distributed_sync = 1;
+set distributed_foreground_insert = 1;
 
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS t_d;

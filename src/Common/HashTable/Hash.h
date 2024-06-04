@@ -2,9 +2,10 @@
 
 #include <city.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
+#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/StringRef.h>
 
 #include <type_traits>
 
@@ -23,7 +24,7 @@
 /** Taken from MurmurHash. This is Murmur finalizer.
   * Faster than intHash32 when inserting into the hash table UInt64 -> UInt64, where the key is the visitor ID.
   */
-inline DB::UInt64 intHash64(DB::UInt64 x)
+inline UInt64 intHash64(UInt64 x)
 {
     x ^= x >> 33;
     x *= 0xff51afd7ed558ccdULL;
@@ -53,36 +54,13 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #endif
 
 #if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-#include <crc32-s390x.h>
-
-inline uint32_t s390x_crc32_u8(uint32_t crc, uint8_t v)
-{
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint32_t s390x_crc32_u16(uint32_t crc, uint16_t v)
-{
-    v = std::byteswap(v);
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint32_t s390x_crc32_u32(uint32_t crc, uint32_t v)
-{
-    v = std::byteswap(v);
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint64_t s390x_crc32(uint64_t crc, uint64_t v)
-{
-    v = std::byteswap(v);
-    return crc32c_le_vx(static_cast<uint32_t>(crc), reinterpret_cast<unsigned char *>(&v), sizeof(uint64_t));
-}
+#include <base/crc32c_s390x.h>
 #endif
 
 /// NOTE: Intel intrinsic can be confusing.
 /// - https://code.google.com/archive/p/sse-intrinsics/wikis/PmovIntrinsicBug.wiki
 /// - https://stackoverflow.com/questions/15752770/mm-crc32-u64-poorly-defined
-inline DB::UInt64 intHashCRC32(DB::UInt64 x)
+inline UInt64 intHashCRC32(UInt64 x)
 {
 #ifdef __SSE4_2__
     return _mm_crc32_u64(-1ULL, x);
@@ -91,14 +69,14 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(-1U, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return s390x_crc32(-1U, x);
+    return s390x_crc32c(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
     return intHash64(x);
 #endif
 }
-inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
+inline UInt64 intHashCRC32(UInt64 x, UInt64 updated_value)
 {
 #ifdef __SSE4_2__
     return _mm_crc32_u64(updated_value, x);
@@ -107,7 +85,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(updated_value, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-    return s390x_crc32(updated_value, x);
+    return s390x_crc32c(updated_value, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x) ^ updated_value;
@@ -115,14 +93,14 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-requires std::has_unique_object_representations_v<T> && (sizeof(T) % sizeof(DB::UInt64) == 0)
-inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
+requires std::has_unique_object_representations_v<T> && (sizeof(T) % sizeof(UInt64) == 0)
+inline UInt64 intHashCRC32(const T & x, UInt64 updated_value)
 {
     const auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
     {
-        updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
-        begin += sizeof(DB::UInt64);
+        updated_value = intHashCRC32(unalignedLoad<UInt64>(begin), updated_value);
+        begin += sizeof(UInt64);
     }
 
     return updated_value;
@@ -130,7 +108,7 @@ inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
 
 template <std::floating_point T>
 requires(sizeof(T) <= sizeof(UInt64))
-inline DB::UInt64 intHashCRC32(T x, DB::UInt64 updated_value)
+inline UInt64 intHashCRC32(T x, UInt64 updated_value)
 {
     static_assert(std::numeric_limits<T>::is_iec559);
 
@@ -148,7 +126,7 @@ inline DB::UInt64 intHashCRC32(T x, DB::UInt64 updated_value)
     return intHashCRC32(repr, updated_value);
 }
 
-inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 updated_value)
+inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_value)
 {
     if (size < 8)
     {
@@ -228,12 +206,12 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
     {
         /// If string size is not divisible by 8.
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
-        DB::UInt8 tail_size = end - pos;
+        UInt8 tail_size = end - pos;
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
         auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
         /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
-        word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
+        word &= (~UInt64(0)) << UInt8(8 * (8 - tail_size));
         /// Use least byte to store tail length.
         word |= tail_size;
         /// Now word is '\3\0\0\0\0XYZ'
@@ -247,11 +225,11 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
-    DB::UInt64 out {0};
+    UInt64 out {0};
     if constexpr (std::endian::native == std::endian::little)
         std::memcpy(&out, &key, sizeof(T));
     else
-        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
+        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
     return intHash64(out);
 }
 
@@ -306,16 +284,19 @@ template <typename T> struct HashCRC32;
 
 template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
-inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
+inline size_t hashCRC32(T key, UInt64 updated_value = -1)
 {
-    DB::UInt64 out {0};
-    std::memcpy(&out, &key, sizeof(T));
+    UInt64 out {0};
+    if constexpr (std::endian::native == std::endian::little)
+        std::memcpy(&out, &key, sizeof(T));
+    else
+        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
     return intHashCRC32(out, updated_value);
 }
 
 template <typename T>
 requires (sizeof(T) > sizeof(UInt64))
-inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
+inline size_t hashCRC32(T key, UInt64 updated_value = -1)
 {
     return intHashCRC32(key, updated_value);
 }
@@ -329,20 +310,20 @@ template <> struct HashCRC32<T>\
     }\
 };
 
-DEFINE_HASH(DB::UInt8)
-DEFINE_HASH(DB::UInt16)
-DEFINE_HASH(DB::UInt32)
-DEFINE_HASH(DB::UInt64)
-DEFINE_HASH(DB::UInt128)
-DEFINE_HASH(DB::UInt256)
-DEFINE_HASH(DB::Int8)
-DEFINE_HASH(DB::Int16)
-DEFINE_HASH(DB::Int32)
-DEFINE_HASH(DB::Int64)
-DEFINE_HASH(DB::Int128)
-DEFINE_HASH(DB::Int256)
-DEFINE_HASH(DB::Float32)
-DEFINE_HASH(DB::Float64)
+DEFINE_HASH(UInt8)
+DEFINE_HASH(UInt16)
+DEFINE_HASH(UInt32)
+DEFINE_HASH(UInt64)
+DEFINE_HASH(UInt128)
+DEFINE_HASH(UInt256)
+DEFINE_HASH(Int8)
+DEFINE_HASH(Int16)
+DEFINE_HASH(Int32)
+DEFINE_HASH(Int64)
+DEFINE_HASH(Int128)
+DEFINE_HASH(Int256)
+DEFINE_HASH(Float32)
+DEFINE_HASH(Float64)
 DEFINE_HASH(DB::UUID)
 DEFINE_HASH(DB::IPv4)
 DEFINE_HASH(DB::IPv6)
@@ -354,7 +335,7 @@ struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-        return CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]});
+        return CityHash_v1_0_2::Hash128to64({x.items[UInt128::_impl::little(0)], x.items[UInt128::_impl::little(1)]});
     }
 };
 
@@ -392,6 +373,18 @@ struct UInt128HashCRC32
     }
 };
 
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+
+struct UInt128HashCRC32
+{
+    size_t operator()(UInt128 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(1)]);
+        return crc;
+    }
+};
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -401,12 +394,12 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.items[0]; }
+    size_t operator()(UInt128 x) const { return x.items[UInt128::_impl::little(0)]; }
 };
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
+    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getHighBytes(x); }
 };
 
 struct UInt256Hash
@@ -450,6 +443,19 @@ struct UInt256HashCRC32
     }
 };
 
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+struct UInt256HashCRC32
+{
+    size_t operator()(UInt256 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(1)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(2)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(3)]);
+        return crc;
+    }
+};
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
@@ -458,10 +464,10 @@ struct UInt256HashCRC32 : public UInt256Hash {};
 #endif
 
 template <>
-struct DefaultHash<DB::UInt128> : public UInt128Hash {};
+struct DefaultHash<UInt128> : public UInt128Hash {};
 
 template <>
-struct DefaultHash<DB::UInt256> : public UInt256Hash {};
+struct DefaultHash<UInt256> : public UInt256Hash {};
 
 template <>
 struct DefaultHash<DB::UUID> : public UUIDHash {};
@@ -495,8 +501,8 @@ struct TrivialHash
   * NOTE As mentioned, this function is slower than intHash64.
   * But occasionally, it is faster, when written in a loop and loop is vectorized.
   */
-template <DB::UInt64 salt>
-inline DB::UInt32 intHash32(DB::UInt64 key)
+template <UInt64 salt>
+inline UInt32 intHash32(UInt64 key)
 {
     key ^= salt;
 
@@ -512,7 +518,7 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
 
 
 /// For containers.
-template <typename T, DB::UInt64 salt = 0>
+template <typename T, UInt64 salt = 0>
 struct IntHash32
 {
     size_t operator() (const T & key) const
@@ -527,8 +533,11 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            DB::UInt64 out {0};
-            std::memcpy(&out, &key, sizeof(T));
+            UInt64 out {0};
+            if constexpr (std::endian::native == std::endian::little)
+                std::memcpy(&out, &key, sizeof(T));
+            else
+                std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
             return intHash32<salt>(out);
         }
 

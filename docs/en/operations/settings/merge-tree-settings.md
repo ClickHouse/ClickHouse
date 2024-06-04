@@ -56,11 +56,11 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 300.
+Default value: 3000.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to minimize the number of parts processed, see [Merge Tree](../../development/architecture.md#merge-tree).
 
-You can set a larger value to 600 (1200), this will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
+Prior to 23.6 this setting was set to 300. You can set a higher different value, it will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
 
 
 ## parts_to_delay_insert {#parts-to-delay-insert}
@@ -71,7 +71,7 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 150.
+Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
@@ -149,7 +149,7 @@ Possible values:
 - Any positive integer.
 - 0 (disable deduplication)
 
-Default value: 100.
+Default value: 1000.
 
 The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
@@ -287,7 +287,7 @@ Default value: 0 (seconds)
 
 ## remote_fs_execute_merges_on_single_replica_time_threshold
 
-When this setting has a value greater than than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
+When this setting has a value greater than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -502,7 +502,7 @@ Possible values:
 Default value: 480.
 
 After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is 1.
 
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
 To protect data inactive parts are not deleted immediately.
@@ -555,7 +555,7 @@ Merge reads rows from parts in blocks of `merge_max_block_size` rows, then merge
 
 ## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number-of-free-entries-in-pool-to-lower-max-size-of-merge}
 
-When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue). 
+When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue).
 This is to allow small merges to process - not filling the pool with long running merges.
 
 Possible values:
@@ -566,7 +566,7 @@ Default value: 8
 
 ## number_of_free_entries_in_pool_to_execute_mutation {#number-of-free-entries-in-pool-to-execute-mutation}
 
-When there is less than specified number of free entries in pool, do not execute part mutations. 
+When there is less than specified number of free entries in pool, do not execute part mutations.
 This is to leave free threads for regular merges and avoid "Too many parts".
 
 Possible values:
@@ -622,6 +622,19 @@ Possible values:
 - true, false
 
 Default value: false
+
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+
+When there is less than specified number of free entries in pool, do not execute optimizing entire partition in the background (this task generated when set `min_age_to_force_merge_seconds` and enable `min_age_to_force_merge_on_partition_only`). This is to leave free threads for regular merges and avoid "Too many parts".
+
+Possible values:
+
+- Positive integer.
+
+Default value: 25
+
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
@@ -733,14 +746,14 @@ Default value: `0` (limit never applied).
 
 Minimal ratio of the number of _default_ values to the number of _all_ values in a column. Setting this value causes the column to be stored using sparse serializations.
 
-If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0 (the default), then the columns will be always written using the normal full serialization.
+If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0, then the columns will be always written using the normal full serialization.
 
 Possible values:
 
 - Float between 0 and 1 to enable sparse serialization
 - 1.0 (or greater) if you do not want to use sparse serialization
 
-Default value: `1.0` (sparse serialization is disabled)
+Default value: `0.9375`
 
 **Example**
 
@@ -832,12 +845,87 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 
-## clean_deleted_rows
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
+If the file name for column is too long (more than `max_file_name_length` bytes) replace it to SipHash128. Default value: `false`.
 
-Enable/disable automatic deletion of rows flagged as `is_deleted` when perform `OPTIMIZE ... FINAL` on a table using the ReplacingMergeTree engine. When disabled, the `CLEANUP` keyword has to be added to the `OPTIMIZE ... FINAL` to have the same behaviour.
+## max_file_name_length {#max_file_name_length}
+
+The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
+
+## allow_experimental_block_number_column
+
+Persists virtual column `_block_number` on merges.
+
+Default value: false.
+
+## exclude_deleted_rows_for_part_size_in_merge {#exclude_deleted_rows_for_part_size_in_merge}
+
+If enabled, estimated actual size of data parts (i.e., excluding those rows that have been deleted through `DELETE FROM`) will be used when selecting parts to merge. Note that this behavior is only triggered for data parts affected by `DELETE FROM` executed after this setting is enabled.
 
 Possible values:
 
-- `Always` or `Never`.
+- true, false
 
-Default value: `Never`
+Default value: false
+
+**See Also**
+
+- [load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts) setting
+
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
+
+If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge), deleted rows count for existing data parts will be calculated during table starting up. Note that it may slow down start up table loading.
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+**See Also**
+
+- [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
+
+### allow_experimental_optimized_row_order
+
+Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
+
+MergeTree tables are (optionally) compressed using [compression codecs](../../sql-reference/statements/create/table.md#column_compression_codec).
+Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.
+Long runs of the same value typically compress very well.
+
+If this setting is enabled, ClickHouse attempts to store the data in newly inserted parts in a row order that minimizes the number of equal-value runs across the columns of the new table part.
+In other words, a small number of equal-value runs mean that individual runs are long and compress well.
+
+Finding the optimal row order is computationally infeasible (NP hard).
+Therefore, ClickHouse uses a heuristics to quickly find a row order which still improves compression rates over the original row order.
+
+<details markdown="1">
+
+<summary>Heuristics for finding a row order</summary>
+
+It is generally possible to shuffle the rows of a table (or table part) freely as SQL considers the same table (table part) in different row order equivalent.
+
+This freedom of shuffling rows is restricted when a primary key is defined for the table.
+In ClickHouse, a primary key `C1, C2, ..., CN` enforces that the table rows are sorted by columns `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
+As a result, rows can only be shuffled within "equivalence classes" of row, i.e. rows which have the same values in their primary key columns.
+The intuition is that primary keys with high-cardinality, e.g. primary keys involving a `DateTime64` timestamp column, lead to many small equivalence classes.
+Likewise, tables with a low-cardinality primary key, create few and large equivalence classes.
+A table with no primary key represents the extreme case of a single equivalence class which spans all rows.
+
+The fewer and the larger the equivalence classes are, the higher the degree of freedom when re-shuffling rows.
+
+The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemir, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
+It performs three steps:
+1. Find all equivalence classes based on the row values in primary key columns.
+2. For each equivalence class, calculate (usually estimate) the cardinalities of the non-primary-key columns.
+3. For each equivalence class, sort the rows in order of ascending non-primary-key column cardinality.
+
+</details>
+
+If enabled, insert operations incur additional CPU costs to analyze and optimize the row order of the new data.
+INSERTs are expected to take 30-50% longer depending on the data characteristics.
+Compression rates of LZ4 or ZSTD improve on average by 20-40%.
+
+This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
+High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.

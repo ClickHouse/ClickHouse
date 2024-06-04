@@ -52,6 +52,8 @@ public:
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
 
+    void reset(QuotaType quota_type) const;
+
     /// Returns the information about quota consumption.
     std::optional<QuotaUsage> getUsage() const;
 

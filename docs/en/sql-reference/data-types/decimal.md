@@ -1,17 +1,19 @@
 ---
 slug: /en/sql-reference/data-types/decimal
-sidebar_position: 42
+sidebar_position: 6
 sidebar_label: Decimal
 ---
 
-# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S)
+# Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S)
 
 Signed fixed-point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
 
 ## Parameters
 
-- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction).
+- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
 - S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
+
+Decimal(P) is equivalent to Decimal(P, 0). Similarly, the syntax Decimal is equivalent to Decimal(10, 0).
 
 Depending on P parameter value Decimal(P, S) is a synonym for:
 - P from \[ 1 : 9 \] - for Decimal32(S)

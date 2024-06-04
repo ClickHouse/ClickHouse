@@ -62,10 +62,10 @@ void read(std::string & s, ReadBuffer & in)
     }
 
     if (size < 0)
-        throw Exception("Negative size while reading string from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading string from ZooKeeper");
 
     if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large string size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper");
 
     s.resize(size);
     size_t read_bytes = in.read(s.data(), size);

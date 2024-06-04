@@ -1,17 +1,17 @@
 #include <Analyzer/ColumnTransformers.h>
 
 #include <Common/SipHash.h>
+#include <Common/re2.h>
 
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
+
 
 namespace DB
 {
@@ -74,13 +74,13 @@ void ApplyColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState 
     expression_node->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ApplyColumnTransformerNode &>(rhs);
     return apply_transformer_type == rhs_typed.apply_transformer_type;
 }
 
-void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
+void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getApplyTransformerType()));
@@ -133,7 +133,7 @@ ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE
 bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name) const
 {
     if (column_matcher)
-        return RE2::PartialMatch(column_name, *column_matcher);
+        return re2::RE2::PartialMatch(column_name, *column_matcher);
 
     for (const auto & name : except_column_names)
         if (column_name == name)
@@ -178,7 +178,7 @@ void ExceptColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState
     }
 }
 
-bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ExceptColumnTransformerNode &>(rhs);
     if (except_transformer_type != rhs_typed.except_transformer_type ||
@@ -198,7 +198,7 @@ bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return column_matcher->pattern() == rhs_column_matcher->pattern();
 }
 
-void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
+void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getExceptTransformerType()));
@@ -302,13 +302,13 @@ void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatStat
     }
 }
 
-bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ReplaceColumnTransformerNode &>(rhs);
     return is_strict == rhs_typed.is_strict && replacements_names == rhs_typed.replacements_names;
 }
 
-void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
+void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
 

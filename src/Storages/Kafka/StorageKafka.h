@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/ThreadPool_fwd.h>
+#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
@@ -8,23 +10,23 @@
 
 #include <Poco/Semaphore.h>
 
+#include <condition_variable>
 #include <mutex>
 #include <list>
 #include <atomic>
-
-namespace cppkafka
-{
-
-class Configuration;
-
-}
+#include <cppkafka/cppkafka.h>
 
 namespace DB
 {
 
+class ReadFromStorageKafka;
+class StorageSystemKafkaConsumers;
+class ThreadStatus;
+
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
+using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -41,14 +43,17 @@ public:
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 
+    ~StorageKafka() override;
+
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -72,13 +77,23 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-    Names getVirtualColumnNames() const;
-    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+
+    struct SafeConsumers
+    {
+        std::shared_ptr<IStorage> storage_ptr;
+        std::unique_lock<std::mutex> lock;
+        std::vector<KafkaConsumerPtr> & consumers;
+    };
+
+    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
 private:
+    friend class ReadFromStorageKafka;
+
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
+    Macros::MacroExpansionInfo macros_info;
     const Names topics;
     const String brokers;
     const String group;
@@ -87,20 +102,17 @@ private:
     const size_t max_rows_per_message;
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
-    Poco::Logger * log;
-    Poco::Semaphore semaphore;
+    LoggerPtr log;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
     std::atomic<bool> mv_attached = false;
 
-    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
-    /// In this case we still need to be able to shutdown() properly.
-    size_t num_created_consumers = 0; /// number of actually created consumers.
-
-    std::vector<KafkaConsumerPtr> consumers; /// available consumers
+    std::vector<KafkaConsumerPtr> consumers;
 
     std::mutex mutex;
+    std::condition_variable cv;
+    std::condition_variable cleanup_cv;
 
     // Stream thread
     struct TaskContext
@@ -114,21 +126,39 @@ private:
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
 
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     SettingsChanges createSettingsAdjustments();
-    KafkaConsumerPtr createConsumer(size_t consumer_number);
+    /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
+    KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
+    /// Returns full consumer related configuration, also the configuration
+    /// contains global kafka properties.
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    /// Returns full producer related configuration, also the configuration
+    /// contains global kafka properties.
+    cppkafka::Configuration getProducerConfiguration();
 
     /// If named_collection is specified.
     String collection_name;
 
     std::atomic<bool> shutdown_called = false;
 
-    // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
-    String getConfigPrefix() const;
+    // Load Kafka global configuration
+    // https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md#global-configuration-properties
+    void updateGlobalConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from consumer configuration
+    // NOTE: librdkafka allow to set a consumer property to a producer and vice versa,
+    //       but a warning will be generated e.g:
+    //       "Configuration property session.timeout.ms is a consumer property and
+    //        will be ignored by this producer instance"
+    void updateConsumerConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from producer configuration
+    void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
+
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
@@ -140,6 +170,10 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+
+    void cleanConsumers();
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

@@ -1,17 +1,28 @@
-#include "DateLUTImpl.h"
-
-#include <cctz/civil_time.h>
-#include <cctz/time_zone.h>
-#include <cctz/zone_info_source.h>
-#include <Common/getResource.h>
-#include <Poco/Exception.h>
+#include <Core/DecimalFunctions.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstring>
-#include <iostream>
 #include <memory>
+
+#include <cctz/civil_time.h>
+#include <cctz/time_zone.h>
+#include <cctz/zone_info_source.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+}
+
+/// Embedded timezones.
+std::string_view getTimeZone(const char * name);
 
 
 namespace
@@ -30,7 +41,6 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
-    UNREACHABLE();
 }
 
 inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
@@ -64,7 +74,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
-        throw Poco::Exception("Cannot load time zone " + time_zone_);
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot load time zone {}", time_zone_);
 
     constexpr cctz::civil_day epoch{1970, 1, 1};
     constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
@@ -204,6 +214,29 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     }
 }
 
+unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
+{
+    constexpr Int64 millisecond_multiplier = 1'000;
+    constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
+    constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
+
+    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+    if (datetime.value < 0 && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+        --components.whole;
+    }
+    Int64 fractional = components.fractional;
+    if (scale_multiplier > microsecond_multiplier)
+        fractional = fractional / (scale_multiplier / microsecond_multiplier);
+    else if (scale_multiplier < microsecond_multiplier)
+        fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+    UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+    return millisecond;
+}
+
 
 /// Prefer to load timezones from blobs linked to the binary.
 /// The blobs are provided by "tzdata" library.
@@ -219,8 +252,7 @@ namespace cctz_extension
 
             size_t Read(void * buf, size_t bytes) override
             {
-                if (bytes > size)
-                    bytes = size;
+                bytes = std::min(bytes, size);
                 memcpy(buf, data, bytes);
                 data += bytes;
                 size -= bytes;
@@ -250,9 +282,10 @@ namespace cctz_extension
             const std::string & name,
             const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
         {
-            std::string_view resource = getResource(name);
-            if (!resource.empty())
-                return std::make_unique<Source>(resource.data(), resource.size());
+            std::string_view tz_file = getTimeZone(name.data());
+
+            if (!tz_file.empty())
+                return std::make_unique<Source>(tz_file.data(), tz_file.size());
 
             return fallback(name);
         }

@@ -1,3 +1,4 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
@@ -17,8 +18,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.name}.ignore(pos, expected)
-                || (!type_info.alias.empty() && ParserKeyword{type_info.alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.name).ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword::createDeprecated(type_info.alias).ignore(pos, expected)))
             {
                 type = i;
                 return true;
@@ -32,7 +33,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -40,7 +41,7 @@ namespace
 
 bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"DROP"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::DROP}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -48,11 +49,12 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
 
     bool if_exists = false;
-    if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
         if_exists = true;
 
     Strings names;
     std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    String storage_name;
     String cluster;
 
     if ((type == AccessEntityType::USER) || (type == AccessEntityType::ROLE))
@@ -76,6 +78,9 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
+    if (ParserKeyword{Keyword::FROM}.ignore(pos, expected))
+        parseAccessStorageName(pos, expected, storage_name);
+
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
@@ -87,6 +92,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->row_policy_names = std::move(row_policy_names);
+    query->storage_name = std::move(storage_name);
 
     return true;
 }

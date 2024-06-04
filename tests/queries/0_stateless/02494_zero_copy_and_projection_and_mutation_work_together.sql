@@ -72,6 +72,7 @@ SYSTEM SYNC REPLICA wikistat2;
 
 -- it doesn't make test flaky, rarely we will not delete the parts because of cleanup thread was slow.
 -- Such condition will lead to successful queries.
+SET function_sleep_max_microseconds_per_block = 5000000;
 SELECT 0 FROM numbers(5) WHERE sleepEachRow(1) = 1;
 
 select sum(hits), count() from wikistat1 GROUP BY project, subproject, path settings optimize_use_projections = 1, force_optimize_projection = 1;

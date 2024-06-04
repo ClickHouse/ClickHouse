@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-s3-storage, no-upgrade-check
+# Tags: zookeeper, no-s3-storage
 
 # Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
 # (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
@@ -10,26 +10,6 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
-function query_with_retry
-{
-    local query="$1" && shift
-
-    local retry=0
-    until [ $retry -ge 5 ]
-    do
-        local result
-        result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
-        if [ "$?" == 0 ]; then
-            echo -n "$result"
-            return
-        else
-            retry=$((retry + 1))
-            sleep 3
-        fi
-    done
-    echo "Query '$query' failed with '$result'"
-}
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS src;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r1;"
@@ -116,7 +96,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE src;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '1', 1);"
-$CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2); -- trash part to be deleted"
+$CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2);" # trash part to be deleted
 
 # Stop replication at the second replica and remove source table to use fetch instead of copying
 $CLICKHOUSE_CLIENT --query="SYSTEM STOP REPLICATION QUEUES dst_r2;"
@@ -136,7 +116,7 @@ query_with_retry "ALTER TABLE dst_r1 DROP PARTITION 1;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '1', 1);"
-$CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2); -- trash part to be deleted"
+$CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2);" # trash part to be deleted
 
 $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES dst_r2;"
 $CLICKHOUSE_CLIENT --query="SYSTEM STOP REPLICATION QUEUES dst_r2;"

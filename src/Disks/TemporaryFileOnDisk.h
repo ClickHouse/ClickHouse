@@ -16,14 +16,16 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class TemporaryFileOnDisk
 {
 public:
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_);
     explicit TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope);
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix);
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix = "tmp");
 
     ~TemporaryFileOnDisk();
 
     DiskPtr getDisk() const { return disk; }
-    String getPath() const;
+    /// Return absolute path (disk + relative_path)
+    String getAbsolutePath() const;
+    /// Return relative path (without disk)
+    const String & getRelativePath() const { return relative_path; }
 
 private:
     DiskPtr disk;

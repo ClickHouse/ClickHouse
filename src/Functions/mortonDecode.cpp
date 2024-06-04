@@ -1,10 +1,11 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionSpaceFillingCurve.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
@@ -15,12 +16,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
+// NOLINTBEGIN(bugprone-switch-missing-default-case)
 
 #define EXTRACT_VECTOR(INDEX) \
         auto col##INDEX = ColumnUInt64::create(); \
@@ -184,7 +180,7 @@ constexpr auto MortonND_5D_Dec = mortonnd::MortonNDLutDecoder<5, 12, 8>();
 constexpr auto MortonND_6D_Dec = mortonnd::MortonNDLutDecoder<6, 10, 8>();
 constexpr auto MortonND_7D_Dec = mortonnd::MortonNDLutDecoder<7, 9, 8>();
 constexpr auto MortonND_8D_Dec = mortonnd::MortonNDLutDecoder<8, 8, 8>();
-class FunctionMortonDecode : public IFunction
+class FunctionMortonDecode : public FunctionSpaceFillingCurveDecode<8, 1, 8>
 {
 public:
     static constexpr auto name = "mortonDecode";
@@ -198,71 +194,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        UInt64 tuple_size = 0;
-        const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        if (!col_const)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column type {} of function {}, should be a constant (UInt or Tuple)",
-                            arguments[0].type->getName(), getName());
-        if (!WhichDataType(arguments[1].type).isNativeUInt())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column type {} of function {}, should be a native UInt",
-                            arguments[1].type->getName(), getName());
-        const auto * mask = typeid_cast<const ColumnTuple *>(col_const->getDataColumnPtr().get());
-        if (mask)
-        {
-            tuple_size = mask->tupleSize();
-        }
-        else if (WhichDataType(arguments[0].type).isNativeUInt())
-        {
-            tuple_size = col_const->getUInt(0);
-        }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column type {} of function {}, should be UInt or Tuple",
-                            arguments[0].type->getName(), getName());
-        if (tuple_size > 8 || tuple_size < 1)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Illegal first argument for function {}, should be a number in range 1-8 or a Tuple of such size",
-                            getName());
-        if (mask)
-        {
-            const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].type.get());
-            for (size_t i = 0; i < tuple_size; i++)
-            {
-                if (!WhichDataType(type_tuple->getElement(i)).isNativeUInt())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal type {} of argument in tuple for function {}, should be a native UInt",
-                                    type_tuple->getElement(i)->getName(), getName());
-                auto ratio = mask->getColumn(i).getUInt(0);
-                if (ratio > 8 || ratio < 1)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                    "Illegal argument {} in tuple for function {}, should be a number in range 1-8",
-                                    ratio, getName());
-            }
-        }
-        DataTypes types(tuple_size);
-        for (size_t i = 0; i < tuple_size; i++)
-        {
-            types[i] = std::make_shared<DataTypeUInt64>();
-        }
-        return std::make_shared<DataTypeTuple>(types);
-    }
-
     static UInt64 shrink(UInt64 ratio, UInt64 value)
     {
-        switch (ratio)
+        switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 1:
                 return value;
@@ -377,6 +311,8 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
+
+// NOLINTEND(bugprone-switch-missing-default-case)
 
 REGISTER_FUNCTION(MortonDecode)
 {

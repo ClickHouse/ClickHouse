@@ -103,6 +103,13 @@ SELECT * FROM url_engine_table
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
+## Virtual Columns {#virtual-columns}
+
+- `_path` — Path to the `URL`. Type: `LowCardinalty(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinalty(String)`.
+- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+
 ## Storage Settings {#storage-settings}
 
 - [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/docs/en/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.

@@ -4,6 +4,8 @@ sidebar_position: 170
 sidebar_label: Strings
 ---
 
+import VersionBadge from '@theme/badges/VersionBadge';
+
 # Functions for Working with Strings
 
 Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
@@ -28,9 +30,7 @@ empty(x)
 
 **Returned value**
 
-- Returns `1` for an empty string or `0` for a non-empty string.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty string or `0` for a non-empty string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -66,9 +66,7 @@ notEmpty(x)
 
 **Returned value**
 
-- Returns `1` for a non-empty string or `0` for an empty string string.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty string or `0` for an empty string string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -86,17 +84,186 @@ Result:
 
 ## length
 
-Returns the length of a string in bytes (not: in characters or Unicode code points).
+Returns the length of a string in bytes rather than in characters or Unicode code points. The function also works for arrays.
 
-The function also works for arrays.
+Alias: `OCTET_LENGTH`
+
+**Syntax**
+
+```sql
+length(s)
+```
+
+**Parameters**
+
+- `s`: An input string or array. [String](../data-types/string)/[Array](../data-types/array).
+
+**Returned value**
+
+- Length of the string or array `s` in bytes. [UInt64](../data-types/int-uint).
+
+**Example**
+
+Query:
+
+```sql
+SELECT length('Hello, world!');
+```
+
+Result: 
+
+```response
+┌─length('Hello, world!')─┐
+│                      13 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT length([1, 2, 3, 4]);
+```
+
+Result: 
+
+```response
+┌─length([1, 2, 3, 4])─┐
+│                    4 │
+└──────────────────────┘
+```
+
 
 ## lengthUTF8
 
-Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-Alias:
-- `CHAR_LENGTH``
+Aliases:
+- `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
+
+**Syntax**
+
+```sql
+lengthUTF8(s)
+```
+
+**Parameters**
+
+- `s`: String containing valid UTF-8 encoded text. [String](../data-types/string).
+
+**Returned value**
+
+- Length of the string `s` in Unicode code points. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT lengthUTF8('Здравствуй, мир!');
+```
+
+Result: 
+
+```response
+┌─lengthUTF8('Здравствуй, мир!')─┐
+│                             16 │
+└────────────────────────────────┘
+```
+
+## left
+
+Returns a substring of string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+left(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT left('Hello', 3);
+```
+
+Result:
+
+```response
+Hel
+```
+
+Query:
+
+```sql
+SELECT left('Hello', -3);
+```
+
+Result:
+
+```response
+He
+```
+
+## leftUTF8
+
+Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+leftUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+Прив
+```
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+Пр
+```
 
 ## leftPad
 
@@ -118,9 +285,7 @@ Alias: `LPAD`
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -154,9 +319,7 @@ leftPadUTF8(string, length[, pad_string])
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -170,6 +333,100 @@ Result:
 ┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
 │ ***абвг                     │    дежз                │
 └─────────────────────────────┴────────────────────────┘
+```
+
+## right
+
+Returns a substring of string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+right(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT right('Hello', 3);
+```
+
+Result:
+
+```response
+llo
+```
+
+Query:
+
+```sql
+SELECT right('Hello', -3);
+```
+
+Result:
+
+```response
+lo
+```
+
+## rightUTF8
+
+Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+rightUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+ивет
+```
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+ет
 ```
 
 ## rightPad
@@ -192,9 +449,7 @@ Alias: `RPAD`
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -228,9 +483,7 @@ rightPadUTF8(string, length[, pad_string])
 
 **Returned value**
 
-- A right-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A right-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -250,13 +503,69 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](../data-types/string.md).
+
+**Returned value**
+
+- A [String](../data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
 Converts the ASCII Latin symbols in a string to uppercase.
 
+**Syntax**
+
+``` sql
+upper(input)
+```
+
 Alias: `ucase`
+
+**Parameters**
+
+- `input`: A string type [String](../data-types/string.md).
+
+**Returned value**
+
+- A [String](../data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT upper('clickhouse');
+```
+
+``` response
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
+```
 
 ## lowerUTF8
 
@@ -274,6 +583,34 @@ Does not detect the language, e.g. for Turkish the result might not be exactly c
 
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 
+**Syntax**
+
+``` sql
+upperUTF8(input)
+```
+
+**Parameters**
+
+- `input`: A string type [String](../data-types/string.md).
+
+**Returned value**
+
+- A [String](../data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT upperUTF8('München') as Upperutf8;
+```
+
+``` response
+┌─Upperutf8─┐
+│ MÜNCHEN   │
+└───────────┘
+```
+
 ## isValidUTF8
 
 Returns 1, if the set of bytes constitutes valid UTF-8-encoded text, otherwise 0.
@@ -290,7 +627,7 @@ toValidUTF8(input_string)
 
 **Arguments**
 
-- `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
 
 **Returned value**
 
@@ -322,14 +659,12 @@ Alias: `REPEAT`
 
 **Arguments**
 
-- `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
-- `n` — The number of times to repeat the string. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+- `s` — The string to repeat. [String](../data-types/string.md).
+- `n` — The number of times to repeat the string. [UInt* or Int*](../data-types/int-uint.md).
 
 **Returned value**
 
-A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.
-
-Type: `String`.
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -359,13 +694,11 @@ Alias: `SPACE`.
 
 **Arguments**
 
-- `n` — The number of times to repeat the space. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+- `n` — The number of times to repeat the space. [UInt* or Int*](../data-types/int-uint.md).
 
 **Returned value**
 
-The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.
-
-Type: `String`.
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -391,43 +724,9 @@ Reverses the sequence of bytes in a string.
 
 Reverses a sequence of Unicode code points in a string. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-## format
-
-Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
-
-**Syntax**
-
-```sql
-format(pattern, s0, s1, …)
-```
-
-**Example**
-
-``` sql
-SELECT format('{1} {0} {1}', 'World', 'Hello')
-```
-
-```result
-┌─format('{1} {0} {1}', 'World', 'Hello')─┐
-│ Hello World Hello                       │
-└─────────────────────────────────────────┘
-```
-
-With implicit numbers:
-
-``` sql
-SELECT format('{} {}', 'Hello', 'World')
-```
-
-```result
-┌─format('{} {}', 'Hello', 'World')─┐
-│ Hello World                       │
-└───────────────────────────────────┘
-```
-
 ## concat
 
-Concatenates the strings listed in the arguments without separator.
+Concatenates the given arguments.
 
 **Syntax**
 
@@ -437,7 +736,9 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-Values of type String or FixedString.
+At least one value of arbitrary type.
+
+Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -446,6 +747,8 @@ The String created by concatenating the arguments.
 If any of arguments is `NULL`, the function returns `NULL`.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT concat('Hello, ', 'World!');
@@ -457,6 +760,20 @@ Result:
 ┌─concat('Hello, ', 'World!')─┐
 │ Hello, World!               │
 └─────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT concat(42, 144);
+```
+
+Result:
+
+```result
+┌─concat(42, 144)─┐
+│ 42144           │
+└─────────────────┘
 ```
 
 ## concatAssumeInjective
@@ -524,10 +841,12 @@ Concatenates the given strings with a given separator.
 concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
 
+Alias: `concat_ws`
+
 **Arguments**
 
-- sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- sep — separator. Const [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- exprN — expression to be concatenated. Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -545,8 +864,8 @@ Result:
 
 ```result
 ┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                           │
-└───────────────────────────────────┘
+│ 1a2a3a4                                      │
+└──────────────────────────────────────────────┘
 ```
 
 ## concatWithSeparatorAssumeInjective
@@ -555,23 +874,149 @@ Like `concatWithSeparator` but assumes that `concatWithSeparator(sep, expr1, exp
 
 A function is called injective if it returns for different arguments different results. In other words: different arguments never produce identical result.
 
-## substring(s, offset, length)
+## substring
 
-Returns a substring with `length` many bytes, starting at the byte at index `offset`. Character indexing starts from 1.
+Returns the substring of a string `s` which starts at the specified byte index `offset`. Byte counting starts from 1. If `offset` is 0, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
 **Syntax**
 
 ```sql
-substring(s, offset, length)
+substring(s, offset[, length])
 ```
 
 Alias:
 - `substr`
 - `mid`
+- `byteSlice`
+
+**Arguments**
+
+- `s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
+
+**Returned value**
+
+A substring of `s` with `length` many bytes, starting at index `offset`. [String](../data-types/string.md).
+
+**Example**
+
+``` sql
+SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)
+```
+
+Result:
+
+```result
+┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
+│ database │ base                     │ b                           │
+└──────────┴──────────────────────────┴─────────────────────────────┘
+```
 
 ## substringUTF8
 
-Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points. Byte counting starts from `1`. If `offset` is `0`, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+substringUTF8(s, offset[, length])
+```
+
+**Arguments**
+
+- `s`: The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset`: The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length`: The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
+
+**Returned value**
+
+A substring of `s` with `length` many bytes, starting at index `offset`.
+
+**Implementation details**
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Example**
+
+```sql
+SELECT 'Täglich grüßt das Murmeltier.' AS str,
+       substringUTF8(str, 9),
+       substringUTF8(str, 9, 5)
+```
+
+```response
+Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+```
+
+## substringIndex
+
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
+
+**Syntax**
+
+```sql
+substringIndex(s, delim, count)
+```
+Alias: `SUBSTRING_INDEX`
+
+
+**Arguments**
+
+- s: The string to extract substring from. [String](../data-types/string.md).
+- delim: The character to split. [String](../data-types/string.md).
+- count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Example**
+
+``` sql
+SELECT substringIndex('www.clickhouse.com', '.', 2)
+```
+
+Result:
+```
+┌─substringIndex('www.clickhouse.com', '.', 2)─┐
+│ www.clickhouse                               │
+└──────────────────────────────────────────────┘
+```
+
+## substringIndexUTF8
+
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+substringIndexUTF8(s, delim, count)
+```
+
+**Arguments**
+
+- `s`: The string to extract substring from. [String](../data-types/string.md).
+- `delim`: The character to split. [String](../data-types/string.md).
+- `count`: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Returned value**
+
+A substring [String](../data-types/string.md) of `s` before `count` occurrences of `delim`.
+
+**Implementation details**
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Example**
+
+```sql
+SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)
+```
+
+```response
+www.straßen-in-europa
+```
 
 ## appendTrailingCharIfAbsent
 
@@ -595,7 +1040,7 @@ convertCharset(s, from, to)
 
 ## base58Encode
 
-Encodes a String using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) in the "Bitcoin" alphabet.
+Encodes a String using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -605,13 +1050,11 @@ base58Encode(plaintext)
 
 **Arguments**
 
-- `plaintext` — [String](../../sql-reference/data-types/string.md) column or constant.
+- `plaintext` — [String](../data-types/string.md) column or constant.
 
 **Returned value**
 
-- A string containing the encoded value of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string containing the encoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -629,7 +1072,7 @@ Result:
 
 ## base58Decode
 
-Accepts a String and decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+Accepts a String and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -639,13 +1082,11 @@ base58Decode(encoded)
 
 **Arguments**
 
-- `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, an exception is thrown.
 
 **Returned value**
 
-- A string containing the decoded value of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -665,6 +1106,34 @@ Result:
 
 Like `base58Decode` but returns an empty string in case of error.
 
+**Syntax**
+
+```sql
+tryBase58Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
+```
+
 ## base64Encode
 
 Encodes a String or FixedString as base64.
@@ -681,7 +1150,31 @@ Alias: `FROM_BASE64`.
 
 Like `base64Decode` but returns an empty string in case of error.
 
-## endsWith
+**Syntax**
+
+```sql
+tryBase64Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
+```
+
+## endsWith {#endswith}
 
 Returns whether string `str` ends with `suffix`.
 
@@ -691,7 +1184,31 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
-## startsWith
+## endsWithUTF8
+
+Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+**Syntax**
+
+```sql
+endsWithUTF8(str, suffix)
+```
+
+**Example**
+
+``` sql
+SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
+```
+
+Result:
+
+```result
+┌─endsWithUTF8('中国', '½')─┬─endsWith('中国', '½')─┐
+│                        0 │                    1 │
+└──────────────────────────┴──────────────────────┘
+```
+
+## startsWith {#startswith}
 
 Returns whether string `str` starts with `prefix`.
 
@@ -707,6 +1224,27 @@ startsWith(str, prefix)
 SELECT startsWith('Spider-Man', 'Spi');
 ```
 
+## startsWithUTF8
+
+<VersionBadge minVersion='23.8' />
+
+Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+
+**Example**
+
+``` sql
+SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
+```
+
+Result:
+
+```result
+┌─startsWithUTF8('中国', '⥩─┬─startsWith('中国', '⥩─┐
+│                          0 │                      1 │
+└────────────────────────────┴────────────────────────┘
+```
+
 ## trim
 
 Removes the specified characters from the start or end of a string. If not specified otherwise, the function removes whitespace (ASCII-character 32).
@@ -719,14 +1257,12 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — Specified characters for trim. [String](../../sql-reference/data-types/string.md).
-- `input_string` — String for trim. [String](../../sql-reference/data-types/string.md).
+- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
+- `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without leading and/or trailing specified characters.
-
-Type: `String`.
+A string without leading and/or trailing specified characters. [String](../data-types/string.md).
 
 **Example**
 
@@ -756,13 +1292,11 @@ Alias: `ltrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without leading common whitespaces.
-
-Type: `String`.
+A string without leading common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -792,13 +1326,11 @@ Alias: `rtrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without trailing common whitespaces.
-
-Type: `String`.
+A string without trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -828,13 +1360,11 @@ Alias: `trim(input_string)`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without leading and trailing common whitespaces.
-
-Type: `String`.
+A string without leading and trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -880,13 +1410,11 @@ normalizeQuery(x)
 
 **Arguments**
 
-- `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
-- Sequence of characters with placeholders.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Sequence of characters with placeholders. [String](../data-types/string.md).
 
 **Example**
 
@@ -914,13 +1442,11 @@ normalizedQueryHash(x)
 
 **Arguments**
 
-- `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
 
 **Example**
 
@@ -948,13 +1474,11 @@ normalizeUTF8NFC(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFC normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -982,13 +1506,11 @@ normalizeUTF8NFD(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFD normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1016,13 +1538,11 @@ normalizeUTF8NFKC(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFKC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFKC normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1050,13 +1570,11 @@ normalizeUTF8NFKD(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFKD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFKD normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1087,13 +1605,11 @@ encodeXMLComponent(x)
 
 **Arguments**
 
-- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- The escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1127,13 +1643,11 @@ decodeXMLComponent(x)
 
 **Arguments**
 
-- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- The un-escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The un-escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1147,6 +1661,40 @@ Result:
 ```result
 'foo'
 < Σ >
+```
+
+## decodeHTMLComponent
+
+Un-escapes substrings with special meaning in HTML. For example: `&hbar;` `&gt;` `&diamondsuit;` `&heartsuit;` `&lt;` etc.
+
+This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+
+**Syntax**
+
+``` sql
+decodeHTMLComponent(x)
+```
+
+**Arguments**
+
+- `x` — An input string. [String](../data-types/string.md).
+
+**Returned value**
+
+- The un-escaped string. [String](../data-types/string.md).
+
+**Example**
+
+``` sql
+SELECT decodeHTMLComponent(''CH');
+SELECT decodeHTMLComponent('I&heartsuit;ClickHouse');
+```
+
+Result:
+
+```result
+'CH'
+I♥ClickHouse'
 ```
 
 ## extractTextFromHTML
@@ -1182,13 +1730,11 @@ extractTextFromHTML(x)
 
 **Arguments**
 
-- `x` — input text. [String](../../sql-reference/data-types/string.md).
+- `x` — input text. [String](../data-types/string.md).
 
 **Returned value**
 
-- Extracted text.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Extracted text. [String](../data-types/string.md).
 
 **Example**
 
@@ -1252,4 +1798,343 @@ Result:
 ┌─soundex('aksel')─┐
 │ A240             │
 └──────────────────┘
+```
+
+## punycodeEncode
+
+Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) representation of a string.
+The string must be UTF8-encoded, otherwise the behavior is undefined.
+
+**Syntax**
+
+``` sql
+punycodeEncode(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- A Punycode representation of the input value. [String](../data-types/string.md)
+
+**Example**
+
+``` sql
+select punycodeEncode('München');
+```
+
+Result:
+
+```result
+┌─punycodeEncode('München')─┐
+│ Mnchen-3ya                │
+└───────────────────────────┘
+```
+
+## punycodeDecode
+
+Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
+If no valid Punycode-encoded string is given, an exception is thrown.
+
+**Syntax**
+
+``` sql
+punycodeEncode(val)
+```
+
+**Arguments**
+
+- `val` - Punycode-encoded string. [String](../data-types/string.md)
+
+**Returned value**
+
+- The plaintext of the input value. [String](../data-types/string.md)
+
+**Example**
+
+``` sql
+select punycodeDecode('Mnchen-3ya');
+```
+
+Result:
+
+```result
+┌─punycodeDecode('Mnchen-3ya')─┐
+│ München                      │
+└──────────────────────────────┘
+```
+
+## tryPunycodeDecode
+
+Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded string is given.
+
+## idnaEncode
+
+Returns the the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
+Note: No percent decoding or trimming of tabs, spaces or control characters is performed.
+
+**Syntax**
+
+```sql
+idnaEncode(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- A ASCII representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
+
+**Example**
+
+``` sql
+select idnaEncode('straße.münchen.de');
+```
+
+Result:
+
+```result
+┌─idnaEncode('straße.münchen.de')─────┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
+```
+
+## tryIdnaEncode
+
+Like `idnaEncode` but returns an empty string in case of an error instead of throwing an exception.
+
+## idnaDecode
+
+Returns the the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
+In case of an error (e.g. because the input is invalid), the input string is returned.
+Note that repeated application of `idnaEncode()` and `idnaDecode()` does not necessarily return the original string due to case normalization.
+
+**Syntax**
+
+```sql
+idnaDecode(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- A Unicode (UTF-8) representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
+
+**Example**
+
+``` sql
+select idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
+```
+
+Result:
+
+```result
+┌─idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')─┐
+│ straße.münchen.de                             │
+└───────────────────────────────────────────────┘
+```
+
+## byteHammingDistance
+
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+byteHammingDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT byteHammingDistance('karolin', 'kathrin');
+```
+
+Result:
+
+``` text
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
+```
+
+Alias: mismatches
+
+## stringJaccardIndex
+
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
+
+**Syntax**
+
+```sql
+stringJaccardIndex(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT stringJaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘
+```
+
+## stringJaccardIndexUTF8
+
+Like [stringJaccardIndex](#stringJaccardIndex) but for UTF8-encoded strings.
+
+## editDistance
+
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+editDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT editDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                   6 │
+└─────────────────────────────────────┘
+```
+
+Alias: levenshteinDistance
+
+## damerauLevenshteinDistance
+
+Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+damerauLevenshteinDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT damerauLevenshteinDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
+│                                                 6 │
+└───────────────────────────────────────────────────┘
+```
+
+## jaroSimilarity
+
+Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroSimilarity('clickhouse', 'click')─┐
+│                    0.8333333333333333 │
+└───────────────────────────────────────┘
+```
+
+## jaroWinklerSimilarity
+
+Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro%E2%80%93Winkler_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroWinklerSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroWinklerSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
+│                           0.8999999999999999 │
+└──────────────────────────────────────────────┘
+```
+
+## initcap
+
+Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
+
+## initcapUTF8
+
+Like [initcap](#initcap), assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+
+If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+## firstLine
+
+Returns the first line from a multi-line string.
+
+**Syntax**
+
+```sql
+firstLine(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- The first line of the input value or the whole value if there is no line
+  separators. [String](../data-types/string.md)
+
+**Example**
+
+```sql
+select firstLine('foo\nbar\nbaz');
+```
+
+Result:
+
+```result
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
 ```

@@ -1,13 +1,15 @@
-#include <TableFunctions/TableFunctionPostgreSQL.h>
+#include "config.h"
 
 #if USE_LIBPQXX
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTFunction.h>
+
 #include <TableFunctions/ITableFunction.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/StoragePostgreSQL.h>
+#include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include "registerTableFunctions.h"
 #include <Common/parseRemoteDescription.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -18,15 +20,37 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+class TableFunctionPostgreSQL : public ITableFunction
+{
+public:
+    static constexpr auto name = "postgresql";
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(
+            const ASTPtr & ast_function, ContextPtr context,
+            const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageTypeName() const override { return "PostgreSQL"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    postgres::PoolWithFailoverPtr connection_pool;
+    std::optional<StoragePostgreSQL::Configuration> configuration;
+};
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
         configuration->table,
-        ColumnsDescription{},
+        cached_columns,
         ConstraintsDescription{},
         String{},
         context,
@@ -38,7 +62,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     return StoragePostgreSQL::getTableStructureFromData(connection_pool, configuration->table, configuration->schema, context);
 }
@@ -58,6 +82,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         settings.postgresql_connection_pool_wait_timeout,
         POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
         settings.postgresql_connection_pool_auto_close_connection);
+}
+
 }
 
 

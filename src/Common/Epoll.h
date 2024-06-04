@@ -2,8 +2,6 @@
 #if defined(OS_LINUX)
 
 #include <sys/epoll.h>
-#include <vector>
-#include <functional>
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
 
@@ -30,10 +28,11 @@ public:
     /// Remove file descriptor to epoll.
     void remove(int fd);
 
-    /// Get events from epoll. Events are written in events_out, this function returns an amount of ready events.
-    /// If blocking is false and there are no ready events,
-    /// return empty vector, otherwise wait for ready events.
-    size_t getManyReady(int max_events, epoll_event * events_out, bool blocking) const;
+    /// Get events from epoll. Events are written in events_out, this function returns an amount of
+    /// ready events. The timeout argument specifies the number of milliseconds to wait for ready
+    /// events. Timeout of -1 causes epoll_wait() to block indefinitely, while specifying a timeout
+    /// equal to zero will return immediately, even if no events are available.
+    size_t getManyReady(int max_events, epoll_event * events_out, int timeout) const;
 
     int getFileDescriptor() const { return epoll_fd; }
 

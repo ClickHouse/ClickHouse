@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -7,6 +8,7 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -139,7 +141,7 @@ namespace
         /// For example, to execute
         /// GRANT ALL ON mydb.* TO role1
         /// REVOKE ALL ON *.* FROM role1
-        /// the current user needs to have grants only on the 'mydb' database.
+        /// the current user needs to have the grants only on the 'mydb' database.
         AccessRights all_granted_access;
         for (const auto & id : grantees_from_query)
         {
@@ -166,7 +168,7 @@ namespace
         access_to_revoke.grant(elements_to_revoke);
         access_to_revoke.makeIntersection(all_granted_access);
 
-        /// Build more accurate list of elements to revoke, now we use an intesection of the initial list of elements to revoke
+        /// Build more accurate list of elements to revoke, now we use an intersection of the initial list of elements to revoke
         /// and all the granted access rights to these grantees.
         bool grant_option = !elements_to_revoke.empty() && elements_to_revoke[0].grant_option;
         elements_to_revoke.clear();
@@ -176,6 +178,22 @@ namespace
                 elements_to_revoke.emplace_back(std::move(element_to_revoke));
         }
 
+        /// Additional check for REVOKE
+        ///
+        /// If user1 has the rights
+        /// GRANT SELECT ON *.* TO user1;
+        /// REVOKE SELECT ON system.* FROM user1;
+        /// REVOKE SELECT ON mydb.* FROM user1;
+        ///
+        /// And user2 has the rights
+        /// GRANT SELECT ON *.* TO user2;
+        /// REVOKE SELECT ON system.* FROM user2;
+        ///
+        /// the query `REVOKE SELECT ON *.* FROM user1` executed by user2 should succeed.
+        if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
+            return;
+
+        /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.
         current_user_access.checkGrantOption(elements_to_revoke);
     }
 
@@ -237,7 +255,7 @@ namespace
         if (roles_to_revoke.all)
             boost::range::set_difference(all_granted_roles_set, roles_to_revoke.except_ids, std::back_inserter(roles_to_revoke_ids));
         else
-            boost::range::remove_erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
+            std::erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
 
         roles_to_revoke = roles_to_revoke_ids;
         current_user_access.checkAdminOption(roles_to_revoke_ids);
@@ -396,7 +414,8 @@ namespace
 
 BlockIO InterpreterGrantQuery::execute()
 {
-    auto & query = query_ptr->as<ASTGrantQuery &>();
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
     query.access_rights_elements.eraseNonGrantable();
@@ -430,7 +449,7 @@ BlockIO InterpreterGrantQuery::execute()
         current_user_access->checkGranteesAreAllowed(grantees);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(updated_query, getContext(), params);
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
@@ -476,6 +495,15 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery & query)
 {
     updateFromQuery(role, query);
+}
+
+void registerInterpreterGrantQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterGrantQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterGrantQuery", create_fn);
 }
 
 }
