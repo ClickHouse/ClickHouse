@@ -93,6 +93,7 @@ void BlobStorageLog::prepareTable()
     SystemLog<BlobStorageLogElement>::prepareTable();
     if (auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(getStorage()))
     {
+        std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();
         prefix_to_ignore = normalizePath(relative_data_path);
     }
