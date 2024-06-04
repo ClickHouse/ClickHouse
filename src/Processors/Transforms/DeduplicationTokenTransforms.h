@@ -111,7 +111,7 @@ namespace DeduplicationToken
 
         void transform(Chunk & chunk) override;
 
-        static void setInitialToken(Chunk & chunk);
+        static String getInitialToken(const Chunk & chunk);
     };
 
     class ResetTokenTransform : public ISimpleTransform

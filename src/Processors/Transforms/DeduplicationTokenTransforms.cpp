@@ -67,6 +67,9 @@ void TokenInfo::setSourceBlockNumber(size_t sbn)
 
 void TokenInfo::setViewID(const String & id)
 {
+    LOG_DEBUG(getLogger("TokenInfo"),
+        "token: {}, stage: {}, view id: {}",
+        getToken(false), stage, id);
     chassert(stage == VIEW_ID);
     addTokenPart(fmt::format(":view-id-{}", id));
     stage = VIEW_BLOCK_NUMBER;
@@ -115,7 +118,18 @@ void CheckTokenTransform::transform(Chunk & chunk)
     LOG_DEBUG(getLogger("CheckInsertDeduplicationTokenTransform"), "{}, token: {}", debug, token_info->getToken(false));
 }
 
-void SetInitialTokenTransform::setInitialToken(Chunk & chunk)
+String SetInitialTokenTransform::getInitialToken(const Chunk & chunk)
+{
+    SipHash hash;
+    for (const auto & colunm : chunk.getColumns())
+        colunm->updateHashFast(hash);
+
+    const auto hash_value = hash.get128();
+    return toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+}
+
+
+void SetInitialTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
 
@@ -129,18 +143,7 @@ void SetInitialTokenTransform::setInitialToken(Chunk & chunk)
     if (token_info->tokenInitialized())
         return;
 
-    SipHash hash;
-    for (const auto & colunm : chunk.getColumns())
-        colunm->updateHashFast(hash);
-
-    const auto hash_value = hash.get128();
-    token_info->setInitialToken(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
-}
-
-
-void SetInitialTokenTransform::transform(Chunk & chunk)
-{
-    setInitialToken(chunk);
+    token_info->setInitialToken(getInitialToken(chunk));
 }
 
 void SetUserTokenTransform::transform(Chunk & chunk)
