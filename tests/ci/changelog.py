@@ -3,10 +3,9 @@
 
 import argparse
 import logging
-import os
-import os.path as p
 import re
 from datetime import date, timedelta
+from pathlib import Path
 from subprocess import DEVNULL
 from typing import Dict, List, Optional, TextIO
 
@@ -14,9 +13,12 @@ from github.GithubException import RateLimitExceededException, UnknownObjectExce
 from github.NamedUser import NamedUser
 from thefuzz.fuzz import ratio  # type: ignore
 
+from cache_utils import GitHubCache
+from env_helper import TEMP_PATH
 from git_helper import git_runner as runner
 from git_helper import is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from s3_helper import S3Helper
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
@@ -37,7 +39,6 @@ FROM_REF = ""
 TO_REF = ""
 SHA_IN_CHANGELOG = []  # type: List[str]
 gh = GitHub(create_cache_dir=False)
-CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
 
 class Description:
@@ -375,9 +376,6 @@ def main():
     if args.debug_helpers:
         logging.getLogger("github_helper").setLevel(logging.DEBUG)
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
-    # Create a cache directory
-    if not p.isdir(CACHE_PATH):
-        os.mkdir(CACHE_PATH, 0o700)
 
     # Get the full repo
     if is_shallow():
@@ -413,7 +411,9 @@ def main():
         per_page=100,
         pool_size=args.jobs,
     )
-    gh.cache_path = CACHE_PATH
+    temp_path = Path(TEMP_PATH)
+    gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
+    gh_cache.download()
     query = f"type:pr repo:{args.repo} is:merged"
     prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
 
@@ -421,6 +421,7 @@ def main():
     changelog_year = get_year(prs)
 
     write_changelog(args.output, descriptions, changelog_year)
+    gh_cache.upload()
 
 
 if __name__ == "__main__":
