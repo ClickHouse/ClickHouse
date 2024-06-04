@@ -1,4 +1,4 @@
-#include "localBackup.h"
+#include "Backup.h"
 
 #include <Common/Exception.h>
 #include <Disks/IDiskTransaction.h>
@@ -18,8 +18,9 @@ namespace ErrorCodes
 namespace
 {
 
-void localBackupImpl(
-    const DiskPtr & disk,
+void BackupImpl(
+    const DiskPtr & src_disk,
+    const DiskPtr & dst_disk,
     IDiskTransaction * transaction,
     const String & source_path,
     const String & destination_path,
@@ -40,41 +41,42 @@ void localBackupImpl(
     if (transaction)
         transaction->createDirectories(destination_path);
     else
-        disk->createDirectories(destination_path);
+        dst_disk->createDirectories(destination_path);
 
-    for (auto it = disk->iterateDirectory(source_path); it->isValid(); it->next())
+    for (auto it = src_disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
         auto source = it->path();
         auto destination = fs::path(destination_path) / it->name();
 
-        if (!disk->isDirectory(source))
+        if (!src_disk->isDirectory(source))
         {
             if (make_source_readonly)
             {
                 if (transaction)
                     transaction->setReadOnly(source);
                 else
-                    disk->setReadOnly(source);
+                    src_disk->setReadOnly(source);
             }
             if (copy_instead_of_hardlinks || files_to_copy_instead_of_hardlinks.contains(it->name()))
             {
                 if (transaction)
                     transaction->copyFile(source, destination, read_settings, write_settings);
                 else
-                    disk->copyFile(source, *disk, destination, read_settings, write_settings);
+                    src_disk->copyFile(source, *dst_disk, destination, read_settings, write_settings);
             }
             else
             {
                 if (transaction)
                     transaction->createHardLink(source, destination);
                 else
-                    disk->createHardLink(source, destination);
+                    src_disk->createHardLink(source, destination);
             }
         }
         else
         {
-            localBackupImpl(
-                disk,
+            BackupImpl(
+                src_disk,
+                dst_disk,
                 transaction,
                 source,
                 destination,
@@ -125,8 +127,11 @@ private:
 };
 }
 
-void localBackup(
-    const DiskPtr & disk,
+/// src_disk and dst_disk can be the same disk when local backup.
+/// copy_instead_of_hardlinks must be true when remote backup.
+void Backup(
+    const DiskPtr & src_disk,
+    const DiskPtr & dst_disk,
     const String & source_path,
     const String & destination_path,
     const ReadSettings & read_settings,
@@ -137,10 +142,10 @@ void localBackup(
     const NameSet & files_to_copy_intead_of_hardlinks,
     DiskTransactionPtr disk_transaction)
 {
-    if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
+    if (dst_disk->exists(destination_path) && !dst_disk->isDirectoryEmpty(destination_path))
     {
         throw DB::Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists and is not empty.",
-                            DB::fullPath(disk, destination_path));
+                            DB::fullPath(dst_disk, destination_path));
     }
 
     size_t try_no = 0;
@@ -156,8 +161,9 @@ void localBackup(
         {
             if (disk_transaction)
             {
-                localBackupImpl(
-                    disk,
+                BackupImpl(
+                    src_disk,
+                    dst_disk,
                     disk_transaction.get(),
                     source_path,
                     destination_path,
@@ -167,27 +173,29 @@ void localBackup(
                     /* level= */ 0,
                     max_level,
                     copy_instead_of_hardlinks,
-                    files_to_copy_intead_of_hardlinks);
+                    files_to_copy_intead_of_hardlinks
+                    );
             }
             else if (copy_instead_of_hardlinks)
             {
-                CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
-                disk->copyDirectoryContent(source_path, disk, destination_path, read_settings, write_settings, /*cancellation_hook=*/{});
+                CleanupOnFail cleanup([dst_disk, destination_path]() { dst_disk->removeRecursive(destination_path); });
+                src_disk->copyDirectoryContent(source_path, dst_disk, destination_path, read_settings, write_settings, /*cancellation_hook=*/{});
                 cleanup.success();
             }
             else
             {
                 std::function<void()> cleaner;
-                if (disk->supportZeroCopyReplication())
+                if (dst_disk->supportZeroCopyReplication())
                     /// Note: this code will create garbage on s3. We should always remove `copy_instead_of_hardlinks` files.
                     /// The third argument should be a list of exceptions, but (looks like) it is ignored for keep_all_shared_data = true.
-                    cleaner = [disk, destination_path]() { disk->removeSharedRecursive(destination_path, /*keep_all_shared_data*/ true, {}); };
+                    cleaner = [dst_disk, destination_path]() { dst_disk->removeSharedRecursive(destination_path, /*keep_all_shared_data*/ true, {}); };
                 else
-                    cleaner = [disk, destination_path]() { disk->removeRecursive(destination_path); };
+                    cleaner = [dst_disk, destination_path]() { dst_disk->removeRecursive(destination_path); };
 
                 CleanupOnFail cleanup(std::move(cleaner));
-                localBackupImpl(
-                    disk,
+                BackupImpl(
+                    src_disk,
+                    dst_disk,
                     disk_transaction.get(),
                     source_path,
                     destination_path,
