@@ -9,8 +9,8 @@ sidebar_label: Rounding
 ## floor(x\[, N\])
 
 Returns the largest round number that is less than or equal to `x`. A round number is a multiple of 1/10N, or the nearest number of the appropriate data type if 1 / 10N isn’t exact.
-‘N’ is an integer constant, optional parameter. By default it is zero, which means to round to an integer.
-‘N’ may be negative.
+`N` is an integer, optional parameter. By default it is zero, which means to round to an integer.
+`N` may be negative.
 
 Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
@@ -70,7 +70,7 @@ round(expression [, decimal_places])
 **Arguments**
 
 - `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../data-types/index.md#data_types).
-- `decimal-places` — An integer value.
+- `decimal-places` — The number of decimal places to round to.
     - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
     - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
     - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
@@ -264,7 +264,7 @@ Result:
 
 ## roundDuration
 
-Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`. 
+Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.
 
 **Syntax**
 
