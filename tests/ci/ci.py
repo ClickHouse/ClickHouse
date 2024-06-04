@@ -39,6 +39,7 @@ from commit_status_helper import (
 from digest_helper import DockerDigester, JobDigester
 from env_helper import (
     CI,
+    CI_CONFIG_PATH,
     GITHUB_JOB_API_URL,
     GITHUB_REPOSITORY,
     GITHUB_RUN_ID,
@@ -47,7 +48,6 @@ from env_helper import (
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     TEMP_PATH,
-    CI_CONFIG_PATH,
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
@@ -2234,10 +2234,9 @@ def main() -> int:
                     s3_destination=s3_path_prefix,
                     upload_binary=upload_binary,
                 )
-                # FIXME: profile data upload does not work
-                # _upload_build_profile_data(
-                #     pr_info, build_name, job_report, git_runner, ch_helper
-                # )
+                _upload_build_profile_data(
+                    pr_info, build_name, job_report, git_runner, ch_helper
+                )
                 check_url = log_url
             else:
                 # test job
