@@ -10,9 +10,9 @@ from datetime import date, timedelta
 from subprocess import DEVNULL, CalledProcessError
 from typing import Dict, List, Optional, TextIO
 
-from fuzzywuzzy.fuzz import ratio  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
+from thefuzz.fuzz import ratio  # type: ignore
 
 from git_helper import git_runner as runner
 from git_helper import is_shallow
