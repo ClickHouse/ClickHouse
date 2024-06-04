@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
-import os.path as p
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, ArgumentTypeError
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union
 
 from git_helper import TWEAK, Git, get_tags, git_runner, removeprefix
@@ -241,33 +241,31 @@ def validate_version(version: str) -> None:
         int(part)
 
 
-def get_abs_path(path: str) -> str:
-    return p.abspath(p.join(git_runner.cwd, path))
+def get_abs_path(path: Union[Path, str]) -> Path:
+    return (Path(git_runner.cwd) / path).absolute()
 
 
-def read_versions(versions_path: str = FILE_WITH_VERSION_PATH) -> VERSIONS:
+def read_versions(versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH) -> VERSIONS:
     versions = {}
-    path_to_file = get_abs_path(versions_path)
-    with open(path_to_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line.startswith("SET("):
-                continue
+    for line in get_abs_path(versions_path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line.startswith("SET("):
+            continue
 
-            value = 0  # type: Union[int, str]
-            name, value = line[4:-1].split(maxsplit=1)
-            name = removeprefix(name, "VERSION_").lower()
-            try:
-                value = int(value)
-            except ValueError:
-                pass
-            versions[name] = value
+        value = 0  # type: Union[int, str]
+        name, value = line[4:-1].split(maxsplit=1)
+        name = removeprefix(name, "VERSION_").lower()
+        try:
+            value = int(value)
+        except ValueError:
+            pass
+        versions[name] = value
 
     return versions
 
 
 def get_version_from_repo(
-    versions_path: str = FILE_WITH_VERSION_PATH,
+    versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
     git: Optional[Git] = None,
 ) -> ClickHouseVersion:
     """Get a ClickHouseVersion from FILE_WITH_VERSION_PATH. When the `git` parameter is
@@ -372,15 +370,15 @@ def get_supported_versions(
 
 def update_cmake_version(
     version: ClickHouseVersion,
-    versions_path: str = FILE_WITH_VERSION_PATH,
+    versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
 ) -> None:
-    path_to_file = get_abs_path(versions_path)
-    with open(path_to_file, "w", encoding="utf-8") as f:
-        f.write(VERSIONS_TEMPLATE.format_map(version.as_dict()))
+    get_abs_path(versions_path).write_text(
+        VERSIONS_TEMPLATE.format_map(version.as_dict()), encoding="utf-8"
+    )
 
 
 def update_contributors(
-    relative_contributors_path: str = GENERATED_CONTRIBUTORS,
+    relative_contributors_path: Union[Path, str] = GENERATED_CONTRIBUTORS,
     force: bool = False,
     raise_error: bool = False,
 ) -> None:
@@ -400,13 +398,11 @@ def update_contributors(
     )
     contributors = [f'    "{c}",' for c in contributors]
 
-    executer = p.relpath(p.realpath(__file__), git_runner.cwd)
+    executer = Path(__file__).relative_to(git_runner.cwd)
     content = CONTRIBUTORS_TEMPLATE.format(
         executer=executer, contributors="\n".join(contributors)
     )
-    contributors_path = get_abs_path(relative_contributors_path)
-    with open(contributors_path, "w", encoding="utf-8") as cfd:
-        cfd.write(content)
+    get_abs_path(relative_contributors_path).write_text(content, encoding="utf-8")
 
 
 def update_version_local(version, version_type="testing"):
