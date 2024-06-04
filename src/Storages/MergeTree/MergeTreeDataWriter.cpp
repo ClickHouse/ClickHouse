@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -502,6 +503,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
+    if (data.getSettings()->allow_experimental_optimized_row_order)
+    {
+        RowOrderOptimizer::optimize(block, sort_description, perm);
+        perm_ptr = &perm;
+    }
+
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
     {
@@ -720,6 +727,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         }
         else
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
+    }
+
+    if (data.getSettings()->allow_experimental_optimized_row_order)
+    {
+        RowOrderOptimizer::optimize(block, sort_description, perm);
+        perm_ptr = &perm;
     }
 
     if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)

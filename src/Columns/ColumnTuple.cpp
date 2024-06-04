@@ -429,7 +429,7 @@ void ColumnTuple::updatePermutationImpl(IColumn::PermutationSortDirection direct
 
     for (const auto & column : columns)
     {
-        while (!equal_ranges.empty() && limit && limit <= equal_ranges.back().first)
+        while (!equal_ranges.empty() && limit && limit <= equal_ranges.back().from)
             equal_ranges.pop_back();
 
         if (collator && column->isCollationSupported())
