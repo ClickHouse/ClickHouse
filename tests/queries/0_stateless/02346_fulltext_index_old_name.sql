@@ -12,6 +12,10 @@ CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(2)) ENGINE = Mer
 -- startup finds a table with 'inverted'-type indexes created by an older version, it immediately halts as it thinks
 -- the persistence is corrupt. Similarly (but less severely), tables with 'inverted' index cannot be attached.
 -- A backdoor avoids this. Just set allow_experimental_inverted_index = 0 (which is the default).
+--
+-- Note that the backdoor will exist only temporarily during a transition period. It will be removed in future. Its only purpose is
+-- to simplify the migrationn of experimental inverted indexes to experimental full-text indexes instead of simply breaking existing
+-- tables.
 SET allow_experimental_inverted_index = 0;
 CREATE TABLE tab(k UInt64, s String, INDEX idx(s) TYPE inverted(2)) ENGINE = MergeTree() ORDER BY k;
 INSERT INTO tab VALUES (1, 'ab') (2, 'bc');
