@@ -69,7 +69,7 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
 }
 
 void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr, std::optional<Poco::Timestamp> last_modified = std::nullopt);
 }
 
 }

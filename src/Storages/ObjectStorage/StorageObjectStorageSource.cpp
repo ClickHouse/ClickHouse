@@ -199,7 +199,7 @@ Chunk StorageObjectStorageSource::generate()
                 chunk,
                 read_from_format_info.requested_virtual_columns,
                 getUniqueStoragePathIdentifier(*configuration, reader.getObjectInfo(), false),
-                object_info.metadata->size_bytes, &filename);
+                object_info.metadata->size_bytes, &filename, object_info.metadata->last_modified);
 
             return chunk;
         }

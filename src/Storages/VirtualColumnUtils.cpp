@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -111,7 +112,7 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return {"_path", "_file", "_size"};
+    return {"_path", "_file", "_size", "_time"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
@@ -129,6 +130,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
+    add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
 
     return desc;
 }
@@ -188,7 +190,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 }
 
 void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename, std::optional<Poco::Timestamp> last_modified)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -213,6 +215,13 @@ void addRequestedPathFileAndSizeVirtualsToChunk(
         {
             if (size)
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_time")
+        {
+            if (last_modified)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), last_modified->utcTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
