@@ -304,7 +304,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
 
-    if (res->isSystemStorage() == false)
+    if (table->isSystemStorage() == false)
         CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
 }
 

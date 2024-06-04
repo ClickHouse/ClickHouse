@@ -121,9 +121,9 @@ PORT=$(get_server_port "$SERVER_PID")
 wait_server_port "$PORT"
 
 # check result
-sql_file="$CUR_DIR/31156_database_and_table_count_limitation_sql"
-result_file="$CUR_DIR/31156_database_and_table_count_limitation_result"
-reference_file="$CUR_DIR/31156_database_and_table_count_limitation_reference"
+sql_file="$CUR_DIR/03165_database_and_table_count_limitation_sql"
+result_file="$CUR_DIR/03165_database_and_table_count_limitation_result"
+reference_file="$CUR_DIR/03165_database_and_table_count_limitation_reference"
 
 $CLICKHOUSE_CLIENT --host 127.1 --port "$PORT" --multiquery --ignore-error --queries-file=$sql_file 2>/dev/null > "$result_file"
 
