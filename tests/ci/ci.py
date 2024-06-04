@@ -1732,6 +1732,11 @@ def _upload_build_profile_data(
 ) -> None:
     ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
     if not ci_logs_credentials.host:
+        logging.info("Unknown CI logs host, skip uploading build profile data")
+        return
+
+    if not pr_info.number == 0:
+        logging.info("Skipping uploading build profile data for PRs")
         return
 
     instance_type = get_instance_type()
@@ -1857,7 +1862,7 @@ def _upload_build_profile_data(
     )
     for fq in files_queries:
         logging.info(
-            "::notice ::Uploading profile data, path: %s, size: %s, query:\n%s",
+            "Uploading profile data, path: %s, size: %s, query:\n%s",
             fq.file,
             fq.file.stat().st_size,
             fq.query,
