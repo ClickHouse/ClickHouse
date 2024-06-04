@@ -107,7 +107,7 @@ def test_drop_replicated_table(start_cluster):
     assert exists_replica != None
 
     replica1.query(
-        "SET allow_experimental_drop_detached_table=1; DROP TABLE test_replicated_table SYNC;"
+        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table SYNC;"
     )
 
     exists_replica = check_exists(
@@ -127,7 +127,7 @@ def test_drop_replicated_table(start_cluster):
     assert exists_replica != None
 
     replica2.query(
-        "SET allow_experimental_drop_detached_table=1; DROP TABLE test_replicated_table SYNC;"
+        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table SYNC;"
     )
 
     objects_after = list_objects(cluster, "data/")
@@ -161,7 +161,7 @@ def test_drop_s3_table(start_cluster):
 
     node_s3.query("DETACH TABLE test_s3_table PERMANENTLY;")
     node_s3.query(
-        "SET allow_experimental_drop_detached_table=1; DROP TABLE test_s3_table SYNC;"
+        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_s3_table SYNC;"
     )
 
     objects_after = list_objects(cluster, "data/")
