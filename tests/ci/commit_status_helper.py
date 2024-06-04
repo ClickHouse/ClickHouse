@@ -18,11 +18,7 @@ from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
-from env_helper import (
-    GITHUB_REPOSITORY,
-    GITHUB_UPSTREAM_REPOSITORY,
-    TEMP_PATH,
-)
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
 from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
@@ -84,7 +80,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: Union[StatusType, str],
+    state: StatusType,  # do not change it, it MUST be StatusType and nothing else
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
