@@ -438,7 +438,7 @@ BlockIO InterpreterGrantQuery::execute()
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
 
-    /// Check if the current user has corresponding access rights granted with grant option.
+    /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
     String current_database = getContext()->getCurrentDatabase();
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
@@ -457,6 +457,7 @@ BlockIO InterpreterGrantQuery::execute()
         return executeDDLQueryOnCluster(updated_query, getContext(), params);
     }
 
+    /// Check if the current user has corresponding access rights granted with grant option.
     bool need_check_grantees_are_allowed = true;
     if (!query.current_grants)
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
