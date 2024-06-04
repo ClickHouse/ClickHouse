@@ -257,8 +257,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             }
             e.addMessage("After successfully inserting {}/{}: {}", successfully_inserted.size(), multiple_entities.size(), successfully_inserted_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -361,8 +360,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             }
             e.addMessage("After successfully removing {}/{}: {}", removed_names.size(), ids.size(), removed_names_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -458,8 +456,7 @@ std::vector<UUID> IAccessStorage::update(const std::vector<UUID> & ids, const Up
             }
             e.addMessage("After successfully updating {}/{}: {}", names_of_updated.size(), ids.size(), names_of_updated_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -583,7 +580,7 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;

@@ -7,7 +7,7 @@
 #include <base/hex.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
 constexpr size_t IPV6_BINARY_LENGTH = 16;

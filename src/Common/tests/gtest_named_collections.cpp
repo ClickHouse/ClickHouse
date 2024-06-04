@@ -1,5 +1,5 @@
 #include <Common/tests/gtest_global_context.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>

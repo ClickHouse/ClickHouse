@@ -82,7 +82,7 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, …)
+## sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
@@ -172,7 +172,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 - [sequenceCount](#function-sequencecount)
 
-## sequenceCount(pattern)(time, cond1, cond2, …)
+## sequenceCount(pattern)(time, cond1, cond2, ...)
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 

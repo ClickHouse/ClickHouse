@@ -30,6 +30,8 @@ def cluster():
             with_azurite=True,
         )
         cluster.start()
+        container_client = cluster.blob_service_client.get_container_client("cont")
+        container_client.create_container()
         yield cluster
     finally:
         cluster.shutdown()
@@ -130,8 +132,10 @@ def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}',"
-        f"'cont', 'test_create_connection_string', 'CSV')",
+        f"""
+        CREATE TABLE test_create_table_conn_string (key UInt64, data String)
+        Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_create_connection_string', 'CSV')
+        """,
     )
 
 
@@ -1321,6 +1325,20 @@ def test_format_detection(cluster):
     )
 
     assert result == expected_result
+
+
+def test_write_to_globbed_partitioned_path(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    error = azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42",
+        expect_error="true",
+    )
+
+    assert "DATABASE_ACCESS_DENIED" in error
 
 
 def test_parallel_read(cluster):

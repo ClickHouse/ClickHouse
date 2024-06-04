@@ -1,5 +1,4 @@
 #include "ZooKeeper.h"
-#include "Coordination/KeeperConstants.h"
 #include "Coordination/KeeperFeatureFlags.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
@@ -19,7 +18,7 @@
 #include <Core/ServerUUID.h>
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/DNSResolver.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/NetException.h>
@@ -376,10 +375,13 @@ void ZooKeeper::createAncestors(const std::string & path)
         }
 
         Coordination::Responses responses;
-        Coordination::Error code = multiImpl(create_ops, responses, /*check_session_valid*/ false);
+        const auto & [code, failure_reason] = multiImpl(create_ops, responses, /*check_session_valid*/ false);
 
         if (code == Coordination::Error::ZOK)
             return;
+
+        if (!failure_reason.empty())
+            throw KeeperException::fromMessage(code, failure_reason);
 
         throw KeeperException::fromPath(code, path);
     }
@@ -676,17 +678,19 @@ Coordination::Error ZooKeeper::trySet(const std::string & path, const std::strin
 }
 
 
-Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
+std::pair<Coordination::Error, std::string>
+ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
 {
     if (requests.empty())
-        return Coordination::Error::ZOK;
+        return {Coordination::Error::ZOK, ""};
 
     std::future<Coordination::MultiResponse> future_result;
+    Coordination::Requests requests_with_check_session;
     if (check_session_valid)
     {
-        Coordination::Requests new_requests = requests;
-        addCheckSessionOp(new_requests);
-        future_result = asyncTryMultiNoThrow(new_requests);
+        requests_with_check_session = requests;
+        addCheckSessionOp(requests_with_check_session);
+        future_result = asyncTryMultiNoThrow(requests_with_check_session);
     }
     else
     {
@@ -696,7 +700,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Multi, requests[0]->getPath()));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
+        return {Coordination::Error::ZOPERATIONTIMEOUT, ""};
     }
     else
     {
@@ -704,11 +708,14 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
         Coordination::Error code = response.error;
         responses = response.responses;
 
+        std::string reason;
+
         if (check_session_valid)
         {
             if (code != Coordination::Error::ZOK && !Coordination::isHardwareError(code) && getFailedOpIndex(code, responses) == requests.size())
             {
-                impl->finalize(fmt::format("Session was killed: {}", requests.back()->getPath()));
+                reason = fmt::format("Session was killed: {}", requests_with_check_session.back()->getPath());
+                impl->finalize(reason);
                 code = Coordination::Error::ZSESSIONMOVED;
             }
             responses.pop_back();
@@ -717,23 +724,33 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
             chassert(code == Coordination::Error::ZOK || Coordination::isHardwareError(code) || responses.back()->error != Coordination::Error::ZOK);
         }
 
-        return code;
+        return {code, std::move(reason)};
     }
 }
 
 Coordination::Responses ZooKeeper::multi(const Coordination::Requests & requests, bool check_session_valid)
 {
     Coordination::Responses responses;
-    Coordination::Error code = multiImpl(requests, responses, check_session_valid);
+    const auto & [code, failure_reason] = multiImpl(requests, responses, check_session_valid);
+    if (!failure_reason.empty())
+        throw KeeperException::fromMessage(code, failure_reason);
+
     KeeperMultiException::check(code, requests, responses);
     return responses;
 }
 
 Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
 {
-    Coordination::Error code = multiImpl(requests, responses, check_session_valid);
+    const auto & [code, failure_reason] = multiImpl(requests, responses, check_session_valid);
+
     if (code != Coordination::Error::ZOK && !Coordination::isUserError(code))
+    {
+        if (!failure_reason.empty())
+            throw KeeperException::fromMessage(code, failure_reason);
+
         throw KeeperException(code);
+    }
+
     return code;
 }
 
@@ -1346,7 +1363,7 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
 {
     try
     {
-        return multiImpl(requests, responses, check_session_valid);
+        return multiImpl(requests, responses, check_session_valid).first;
     }
     catch (const Coordination::Exception & e)
     {

@@ -1038,7 +1038,8 @@ private:
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1142,8 +1143,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return getFailoverOptions(next_uri, max_addresses);
         });
 
-        if (num_streams > glob_iterator->size())
-            num_streams = glob_iterator->size();
+        num_streams = std::min(num_streams, glob_iterator->size());
     }
     else
     {
