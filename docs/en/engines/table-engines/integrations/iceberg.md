@@ -37,7 +37,7 @@ Using named collections:
     <named_collections>
         <iceberg_conf>
             <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
-            <access_key_id>test<access_key_id>
+            <access_key_id>test</access_key_id>
             <secret_access_key>test</secret_access_key>
         </iceberg_conf>
     </named_collections>
