@@ -187,9 +187,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
 
-    if (table->isView() == false && table->isRemote() == false
-        && table->isDictionary() == false && table->isSystemStorage() == false)
-        CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -206,9 +204,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
 
-        if (res->isView() == false && res->isRemote() == false
-            && res->isDictionary() == false && res->isSystemStorage() == false)
-            CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;
 }
