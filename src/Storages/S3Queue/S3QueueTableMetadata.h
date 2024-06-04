@@ -1,7 +1,5 @@
 #pragma once
 
-#if USE_AWS_S3
-
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -22,10 +20,11 @@ struct S3QueueTableMetadata
     String columns;
     String after_processing;
     String mode;
-    UInt64 s3queue_tracked_files_limit = 0;
-    UInt64 s3queue_tracked_file_ttl_sec = 0;
-    UInt64 s3queue_total_shards_num = 1;
-    UInt64 s3queue_processing_threads_num = 1;
+    UInt64 tracked_files_limit = 0;
+    UInt64 tracked_file_ttl_sec = 0;
+    UInt64 buckets = 0;
+    UInt64 processing_threads_num = 1;
+    String last_processed_path;
 
     S3QueueTableMetadata() = default;
     S3QueueTableMetadata(
@@ -39,6 +38,7 @@ struct S3QueueTableMetadata
     String toString() const;
 
     void checkEquals(const S3QueueTableMetadata & from_zk) const;
+    static void checkEquals(const S3QueueSettings & lhs, const S3QueueSettings & rhs);
 
 private:
     void checkImmutableFieldsEquals(const S3QueueTableMetadata & from_zk) const;
@@ -46,5 +46,3 @@ private:
 
 
 }
-
-#endif
