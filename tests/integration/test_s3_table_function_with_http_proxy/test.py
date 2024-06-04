@@ -24,7 +24,6 @@ def cluster():
             main_configs=[
                 "configs/config.d/proxy_remote_no_proxy.xml",
             ],
-            instance_env_variables=True,
             with_minio=True,
         )
 
@@ -41,7 +40,6 @@ def cluster():
             main_configs=[
                 "configs/config.d/proxy_list_no_proxy.xml",
             ],
-            instance_env_variables=True,
             with_minio=True,
         )
 

@@ -95,6 +95,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
     cached_config.port = proxy_port;
     cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
     cached_config.original_request_protocol = request_protocol;
+    cached_config.no_proxy_hosts = no_proxy_hosts;
     cache_timestamp = std::chrono::system_clock::now();
     cache_valid = true;
 
