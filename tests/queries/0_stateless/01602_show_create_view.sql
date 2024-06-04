@@ -28,13 +28,13 @@ SHOW CREATE VIEW test_1602.tbl; -- { serverError BAD_ARGUMENTS }
 
 SHOW CREATE TEMPORARY VIEW; -- { serverError UNKNOWN_TABLE }
 
-SHOW CREATE VIEW; -- { clientError 62 }
+SHOW CREATE VIEW; -- { clientError SYNTAX_ERROR }
 
-SHOW CREATE DATABASE; -- { clientError 62 }
+SHOW CREATE DATABASE; -- { clientError SYNTAX_ERROR }
 
-SHOW CREATE DICTIONARY; -- { clientError 62 }
+SHOW CREATE DICTIONARY; -- { clientError SYNTAX_ERROR }
 
-SHOW CREATE TABLE; -- { clientError 62 }
+SHOW CREATE TABLE; -- { clientError SYNTAX_ERROR }
 
 SHOW CREATE test_1602.VIEW;
 

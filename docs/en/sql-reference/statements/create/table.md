@@ -410,6 +410,10 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 - For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
 - Decompression is always performed in software.
 
+:::note
+ZSTD_QAT is not available in ClickHouse Cloud.
+:::
+
 #### DEFLATE_QPL
 
 `DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
