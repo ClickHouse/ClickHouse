@@ -46,7 +46,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!source_step_with_filter)
         return;
 
-    if (!source_step_with_filter->getContext()->getSettingsRef().allow_experimental_analyzer && typeid_cast<ReadFromMerge *>(source_step_with_filter))\
+    /// Prewhere is broken with StorageMerge and old analyzer.
+    if (!source_step_with_filter->getContext()->getSettingsRef().allow_experimental_analyzer && typeid_cast<ReadFromMerge *>(source_step_with_filter))
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
