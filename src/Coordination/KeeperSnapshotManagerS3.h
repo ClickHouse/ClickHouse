@@ -12,8 +12,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 
-
-#include <string>
 #endif
 
 namespace DB
@@ -27,13 +25,13 @@ public:
 
     /// 'macros' are used to substitute macros in endpoint of disks
     void updateS3Configuration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
-    void uploadSnapshot(const SnapshotFileInfo & file_info, bool async_upload = true);
+    void uploadSnapshot(const SnapshotFileInfoPtr & file_info, bool async_upload = true);
 
     /// 'macros' are used to substitute macros in endpoint of disks
     void startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void shutdown();
 private:
-    using SnapshotS3Queue = ConcurrentBoundedQueue<SnapshotFileInfo>;
+    using SnapshotS3Queue = ConcurrentBoundedQueue<SnapshotFileInfoPtr>;
     SnapshotS3Queue snapshots_s3_queue;
 
     /// Upload new snapshots to S3
@@ -51,7 +49,7 @@ private:
 
     std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
 
-    void uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info);
+    void uploadSnapshotImpl(const SnapshotFileInfoPtr & snapshot_file_info);
 
     /// Thread upload snapshots to S3 in the background
     void snapshotS3Thread();
