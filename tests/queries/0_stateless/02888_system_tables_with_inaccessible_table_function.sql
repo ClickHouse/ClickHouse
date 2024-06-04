@@ -21,7 +21,7 @@ SELECT name, engine, engine_full, create_table_query, data_paths, notEmpty([meta
     WHERE name like '%tablefunc%' and database=currentDatabase()
     ORDER BY name;
 
-DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc01; 
+DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc01;
 DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc02;
 DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc03;
 DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc04;
@@ -39,5 +39,8 @@ SELECT name, engine, engine_full, create_table_query, data_paths, notEmpty([meta
     FROM system.tables
     WHERE name like '%tablefunc%' and database=currentDatabase()
     ORDER BY name;
+
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc01; -- { serverError POSTGRESQL_CONNECTION_FAILURE }
+SELECT engine FROM system.tables WHERE name = 'tablefunc01' and database=currentDatabase();
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
