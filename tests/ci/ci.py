@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -41,7 +42,6 @@ from commit_status_helper import (
 from digest_helper import DockerDigester
 from env_helper import (
     CI,
-    CI_CONFIG_PATH,
     GITHUB_JOB_API_URL,
     GITHUB_REPOSITORY,
     GITHUB_RUN_ID,
