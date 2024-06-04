@@ -43,6 +43,8 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
+#include <Core/ServerSettings.h>
+
 namespace DB
 {
 
