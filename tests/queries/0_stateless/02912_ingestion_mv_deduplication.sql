@@ -98,7 +98,7 @@ SELECT '-- Original issue with deduplicate_blocks_in_dependent_materialized_view
     This is what happens now:
 
     - 1st insert works for landing and mv tables
-    - 2nd insert gets first block 20220901 deduplicated and second one inserted for landing and mv tables
+    - 2nd insert gets first block 20220901 deduplicated for landing and both rows are inserted for mv tables
 
 */
 SET deduplicate_blocks_in_dependent_materialized_views = 1, max_insert_delayed_streams_for_parallel_write = 1000;

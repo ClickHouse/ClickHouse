@@ -17,7 +17,7 @@
 2022-09-01 12:23:34	42
 2023-09-01 12:23:34	42
 -- MV
-2022-09-01 12:00:00	42
+2022-09-01 12:00:00	84
 2023-09-01 12:00:00	42
 -- Regression introduced in https://github.com/ClickHouse/ClickHouse/pull/54184
 -- Landing (Agg/Replacing)MergeTree

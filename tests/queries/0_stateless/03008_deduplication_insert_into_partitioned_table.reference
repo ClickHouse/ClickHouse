@@ -1,10 +1,10 @@
 no user deduplication token
-partitioned_table:
+partitioned_table is deduplicated bacause deduplication works in scope of one partiotion:
 1	A
 1	D
 2	B
 2	C
-mv_table:
+mv_table is not deduplicated because the inserted blocks was different:
 1	A
 1	A
 1	D
@@ -12,14 +12,14 @@ mv_table:
 2	B
 2	C
 with user deduplication token
-partitioned_table:
+partitioned_table is not deduplicated because different tokens:
 1	A
 1	A
 1	D
 2	B
 2	B
 2	C
-mv_table:
+mv_table is not deduplicated because different tokens:
 1	A
 1	A
 1	D
@@ -27,9 +27,9 @@ mv_table:
 2	B
 2	C
 with incorrect ussage of user deduplication token
-partitioned_table:
+partitioned_table is deduplicated because equal tokens:
 1	A
 2	B
-mv_table:
+mv_table is deduplicated because equal tokens:
 1	A
 2	B
