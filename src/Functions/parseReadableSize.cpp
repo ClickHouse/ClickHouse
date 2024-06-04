@@ -128,9 +128,7 @@ public:
 
 private:
 
-    UInt64 parseReadableFormat(
-
-    ) const
+    UInt64 parseReadableFormat(const std::string_view & value) const
     {
         static const ScaleFactors scale_factors =
         {
