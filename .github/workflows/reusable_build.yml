@@ -107,6 +107,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.build_name}}'
+      - name: Upload json report
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{ env.TEMP_PATH }}/build_report_*.json
+          name: build_report_${{inputs.build_name}}
       - name: Clean
         if: always()
         uses: ./.github/actions/clean

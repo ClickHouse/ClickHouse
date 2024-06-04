@@ -161,10 +161,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -183,12 +180,12 @@ jobs:
         with:
           name: ${{ env.SUITE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
-          
+
   Alter:
    strategy:
      fail-fast: false
      matrix:
-      ONLY: [replace, attach, move]    
+      ONLY: [replace, attach, move]
    needs: [runner_labels_setup]
    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
    timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -208,10 +205,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -257,10 +251,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -309,10 +300,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -357,10 +345,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -400,10 +385,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -448,10 +430,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -501,10 +480,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -556,10 +532,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-          name: build_urls_package_${{ inputs.arch }}
-      - name: Rename report
-        run: |
-          mv ${{ env.REPORTS_PATH }}/build_urls_package_${{ inputs.arch }}.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
+          name: build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
