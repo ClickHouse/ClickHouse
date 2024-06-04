@@ -900,14 +900,19 @@ void HTTPHandler::processQuery(
     customizeContext(request, context, *in_post_maybe_compressed);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
-    auto set_query_result = [&response, this](const QueryResultDetails & details)
+    if (http_response_headers_override) {
+        for (auto [header_name, header_value] : *http_response_headers_override)
+            response.set(header_name, header_value);
+    }
+
+    auto set_query_result = [this, &response](const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
-        if (http_response_headers_override)
-            for (auto [header_name, header_value] : *http_response_headers_override)
-                response.add(header_name, header_value);
 
-        if (response.getContentType() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_TYPE && details.content_type)
+        if (!(
+                http_response_headers_override.has_value()
+                && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE)
+             ) && details.content_type)
             response.setContentType(*details.content_type);
 
         if (details.format)
@@ -1362,9 +1367,9 @@ parseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const
         http_response_headers_override[Poco::Net::HTTPMessage::CONTENT_TYPE] = config.getString(config_prefix + ".handler.content_type");
 
     if (http_response_headers_override.empty())
-        return std::nullopt;
+        return {};
 
-    return std::optional(std::move(http_response_headers_override));
+    return std::move(http_response_headers_override);
 }
 
 HTTPRequestHandlerFactoryPtr
