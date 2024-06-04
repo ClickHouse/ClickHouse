@@ -38,7 +38,7 @@ enum class ErrorHandling : uint8_t
 
 using ScaleFactors = std::unordered_map<std::string_view, size_t>;
 
-/** parseReadble*Size - Returns the number of bytes corresponding to a given readable binary or decimal size.
+/** parseReadable*Size - Returns the number of bytes corresponding to a given readable binary or decimal size.
   * Examples:
   *  - `parseReadableSize('123 MiB')`
   *  - `parseReadableSize('123 MB')`
@@ -70,7 +70,10 @@ public:
         };
         validateFunctionArgumentTypes(*this, arguments, args);
         DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
-        return (error_handling == ErrorHandling::Null) ? std::make_shared<DataTypeNullable>(return_type) : return_type;
+        if constexpr (error_handling == ErrorHandling::Null)
+            return std::make_shared<DataTypeNullable>(return_type);
+        else
+            return return_type;
     }
 
 
@@ -125,7 +128,9 @@ public:
 
 private:
 
-    UInt64 parseReadableFormat(const std::string_view & value) const
+    UInt64 parseReadableFormat(
+        
+    ) const
     {
         static const ScaleFactors scale_factors =
         {
