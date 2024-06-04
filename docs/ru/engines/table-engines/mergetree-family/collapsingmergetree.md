@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Секции запроса**
 
-При создании таблицы с движком `CollapsingMergeTree` используются те же [секции запроса](mergetree.md#table_engine-mergetree-creating-a-table) что и при создании таблицы с движком `MergeTree`.
+При создании таблицы с движком `CollapsingMergeTree` используются те же [секции запроса](mergetree.md#table_engine-mergetree-creating-a-table), что и при создании таблицы с движком `MergeTree`.
 
 <details markdown="1">
 

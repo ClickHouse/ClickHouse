@@ -63,7 +63,7 @@ public:
     void resetParser() override;
 
 private:
-    Chunk generate() override;
+    Chunk read() override;
 
     void onCancel() override
     {
@@ -83,7 +83,7 @@ private:
 class ParquetMetadataSchemaReader : public ISchemaReader
 {
 public:
-    ParquetMetadataSchemaReader(ReadBuffer & in_);
+    explicit ParquetMetadataSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };

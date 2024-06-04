@@ -1,11 +1,12 @@
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/getRandomASCIIString.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -17,6 +18,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
+}
+
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -24,16 +30,16 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return !files.empty();
 }
 
-void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, int) const
+void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
 
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     RelativePathsWithMetadata files;
-    listObjects(path_prefix, files, 0);
+    listObjects(path_prefix, files, max_keys);
 
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
@@ -83,33 +89,12 @@ const std::string & IObjectStorage::getCacheName() const
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings settings{read_settings};
-    settings.for_object_storage = true;
-    return settings;
+    return read_settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    WriteSettings settings{write_settings};
-    settings.for_object_storage = true;
-    return settings;
-}
-
-std::string IObjectStorage::generateBlobNameForPath(const std::string & /* path */)
-{
-    /// Path to store the new S3 object.
-
-    /// Total length is 32 a-z characters for enough randomness.
-    /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
-    constexpr size_t key_name_total_size = 32;
-    constexpr size_t key_name_prefix_size = 3;
-
-    /// Path to store new S3 object.
-    return fmt::format("{}/{}",
-        getRandomASCIIString(key_name_prefix_size),
-        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
+    return write_settings;
 }
 
 }

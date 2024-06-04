@@ -47,24 +47,24 @@ def test_big_family(client: KeeperClient):
 
     assert response == TSV(
         [
-            ["/test_big_family/1", "5"],
-            ["/test_big_family/2", "3"],
-            ["/test_big_family/2/3", "0"],
-            ["/test_big_family/2/2", "0"],
-            ["/test_big_family/2/1", "0"],
-            ["/test_big_family/1/5", "0"],
-            ["/test_big_family/1/4", "0"],
-            ["/test_big_family/1/3", "0"],
-            ["/test_big_family/1/2", "0"],
-            ["/test_big_family/1/1", "0"],
+            ["/test_big_family", "11"],
+            ["/test_big_family/1", "6"],
+            ["/test_big_family/2", "4"],
+            ["/test_big_family/2/3", "1"],
+            ["/test_big_family/2/2", "1"],
+            ["/test_big_family/2/1", "1"],
+            ["/test_big_family/1/5", "1"],
+            ["/test_big_family/1/4", "1"],
+            ["/test_big_family/1/3", "1"],
+            ["/test_big_family/1/2", "1"],
         ]
     )
 
-    response = client.find_big_family("/test_big_family", 1)
-
+    response = client.find_big_family("/test_big_family", 2)
     assert response == TSV(
         [
-            ["/test_big_family/1", "5"],
+            ["/test_big_family", "11"],
+            ["/test_big_family/1", "6"],
         ]
     )
 
@@ -86,7 +86,12 @@ def test_find_super_nodes(client: KeeperClient):
     client.cd("/test_find_super_nodes")
 
     response = client.find_super_nodes(4)
-    assert response == TSV(
+
+    # The order of the response is not guaranteed, so we need to sort it
+    normalized_response = response.strip().split("\n")
+    normalized_response.sort()
+
+    assert TSV(normalized_response) == TSV(
         [
             ["/test_find_super_nodes/1", "5"],
             ["/test_find_super_nodes/2", "4"],
@@ -216,3 +221,32 @@ def test_quoted_argument_parsing(client: KeeperClient):
 
     client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
     assert client.get(node_path) == "value4 with some whitespace"
+
+
+def get_direct_children_number(client: KeeperClient):
+    client.touch("/get_direct_children_number")
+    client.touch("/get_direct_children_number/1")
+    client.touch("/get_direct_children_number/1/1")
+    client.touch("/get_direct_children_number/1/2")
+    client.touch("/get_direct_children_number/2")
+    client.touch("/get_direct_children_number/2/1")
+    client.touch("/get_direct_children_number/2/2")
+
+    assert client.get_direct_children_number("/get_direct_children_number") == "2"
+
+
+def test_get_all_children_number(client: KeeperClient):
+    client.touch("/test_get_all_children_number")
+    client.touch("/test_get_all_children_number/1")
+    client.touch("/test_get_all_children_number/1/1")
+    client.touch("/test_get_all_children_number/1/2")
+    client.touch("/test_get_all_children_number/1/3")
+    client.touch("/test_get_all_children_number/1/4")
+    client.touch("/test_get_all_children_number/1/5")
+    client.touch("/test_get_all_children_number/2")
+    client.touch("/test_get_all_children_number/2/1")
+    client.touch("/test_get_all_children_number/2/2")
+    client.touch("/test_get_all_children_number/2/3")
+    client.touch("/test_get_all_children_number/2/4")
+
+    assert client.get_all_children_number("/test_get_all_children_number") == "11"

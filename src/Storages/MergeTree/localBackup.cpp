@@ -1,8 +1,10 @@
 #include "localBackup.h"
 
 #include <Common/Exception.h>
+#include <Disks/IDiskTransaction.h>
 #include <string>
 #include <cerrno>
+
 
 namespace DB
 {
@@ -170,7 +172,7 @@ void localBackup(
             else if (copy_instead_of_hardlinks)
             {
                 CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
-                disk->copyDirectoryContent(source_path, disk, destination_path, read_settings, write_settings);
+                disk->copyDirectoryContent(source_path, disk, destination_path, read_settings, write_settings, /*cancellation_hook=*/{});
                 cleanup.success();
             }
             else

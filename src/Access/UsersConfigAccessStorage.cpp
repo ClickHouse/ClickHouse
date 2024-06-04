@@ -1,6 +1,5 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/Quota.h>
-#include <Common/SSH/Wrappers.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -10,9 +9,10 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/SSHWrapper.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -66,7 +66,7 @@ namespace
 
         String error_message;
         const char * pos = string_query.data();
-        auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, 0);
+        auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
 
         if (!ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse grant query. Error: {}", error_message);
@@ -135,18 +135,22 @@ namespace
         const auto ssh_keys_config = user_config + ".ssh_keys";
         bool has_ssh_keys = config.has(ssh_keys_config);
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates + has_ssh_keys;
+        const auto http_auth_config = user_config + ".http_authentication";
+        bool has_http_auth = config.has(http_auth_config);
+
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys' "
-                            "are used to specify authentication info for user {}. "
+                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
+                            "'http_authentication' are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' must be specified for user {}.", user_name);
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
 
         if (has_password_plaintext)
         {
@@ -205,12 +209,12 @@ namespace
         }
         else if (has_ssh_keys)
         {
-#if USE_SSL
+#if USE_SSH
             user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
 
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
-            std::vector<ssh::SSHKey> keys;
+            std::vector<SSHKey> keys;
             for (const String& entry : entries)
             {
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
@@ -233,7 +237,7 @@ namespace
 
                     try
                     {
-                        keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, type));
+                        keys.emplace_back(SSHKeyFactory::makePublicKeyFromBase64(base64_key, type));
                     }
                     catch (const std::invalid_argument &)
                     {
@@ -245,8 +249,15 @@ namespace
             }
             user->auth_data.setSSHKeys(std::move(keys));
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
+        }
+        else if (has_http_auth)
+        {
+            user->auth_data = AuthenticationData{AuthenticationType::HTTP};
+            user->auth_data.setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
+            auto scheme = config.getString(http_auth_config + ".scheme");
+            user->auth_data.setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
         }
 
         auto auth_type = user->auth_data.getType();
@@ -360,6 +371,7 @@ namespace
             if (databases)
             {
                 user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+                user->access.grantWithGrantOption(AccessType::TABLE_ENGINE);
                 user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
                 for (const String & database : *databases)
                     user->access.grantWithGrantOption(AccessFlags::allFlags(), database);

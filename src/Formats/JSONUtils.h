@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class Block;
 struct JSONInferenceInfo;
 
 namespace JSONUtils
@@ -112,8 +113,9 @@ namespace JSONUtils
 
     void skipColon(ReadBuffer & in);
     void skipComma(ReadBuffer & in);
+    bool checkAndSkipComma(ReadBuffer & in);
 
-    String readFieldName(ReadBuffer & in);
+    String readFieldName(ReadBuffer & in, const FormatSettings::JSON & settings);
 
     void skipArrayStart(ReadBuffer & in);
     void skipArrayEnd(ReadBuffer & in);
@@ -122,14 +124,16 @@ namespace JSONUtils
 
     void skipObjectStart(ReadBuffer & in);
     void skipObjectEnd(ReadBuffer & in);
+    bool checkAndSkipObjectStart(ReadBuffer & in);
     bool checkAndSkipObjectEnd(ReadBuffer & in);
 
-    NamesAndTypesList readMetadata(ReadBuffer & in);
-    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
+    NamesAndTypesList readMetadata(ReadBuffer & in, const FormatSettings::JSON & settings);
+    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types, const FormatSettings::JSON & settings);
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header, const FormatSettings::JSON & settings);
     void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 
-    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name);
-    void skipTheRestOfObject(ReadBuffer & in);
+    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name, const FormatSettings::JSON & settings);
+    void skipTheRestOfObject(ReadBuffer & in, const FormatSettings::JSON & settings);
 }
 
 }

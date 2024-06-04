@@ -17,7 +17,7 @@ class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
     ReplicatedMergeMutateTaskBase(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
         IExecutableTask::TaskResultCallback & task_result_callback_)
@@ -36,6 +36,8 @@ public:
     StorageID getStorageID() const override;
     String getQueryId() const override { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
     bool executeStep() override;
+
+    bool printExecutionException() const override { return print_exception; }
 
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
@@ -64,13 +66,13 @@ protected:
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
-    Poco::Logger * log;
+    LoggerPtr log;
     /// ProfileEvents for current part will be stored here
     ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;
 
 private:
-    enum class CheckExistingPartResult
+    enum class CheckExistingPartResult : uint8_t
     {
         PART_EXISTS,
         OK
@@ -79,7 +81,7 @@ private:
     CheckExistingPartResult checkExistingPart();
     bool executeImpl();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE_INNER_MERGE,
@@ -91,6 +93,7 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
+    bool print_exception = true;
 };
 
 }

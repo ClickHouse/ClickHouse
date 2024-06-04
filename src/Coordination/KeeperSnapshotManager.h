@@ -1,12 +1,6 @@
 #pragma once
-#include <filesystem>
-#include <system_error>
 #include <Coordination/KeeperStorage.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <libnuraft/nuraft.hxx>
-#include <Coordination/KeeperContext.h>
-#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -16,6 +10,15 @@ using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
 
+class WriteBuffer;
+class ReadBuffer;
+
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 enum SnapshotVersion : uint8_t
 {
     V0 = 0,
@@ -24,9 +27,10 @@ enum SnapshotVersion : uint8_t
     V3 = 3, /// compress snapshots with ZSTD codec
     V4 = 4, /// add Node size to snapshots
     V5 = 5, /// add ZXID and digest to snapshots
+    V6 = 6, /// remove is_sequential, per node size, data length
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V5;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V6;
 
 /// What is stored in binary snapshot
 struct SnapshotDeserializationResult
@@ -94,8 +98,7 @@ struct SnapshotFileInfo
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
-
+using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&, bool)>;
 
 using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
 
@@ -138,30 +141,9 @@ public:
     size_t totalSnapshots() const { return existing_snapshots.size(); }
 
     /// The most fresh snapshot log index we have
-    size_t getLatestSnapshotIndex() const
-    {
-        if (!existing_snapshots.empty())
-            return existing_snapshots.rbegin()->first;
-        return 0;
-    }
+    size_t getLatestSnapshotIndex() const;
 
-    SnapshotFileInfo getLatestSnapshotInfo() const
-    {
-        if (!existing_snapshots.empty())
-        {
-            const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
-
-            try
-            {
-                if (disk->exists(path))
-                    return {path, disk};
-            }
-            catch (...)
-            {
-            }
-        }
-        return {"", nullptr};
-    }
+    SnapshotFileInfo getLatestSnapshotInfo() const;
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
@@ -187,7 +169,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * log = &Poco::Logger::get("KeeperSnapshotManager");
+    LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

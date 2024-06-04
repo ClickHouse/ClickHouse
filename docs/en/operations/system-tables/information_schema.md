@@ -18,12 +18,14 @@ SHOW TABLES FROM information_schema;
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
+| STATISTICS              |
 │ TABLES                  │
 │ VIEWS                   │
 │ columns                 │
 │ key_column_usage        │
 │ referential_constraints │
 │ schemata                │
+| statistics              |
 │ tables                  │
 │ views                   │
 └─────────────────────────┘
@@ -32,11 +34,12 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA` contains the following views:
 
 - [COLUMNS](#columns)
-- [SCHEMATA](#schemata)
-- [TABLES](#tables)
-- [VIEWS](#views)
 - [KEY_COLUMN_USAGE](#key_column_usage)
 - [REFERENTIAL_CONSTRAINTS](#referential_constraints)
+- [SCHEMATA](#schemata)
+- [STATISTICS](#statistics)
+- [TABLES](#tables)
+- [VIEWS](#views)
 
 Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases. The same applies to all the columns in these views - both lowercase (for example, `table_name`) and uppercase (`TABLE_NAME`) variants are provided.
 
@@ -69,6 +72,7 @@ Columns:
 - `domain_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+- `extra` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `STORED GENERATED` for `MATERIALIZED`-type columns, `VIRTUAL GENERATED` for `ALIAS`-type columns, `DEFAULT_GENERATED` for `DEFAULT`-type columns, or `NULL`.
 
 **Example**
 
@@ -198,6 +202,8 @@ Columns:
     - `FOREIGN TABLE`
     - `LOCAL TEMPORARY`
     - `SYSTEM VIEW`
+- `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total
+  number of rows. NULL if it could not be determined.
 - `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of
   the data on-disk. NULL if it could not be determined.
 - `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
@@ -369,3 +375,28 @@ Columns:
 - `delete_rule` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
 - `referenced_table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+
+## STATISTICS {#statistics}
+
+Provides information about table indexes. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
+
+Columns:
+
+- `table_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `table_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `non_unique` ([Int32](../../sql-reference/data-types/int-uint.md)) — Currently unused.
+- `index_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `index_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `seq_in_index` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Currently unused.
+- `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `cardinality` ([Nullable](../../sql-reference/data-types/nullable.md)([Int64](../../sql-reference/data-types/int-uint.md))) — Currently unused.
+- `sub_part` ([Nullable](../../sql-reference/data-types/nullable.md)([Int64](../../sql-reference/data-types/int-uint.md))) — Currently unused.
+- `packed` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `nullable` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `index_type` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `comment` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `index_comment` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `is_visible` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `expression` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.

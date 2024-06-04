@@ -19,6 +19,20 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
+namespace
+{
+
+using namespace DB;
+
+ContextPtr makeSQLiteWriteContext(ContextPtr context)
+{
+    auto write_context = Context::createCopy(context);
+    write_context->setSetting("output_format_values_escape_quote_with_quote", Field(true));
+    return write_context;
+}
+
+}
+
 
 namespace DB
 {
@@ -42,7 +56,8 @@ StorageSQLite::StorageSQLite(
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
+    , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -144,7 +159,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.write_context);
         writer->write(block);
 
         sqlbuf << ";";
@@ -193,7 +208,7 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
         const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());

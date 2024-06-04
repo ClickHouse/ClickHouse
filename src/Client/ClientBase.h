@@ -58,8 +58,6 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
@@ -75,10 +73,14 @@ public:
     void init(int argc, char ** argv);
 
     std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
+    static ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error);
 
 protected:
     void runInteractive();
     void runNonInteractive();
+
+    char * argv0 = nullptr;
+    void runLibFuzzer();
 
     virtual bool processWithFuzzing(const String &)
     {
@@ -96,8 +98,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     static void setupSignalHandler();
 
     bool executeMultiQuery(const String & all_queries_text);
@@ -120,7 +121,7 @@ protected:
     };
 
     virtual void updateLoggerLevel(const String &) {}
-    virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
+    virtual void printHelpMessage(const OptionsDescription & options_description, bool verbose) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
@@ -184,7 +185,14 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    void initTtyBuffer(ProgressOption progress);
+    static bool isRegularFile(int fd);
+
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
+    void setDefaultFormatsAndCompressionFromConfiguration();
+
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -201,6 +209,7 @@ protected:
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
+    bool wait_for_suggestions_to_load = false;
 
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
@@ -212,12 +221,16 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    String format; /// Query results output format.
+    String pager;
+
+    String default_output_format; /// Query results output format.
+    CompressionMethod default_output_compression_method = CompressionMethod::None;
+    String default_input_format; /// Tables' format for clickhouse-local.
+
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
-    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
@@ -272,21 +285,6 @@ protected:
     size_t processed_rows = 0; /// How many rows have been read or written.
     bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
-    enum class PartialResultMode: UInt8
-    {
-        /// Query doesn't show partial result before the first block with 0 rows.
-        /// The first block with 0 rows initializes the output table format using its header.
-        NotInit,
-
-        /// Query shows partial result after the first and before the second block with 0 rows.
-        /// The second block with 0 rows indicates that that receiving blocks with partial result has been completed and next blocks will be with the full result.
-        Active,
-
-        /// Query doesn't show partial result at all.
-        Inactive,
-    };
-    PartialResultMode partial_result_mode = PartialResultMode::Inactive;
-
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
@@ -319,8 +317,6 @@ protected:
     QueryProcessingStage::Enum query_processing_stage;
     ClientInfo::QueryKind query_kind;
 
-    bool fake_drop = false;
-
     struct HostAndPort
     {
         String host;
@@ -334,7 +330,8 @@ protected:
 
     bool cancelled = false;
 
-    bool logging_initialized = false;
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }

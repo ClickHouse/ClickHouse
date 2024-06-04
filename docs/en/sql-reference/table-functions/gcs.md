@@ -7,12 +7,17 @@ keywords: [gcs, bucket]
 
 # gcs Table Function
 
-Provides a table-like interface to select/insert files in [Google Cloud Storage](https://cloud.google.com/storage/).
+Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
+
+This is an alias of the [s3 table function](../../sql-reference/table-functions/s3.md).
+
+If you have multiple replicas in your cluster, you can use the [s3Cluster function](../../sql-reference/table-functions/s3Cluster.md) (which works with GCS) instead to parallelize inserts.
 
 **Syntax**
 
 ``` sql
-gcs(path [,hmac_key, hmac_secret] [,format] [,structure] [,compression])
+gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
+gcs(named_collection[, option=value [,..]])
 ```
 
 :::tip GCS
@@ -20,10 +25,9 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
 
 :::
 
-**Arguments**
+**Parameters**
 
--   `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
-
+- `url` — Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
   :::note GCS
   The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
   ```
@@ -31,10 +35,21 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
   ```
   and not ~~https://storage.cloud.google.com~~.
   :::
+- `NOSIGN` — If this keyword is provided in place of credentials, all the requests will not be signed.
+- `hmac_key` and `hmac_secret` — Keys that specify credentials to use with given endpoint. Optional.
+- `format` — The [format](../../interfaces/formats.md#formats) of the file.
+- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+- `compression_method` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression method by file extension.
 
--   `format` — The [format](../../interfaces/formats.md#formats) of the file.
--   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
--   `compression` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension.
+Arguments can also be passed using [named collections](/docs/en/operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+
+ - `access_key_id` — `hmac_key`, optional.
+ - `secret_access_key` — `hmac_secret`, optional.
+ - `filename` — appended to the url if specified.
+ - `use_environment_credentials` — enabled by default, allows passing extra parameters using environment variables `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`.
+ - `no_sign_request` — disabled by default.
+ - `expiration_window_seconds` — default value is 120.
+
 
 **Returned value**
 
@@ -57,7 +72,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-The similar but from file with `gzip` compression:
+The similar but from file with `gzip` compression method:
 
 ``` sql
 SELECT *
@@ -115,7 +130,7 @@ FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefi
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, … , `file-999.csv`:
+Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
 
 ``` sql
 SELECT count(*)
@@ -152,6 +167,16 @@ The below get data from all `test-data.csv.gz` files from any folder inside `my-
 
 ``` sql
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+```
+
+For production use cases it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
+``` sql
+
+CREATE NAMED COLLECTION creds AS
+        access_key_id = '***',
+        secret_access_key = '***';
+SELECT count(*)
+FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
 ## Partitioned Write

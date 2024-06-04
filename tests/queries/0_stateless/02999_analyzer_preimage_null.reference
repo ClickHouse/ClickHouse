@@ -1,0 +1,121 @@
+-- { echoOn }
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM date_t__fuzz_0
+WHERE ((toYear(date1) AS b) != toNullable(1993)) AND (id <= b);
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt32
+    value1 String
+    date1 Date
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: id, result_type: UInt32, source_id: 3
+      COLUMN id: 4, column_name: value1, result_type: String, source_id: 3
+      COLUMN id: 5, column_name: date1, result_type: Date, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date_t__fuzz_0
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: Nullable(UInt8)
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: notEquals, function_type: ordinary, result_type: Nullable(UInt8)
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: toYear, function_type: ordinary, result_type: UInt16
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                CONSTANT id: 13, constant_value: UInt64_1993, constant_value_type: Nullable(UInt16)
+                  EXPRESSION
+                    FUNCTION id: 14, function_name: toNullable, function_type: ordinary, result_type: Nullable(UInt16)
+                      ARGUMENTS
+                        LIST id: 15, nodes: 1
+                          CONSTANT id: 16, constant_value: UInt64_1993, constant_value_type: UInt16
+          FUNCTION id: 17, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 2
+                COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                FUNCTION id: 10, function_name: toYear, function_type: ordinary, result_type: UInt16
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM date_t__fuzz_0
+WHERE ((toYear(date1) AS b) != 1993) AND (id <= b) SETTINGS optimize_time_filter_with_preimage=0;
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt32
+    value1 String
+    date1 Date
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: id, result_type: UInt32, source_id: 3
+      COLUMN id: 4, column_name: value1, result_type: String, source_id: 3
+      COLUMN id: 5, column_name: date1, result_type: Date, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date_t__fuzz_0
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: notEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: toYear, function_type: ordinary, result_type: UInt16
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                CONSTANT id: 13, constant_value: UInt64_1993, constant_value_type: UInt16
+          FUNCTION id: 14, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
+                FUNCTION id: 10, function_name: toYear, function_type: ordinary, result_type: UInt16
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+  SETTINGS optimize_time_filter_with_preimage=0
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM date_t__fuzz_0
+WHERE ((toYear(date1) AS b) != 1993) AND (id <= b) SETTINGS optimize_time_filter_with_preimage=1;
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt32
+    value1 String
+    date1 Date
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: id, result_type: UInt32, source_id: 3
+      COLUMN id: 4, column_name: value1, result_type: String, source_id: 3
+      COLUMN id: 5, column_name: date1, result_type: Date, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date_t__fuzz_0
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 13, constant_value: \'1993-01-01\', constant_value_type: String
+                FUNCTION id: 14, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 15, nodes: 2
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 16, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 17, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 2
+                COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                FUNCTION id: 20, function_name: toYear, function_type: ordinary, result_type: UInt16
+                  ARGUMENTS
+                    LIST id: 21, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+  SETTINGS optimize_time_filter_with_preimage=1

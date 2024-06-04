@@ -3,7 +3,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include "Columns/IColumn.h"
 
 #include <DataTypes/DataTypeArray.h>
@@ -16,6 +16,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -77,10 +78,11 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 
     for (const auto & elem : block)
     {
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
+        if (isNested(elem.type))
         {
-            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
-            if (type_tuple && type_tuple->haveExplicitNames())
+            const DataTypeArray * type_arr = assert_cast<const DataTypeArray *>(elem.type.get());
+            const DataTypeTuple * type_tuple = assert_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
+            if (type_tuple->haveExplicitNames())
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
@@ -149,7 +151,7 @@ Block flatten(const Block & block)
 }
 
 
-Block flattenArrayOfTuples(const Block & block)
+Block flattenNested(const Block & block)
 {
     return flattenImpl(block, false);
 }
@@ -291,6 +293,12 @@ Names getAllNestedColumnsForTable(const Block & block, const std::string & table
             names.push_back(name);
     }
     return names;
+}
+
+bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns)
+{
+    auto nested_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return nested_subcolumn && isNested(nested_subcolumn->getTypeInStorage()) && nested_subcolumn->isSubcolumn() && isArray(nested_subcolumn->type);
 }
 
 }

@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -5,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
@@ -12,6 +14,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -56,14 +59,14 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
-std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const
+std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
     if (detached)
-        full_relative_path /= "detached";
+        full_relative_path /= MergeTreeData::DETACHED_DIR_NAME;
 
     std::optional<String> original_checksums_content;
     std::optional<Strings> original_files_list;
@@ -108,7 +111,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     if (!exists("checksums.txt"))
         return false;
 
-    auto storage_from_detached = create(volume, fs::path(root_path) / "detached", detached_part_path, /*initialize=*/ true);
+    auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
     if (!storage_from_detached->exists("checksums.txt"))
         return false;
 
@@ -194,7 +197,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return toString(volume->getDisk()->getDataSourceDescription().type);
+    return volume->getDisk()->getDataSourceDescription().toString();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -334,7 +337,9 @@ void DataPartStorageOnDiskBase::backup(
     const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
-    TemporaryFilesOnDisks * temp_dirs) const
+    TemporaryFilesOnDisks * temp_dirs,
+    bool is_projection_part,
+    bool allow_backup_broken_projection) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
     fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
@@ -376,7 +381,7 @@ void DataPartStorageOnDiskBase::backup(
 
     bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
 
-    for (const auto & filepath : files_to_backup)
+    auto backup_file = [&](const String & filepath)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
@@ -384,8 +389,10 @@ void DataPartStorageOnDiskBase::backup(
         if (files_without_checksums.contains(filepath))
         {
             backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
-            continue;
+            return;
         }
+        else if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
+            return;
 
         if (make_temporary_hard_links)
         {
@@ -410,6 +417,31 @@ void DataPartStorageOnDiskBase::backup(
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
 
         backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
+    };
+
+    auto * log = &Poco::Logger::get("DataPartStorageOnDiskBase::backup");
+
+    for (const auto & filepath : files_to_backup)
+    {
+        if (is_projection_part && allow_backup_broken_projection)
+        {
+            try
+            {
+                backup_file(filepath);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                    throw;
+
+                LOG_ERROR(log, "Cannot backup file {} of projection part {}. Will try to ignore it", filepath, part_dir);
+                continue;
+            }
+        }
+        else
+        {
+            backup_file(filepath);
+        }
     }
 }
 
@@ -460,7 +492,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with("detached/");
+    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
     return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
@@ -470,7 +502,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const DiskPtr & dst_disk,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    Poco::Logger * log) const
+    LoggerPtr log,
+    const std::function<void()> & cancellation_hook) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
@@ -485,7 +518,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     try
     {
         dst_disk->createDirectories(to);
-        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone, read_settings, write_settings);
+        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone, read_settings, write_settings, cancellation_hook);
     }
     catch (...)
     {
@@ -503,7 +536,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
 void DataPartStorageOnDiskBase::rename(
     std::string new_root_path,
     std::string new_part_dir,
-    Poco::Logger * log,
+    LoggerPtr log,
     bool remove_new_dir_if_exists,
     bool fsync_part_dir)
 {
@@ -547,7 +580,7 @@ void DataPartStorageOnDiskBase::rename(
         disk.setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
         disk.moveDirectory(from, to);
 
-        /// Only after moveDirectory() since before the directory does not exists.
+        /// Only after moveDirectory() since before the directory does not exist.
         SyncGuardPtr to_sync_guard;
         if (fsync_part_dir)
             to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
@@ -562,7 +595,7 @@ void DataPartStorageOnDiskBase::remove(
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     bool is_temp,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
@@ -587,7 +620,7 @@ void DataPartStorageOnDiskBase::remove(
         if (part_dir_without_slash.has_parent_path())
         {
             auto parent_path = part_dir_without_slash.parent_path();
-            if (parent_path == "detached")
+            if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Trying to remove detached part {} with path {} in remove function. It shouldn't happen",
@@ -619,6 +652,15 @@ void DataPartStorageOnDiskBase::remove(
                     log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
                 throw;
             }
+        }
+
+        if (!disk->exists(from))
+        {
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            /// We will never touch this part again, so unlocking it from zero-copy
+            if (!can_remove_description)
+                can_remove_description.emplace(can_remove_callback());
+            return;
         }
 
         try
@@ -670,7 +712,9 @@ void DataPartStorageOnDiskBase::remove(
             if (file_name.starts_with(proj_dir_name))
                 files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
 
-        LOG_DEBUG(log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
+        if (!files_not_to_remove_for_projection.empty())
+            LOG_DEBUG(
+                log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
 
         CanRemoveDescription proj_description
         {
@@ -720,7 +764,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
     const CanRemoveDescription & can_remove_description,
     const MergeTreeDataPartChecksums & checksums,
     bool is_temp,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto disk = volume->getDisk();
     auto [can_remove_shared_data, names_not_to_remove] = can_remove_description;
@@ -749,8 +793,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
+        {
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+                continue;
 
+            request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);

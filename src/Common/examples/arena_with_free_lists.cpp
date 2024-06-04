@@ -137,7 +137,7 @@ struct Dictionary
     template <typename Value> using ContainerType = Value[];
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-    enum class AttributeUnderlyingTypeTest
+    enum class AttributeUnderlyingTypeTest : uint8_t
     {
         UInt8,
         UInt16,
@@ -248,7 +248,7 @@ int main(int argc, char ** argv)
 
         rusage resource_usage;
         if (0 != getrusage(RUSAGE_SELF, &resource_usage))
-            throwFromErrno("Cannot getrusage", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getrusage");
 
         size_t allocated_bytes = resource_usage.ru_maxrss * 1024;
         std::cerr << "Current memory usage: " << allocated_bytes << " bytes.\n";

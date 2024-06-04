@@ -6,7 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnVectorHelper.h>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Core/Field.h>
 
 
@@ -16,10 +16,10 @@ namespace DB
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
   */
-class ColumnFixedString final : public COWHelper<ColumnVectorHelper, ColumnFixedString>
+class ColumnFixedString final : public COWHelper<IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>, ColumnFixedString>
 {
 public:
-    friend class COWHelper<ColumnVectorHelper, ColumnFixedString>;
+    friend class COWHelper<IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>, ColumnFixedString>;
 
     using Chars = PaddedPODArray<UInt8>;
 
@@ -96,7 +96,11 @@ public:
 
     void insert(const Field & x) override;
 
+    bool tryInsert(const Field & x) override;
+
     void insertFrom(const IColumn & src_, size_t index) override;
+
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 
     void insertData(const char * pos, size_t length) override;
 
@@ -105,7 +109,7 @@ public:
         chars.resize_fill(chars.size() + n);
     }
 
-    virtual void insertManyDefaults(size_t length) override
+    void insertManyDefaults(size_t length) override
     {
         chars.resize_fill(chars.size() + n * length);
     }
@@ -114,8 +118,6 @@ public:
     {
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
-
-    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -130,20 +132,8 @@ public:
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+        chassert(this->n == rhs.n);
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
-    }
-
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override
-    {
-        return doCompareColumn<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, row_indexes,
-                                               compare_results, direction, nan_direction_hint);
-    }
-
-    bool hasEqualValues() const override
-    {
-        return hasEqualValuesImpl<ColumnFixedString>();
     }
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -167,18 +157,16 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
-    {
-        return scatterImpl<ColumnFixedString>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
     ColumnPtr compress() const override;
 
     void reserve(size_t size) override
     {
-        chars.reserve(n * size);
+        chars.reserve_exact(n * size);
+    }
+
+    void shrinkToFit() override
+    {
+        chars.shrink_to_fit();
     }
 
     void resize(size_t size)
@@ -193,21 +181,6 @@ public:
         if (const auto * rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
             return n == rhs_concrete->n;
         return false;
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return getNumberOfDefaultRowsImpl<ColumnFixedString>();
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
     }
 
     bool canBeInsideNullable() const override { return true; }
