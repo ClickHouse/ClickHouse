@@ -429,7 +429,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
         auto average_row_bytes = floor(static_cast<double>(total_size) / row_group_meta->num_rows());
         // avoid inf preferred_num_rows;
-        if (average_row_bytes < 1) return 0;  
+        if (average_row_bytes < 1) return 0;
         const size_t preferred_num_rows = static_cast<size_t>(floor(format_settings.parquet.prefer_block_bytes/average_row_bytes));
         const size_t MIN_ROW_NUM = 128;
         // size_t != UInt64 in darwin
