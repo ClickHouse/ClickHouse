@@ -1,5 +1,9 @@
 -- Checks that no bad things happen when the table optimizes the row order to improve compressability during insert.
 
+
+-- Below SELECTs intentionally only ORDER BY the table primary key and rely on read-in-order optimization
+SET optimize_read_in_order = 1;
+
 -- Just simple check, that optimization works correctly for table with 2 columns and 2 equivalence classes.
 SELECT 'Simple test';
 
