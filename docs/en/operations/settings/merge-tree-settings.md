@@ -894,7 +894,7 @@ MergeTree tables are (optionally) compressed using [compression codecs](../../sq
 Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.
 Long runs of the same value typically compress very well.
 
-If this setting is enabled, ClickHouse attempts to store the data in newly inserted parts in a row order that minimizes the number of equal-value across the columns of the new table part.
+If this setting is enabled, ClickHouse attempts to store the data in newly inserted parts in a row order that minimizes the number of equal-value runs across the columns of the new table part.
 In other words, a small number of equal-value runs mean that individual runs are long and compress well.
 
 Finding the optimal row order is computationally infeasible (NP hard).
