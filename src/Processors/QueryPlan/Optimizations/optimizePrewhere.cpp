@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -43,6 +44,9 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
       */
     auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
     if (!source_step_with_filter)
+        return;
+
+    if (!source_step_with_filter->getContext()->getSettingsRef().allow_experimental_analyzer && typeid_cast<ReadFromMerge *>(source_step_with_filter))\
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
