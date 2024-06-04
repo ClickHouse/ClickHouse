@@ -28,6 +28,11 @@ struct SingleStatisticsDescription
     SingleStatisticsDescription() = delete;
     SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_);
 
+    SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
+    SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
+    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept { *this = std::move(other); }
+    SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
+
     bool operator==(const SingleStatisticsDescription & other) const;
 };
 

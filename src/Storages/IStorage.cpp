@@ -236,7 +236,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const
 {
     return {};
 }

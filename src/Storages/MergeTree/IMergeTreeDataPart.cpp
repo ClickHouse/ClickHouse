@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/localBackup.h>
+#include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>

@@ -25,6 +25,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
+SingleStatisticsDescription & SingleStatisticsDescription::operator=(const SingleStatisticsDescription & other)
+{
+    if (this == &other)
+        return *this;
+
+    type = other.type;
+    ast = other.ast ? other.ast->clone() : nullptr;
+
+    return *this;
+}
+
+SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStatisticsDescription && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    type = std::exchange(other.type, StatisticsType{});
+    ast = other.ast ? other.ast->clone() : nullptr;
+    other.ast.reset();
+
+    return *this;
+}
+
 static StatisticsType stringToStatisticsType(String type)
 {
     if (type == "tdigest")
@@ -109,7 +132,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
 {
     const auto * stat_definition_ast = definition_ast->as<ASTStatisticsDeclaration>();
     if (!stat_definition_ast)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast AST to ASTStatisticDeclaration");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast AST to ASTSingleStatisticsDeclaration");
 
     StatisticsTypeDescMap statistics_types;
     for (const auto & stat_ast : stat_definition_ast->types->children)
