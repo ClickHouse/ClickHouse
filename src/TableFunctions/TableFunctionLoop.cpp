@@ -108,7 +108,7 @@ namespace DB
             bool is_insert_query) const
     {
         StoragePtr storage;
-        if (!loop_table_name.empty())
+        if (!inner_table_function_ast)
         {
             String database_name = loop_database_name;
             if (database_name.empty())
@@ -119,7 +119,6 @@ namespace DB
             if (!storage)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
         }
-
         else
         {
             auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
