@@ -539,8 +539,11 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (query_node.hasWhere())
     {
         where_analysis_result_optional = analyzeFilter(query_node.getWhere(), current_output_columns, planner_context, actions_chain);
-        where_action_step_index_optional = actions_chain.getLastStepIndex();
-        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        if (where_analysis_result_optional)
+        {
+            where_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
     auto aggregation_analysis_result_optional = analyzeAggregation(query_tree, current_output_columns, planner_context, actions_chain);
@@ -553,8 +556,11 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (query_node.hasHaving())
     {
         having_analysis_result_optional = analyzeFilter(query_node.getHaving(), current_output_columns, planner_context, actions_chain);
-        having_action_step_index_optional = actions_chain.getLastStepIndex();
-        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        if (having_analysis_result_optional)
+        {
+            having_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
     auto window_analysis_result_optional = analyzeWindow(query_tree, current_output_columns, planner_context, actions_chain);
@@ -567,8 +573,11 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (query_node.hasQualify())
     {
         qualify_analysis_result_optional = analyzeFilter(query_node.getQualify(), current_output_columns, planner_context, actions_chain);
-        qualify_action_step_index_optional = actions_chain.getLastStepIndex();
-        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        if (qualify_analysis_result_optional)
+        {
+            qualify_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
     auto projection_analysis_result = analyzeProjection(query_node, current_output_columns, planner_context, actions_chain);
