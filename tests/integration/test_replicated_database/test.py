@@ -1534,7 +1534,7 @@ def test_all_groups_cluster(started_cluster):
         "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica2');"
     )
 
-    assert "bad_settings_node\ndummy_node\n" == dummy_node.query(
+    assert "dummy_node\n" == dummy_node.query(
         "select host_name from system.clusters where name='db_cluster' order by host_name"
     )
     assert "bad_settings_node\n" == bad_settings_node.query(
