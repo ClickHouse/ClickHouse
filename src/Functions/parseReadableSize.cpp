@@ -38,7 +38,7 @@ enum class ErrorHandling : uint8_t
 
 using ScaleFactors = std::unordered_map<std::string_view, size_t>;
 
-/** parseReadable*Size - Returns the number of bytes corresponding to a given readable binary or decimal size.
+/** parseReadableSize - Returns the number of bytes corresponding to a given readable binary or decimal size.
   * Examples:
   *  - `parseReadableSize('123 MiB')`
   *  - `parseReadableSize('123 MB')`
