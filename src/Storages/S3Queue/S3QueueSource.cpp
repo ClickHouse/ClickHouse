@@ -1,6 +1,5 @@
 #include "config.h"
 
-#if USE_AWS_S3
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -513,5 +512,3 @@ void StorageS3QueueSource::appendLogElement(
 }
 
 }
-
-#endif

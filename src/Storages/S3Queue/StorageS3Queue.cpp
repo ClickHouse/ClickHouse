@@ -1,7 +1,6 @@
 #include <optional>
 #include "config.h"
 
-#if USE_AWS_S3
 #include <Common/ProfileEvents.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
@@ -494,6 +493,7 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
 }
 
+#if USE_AWS_S3
 void registerStorageS3Queue(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -560,8 +560,6 @@ void registerStorageS3Queue(StorageFactory & factory)
             .source_access_type = AccessType::S3,
         });
 }
+#endif
 
 }
-
-
-#endif

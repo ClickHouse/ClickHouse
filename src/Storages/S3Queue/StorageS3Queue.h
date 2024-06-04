@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AWS_S3
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -97,5 +96,3 @@ private:
 };
 
 }
-
-#endif

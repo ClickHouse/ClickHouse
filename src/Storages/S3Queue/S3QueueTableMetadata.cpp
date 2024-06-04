@@ -1,7 +1,5 @@
 #include <config.h>
 
-#if USE_AWS_S3
-
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -252,5 +250,3 @@ void S3QueueTableMetadata::checkEquals(const S3QueueSettings & current, const S3
     }
 }
 }
-
-#endif

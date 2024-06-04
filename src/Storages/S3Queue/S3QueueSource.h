@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AWS_S3
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Processors/ISource.h>
 #include <Storages/S3Queue/S3QueueMetadata.h>
@@ -131,4 +130,3 @@ private:
 };
 
 }
-#endif
