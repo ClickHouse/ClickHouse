@@ -49,10 +49,8 @@ namespace
     }
 }
 
-ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
+ProxyConfiguration EnvironmentProxyConfigurationResolver::buildProxyConfiguration(Protocol protocol, const char * proxy_host, const std::string & no_proxy_hosts_string)
 {
-    const auto * proxy_host = getProxyHost(request_protocol);
-
     if (!proxy_host)
     {
         return {};
@@ -69,10 +67,22 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
         host,
         ProxyConfiguration::protocolFromString(scheme),
         port,
-        useTunneling(request_protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
-        request_protocol,
-        getNoProxyHostsString()
+        useTunneling(protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
+        protocol,
+        no_proxy_hosts_string
     };
+}
+
+ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
+{
+    static const auto * http_proxy_host = getProxyHost(Protocol::HTTP);
+    static const auto * https_proxy_host = getProxyHost(Protocol::HTTPS);
+    static const auto no_proxy_hosts_string = getNoProxyHostsString();
+
+    static const auto http_proxy_configuration = buildProxyConfiguration(Protocol::HTTP, http_proxy_host, no_proxy_hosts_string);
+    static const auto https_proxy_configuration = buildProxyConfiguration(Protocol::HTTPS, https_proxy_host, no_proxy_hosts_string);
+
+    return request_protocol == Protocol::HTTP ? http_proxy_configuration : https_proxy_configuration;
 }
 
 }

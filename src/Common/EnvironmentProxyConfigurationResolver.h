@@ -15,6 +15,9 @@ public:
 
     ProxyConfiguration resolve() override;
     void errorReport(const ProxyConfiguration &) override {}
+
+private:
+    ProxyConfiguration buildProxyConfiguration(Protocol protocol, const char * proxy_host, const std::string & no_proxy_hosts);
 };
 
 }
