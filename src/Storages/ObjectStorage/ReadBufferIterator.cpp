@@ -254,21 +254,17 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             }
         }
 
-        LOG_TEST(getLogger("KSSENII"), "Will read columns from {}", current_object_info->getPath());
-
         std::unique_ptr<ReadBuffer> read_buf;
         CompressionMethod compression_method;
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
-            LOG_TEST(getLogger("KSSENII"), "Will read columns from {} from archive", current_object_info->getPath());
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
-            LOG_TEST(getLogger("KSSENII"), "Will read columns from {} from s3", current_object_info->getPath());
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             read_buf = object_storage->readObject(
                 StoredObject(current_object_info->getPath()),

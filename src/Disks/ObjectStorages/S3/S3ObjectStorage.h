@@ -54,8 +54,7 @@ private:
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeysGeneratorPtr key_generator_,
         const String & disk_name_,
-        bool for_disk_s3_ = true,
-        const HTTPHeaderEntries & static_headers_ = {})
+        bool for_disk_s3_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
@@ -64,7 +63,6 @@ private:
         , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
-        , static_headers(static_headers_)
     {
     }
 
@@ -170,6 +168,7 @@ public:
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
+    std::shared_ptr<const S3::Client> getS3StorageClient() override;
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
@@ -189,7 +188,6 @@ private:
     LoggerPtr log;
 
     const bool for_disk_s3;
-    const HTTPHeaderEntries static_headers;
 };
 
 }
