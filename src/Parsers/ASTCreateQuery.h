@@ -5,6 +5,8 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -13,6 +15,7 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
+
 
 class ASTStorage : public IAST
 {
@@ -95,6 +98,7 @@ public:
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
+    bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
     ASTColumns * columns_list = nullptr;
 
@@ -109,6 +113,7 @@ public:
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
+    ASTPtr sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 
@@ -116,7 +121,7 @@ public:
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
-    std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
+    ASTRefreshStrategy * refresh_strategy = nullptr; // For CREATE MATERIALIZED VIEW ... REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
     bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -143,6 +148,8 @@ public:
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
     bool isParameterizedView() const;
+
+    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

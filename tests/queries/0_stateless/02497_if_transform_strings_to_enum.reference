@@ -35,7 +35,7 @@ QUERY id: 0
                         CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
                         CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
-    TABLE id: 7, table_name: system.numbers
+    TABLE id: 7, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
 google
@@ -78,7 +78,7 @@ QUERY id: 0
                         CONSTANT id: 17, constant_value: \'google\', constant_value_type: String
                         CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
   JOIN TREE
-    TABLE id: 9, table_name: system.numbers
+    TABLE id: 9, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt64
 other1
@@ -122,7 +122,7 @@ QUERY id: 0
                               CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
             CONSTANT id: 19, constant_value: \'1\', constant_value_type: String
   JOIN TREE
-    TABLE id: 9, table_name: system.numbers
+    TABLE id: 9, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
 google1
@@ -169,7 +169,7 @@ QUERY id: 0
                               CONSTANT id: 20, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
             CONSTANT id: 21, constant_value: \'1\', constant_value_type: String
   JOIN TREE
-    TABLE id: 11, table_name: system.numbers
+    TABLE id: 11, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt64
 google
@@ -196,7 +196,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value, result_type: String, source_id: 3
   JOIN TREE
-    QUERY id: 3, alias: t1, is_subquery: 1
+    QUERY id: 3, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         value String
       PROJECTION
@@ -223,7 +223,7 @@ QUERY id: 0
                             CONSTANT id: 20, constant_value: \'google\', constant_value_type: String
                             CONSTANT id: 21, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
       JOIN TREE
-        TABLE id: 12, table_name: system.numbers
+        TABLE id: 12, alias: __table2, table_name: system.numbers
       LIMIT
         CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt64
 other
@@ -250,7 +250,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value, result_type: String, source_id: 3
   JOIN TREE
-    QUERY id: 3, alias: t1, is_subquery: 1
+    QUERY id: 3, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         value String
       PROJECTION
@@ -274,7 +274,7 @@ QUERY id: 0
                             CONSTANT id: 18, constant_value: \'other\', constant_value_type: String
                             CONSTANT id: 19, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
       JOIN TREE
-        TABLE id: 10, table_name: system.numbers
+        TABLE id: 10, alias: __table2, table_name: system.numbers
       LIMIT
         CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
 google	google
@@ -341,7 +341,7 @@ QUERY id: 0
                         CONSTANT id: 17, constant_value: \'google\', constant_value_type: String
                         CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
   JOIN TREE
-    TABLE id: 9, table_name: system.numbers
+    TABLE id: 9, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt64
 other	other
@@ -402,7 +402,7 @@ QUERY id: 0
                         CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
                         CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
-    TABLE id: 7, table_name: system.numbers
+    TABLE id: 7, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
 other
@@ -446,14 +446,14 @@ QUERY id: 0
                         CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
                         CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
-    QUERY id: 7, is_subquery: 1
+    QUERY id: 7, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         number Nullable(Nothing)
       PROJECTION
         LIST id: 17, nodes: 1
           CONSTANT id: 18, constant_value: NULL, constant_value_type: Nullable(Nothing)
       JOIN TREE
-        TABLE id: 19, table_name: system.numbers
+        TABLE id: 19, alias: __table2, table_name: system.numbers
       LIMIT
         CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
 other
@@ -482,7 +482,7 @@ QUERY id: 0
             CONSTANT id: 7, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
             CONSTANT id: 8, constant_value: \'other\', constant_value_type: String
   JOIN TREE
-    TABLE id: 5, table_name: system.numbers
+    TABLE id: 5, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt64
 google
@@ -514,6 +514,6 @@ QUERY id: 0
             CONSTANT id: 9, constant_value: \'censor.net\', constant_value_type: String
             CONSTANT id: 10, constant_value: \'google\', constant_value_type: String
   JOIN TREE
-    TABLE id: 7, table_name: system.numbers
+    TABLE id: 7, alias: __table1, table_name: system.numbers
   LIMIT
     CONSTANT id: 11, constant_value: UInt64_10, constant_value_type: UInt64

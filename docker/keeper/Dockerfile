@@ -34,8 +34,9 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="23.10.2.13"
+ARG VERSION="24.5.1.1763"
 ARG PACKAGES="clickhouse-keeper"
+ARG DIRECT_DOWNLOAD_URLS=""
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -43,35 +44,51 @@ ARG PACKAGES="clickhouse-keeper"
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-
+ARG DEFAULT_UID="101"
+ARG DEFAULT_GID="101"
+RUN addgroup -S -g "${DEFAULT_GID}" clickhouse && \
+    adduser -S -h "/var/lib/clickhouse" -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u "${DEFAULT_UID}" clickhouse
 
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
-    && for package in ${PACKAGES}; do \
-    ( \
-        cd /tmp \
-        && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+    && cd /tmp && rm -f /tmp/*tgz && rm -f /tmp/*tgz.sha512 |: \
+    && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
+        echo "installing from provided urls with tgz packages: ${DIRECT_DOWNLOAD_URLS}" \
+        && for url in $DIRECT_DOWNLOAD_URLS; do \
+            echo "Get ${url}" \
+            && wget -c -q "$url" \
+        ; done \
+    else \
+        for package in ${PACKAGES}; do \
+            cd /tmp \
+            && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
             && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
             && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
-            && sed 's:/output/:/tmp/:' < "${package}-${VERSION}-${arch}.tgz.sha512" | sha512sum -c \
-            && tar xvzf "${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / \
-    ) \
+        ; done \
+    fi \
+    && cat *.tgz.sha512 | sha512sum -c \
+    && for file in *.tgz; do \
+        if [ -f "$file" ]; then \
+            echo "Unpacking $file"; \
+            tar xvzf "$file" --strip-components=1 -C /; \
+        fi \
     ; done \
     && rm /tmp/*.tgz /install -r \
-    && addgroup -S -g 101 clickhouse \
-    && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u 101 clickhouse \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper \
-    && chown clickhouse:clickhouse /var/lib/clickhouse \
-    && chown root:clickhouse /var/log/clickhouse-keeper \
     && chmod +x /entrypoint.sh \
     && apk add --no-cache su-exec bash tzdata \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
-    && echo "UTC" > /etc/timezone \
-    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
+    && echo "UTC" > /etc/timezone
 
+ARG DEFAULT_CONFIG_DIR="/etc/clickhouse-keeper"
+ARG DEFAULT_DATA_DIR="/var/lib/clickhouse-keeper"
+ARG DEFAULT_LOG_DIR="/var/log/clickhouse-keeper"
+RUN mkdir -p "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}" \
+    && chown clickhouse:clickhouse "${DEFAULT_DATA_DIR}" \
+    && chown root:clickhouse "${DEFAULT_LOG_DIR}" \
+    && chmod ugo+Xrw -R "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}"
 
+# /var/lib/clickhouse is necessary due to the current default configuration for Keeper
+VOLUME "${DEFAULT_DATA_DIR}" /var/lib/clickhouse
 EXPOSE 2181 10181 44444 9181
-
-VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 ENTRYPOINT ["/entrypoint.sh"]

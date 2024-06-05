@@ -27,6 +27,9 @@ public:
     /// Run query tree passes on query tree
     void run(QueryTreeNodePtr query_tree_node);
 
+    /// Run only query tree passes responsible to name resolution.
+    void runOnlyResolve(QueryTreeNodePtr query_tree_node);
+
     /** Run query tree passes on query tree up to up_to_pass_index.
       * Throws exception if up_to_pass_index is greater than passes size.
       */
@@ -44,6 +47,6 @@ private:
     std::vector<QueryTreePassPtr> passes;
 };
 
-void addQueryTreePasses(QueryTreePassManager & manager);
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false);
 
 }

@@ -3,17 +3,12 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <double-conversion/double-conversion.h>
+#include <Common/StringUtils.h>
 
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
-#endif
 #include <fast_float/fast_float.h>
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
@@ -160,7 +155,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw ParsingException(
+                throw Exception(
                     ErrorCodes::CANNOT_PARSE_NUMBER,
                     "Cannot read floating point value here: {}",
                     String(initial_position, buf.buffer().end() - initial_position));
@@ -253,7 +248,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc() || res.ptr - tmp_buf != num_copied_chars))
         {
             if constexpr (throw_exception)
-                throw ParsingException(
+                throw Exception(
                     ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value here: {}", String(tmp_buf, num_copied_chars));
             else
                 return ReturnType(false);
@@ -324,7 +319,7 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 }
 
 
-template <typename T, typename ReturnType>
+template <typename T, typename ReturnType, bool allow_exponent = true>
 ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
@@ -342,7 +337,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (in.eof())
     {
         if constexpr (throw_exception)
-            throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value");
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value");
         else
             return false;
     }
@@ -395,30 +390,33 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         after_point_exponent = (read_digits > significant_digits ? -significant_digits : static_cast<int>(-read_digits)) - after_point_num_leading_zeros;
     }
 
-    if (checkChar('e', in) || checkChar('E', in))
+    if constexpr (allow_exponent)
     {
-        if (in.eof())
+        if (checkChar('e', in) || checkChar('E', in))
         {
-            if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: nothing after exponent");
-            else
-                return false;
-        }
+            if (in.eof())
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: nothing after exponent");
+                else
+                    return false;
+            }
 
-        bool exponent_negative = false;
-        if (*in.position() == '-')
-        {
-            exponent_negative = true;
-            ++in.position();
-        }
-        else if (*in.position() == '+')
-        {
-            ++in.position();
-        }
+            bool exponent_negative = false;
+            if (*in.position() == '-')
+            {
+                exponent_negative = true;
+                ++in.position();
+            }
+            else if (*in.position() == '+')
+            {
+                ++in.position();
+            }
 
-        readUIntTextUpToNSignificantDigits<4>(exponent, in);
-        if (exponent_negative)
-            exponent = -exponent;
+            readUIntTextUpToNSignificantDigits<4>(exponent, in);
+            if (exponent_negative)
+                exponent = -exponent;
+        }
     }
 
     if (after_point)
@@ -438,7 +436,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: no digits read");
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: no digits read");
             else
                 return false;
         }
@@ -449,14 +447,14 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             if (in.eof())
             {
                 if constexpr (throw_exception)
-                    throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: nothing after plus sign");
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: nothing after plus sign");
                 else
                     return false;
             }
             else if (negative)
             {
                 if constexpr (throw_exception)
-                    throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: plus after minus sign");
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: plus after minus sign");
                 else
                     return false;
             }
@@ -603,5 +601,8 @@ template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { retu
 
 template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextFast(x, in); }
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
+
+/// Don't read exponent part of the number.
+template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool, false>(x, in); }
 
 }

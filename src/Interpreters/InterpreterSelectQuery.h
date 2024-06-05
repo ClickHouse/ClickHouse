@@ -117,7 +117,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
     Names getRequiredColumns() { return required_columns; }
 
@@ -134,8 +134,12 @@ public:
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+
+    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();
+
 
 private:
     InterpreterSelectQuery(
@@ -196,7 +200,7 @@ private:
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
-    enum class Modificator
+    enum class Modificator : uint8_t
     {
         ROLLUP = 0,
         CUBE = 1,
@@ -249,7 +253,7 @@ private:
     /// Used when we read from prepared input, not table or subquery.
     std::optional<Pipe> input_pipe;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     StorageMetadataPtr metadata_snapshot;
     StorageSnapshotPtr storage_snapshot;
 

@@ -57,7 +57,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -86,14 +86,14 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
         if (inner_select_with_union_query)
         {
             if (inner_select_with_union_query->list_of_selects->children.size() != 1)
-                throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "UNION is not supported for LIVE VIEW");
 
             inner_query = inner_select_with_union_query->list_of_selects->children[0];
         }
 
         auto * inner_select_query = inner_query->as<ASTSelectQuery>();
         if (!inner_select_query)
-            throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW,
+            throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
                 "LIVE VIEWs are only supported for queries from tables, "
                 "but there is no table name in select query.");
 
@@ -209,7 +209,7 @@ StorageLiveView::StorageLiveView(
     live_view_context = Context::createCopy(getContext());
     live_view_context->makeQueryContext();
 
-    log = &Poco::Logger::get("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
+    log = getLogger("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -217,6 +217,10 @@ StorageLiveView::StorageLiveView(
         storage_metadata.setComment(comment);
 
     setInMemoryMetadata(storage_metadata);
+
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
+    setVirtuals(std::move(virtuals));
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -226,41 +230,14 @@ StorageLiveView::StorageLiveView(
 
     DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
 
-    if (query.live_view_periodic_refresh)
-    {
-        is_periodically_refreshed = true;
-        periodic_live_view_refresh = Seconds {*query.live_view_periodic_refresh};
-    }
-
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
-
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask",
-        [this]
-        {
-            try
-            {
-                periodicRefreshTaskFunc();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Exception in LiveView periodic refresh task in BackgroundSchedulePool");
-            }
-        });
-    periodic_refresh_task->deactivate();
 }
 
 StorageLiveView::~StorageLiveView()
 {
     shutdown(false);
-}
-
-NamesAndTypesList StorageLiveView::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
-    };
 }
 
 void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
@@ -285,16 +262,11 @@ void StorageLiveView::drop()
 
 void StorageLiveView::startup()
 {
-    if (is_periodically_refreshed)
-        periodic_refresh_task->activate();
 }
 
 void StorageLiveView::shutdown(bool)
 {
     shutdown_called = true;
-
-    if (is_periodically_refreshed)
-        periodic_refresh_task->deactivate();
 
     DatabaseCatalog::instance().removeViewDependency(select_query_description.select_table_id, getStorageID());
 }
@@ -311,17 +283,7 @@ Pipe StorageLiveView::read(
     std::lock_guard lock(mutex);
 
     if (!(*blocks_ptr))
-    {
         refreshImpl(lock);
-    }
-    else if (is_periodically_refreshed)
-    {
-        Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
-        Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
-
-        if ((current_time - periodic_live_view_refresh) >= blocks_time)
-            refreshImpl(lock);
-    }
 
     return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
 }
@@ -362,9 +324,6 @@ Pipe StorageLiveView::watch(
 
         if (!(*blocks_ptr))
             refreshImpl(lock);
-
-        if (is_periodically_refreshed)
-            scheduleNextPeriodicRefresh(lock);
     }
 
     processed_stage = QueryProcessingStage::Complete;
@@ -746,44 +705,11 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
     return updated;
 }
 
-void StorageLiveView::periodicRefreshTaskFunc()
-{
-    LOG_TRACE(log, "periodic refresh task");
-
-    std::lock_guard lock(mutex);
-
-    if (hasActiveUsers(lock))
-        scheduleNextPeriodicRefresh(lock);
-}
-
-void StorageLiveView::scheduleNextPeriodicRefresh(const std::lock_guard<std::mutex> & lock)
-{
-    Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
-    Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
-
-    if ((current_time - periodic_live_view_refresh) >= blocks_time)
-    {
-        refreshImpl(lock);
-        blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
-    }
-    current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
-
-    auto next_refresh_time = blocks_time + periodic_live_view_refresh;
-
-    if (current_time >= next_refresh_time)
-        periodic_refresh_task->scheduleAfter(0);
-    else
-    {
-        auto schedule_time = std::chrono::duration_cast<MilliSeconds> (next_refresh_time - current_time);
-        periodic_refresh_task->scheduleAfter(static_cast<size_t>(schedule_time.count()));
-    }
-}
-
 void registerStorageLiveView(StorageFactory & factory)
 {
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
     {
-        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
 

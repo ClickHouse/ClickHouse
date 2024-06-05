@@ -33,7 +33,7 @@ int main(int, char **)
     }
 
     {
-        using Cont = SmallSet<DB::UInt128, 16>;
+        using Cont = SmallSet<UInt128, 16>;
         Cont cont;
 
         DB::WriteBufferFromOwnString wb;

@@ -1,11 +1,15 @@
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/UTF8Helpers.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/iota.h>
+
 #include <numeric>
 
 
@@ -31,7 +35,7 @@ struct TranslateImpl
         if (map_from.size() != map_to.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::iota(map.begin(), map.end(), 0);
+        iota(map.data(), map.size(), UInt8(0));
 
         for (size_t i = 0; i < map_from.size(); ++i)
         {
@@ -129,7 +133,7 @@ struct TranslateUTF8Impl
         if (map_from_size != map_to_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::iota(map_ascii.begin(), map_ascii.end(), 0);
+        iota(map_ascii.data(), map_ascii.size(), UInt32(0));
 
         const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
         const UInt8 * map_from_end = map_from_ptr + map_from.size();
@@ -297,7 +301,14 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
                 arguments[2]->getName(), getName());
 
-        return std::make_shared<DataTypeString>();
+        if (isString(arguments[0]))
+            return std::make_shared<DataTypeString>();
+        else
+        {
+            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+            chassert(ptr);
+            return std::make_shared<DataTypeFixedString>(ptr->getN());
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

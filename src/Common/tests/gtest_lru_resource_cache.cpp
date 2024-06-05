@@ -45,6 +45,33 @@ struct MyWeight
     size_t operator()(const int & x) const { return static_cast<size_t>(x); }
 };
 
+TEST(LRUResourceCache, remove2)
+{
+    using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
+    auto mcache = MyCache(10, 10);
+    for (int i = 1; i < 5; ++i)
+    {
+        auto load_int = [&] { return std::make_shared<int>(i); };
+        mcache.getOrSet(i, load_int);
+    }
+
+    auto n = mcache.size();
+    ASSERT_EQ(n, 4);
+    auto w = mcache.weight();
+    ASSERT_EQ(w, 10);
+    auto holder4 = mcache.get(4);
+    ASSERT_TRUE(holder4 != nullptr);
+    mcache.tryRemove(4);
+    auto holder_reget_4 = mcache.get(4);
+    ASSERT_TRUE(holder_reget_4 == nullptr);
+    mcache.getOrSet(4, [&]() { return std::make_shared<int>(4); });
+    holder4.reset();
+    auto holder1 = mcache.getOrSet(1, [&]() { return std::make_shared<int>(1); });
+    ASSERT_TRUE(holder1 != nullptr);
+    auto holder7 = mcache.getOrSet(7, [&] { return std::make_shared<int>(7); });
+    ASSERT_TRUE(holder7 != nullptr);
+}
+
 TEST(LRUResourceCache, evictOnWweight)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;

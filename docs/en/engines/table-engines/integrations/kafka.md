@@ -54,7 +54,7 @@ Optional parameters:
 
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
-- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
+- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
 - `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
 - `kafka_client_id` — Client identifier. Empty by default.
@@ -151,7 +151,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -170,52 +170,41 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   <kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
-    <auto_offset_reset>smallest</auto_offset_reset>
-	<statistics_interval_ms>600</statistics_interval_ms>
-
-    <!-- Configuration specific to topics "logs" and "stats" -->
+    <statistics_interval_ms>3000</statistics_interval_ms>
 
     <kafka_topic>
-      <name>logs</name>
-      <retry_backoff_ms>250</retry_backoff_ms>
-      <fetch_min_bytes>100000</fetch_min_bytes>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
     </kafka_topic>
 
-    <kafka_topic>
-      <name>stats</name>
-      <retry_backoff_ms>400</retry_backoff_ms>
-      <fetch_min_bytes>50000</fetch_min_bytes>
-    </kafka_topic>
+    <!-- Settings for consumer -->
+    <consumer>
+        <auto_offset_reset>smallest</auto_offset_reset>
+        <kafka_topic>
+            <name>logs</name>
+            <fetch_min_bytes>100000</fetch_min_bytes>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <fetch_min_bytes>50000</fetch_min_bytes>
+        </kafka_topic>
+    </consumer>
+
+    <!-- Settings for producer -->
+    <producer>
+        <kafka_topic>
+            <name>logs</name>
+            <retry_backoff_ms>250</retry_backoff_ms>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <retry_backoff_ms>400</retry_backoff_ms>
+        </kafka_topic>
+    </producer>
   </kafka>
-
 ```
-
-<details markdown="1">
-
-<summary>Example in deprecated syntax</summary>
-
-``` xml
-  <kafka>
-    <!-- Global configuration options for all tables of Kafka engine type -->
-    <debug>cgrp</debug>
-    <auto_offset_reset>smallest</auto_offset_reset>
-  </kafka>
-
-  <!-- Configuration specific to topics "logs" and "stats" -->
-  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
-
-  <kafka_logs>
-    <retry_backoff_ms>250</retry_backoff_ms>
-    <fetch_min_bytes>100000</fetch_min_bytes>
-  </kafka_logs>
-
-  <kafka_stats>
-    <retry_backoff_ms>400</retry_backoff_ms>
-    <fetch_min_bytes>50000</fetch_min_bytes>
-  </kafka_stats>
-```
-
-</details>
 
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
@@ -238,19 +227,19 @@ Example:
 
 ## Virtual Columns {#virtual-columns}
 
-- `_topic` — Kafka topic.
-- `_key` — Key of the message.
-- `_offset` — Offset of the message.
-- `_timestamp` — Timestamp of the message.
-- `_timestamp_ms` — Timestamp in milliseconds of the message.
-- `_partition` — Partition of Kafka topic.
-- `_headers.name` — Array of message's headers keys.
-- `_headers.value` — Array of message's headers values.
+- `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
+- `_key` — Key of the message. Data type: `String`.
+- `_offset` — Offset of the message. Data type: `UInt64`.
+- `_timestamp` — Timestamp of the message Data type: `Nullable(DateTime)`.
+- `_timestamp_ms` — Timestamp in milliseconds of the message. Data type: `Nullable(DateTime64(3))`.
+- `_partition` — Partition of Kafka topic. Data type: `UInt64`.
+- `_headers.name` — Array of message's headers keys. Data type: `Array(String)`.
+- `_headers.value` — Array of message's headers values. Data type: `Array(String)`.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_message` - Raw message that couldn't be parsed successfully.
-- `_error` - Exception message happened during failed parsing.
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `String`.
+- `_error` - Exception message happened during failed parsing. Data type: `String`.
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
 

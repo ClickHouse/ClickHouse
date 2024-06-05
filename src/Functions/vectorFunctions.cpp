@@ -1,9 +1,9 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
@@ -1364,11 +1364,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (getReturnTypeImpl(arguments)->isNullable())
-        {
-            return DataTypeNullable(std::make_shared<DataTypeNothing>())
-                   .createColumnConstWithDefaultValue(input_rows_count);
-        }
+        /// TODO: cosineDistance does not support nullable arguments
+        /// https://github.com/ClickHouse/ClickHouse/pull/27933#issuecomment-916670286
+        auto return_type = getReturnTypeImpl(arguments);
+        if (return_type->isNullable())
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.executeImpl(arguments, DataTypePtr(), input_rows_count),
@@ -1400,7 +1400,7 @@ public:
                                                     divide_result.type, input_rows_count);
 
         auto minus_elem = minus->build({one, divide_result});
-        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), {});
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count);
     }
 };
 

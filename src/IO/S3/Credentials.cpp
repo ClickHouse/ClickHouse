@@ -1,9 +1,15 @@
-#include <exception>
-#include <variant>
 #include <IO/S3/Credentials.h>
-#include <boost/algorithm/string/classification.hpp>
-#include <Poco/Exception.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
+}
 
 #if USE_AWS_S3
 
@@ -16,27 +22,23 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
-
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 
 #    include <fstream>
-#    include <base/EnumReflection.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/algorithm/string/split.hpp>
-
-
-#include <Poco/URI.h>
-#include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
+#    include <boost/algorithm/string/split.hpp>
+#    include <boost/algorithm/string/classification.hpp>
+#    include <Poco/Exception.h>
+#    include <Poco/URI.h>
+#    include <Poco/Net/HTTPClientSession.h>
+#    include <Poco/Net/HTTPRequest.h>
+#    include <Poco/Net/HTTPResponse.h>
+#    include <Poco/StreamCopier.h>
 
 
 namespace DB
@@ -46,7 +48,6 @@ namespace ErrorCodes
 {
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace S3
@@ -65,13 +66,14 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
 }
 
 const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
+constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 
 }
 
 AWSEC2MetadataClient::AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
     : Aws::Internal::AWSHttpResourceClient(client_configuration)
     , endpoint(endpoint_)
-    , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
+    , logger(getLogger("AWSEC2InstanceProfileConfigLoader"))
 {
 }
 
@@ -195,12 +197,12 @@ Aws::String AWSEC2MetadataClient::getCurrentRegion() const
 
 static Aws::String getAWSMetadataEndpoint()
 {
-    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
+    auto logger = getLogger("AWSEC2InstanceProfileConfigLoader");
     Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
     if (ec2_metadata_service_endpoint.empty())
     {
         Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
-        if (ec2_metadata_service_endpoint_mode.length() == 0)
+        if (ec2_metadata_service_endpoint_mode.empty())
         {
             ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
         }
@@ -240,6 +242,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 {
     Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+    session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
 
     Poco::Net::HTTPResponse response;
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
@@ -257,9 +260,12 @@ String getGCPAvailabilityZoneOrException()
 {
     Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+    session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
+
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
+
     session.sendRequest(request);
     std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
@@ -270,58 +276,38 @@ String getGCPAvailabilityZoneOrException()
     boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
     if (zone_info.size() != 4)
-        throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>, got {}", response_data);
+        throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>");
     return zone_info[3];
-}
-
-String getRunningAvailabilityZoneImpl()
-{
-    LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
-    try
-    {
-        auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();
-        return aws_az;
-    }
-    catch (const DB::Exception & aws_ex)
-    {
-        try
-        {
-            auto gcp_zone = getGCPAvailabilityZoneOrException();
-            return gcp_zone;
-        }
-        catch (const DB::Exception & gcp_ex)
-        {
-            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText());
-        }
-    }
-}
-
-std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImplOrException()
-{
-    try
-    {
-        return getRunningAvailabilityZoneImpl();
-    }
-    catch (...)
-    {
-        return std::current_exception();
-    }
 }
 
 String getRunningAvailabilityZone()
 {
-    static auto az_or_exception = getRunningAvailabilityZoneImplOrException();
-    if (const auto * az = std::get_if<String>(&az_or_exception))
-        return *az;
-    else
-        std::rethrow_exception(std::get<std::exception_ptr>(az_or_exception));
+    LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
+    try
+    {
+        return AWSEC2MetadataClient::getAvailabilityZoneOrException();
+    }
+    catch (...)
+    {
+        auto aws_ex_msg = getExceptionMessage(std::current_exception(), false);
+        try
+        {
+            return getGCPAvailabilityZoneOrException();
+        }
+        catch (...)
+        {
+            auto gcp_ex_msg = getExceptionMessage(std::current_exception(), false);
+            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex_msg, gcp_ex_msg);
+        }
+    }
 }
+
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
     : client(client_)
     , use_secure_pull(use_secure_pull_)
-    , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
+    , logger(getLogger("AWSEC2InstanceProfileConfigLoader"))
 {
 }
 
@@ -363,7 +349,7 @@ bool AWSEC2InstanceProfileConfigLoader::LoadInternal()
 AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader)
     : ec2_metadata_config_loader(config_loader)
     , load_frequency_ms(Aws::Auth::REFRESH_THRESHOLD)
-    , logger(&Poco::Logger::get("AWSInstanceProfileCredentialsProvider"))
+    , logger(getLogger("AWSInstanceProfileCredentialsProvider"))
 {
     LOG_INFO(logger, "Creating Instance with injected EC2MetadataClient and refresh rate.");
 }
@@ -407,7 +393,7 @@ void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
 
 AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
     DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_)
-    : logger(&Poco::Logger::get("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
+    : logger(getLogger("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
     , expiration_window_seconds(expiration_window_seconds_)
 {
     // check environment variables
@@ -540,7 +526,7 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
     : profile_to_use(Aws::Auth::GetConfigProfileName())
     , aws_client_configuration(std::move(aws_client_configuration_))
     , expiration_window_seconds(expiration_window_seconds_)
-    , logger(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
+    , logger(getLogger(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
 {
     LOG_TRACE(logger, "Setting sso credentials provider to read config from {}", profile_to_use);
 }
@@ -660,7 +646,7 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
     }
     else
     {
-        LOG_TRACE(logger, "Unable to open token file on path: {}", sso_access_token_path);
+        LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
         return "";
     }
 }
@@ -670,7 +656,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         const Aws::Auth::AWSCredentials & credentials,
         CredentialsConfiguration credentials_configuration)
 {
-    auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
+    auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
     if (credentials_configuration.no_sign_request)
@@ -766,7 +752,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.put_request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
-            /// See MakeDefaultHttpResourceClientConfiguration().
+            /// See MakeDefaultHTTPResourceClientConfiguration().
             /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
             /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
             aws_client_configuration.maxConnections = 2;
@@ -809,9 +795,9 @@ namespace DB
 namespace S3
 {
 
-String getRunningAvailabilityZone()
+std::string getRunningAvailabilityZone()
 {
-    throw Poco::Exception("Does not support availability zone detection for non-cloud environment");
+    throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Does not support availability zone detection for non-cloud environment");
 }
 
 }

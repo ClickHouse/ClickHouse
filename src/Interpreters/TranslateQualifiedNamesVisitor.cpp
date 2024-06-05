@@ -1,12 +1,10 @@
-#include <cstring>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Core/Names.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -21,6 +19,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Storages/StorageView.h>
+#include <Common/re2.h>
 
 
 namespace DB
@@ -31,7 +30,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
+
+
 bool TranslateQualifiedNamesMatcher::Data::matchColumnName(std::string_view name, const String & column_name, DataTypePtr column_type)
 {
     if (name.size() < column_name.size())
@@ -158,7 +160,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
 void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
 {
     if (!node.qualifier)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must have a qualifier");
 
     /// @note it could contain table alias as table name.
     DatabaseAndTableWithAlias db_and_table(node.qualifier);
@@ -275,12 +277,19 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         }
         else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
         {
+            String pattern = asterisk_regexp_pattern->getPattern();
+            re2::RE2 regexp(pattern, re2::RE2::Quiet);
+            if (!regexp.ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
                 for (const auto & column : table.columns)
                 {
-                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.contains(column.name)))
+                    if (re2::RE2::PartialMatch(column.name, regexp)
+                        && (first_table || !data.join_using_columns.contains(column.name)))
                     {
                         addIdentifier(columns, table.table, column.name);
                     }

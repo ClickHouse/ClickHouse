@@ -12,7 +12,7 @@
 #include <base/types.h>
 #include <Common/CacheBase.h>
 #include <Common/PoolBase.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveFile.h>
 
 
@@ -115,7 +115,7 @@ public:
         const bool empty_partition_keys;
         const HiveFilesCachePtr hive_files_cache;
 
-        Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
+        LoggerPtr log = getLogger("HiveMetastoreClient");
     };
 
 
@@ -138,7 +138,7 @@ private:
     CacheBase<String, HiveTableMetadata> table_metadata_cache;
     ThriftHiveMetastoreClientPool client_pool;
 
-    Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
+    LoggerPtr log = getLogger("HiveMetastoreClient");
 };
 
 using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;

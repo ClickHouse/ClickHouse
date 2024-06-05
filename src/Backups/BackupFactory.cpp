@@ -33,11 +33,13 @@ void BackupFactory::registerBackupEngine(const String & engine_name, const Creat
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);
 void registerBackupEngineS3(BackupFactory &);
+void registerBackupEngineAzureBlobStorage(BackupFactory &);
 
 void registerBackupEngines(BackupFactory & factory)
 {
     registerBackupEnginesFileAndDisk(factory);
     registerBackupEngineS3(factory);
+    registerBackupEngineAzureBlobStorage(factory);
 }
 
 BackupFactory::BackupFactory()

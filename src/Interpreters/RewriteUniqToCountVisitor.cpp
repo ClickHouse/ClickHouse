@@ -27,7 +27,7 @@ bool matchFnUniq(String name)
 
 bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & alias)
 {
-    if (lhs->getTreeHash() == rhs->getTreeHash())
+    if (lhs->getTreeHash(/*ignore_aliases=*/ true) == rhs->getTreeHash(/*ignore_aliases=*/ true))
     {
         return true;
     }
@@ -156,7 +156,11 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
     };
 
     if (match_subquery_with_distinct() || match_subquery_with_group_by())
+    {
+        auto main_alias = expr_list->children[0]->tryGetAlias();
         expr_list->children[0] = makeASTFunction("count");
+        expr_list->children[0]->setAlias(main_alias);
+    }
 }
 
 }

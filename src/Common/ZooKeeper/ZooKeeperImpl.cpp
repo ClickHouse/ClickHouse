@@ -1,5 +1,8 @@
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -8,17 +11,17 @@
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
+#include <Common/thread_local_rng.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -340,7 +343,7 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = &Poco::Logger::get("ZooKeeperClient");
+    log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
@@ -552,12 +555,13 @@ void ZooKeeper::connect(
 
 void ZooKeeper::sendHandshake()
 {
-    int32_t handshake_length = 44;
+    int32_t handshake_length = 45;
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd {};
+    bool read_only = true;
 
     write(handshake_length);
     if (use_compression)
@@ -568,6 +572,7 @@ void ZooKeeper::sendHandshake()
     write(timeout);
     write(previous_session_id);
     write(passwd);
+    write(read_only);
     flushWriteBuffer();
 }
 
@@ -577,9 +582,10 @@ void ZooKeeper::receiveHandshake()
     int32_t protocol_version_read;
     int32_t timeout;
     std::array<char, PASSWORD_LENGTH> passwd;
+    bool read_only;
 
     read(handshake_length);
-    if (handshake_length != SERVER_HANDSHAKE_LENGTH)
+    if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected handshake length received: {}", handshake_length);
 
     read(protocol_version_read);
@@ -607,6 +613,8 @@ void ZooKeeper::receiveHandshake()
 
     read(session_id);
     read(passwd);
+    if (handshake_length == SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
+        read(read_only);
 }
 
 
@@ -805,7 +813,7 @@ void ZooKeeper::receiveEvent()
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
-    UInt64 elapsed_ms = 0;
+    UInt64 elapsed_microseconds = 0;
 
     maybeInjectRecvFault();
 
@@ -868,8 +876,8 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
     try
@@ -928,7 +936,7 @@ void ZooKeeper::receiveEvent()
                                 length, actual_length);
         }
 
-        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
     }
     catch (...)
     {
@@ -947,7 +955,7 @@ void ZooKeeper::receiveEvent()
             if (request_info.callback)
                 request_info.callback(*response);
 
-            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
+            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
         }
         catch (...)
         {
@@ -1041,14 +1049,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
-                UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true, elapsed_ms);
+                        logOperationIfNeeded(request_info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1108,8 +1116,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
-                        logOperationIfNeeded(info.request, response, true, elapsed_ms);
+                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
+                        logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1147,7 +1155,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     {
         checkSessionDeadline();
         info.time = clock::now();
-        if (zk_log)
+        auto maybe_zk_log = std::atomic_load(&zk_log);
+        if (maybe_zk_log)
         {
             info.request->thread_id = getThreadId();
             info.request->query_id = String(CurrentThread::getQueryId());
@@ -1250,11 +1259,13 @@ void ZooKeeper::initFeatureFlags()
 
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
-    ResponseCallback callback)
+    ResponseCallback callback,
+    WatchCallbackPtr watch)
 {
     RequestInfo request_info;
     request_info.request = request;
     request_info.callback = callback;
+    request_info.watch = watch;
 
     pushRequest(std::move(request_info));
 }
@@ -1447,6 +1458,13 @@ void ZooKeeper::multi(
     const Requests & requests,
     MultiCallback callback)
 {
+    multi(std::span(requests), std::move(callback));
+}
+
+void ZooKeeper::multi(
+    std::span<const RequestPtr> requests,
+    MultiCallback callback)
+{
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
@@ -1483,7 +1501,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 #ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_ms)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
@@ -1521,7 +1539,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
-        elem.duration_ms = elapsed_ms;
+        elem.duration_microseconds = elapsed_microseconds;
         if (request)
         {
             elem.thread_id = request->thread_id;

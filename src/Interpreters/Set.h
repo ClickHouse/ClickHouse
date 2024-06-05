@@ -33,7 +33,7 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-        : log(&Poco::Logger::get("Set")),
+        : log(getLogger("Set")),
         limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
         cast_cache(std::make_unique<InternalCastFunctionCache>())
     {}
@@ -77,6 +77,7 @@ public:
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
+    bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
@@ -114,7 +115,7 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;
@@ -232,11 +233,11 @@ public:
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
-    const Columns & getOrderedSet() const { return ordered_set; }
-
     bool hasMonotonicFunctionsChain() const;
 
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+
+    const Columns & getOrderedSet() const { return ordered_set; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

@@ -167,7 +167,7 @@ For successful requests that do not return a data table, an empty response body 
 
 You can use compression to reduce network traffic when transmitting a large amount of data or for creating dumps that are immediately compressed.
 
-You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you need `clickhouse-compressor` program to work with it. It is installed with the `clickhouse-client` package. To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) setting.
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you need `clickhouse-compressor` program to work with it. It is installed with the `clickhouse-client` package. To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#http_native_compression_disable_checksumming_on_decompress) setting.
 
 If you specify `compress=1` in the URL, the server will compress the data it sends to you. If you specify `decompress=1` in the URL, the server will decompress the data which you pass in the `POST` method.
 
@@ -183,7 +183,7 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
-In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
+In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#http_zlib_compression_level) setting for all compression methods.
 
 :::info
 Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
@@ -285,7 +285,7 @@ For information about other parameters, see the section “SET”.
 
 Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
+You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#send_progress_in_http_headers). Example of the header sequence:
 
 ``` text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","elapsed_ns":"662334"}
@@ -324,6 +324,39 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 ```
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client-side, the error can only be detected at the parsing stage.
+
+## Setting a role with query parameters {#setting-role-with-query-parameters}
+
+This is a new feature added in ClickHouse 24.4.
+
+In specific scenarios, setting the granted role first might be required before executing the statement itself.
+However, it is not possible to send `SET ROLE` and the statement together, as multi-statements are not allowed:
+
+```
+curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
+```
+
+Which will result in an error:
+
+```
+Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
+```
+
+To overcome this limitation, you could use the `role` query parameter instead:
+
+```
+curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
+```
+
+This will be the equivalent of executing `SET ROLE my_role` before the statement.
+
+Additionally, it is possible to specify multiple `role` query parameters:
+
+```
+curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
+```
+
+In this case, `?role=my_role&role=my_other_role` works similarly to executing `SET ROLE my_role, my_other_role` before the statement.
 
 ## HTTP response codes caveats {#http_response_codes_caveats}
 
@@ -438,7 +471,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
-< Keep-Alive: timeout=3
+< Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 # HELP "Query" "Number of executing queries"
@@ -496,7 +529,7 @@ Next are the configuration methods for different `type`.
 
 `query` value is a predefined query of `predefined_query_handler`, which is executed by ClickHouse when an HTTP request is matched and the result of the query is returned. It is a must configuration.
 
-The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
+The following example defines the values of [max_threads](../operations/settings/settings.md#max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
 :::note
 To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
@@ -507,16 +540,18 @@ Example:
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
-            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
-            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
+            <query>
+                SELECT name, value FROM system.settings
+                WHERE name IN ({name_1:String}, {name_2:String})
+            </query>
         </handler>
     </rule>
     <defaults/>
@@ -524,13 +559,13 @@ Example:
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
-1
-max_final_threads   2
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
+max_final_threads	2
+max_threads	1
 ```
 
 :::note
-In one `predefined_query_handler` only supports one `query` of an insert type.
+In one `predefined_query_handler` only one `query` is supported.
 :::
 
 ### dynamic_query_handler {#dynamic_query_handler}
@@ -539,7 +574,7 @@ In `dynamic_query_handler`, the query is written in the form of parameter of the
 
 ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the parameter is not passed in.
 
-To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
+To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
 
 Example:
 
@@ -603,7 +638,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
+< Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
@@ -643,7 +678,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
+< Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
@@ -695,7 +730,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
+< Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
@@ -714,7 +749,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
+< Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>

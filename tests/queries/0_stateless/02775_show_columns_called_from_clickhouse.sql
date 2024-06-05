@@ -5,7 +5,7 @@
 -- Tests the output of SHOW COLUMNS when called through the ClickHouse protocol.
 
 -- -----------------------------------------------------------------------------------
--- Please keep this test in-sync with 02775_show_columns_called_through_mysql.sql
+-- Please keep this test in-sync with 02775_show_columns_called_from_clickhouse.expect
 -- -----------------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS tab;

@@ -60,9 +60,9 @@ public:
 
     void createDirectories(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->createDirectories(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        /// Delegate disk can have retry logic for recursive directory creation. Let it handle it.
+        delegate->createDirectories(wrapped_path);
     }
 
     void clearDirectory(const String & path) override
@@ -112,7 +112,13 @@ public:
         delegate->listFiles(wrapped_path, file_names);
     }
 
-    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const ReadSettings & read_settings, const WriteSettings & write_settings) override;
+    void copyDirectoryContent(
+        const String & from_dir,
+        const std::shared_ptr<IDisk> & to_disk,
+        const String & to_dir,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -343,6 +349,13 @@ public:
     {
         return delegate;
     }
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() const override
+    {
+        return delegate->getS3StorageClient();
+    }
+#endif
 
 private:
     String wrappedPath(const String & path) const

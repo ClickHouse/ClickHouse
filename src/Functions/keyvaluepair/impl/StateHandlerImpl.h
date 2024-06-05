@@ -106,6 +106,10 @@ public:
             {
                 return {next_pos, State::WAITING_KEY};
             }
+            else if (isQuotingCharacter(*p))
+            {
+                return {next_pos, State::READING_QUOTED_KEY};
+            }
 
             pos = next_pos;
         }
@@ -399,7 +403,7 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
     };
 
     template <typename ... Args>
-    NoEscapingStateHandler(Args && ... args)
+    explicit NoEscapingStateHandler(Args && ... args)
     : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
 };
 
@@ -461,7 +465,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
     };
 
     template <typename ... Args>
-    InlineEscapingStateHandler(Args && ... args)
+    explicit InlineEscapingStateHandler(Args && ... args)
         : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
 

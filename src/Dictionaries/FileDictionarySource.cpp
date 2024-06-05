@@ -1,6 +1,6 @@
 #include "FileDictionarySource.h"
 #include <Common/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
@@ -48,7 +48,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 
 QueryPipeline FileDictionarySource::loadAll()
 {
-    LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
+    LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto source = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr));

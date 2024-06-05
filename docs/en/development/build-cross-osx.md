@@ -13,14 +13,14 @@ The cross-build for macOS is based on the [Build instructions](../development/bu
 
 The following sections provide a walk-through for building ClickHouse for `x86_64` macOS. If you’re targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`. For example, replace `x86_64-apple-darwin` with `aarch64-apple-darwin` throughout the steps.
 
-## Install Clang-17
+## Install clang-18
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
 For example the commands for Bionic are like:
 
 ``` bash
 sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-17 main" >> /etc/apt/sources.list
-sudo apt-get install clang-17
+sudo apt-get install clang-18
 ```
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
@@ -28,18 +28,20 @@ sudo apt-get install clang-17
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
 
 ``` bash
+mkdir ~/cctools
 export CCTOOLS=$(cd ~/cctools && pwd)
-mkdir ${CCTOOLS}
 cd ${CCTOOLS}
 
-git clone --depth=1 https://github.com/tpoechtrager/apple-libtapi.git
+git clone https://github.com/tpoechtrager/apple-libtapi.git
 cd apple-libtapi
+git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9
 INSTALLPREFIX=${CCTOOLS} ./build.sh
 ./install.sh
 cd ..
 
-git clone --depth=1 https://github.com/tpoechtrager/cctools-port.git
+git clone https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
+git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7
 ./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
 make install
 ```
@@ -57,7 +59,7 @@ curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11
 cd ClickHouse
 mkdir build-darwin
 cd build-darwin
-CC=clang-17 CXX=clang++-17 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+CC=clang-18 CXX=clang++-18 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
 ninja
 ```
 

@@ -7,6 +7,7 @@ echo '/*' > $FILES_TO_CHECKOUT
 echo '!/test/*' >> $FILES_TO_CHECKOUT
 echo '/test/build/*' >> $FILES_TO_CHECKOUT
 echo '/test/core/tsi/alts/fake_handshaker/*' >> $FILES_TO_CHECKOUT
+echo '/test/core/event_engine/fuzzing_event_engine/*' >> $FILES_TO_CHECKOUT
 echo '!/tools/*' >> $FILES_TO_CHECKOUT
 echo '/tools/codegen/*' >> $FILES_TO_CHECKOUT
 echo '!/examples/*' >> $FILES_TO_CHECKOUT

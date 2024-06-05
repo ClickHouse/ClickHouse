@@ -56,10 +56,11 @@ namespace DB
 namespace EncodedUserInfo
 {
 
-/// Marker of the inter-server secret (passed in the user name)
+/// Marker for the inter-server secret (passed as the user name)
 /// (anyway user cannot be started with a whitespace)
 const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
-/// Marker of the SSH keys based authentication (passed in the user name)
+
+/// Marker for SSH-keys-based authentication (passed as the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
 
 };
@@ -97,7 +98,7 @@ namespace Protocol
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
-        /// would always be true because of compiler optimisation. That would lead to out-of-bounds error
+        /// would always be true because of compiler optimization. That would lead to out-of-bounds error
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
@@ -160,8 +161,8 @@ namespace Protocol
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
-            SSHChallengeRequest = 11,       /// Request for SSH signature challenge
-            SSHChallengeResponse = 12,       /// Request for SSH signature challenge
+            SSHChallengeRequest = 11,       /// Request SSH signature challenge
+            SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
             MAX = SSHChallengeResponse,
         };
 
@@ -189,14 +190,14 @@ namespace Protocol
     }
 
     /// Whether the compression must be used.
-    enum class Compression
+    enum class Compression : uint8_t
     {
         Disable = 0,
         Enable = 1,
     };
 
     /// Whether the ssl must be used.
-    enum class Secure
+    enum class Secure : uint8_t
     {
         Disable = 0,
         Enable = 1,

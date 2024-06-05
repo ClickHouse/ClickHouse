@@ -45,7 +45,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
 
     ConstraintsDescription res;
     ParserConstraintDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & constraint : list->children)
         res.constraints.push_back(constraint);
@@ -167,7 +167,7 @@ const ASTs & ConstraintsDescription::getConstraints() const
 
 std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::getAtomIds(const ASTPtr & ast) const
 {
-    const auto hash = ast->getTreeHash();
+    const auto hash = ast->getTreeHash(/*ignore_aliases=*/ true);
     auto it = ast_to_atom_ids.find(hash);
     if (it != ast_to_atom_ids.end())
         return it->second;
@@ -321,7 +321,7 @@ void ConstraintsDescription::update()
     ast_to_atom_ids.clear();
     for (size_t i = 0; i < cnf_constraints.size(); ++i)
         for (size_t j = 0; j < cnf_constraints[i].size(); ++j)
-            ast_to_atom_ids[cnf_constraints[i][j].ast->getTreeHash()].push_back({i, j});
+            ast_to_atom_ids[cnf_constraints[i][j].ast->getTreeHash(/*ignore_aliases=*/ true)].push_back({i, j});
 
     graph = buildGraph();
 }
