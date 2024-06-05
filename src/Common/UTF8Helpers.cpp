@@ -184,7 +184,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                 // special treatment for '\t' and for ESC
                 size_t next_width = width;
                 if (decoder.codepoint == '\x1b')
-                    isEscapeSequence = true;
+                    is_escape_sequence = true;
                 else if (decoder.codepoint == '\t')
                     next_width += 8 - (prefix + width) % 8;
                 else
