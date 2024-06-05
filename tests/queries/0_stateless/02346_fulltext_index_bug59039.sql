@@ -1,7 +1,7 @@
 -- This is supposed to test that DROP INDEX removes all index related files. Can't test this directly but at least run the statement and
 -- check that no bad things happen.
 
-SET allow_experimental_inverted_index = 1;
+SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 

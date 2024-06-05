@@ -552,28 +552,28 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
-bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
+std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
 {
     if (node.children.size() != 1)
-        return false;
+        return {};
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
-        return false;
+        return {};
 
     if (!aggregating->canUseProjection())
-        return false;
+        return {};
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
-        return false;
+        return {};
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
     if (!reading)
-        return false;
+        return {};
 
     if (!canUseProjectionForReadingStep(reading))
-        return false;
+        return {};
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -597,7 +597,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         if (ordinary_reading_marks == 0)
         {
             reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-            return false;
+            return {};
         }
 
         const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
@@ -631,15 +631,14 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         if (!best_candidate)
         {
             reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-            return false;
+            return {};
         }
     }
     else
     {
-        return false;
+        return {};
     }
 
-    Context::QualifiedProjectionName projection_name;
     chassert(best_candidate != nullptr);
 
     QueryPlanStepPtr projection_reading;
@@ -654,12 +653,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_ordinary_parts = false;
-
-        projection_name = Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = candidates.minmax_projection->candidate.projection->name,
-        };
     }
     else
     {
@@ -690,12 +683,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
-
-        projection_name = Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        };
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
         if (has_ordinary_parts)
@@ -746,7 +733,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         node.children.push_back(&expr_or_filter_node);
     }
 
-    return true;
+    return best_candidate->projection->name;
 }
 
 }

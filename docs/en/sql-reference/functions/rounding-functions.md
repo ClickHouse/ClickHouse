@@ -36,8 +36,8 @@ Alias: `truncate`.
 
 **Parameters**
 
-- `input`: A numeric type ([Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md) or [Integer](/docs/en/sql-reference/data-types/int-uint.md)).
-- `precision`: An [Integer](/docs/en/sql-reference/data-types/int-uint.md) type.
+- `input`: A numeric type ([Float](../data-types/float.md), [Decimal](../data-types/decimal.md) or [Integer](../data-types/int-uint.md)).
+- `precision`: An [Integer](../data-types/int-uint.md) type.
 
 **Returned value**
 
@@ -69,7 +69,7 @@ round(expression [, decimal_places])
 
 **Arguments**
 
-- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
+- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../data-types/index.md#data_types).
 - `decimal-places` — An integer value.
     - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
     - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
@@ -171,7 +171,7 @@ roundBankers(expression [, decimal_places])
 
 **Arguments**
 
-- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
+- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../data-types/index.md#data_types).
 - `decimal-places` — Decimal places. An integer number.
     - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
     - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.

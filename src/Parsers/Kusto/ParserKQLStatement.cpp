@@ -99,11 +99,14 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ++pos;
     }
 
-    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
+    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size());
     IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
 
-    if (!ParserKQLWithUnionQuery().parse(pos_kql, node, expected))
+    Expected kql_expected;
+    kql_expected.enable_highlighting = false;
+    if (!ParserKQLWithUnionQuery().parse(pos_kql, node, kql_expected))
         return false;
+
     ++pos;
     return true;
 }
