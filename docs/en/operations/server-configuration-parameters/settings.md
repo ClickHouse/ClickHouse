@@ -1206,6 +1206,16 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
+## mlock_executable {#mlock_executable}
+
+Perform mlockall after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
+Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
+**Example**
+
+``` xml
+<mlock_executable>false</mlock_executable>
+```
+
 ## include_from {#include_from}
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
