@@ -1,17 +1,17 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <base/phdr_cache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
-#include <Common/thread_local_rng.h>
+#include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
-#include <base/phdr_cache.h>
-#include <base/errnoToString.h>
+#include <Common/thread_local_rng.h>
 
-#include <random>
 
 namespace CurrentMetrics
 {
@@ -24,6 +24,7 @@ namespace ProfileEvents
     extern const Event QueryProfilerSignalOverruns;
     extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
+    extern const Event QueryProfilerErrors;
 }
 
 namespace DB
@@ -83,11 +84,29 @@ namespace
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        const StackTrace stack_trace(signal_context);
+        std::optional<StackTrace> stack_trace;
 
-        TraceSender::send(trace_type, stack_trace, {});
+#if defined(SANITIZER)
+        constexpr bool sanitizer = true;
+#else
+        constexpr bool sanitizer = false;
+#endif
+
+        asynchronous_stack_unwinding = true;
+        if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        {
+            stack_trace.emplace(signal_context);
+        }
+        else
+        {
+            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
+        }
+        asynchronous_stack_unwinding = false;
+
+        if (stack_trace)
+            TraceSender::send(trace_type, *stack_trace, {});
+
         ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
-
         errno = saved_errno;
     }
 
@@ -105,7 +124,7 @@ namespace ErrorCodes
 
 #ifndef __APPLE__
 Timer::Timer()
-    : log(&Poco::Logger::get("Timer"))
+    : log(getLogger("Timer"))
 {}
 
 void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
@@ -141,7 +160,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 
             /// Also, it cannot be created if the server has too many threads.
 
-            throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+            throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer");
         }
         timer_id.emplace(local_timer_id);
         CurrentMetrics::add(CurrentMetrics::CreatedTimersInQueryProfiler);
@@ -151,8 +170,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 void Timer::set(UInt32 period)
 {
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    if (period < 1000000)
-        period = 1000000;
+    period = std::max<UInt32>(period, 1000000);
     /// Randomize offset as uniform random value from 0 to period - 1.
     /// It will allow to sample short queries even if timer period is large.
     /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
@@ -164,7 +182,7 @@ void Timer::set(UInt32 period)
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
-        throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Failed to set thread timer period");
     CurrentMetrics::add(CurrentMetrics::ActiveTimersInQueryProfiler);
 }
 
@@ -210,23 +228,13 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
-    : log(&Poco::Logger::get("QueryProfiler"))
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase([[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
+    : log(getLogger("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif defined(__APPLE__)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
@@ -238,13 +246,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
 
     if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Failed to clean signal mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for query profiler");
 
     if (sigaddset(&sa.sa_mask, pause_signal))
-        throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
 
     if (sigaction(pause_signal, &sa, nullptr))
-        throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
 
     try
     {
@@ -258,6 +266,20 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         throw;
     }
 #endif
+}
+
+
+template <typename ProfilerImpl>
+void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt32 period_)
+{
+#if defined(SANITIZER)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif defined(__APPLE__)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
+#else
+    timer.set(period_);
+#endif
+
 }
 
 template <typename ProfilerImpl>

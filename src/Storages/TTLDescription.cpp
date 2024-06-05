@@ -18,6 +18,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -55,22 +56,29 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
-    for (const auto & action : ttl_expression->getActions())
+    /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
+    if (!allow_suspicious)
     {
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+        if (ttl_expression->getRequiredColumns().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TTL expression {} does not depend on any of the columns of the table", result_column_name);
+
+        for (const auto & action : ttl_expression->getActions())
         {
-            const IFunctionBase & func = *action.node->function_base;
-            if (!func.isDeterministic())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "TTL expression cannot contain non-deterministic functions, but contains function {}",
-                                func.getName());
+            if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const IFunctionBase & func = *action.node->function_base;
+                if (!func.isDeterministic())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "TTL expression cannot contain non-deterministic functions, but contains function {}",
+                                    func.getName());
+            }
         }
     }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
-
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
         && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
     {
@@ -103,7 +111,10 @@ using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFin
 TTLDescription::TTLDescription(const TTLDescription & other)
     : mode(other.mode)
     , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
+    , expression_columns(other.expression_columns)
     , result_column(other.result_column)
+    , where_expression_ast(other.where_expression_ast ? other.where_expression_ast->clone() : nullptr)
+    , where_expression_columns(other.where_expression_columns)
     , where_result_column(other.where_result_column)
     , group_by_keys(other.group_by_keys)
     , set_parts(other.set_parts)
@@ -113,11 +124,6 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , if_exists(other.if_exists)
     , recompression_codec(other.recompression_codec)
 {
-    if (other.expression)
-        expression = other.expression->clone();
-
-    if (other.where_expression)
-        where_expression = other.where_expression->clone();
 }
 
 TTLDescription & TTLDescription::operator=(const TTLDescription & other)
@@ -131,17 +137,15 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     else
         expression_ast.reset();
 
-    if (other.expression)
-        expression = other.expression->clone();
-    else
-        expression.reset();
-
+    expression_columns = other.expression_columns;
     result_column = other.result_column;
-    if (other.where_expression)
-        where_expression = other.where_expression->clone();
-    else
-        where_expression.reset();
 
+    if (other.where_expression_ast)
+        where_expression_ast = other.where_expression_ast->clone();
+    else
+        where_expression_ast.reset();
+
+    where_expression_columns = other.where_expression_columns;
     where_result_column = other.where_result_column;
     group_by_keys = other.group_by_keys;
     set_parts = other.set_parts;
@@ -158,11 +162,50 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
+static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    ExpressionAndSets result;
+    auto ttl_string = queryToString(ast);
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
+    ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
+    auto dag = analyzer.getActionsDAG(false);
+
+    const auto * col = &dag->findInOutputs(ast->getColumnName());
+    if (col->result_name != ttl_string)
+        col = &dag->addAlias(*col, ttl_string);
+
+    dag->getOutputs() = {col};
+    dag->removeUnusedActions();
+
+    result.expression = std::make_shared<ExpressionActions>(dag, ExpressionActionsSettings::fromContext(context));
+    result.sets = analyzer.getPreparedSets();
+
+    return result;
+}
+
+ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
+{
+    auto ast = expression_ast->clone();
+    return buildExpressionAndSets(ast, expression_columns, context);
+}
+
+ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
+{
+    if (where_expression_ast)
+    {
+        auto ast = where_expression_ast->clone();
+        return buildExpressionAndSets(ast, where_expression_columns, context);
+    }
+
+    return {};
+}
+
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     ContextPtr context,
-    const KeyDescription & primary_key)
+    const KeyDescription & primary_key,
+    bool is_attach)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
@@ -174,9 +217,12 @@ TTLDescription TTLDescription::getTTLFromAST(
         result.expression_ast = definition_ast->clone();
 
     auto ttl_ast = result.expression_ast->clone();
-    auto syntax_analyzer_result = TreeRewriter(context).analyze(ttl_ast, columns.getAllPhysical());
-    result.expression = ExpressionAnalyzer(ttl_ast, syntax_analyzer_result, context).getActions(false);
-    result.result_column = ttl_ast->getColumnName();
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
+    result.expression_columns = expression->getRequiredColumnsWithTypes();
+
+    result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
+
+    ExpressionActionsPtr where_expression;
 
     if (ttl_element == nullptr) /// columns TTL
     {
@@ -194,9 +240,10 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
-                auto where_syntax_result = TreeRewriter(context).analyze(where_expr_ast, columns.getAllPhysical());
-                result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, context).getActions(false);
-                result.where_result_column = where_expr_ast->getColumnName();
+                result.where_expression_ast = where_expr_ast->clone();
+                where_expression = buildExpressionAndSets(where_expr_ast, columns.getAllPhysical(), context).expression;
+                result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
+                result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
         }
         else if (ttl_element->mode == TTLMode::GROUP_BY)
@@ -221,17 +268,17 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (const auto & ast : ttl_element->group_by_assignments)
             {
                 const auto assignment = ast->as<const ASTAssignment &>();
-                auto expression = assignment.expression();
+                auto ass_expression = assignment.expression();
 
                 FindAggregateFunctionVisitor::Data data{false};
-                FindAggregateFunctionVisitor(data).visit(expression);
+                FindAggregateFunctionVisitor(data).visit(ass_expression);
 
                 if (!data.has_aggregate_function)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
-                expression = addTypeConversionToAST(std::move(expression), columns.getPhysical(assignment.column_name).type->getName());
-                aggregations.emplace_back(assignment.column_name, std::move(expression));
+                ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
+                aggregations.emplace_back(assignment.column_name, std::move(ass_expression));
                 aggregation_columns_set.insert(assignment.column_name);
             }
 
@@ -285,11 +332,11 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
         }
     }
 
-    checkTTLExpression(result.expression, result.result_column);
+    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef().allow_suspicious_ttl_expressions);
     return result;
 }
 
@@ -327,7 +374,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     ContextPtr context,
-    const KeyDescription & primary_key)
+    const KeyDescription & primary_key,
+    bool is_attach)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -338,10 +386,10 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_attach);
         if (ttl.mode == TTLMode::DELETE)
         {
-            if (!ttl.where_expression)
+            if (!ttl.where_expression_ast)
             {
                 if (have_unconditional_delete_ttl)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "More than one DELETE TTL expression without WHERE expression is not allowed");
@@ -377,10 +425,10 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
         return result;
 
     ParserTTLExpressionList parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    FunctionNameNormalizer().visit(ast.get());
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
 }
 
 }

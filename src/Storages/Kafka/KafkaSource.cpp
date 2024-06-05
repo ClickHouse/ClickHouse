@@ -33,7 +33,7 @@ KafkaSource::KafkaSource(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
@@ -45,7 +45,7 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
+    , virtual_header(storage.getVirtualsHeader())
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }

@@ -73,7 +73,7 @@ bool IParserKQLFunction::directMapping(
 
     int argument_count = 0;
     const auto begin = pos;
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (pos != begin)
             out.append(", ");
@@ -148,11 +148,11 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
     if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
         return {};
 
-    if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+    if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Need more argument(s) in function: {}", fn_name);
 
     std::vector<String> tokens;
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (pos->type == TokenType::OpeningRoundBracket)
             ++round_bracket_count;
@@ -191,7 +191,7 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 {
                     ++pos;
                     String array_index;
-                    while (!pos->isEnd() && pos->type != TokenType::ClosingSquareBracket)
+                    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
                     {
                         array_index += getExpression(pos);
                         ++pos;
@@ -246,7 +246,7 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
 
     const auto * begin = pos->begin;
     std::stack<DB::TokenType> scopes;
-    while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
+    while (isValidKQLPos(pos) && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
     {
         const auto token_type = pos->type;
         if (isOpeningBracket(token_type))
@@ -279,13 +279,13 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::initializer_list<const std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
 {
-    return kqlCallToExpression(function_name, std::span(params), max_depth);
+    return kqlCallToExpression(function_name, std::span(params), max_depth, max_backtracks);
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::span<const std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
 {
     const auto params_str = std::accumulate(
         std::cbegin(params),
@@ -302,7 +302,7 @@ String IParserKQLFunction::kqlCallToExpression(
 
     const auto kql_call = std::format("{}({})", function_name, params_str);
     DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
-    DB::IParser::Pos tokens_pos(call_tokens, max_depth);
+    DB::IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 
@@ -357,7 +357,7 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     {
         ++pos;
         String array_index;
-        while (!pos->isEnd() && pos->type != TokenType::ClosingSquareBracket)
+        while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
         {
             array_index += getExpression(pos);
             ++pos;

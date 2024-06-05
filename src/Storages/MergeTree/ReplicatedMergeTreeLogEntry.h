@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/CopyableAtomic.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
@@ -9,7 +10,6 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
-#include <mutex>
 #include <condition_variable>
 
 
@@ -93,6 +93,7 @@ struct ReplicatedMergeTreeLogEntryData
     MergeTreeDataPartFormat new_part_format;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
+    mutable std::unordered_set<String> replace_range_actual_new_part_names;     /// Same as above, but for REPLACE_RANGE
     UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
@@ -171,6 +172,9 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    /// Used only in tests for permanent fault injection for particular queue entry.
+    CopyableAtomic<bool> fault_injected{false};
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const

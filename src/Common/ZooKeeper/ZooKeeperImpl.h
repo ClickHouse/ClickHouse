@@ -139,7 +139,8 @@ public:
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
-        ResponseCallback callback);
+        ResponseCallback callback,
+        WatchCallbackPtr watch = nullptr);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -193,6 +194,10 @@ public:
         std::string_view new_members,
         int32_t version,
         ReconfigCallback callback) final;
+
+    void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) override;
 
     void multi(
         const Requests & requests,
@@ -287,7 +292,7 @@ private:
     class ThreadReference
     {
     public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
         {
             std::lock_guard<std::mutex> l(lock);
             thread = std::move(thread_);
@@ -308,7 +313,7 @@ private:
     ThreadReference send_thread;
     ThreadReference receive_thread;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void connect(
         const Nodes & node,
@@ -339,7 +344,7 @@ private:
     void flushWriteBuffer();
     ReadBuffer & getReadBuffer();
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     void initFeatureFlags();
 

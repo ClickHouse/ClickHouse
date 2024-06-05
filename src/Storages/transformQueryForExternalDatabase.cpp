@@ -145,7 +145,7 @@ bool isCompatible(ASTPtr & node)
             return false;
 
         if (!function->arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: function->arguments is not set");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "function->arguments is not set");
 
         String name = function->name;
 
@@ -329,14 +329,26 @@ String transformQueryForExternalDatabaseImpl(
         }
         else if (auto * function = original_where->as<ASTFunction>())
         {
-            if (function->name == "and")
+            if (function->name == "and" || function->name == "tuple")
             {
                 auto new_function_and = makeASTFunction("and");
-                for (auto & elem : function->arguments->children)
+                std::queue<const ASTFunction *> predicates;
+                predicates.push(function);
+
+                while (!predicates.empty())
                 {
-                    if (isCompatible(elem))
-                        new_function_and->arguments->children.push_back(elem);
+                    const auto * func = predicates.front();
+                    predicates.pop();
+
+                    for (auto & elem : func->arguments->children)
+                    {
+                        if (isCompatible(elem))
+                            new_function_and->arguments->children.push_back(elem);
+                        else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
+                            predicates.push(child);
+                    }
                 }
+
                 if (new_function_and->arguments->children.size() == 1)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children[0]));
                 else if (new_function_and->arguments->children.size() > 1)

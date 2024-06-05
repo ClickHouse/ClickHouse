@@ -27,9 +27,6 @@ namespace
     {
         /// Precondition: engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree")
 
-        if (data.replicated_table_shared_id)
-            *data.replicated_table_shared_id = StorageReplicatedMergeTree::tryGetTableSharedIDFromCreateQuery(*data.create_query, data.global_context);
-
         /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
         /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
         /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
@@ -57,9 +54,9 @@ namespace
                 if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
                     zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
             }
-            const auto & config = data.global_context->getConfigRef();
-            if ((zookeeper_path_arg == StorageReplicatedMergeTree::getDefaultZooKeeperPath(config))
-                && (replica_name_arg == StorageReplicatedMergeTree::getDefaultReplicaName(config))
+            const auto & server_settings = data.global_context->getServerSettings();
+            if ((zookeeper_path_arg == server_settings.default_replica_path.value)
+                && (replica_name_arg == server_settings.default_replica_name.value)
                 && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
             {
                 engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
@@ -98,12 +95,9 @@ void DDLAdjustingForBackupVisitor::visit(ASTPtr ast, const Data & data)
         visitCreateQuery(*create, data);
 }
 
-void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context, std::optional<String> * replicated_table_shared_id)
+void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context)
 {
-    if (replicated_table_shared_id)
-        *replicated_table_shared_id = {};
-
-    DDLAdjustingForBackupVisitor::Data data{ast, global_context, replicated_table_shared_id};
+    DDLAdjustingForBackupVisitor::Data data{ast, global_context};
     DDLAdjustingForBackupVisitor::Visitor{data}.visit(ast);
 }
 

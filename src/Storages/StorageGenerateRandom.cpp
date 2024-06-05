@@ -3,6 +3,7 @@
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,11 +31,8 @@
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
 #include <Interpreters/Context.h>
-#include <base/unaligned.h>
 
 #include <Functions/FunctionFactory.h>
-
-#include <pcg_random.hpp>
 
 
 namespace DB
@@ -532,7 +530,7 @@ class GenerateSource : public ISource
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : ISource(Nested::flattenArrayOfTuples(prepareBlockToFill(block_header_)))
+        : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
@@ -547,7 +545,7 @@ protected:
         for (const auto & elem : block_to_fill)
             columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
-        columns = Nested::flattenArrayOfTuples(block_to_fill.cloneWithColumns(columns)).getColumns();
+        columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
         return {std::move(columns), block_size};
     }
 
@@ -639,7 +637,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -682,7 +680,14 @@ Pipe StorageGenerateRandom::read(
     pcg64 generate(random_seed);
 
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));
+    {
+        auto source = std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context);
+
+        if (i == 0 && query_info.limit)
+            source->addTotalRowsApprox(query_info.limit);
+
+        pipes.emplace_back(std::move(source));
+    }
 
     return Pipe::unitePipes(std::move(pipes));
 }

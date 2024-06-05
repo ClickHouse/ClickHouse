@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
 
 #include <Access/AccessControl.h>
@@ -138,4 +139,14 @@ void InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(Setti
 {
     updateSettingsProfileFromQueryImpl(SettingsProfile, query, {}, {}, {});
 }
+
+void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateSettingsProfileQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateSettingsProfileQuery", create_fn);
+}
+
 }

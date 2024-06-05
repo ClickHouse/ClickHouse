@@ -23,11 +23,12 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename Distance>
 AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
-    : Base::AnnoyIndex(dimensions)
+    : Base::AnnoyIndex(static_cast<int>(dimensions))
 {
 }
 
@@ -330,6 +331,11 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const Selec
 {
     return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, distance_function, context);
 };
+
+MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const ActionsDAGPtr &, ContextPtr) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
+}
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {

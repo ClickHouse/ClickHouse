@@ -45,7 +45,7 @@ $ cat /var/lib/clickhouse/user_files/test1.csv
     1,"file1"
     11,"file11"
 
-$ cat /var/lib/clickhouse/user_files/test1.csv
+$ cat /var/lib/clickhouse/user_files/test2.csv
     2,"file2"
     22,"file22"
 ```
@@ -59,9 +59,7 @@ INSERT INTO TABLE FUNCTION file('file2.csv', 'CSV', 'i UInt32, s String') VALUES
 Now, read data contents of `test1.csv` and `test2.csv` via `fileCluster` table function:
 
 ```sql
-SELECT * from fileCluster(
-    'my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY (i, s)"""
-)
+SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
 ```
 
 ```

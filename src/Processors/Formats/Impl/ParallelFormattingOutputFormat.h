@@ -84,7 +84,7 @@ public:
         , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
 
     {
-        LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
+        LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
@@ -92,7 +92,7 @@ public:
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
-        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
@@ -154,7 +154,7 @@ public:
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
 
 private:
-    void consume(Chunk chunk) override final
+    void consume(Chunk chunk) final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
     }
@@ -205,7 +205,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType
+    enum class ProcessingUnitType : uint8_t
     {
         START,
         PLAIN,

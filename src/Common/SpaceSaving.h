@@ -131,12 +131,12 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    inline size_t size() const
+    size_t size() const
     {
         return counter_list.size();
     }
 
-    inline size_t capacity() const
+    size_t capacity() const
     {
         return m_capacity;
     }
@@ -206,6 +206,9 @@ public:
      */
     void merge(const Self & rhs)
     {
+        if (!rhs.size())
+            return;
+
         UInt64 m1 = 0;
         UInt64 m2 = 0;
 

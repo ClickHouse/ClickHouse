@@ -22,7 +22,7 @@ using Strings = std::vector<String>;
 class ActiveDataPartSet
 {
 public:
-    enum class AddPartOutcome
+    enum class AddPartOutcome : uint8_t
     {
         Added,
         HasCovering,
@@ -106,11 +106,16 @@ public:
 
     MergeTreeDataFormatVersion getFormatVersion() const { return format_version; }
 
+    void checkIntersectingParts(const MergeTreePartInfo & part_info) const;
+    void checkIntersectingParts(const String & name) const;
+
 private:
 
     AddPartOutcome addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts = nullptr, String * out_reason = nullptr);
     MergeTreeDataFormatVersion format_version;
-    std::map<MergeTreePartInfo, String> part_info_to_name;
+
+    using PartInfoToName = std::map<MergeTreePartInfo, String>;
+    PartInfoToName part_info_to_name;
 
     std::vector<std::map<MergeTreePartInfo, String>::const_iterator> getPartsCoveredByImpl(const MergeTreePartInfo & part_info) const;
 

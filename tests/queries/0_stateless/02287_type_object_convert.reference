@@ -1,18 +1,19 @@
-1	(1)	Tuple(x Nullable(Int8))
-1	(1,NULL)	Tuple(x Nullable(Int8), y Nullable(Int8))
-2	(NULL,2)	Tuple(x Nullable(Int8), y Nullable(Int8))
-1	(1,NULL)	Tuple(x Nullable(Int8), y Nullable(Int8))
-2	(NULL,2)	Tuple(x Nullable(Int8), y Nullable(Int8))
-3	(1,2)	Tuple(x Nullable(Int8), y Nullable(Int8))
+1	(1)	Tuple(\n    x Nullable(Int8))
+1	(1,NULL)	Tuple(\n    x Nullable(Int8),\n    y Nullable(Int8))
+2	(NULL,2)	Tuple(\n    x Nullable(Int8),\n    y Nullable(Int8))
+1	(1,NULL)	Tuple(\n    x Nullable(Int8),\n    y Nullable(Int8))
+2	(NULL,2)	Tuple(\n    x Nullable(Int8),\n    y Nullable(Int8))
+3	(1,2)	Tuple(\n    x Nullable(Int8),\n    y Nullable(Int8))
 1	1	\N
 2	\N	2
 3	1	2
-1	(1)	Tuple(x Int8)
-1	(1,0)	Tuple(x Int8, y Int8)
-2	(0,2)	Tuple(x Int8, y Int8)
+1	(1)	Tuple(\n    x Int8)
+1	(1,0)	Tuple(\n    x Int8,\n    y Int8)
+2	(0,2)	Tuple(\n    x Int8,\n    y Int8)
 {"x":1}
 {"x":1}
 {"x":[[1],[1,2]]}
 {"x":[[],[1,2]]}
 {"x":[[],[[1],[2]]]}
 {"x":[[],[[],[2]]]}
+{"a.a":[[1],[]]}

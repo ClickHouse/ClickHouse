@@ -1,6 +1,7 @@
 #include "GRPCServer.h"
 #include <limits>
 #include <memory>
+#include <Poco/Net/SocketAddress.h>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -76,7 +78,7 @@ namespace
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static Poco::Logger * logger = &Poco::Logger::get("grpc");
+            static LoggerRawPtr logger = getRawLogger("grpc");
             gpr_set_log_function([](gpr_log_func_args* args)
             {
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
@@ -319,8 +321,27 @@ namespace
 
         Poco::Net::SocketAddress getClientAddress() const
         {
-            String peer = grpc_context.peer();
-            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
+            /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
+            String uri_encoded_peer = grpc_context.peer();
+
+            constexpr const std::string_view ipv4_prefix = "ipv4:";
+            constexpr const std::string_view ipv6_prefix = "ipv6:";
+
+            bool ipv4 = uri_encoded_peer.starts_with(ipv4_prefix);
+            bool ipv6 = uri_encoded_peer.starts_with(ipv6_prefix);
+
+            if (!ipv4 && !ipv6)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ipv4 or ipv6 protocol in peer address, got {}", uri_encoded_peer);
+
+            auto prefix = ipv4 ? ipv4_prefix : ipv6_prefix;
+            auto family = ipv4 ? Poco::Net::AddressFamily::Family::IPv4 : Poco::Net::AddressFamily::Family::IPv6;
+
+            uri_encoded_peer= uri_encoded_peer.substr(prefix.length());
+
+            String peer;
+            Poco::URI::decode(uri_encoded_peer, peer);
+
+            return Poco::Net::SocketAddress{family, peer};
         }
 
         std::optional<String> getClientHeader(const String & key) const
@@ -419,7 +440,11 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
+            {
                 callback(false);
+                return;
+            }
+
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -486,7 +511,11 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
+            {
                 callback(false);
+                return;
+            }
+
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -567,7 +596,7 @@ namespace
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
-            BufferBase::set(static_cast<BufferBase::Position>(const_cast<void *>(new_pos)), new_size, 0);
+            BufferBase::set(static_cast<BufferBase::Position>(const_cast<char *>(static_cast<const char *>(new_pos))), new_size, 0);
             return true;
         }
 
@@ -610,11 +639,10 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
-    class Call
+    class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
     public:
-        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_);
+        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
@@ -656,7 +684,7 @@ namespace
         const CallType call_type;
         std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
-        Poco::Logger * log = nullptr;
+        LoggerRawPtr log = nullptr;
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
@@ -716,9 +744,8 @@ namespace
 
         ThreadFromGlobalPool call_thread;
     };
-// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
-    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
+    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
@@ -846,7 +873,7 @@ namespace
             query_context->getClientInfo().client_trace_context,
             query_context->getSettingsRef(),
             query_context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
@@ -877,7 +904,7 @@ namespace
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
+        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
@@ -1843,7 +1870,7 @@ private:
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
-    , log(&Poco::Logger::get("GRPCServer"))
+    , log(getRawLogger("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
 {}
 

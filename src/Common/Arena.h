@@ -3,11 +3,12 @@
 #include <cstring>
 #include <memory>
 #include <vector>
-#include <boost/noncopyable.hpp>
 #include <Core/Defines.h>
-#include <Common/memcpySmall.h>
-#include <Common/ProfileEvents.h>
+#include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
+#include <Common/ProfileEvents.h>
+#include <Common/memcpySmall.h>
+#include <base/getPageSize.h>
 
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
@@ -46,11 +47,9 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk()
-        {
-        }
+        MemoryChunk() = default;
 
-        void swap(MemoryChunk & other)
+        void swap(MemoryChunk & other) noexcept
         {
             std::swap(begin, other.begin);
             std::swap(pos, other.pos);
@@ -58,18 +57,18 @@ private:
             prev.swap(other.prev);
         }
 
-        MemoryChunk(MemoryChunk && other)
+        MemoryChunk(MemoryChunk && other) noexcept
         {
             *this = std::move(other);
         }
 
-        MemoryChunk & operator=(MemoryChunk && other)
+        MemoryChunk & operator=(MemoryChunk && other) noexcept
         {
             swap(other);
             return *this;
         }
 
-        MemoryChunk(size_t size_)
+        explicit MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
@@ -180,7 +179,7 @@ public:
     char * alloc(size_t size)
     {
         used_bytes += size;
-        if (unlikely(head.empty() || static_cast<std::ptrdiff_t>(size) > head.end - head.pos))
+        if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size);
 
         char * res = head.pos;
@@ -193,6 +192,9 @@ public:
     char * alignedAlloc(size_t size, size_t alignment)
     {
         used_bytes += size;
+        if (unlikely(head.empty() || size > head.remaining()))
+            addMemoryChunk(size + alignment);
+
         do
         {
             void * head_pos = head.pos;

@@ -1,17 +1,18 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -45,13 +46,6 @@ class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
-
-using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>;
-using ConstAggregateDataPtr = const char *;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 struct AggregateFunctionProperties;
 
@@ -151,7 +145,7 @@ public:
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 
-    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/) const
+    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
     }
@@ -162,9 +156,13 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Return true if it is allowed to replace call of `addBatch`
+    /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
+    virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
+    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/, Arena * /*arena*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }
@@ -197,7 +195,7 @@ public:
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         if (isState())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented", getName());
 
         insertResultInto(place, to, arena);
     }
@@ -549,8 +547,10 @@ public:
         auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
 
         size_t num_defaults = (row_end - row_begin) - (to - from);
-        static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
-        static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
+        if (from < to)
+            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        if (num_defaults > 0)
+            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT

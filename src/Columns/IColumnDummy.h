@@ -11,7 +11,7 @@ class Arena;
 /** Base class for columns-constants that contain a value that is not in the `Field`.
   * Not a full-fledged column and is used in a special way.
   */
-class IColumnDummy : public IColumn
+class IColumnDummy : public IColumnHelper<IColumnDummy>
 {
 public:
     IColumnDummy() : s(0) {}
@@ -36,6 +36,7 @@ public:
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
     void insert(const Field &) override;
+    bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
     StringRef getDataAt(size_t) const override
@@ -48,8 +49,10 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const UInt8 *) const override;
+    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+
     const char * deserializeAndInsertFromArena(const char * pos) override;
+
     const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override

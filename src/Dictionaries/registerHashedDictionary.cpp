@@ -50,7 +50,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
         const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
         if (preallocate)
-            LOG_WARNING(&Poco::Logger::get("HashedDictionary"), "'prellocate' attribute is obsolete, consider looking at 'shards'");
+            LOG_WARNING(getLogger("HashedDictionary"), "'prellocate' attribute is obsolete, consider looking at 'shards'");
 
         Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
         if (shards <= 0 || shards > 128)
@@ -77,10 +77,11 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             require_nonempty,
             dict_lifetime,
             use_async_executor,
+            std::chrono::seconds(settings.max_execution_time.totalSeconds()),
         };
 
         if (source_ptr->hasUpdateField() && shards > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {

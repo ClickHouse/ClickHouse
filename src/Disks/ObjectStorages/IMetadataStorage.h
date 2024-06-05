@@ -11,6 +11,7 @@
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
 
 namespace DB
@@ -30,7 +31,15 @@ struct UnlinkMetadataFileOperationOutcome
     UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
 };
 
+struct TruncateFileOperationOutcome
+{
+    StoredObjects objects_to_remove;
+};
+
+
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
+using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOutcome>;
+
 
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
@@ -142,9 +151,14 @@ public:
         return nullptr;
     }
 
+    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* size */)
+    {
+        throwNotImplemented();
+    }
+
     virtual ~IMetadataTransaction() = default;
 
-private:
+protected:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");
@@ -163,6 +177,8 @@ public:
 
     /// Get metadata root path.
     virtual const std::string & getPath() const = 0;
+
+    virtual MetadataStorageType getType() const = 0;
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
@@ -207,6 +223,11 @@ public:
         throwNotImplemented();
     }
 
+    virtual void shutdown()
+    {
+        /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
+    }
+
     virtual ~IMetadataStorage() = default;
 
     /// ==== More specific methods. Previous were almost general purpose. ====
@@ -221,7 +242,7 @@ public:
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-private:
+protected:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");

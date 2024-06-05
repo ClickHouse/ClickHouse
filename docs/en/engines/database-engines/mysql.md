@@ -4,7 +4,11 @@ sidebar_position: 50
 sidebar_label: MySQL
 ---
 
-# MySQL
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# MySQL Database Engine
+
+<CloudNotSupportedBadge />
 
 Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
 

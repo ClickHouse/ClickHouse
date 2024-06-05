@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupIO.h>
+#include <Common/Logger.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
@@ -12,13 +13,13 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ReadBuffer;
 class SeekableReadBuffer;
 class WriteBuffer;
-enum class WriteMode;
+enum class WriteMode : uint8_t;
 
 /// Represents operations of loading from disk or downloading for reading a backup.
 class BackupReaderDefault : public IBackupReader
 {
 public:
-    BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, Poco::Logger * log_);
+    BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_);
     ~BackupReaderDefault() override = default;
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
@@ -33,7 +34,7 @@ public:
     size_t getWriteBufferSize() const override { return write_buffer_size; }
 
 protected:
-    Poco::Logger * const log;
+    LoggerPtr const log;
     const ReadSettings read_settings;
 
     /// The write settings are used to write to the source disk in copyFileToDisk().
@@ -45,7 +46,7 @@ protected:
 class BackupWriterDefault : public IBackupWriter
 {
 public:
-    BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, Poco::Logger * log_);
+    BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_);
     ~BackupWriterDefault() override = default;
 
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
@@ -60,7 +61,7 @@ protected:
     /// Here readFile() is used only to implement fileContentsEqual().
     virtual std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) = 0;
 
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     /// The read settings are used to read from the source disk in copyFileFromDisk().
     const ReadSettings read_settings;

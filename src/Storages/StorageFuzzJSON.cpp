@@ -248,10 +248,10 @@ Field generateRandomFixedValue(const StorageFuzzJSON::Configuration & config, pc
     return f;
 }
 
-String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & source)
+String fuzzString(UInt64 min_length, UInt64 max_length, pcg64 & rnd, const String & source, std::function<char(pcg64 &)> charGen)
 {
     String result;
-    result.reserve(config.max_key_length);
+    result.reserve(max_length);
 
     using FA = FuzzAction;
     auto get_action = [&]() -> FuzzAction
@@ -261,7 +261,7 @@ String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, c
     };
 
     size_t i = 0;
-    while (i < source.size() && result.size() < config.max_key_length)
+    while (i < source.size() && result.size() < max_length)
     {
         auto action = get_action();
         switch (action)
@@ -271,12 +271,12 @@ String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, c
             }
             break;
             case FA::Edit: {
-                result.push_back(generateRandomKeyCharacter(rnd));
+                result.push_back(charGen(rnd));
                 ++i;
             }
             break;
             case FA::Add: {
-                result.push_back(generateRandomKeyCharacter(rnd));
+                result.push_back(charGen(rnd));
             }
             break;
             default:
@@ -284,10 +284,22 @@ String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, c
         }
     }
 
-    while (result.size() < config.min_key_length)
-        result.push_back(generateRandomKeyCharacter(rnd));
+    while (result.size() < min_length)
+        result.push_back(charGen(rnd));
 
     return result;
+}
+
+String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & key)
+{
+    return fuzzString(config.min_key_length, config.max_key_length, rnd, key, generateRandomKeyCharacter);
+}
+
+// Randomly modify structural characters (e.g. '{', '}', '[', ']', ':', '"') to generate output that cannot be parsed as JSON.
+String fuzzJSONStructure(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & s)
+{
+    return config.should_malform_output ? fuzzString(/*min_length*/ 0, /*max_length*/ s.size(), rnd, s, generateRandomStringValueCharacter)
+                                        : s;
 }
 
 std::shared_ptr<JSONNode>
@@ -352,7 +364,7 @@ JSONNode & fuzzSingleJSONNode(JSONNode & n, const StorageFuzzJSON::Configuration
 
     if (val.fixed)
         val.fixed = generateRandomFixedValue(config, rnd);
-    else if (val.array && val.array->size() < config.max_array_size && node_count + val.array->size() < config.value_number_limit)
+    else if (val.array && val.array->size() < config.max_array_size && node_count + val.array->size() < StorageFuzzJSON::Configuration::value_number_limit)
     {
         if (val.array->empty())
             val.array->push_back(generateRandomJSONNode(config, rnd, /*with_key*/ false, depth));
@@ -365,7 +377,7 @@ JSONNode & fuzzSingleJSONNode(JSONNode & n, const StorageFuzzJSON::Configuration
         }
         ++node_count;
     }
-    else if (val.object && val.object->size() < config.max_object_size && node_count + val.object->size() < config.value_number_limit)
+    else if (val.object && val.object->size() < config.max_object_size && node_count + val.object->size() < StorageFuzzJSON::Configuration::value_number_limit)
     {
         val.object->push_back(generateRandomJSONNode(config, rnd, /*with_key*/ true, depth));
         ++node_count;
@@ -397,7 +409,7 @@ void fuzzJSONObject(
     if (next_node->key)
     {
         writeDoubleQuoted(*next_node->key, out);
-        out << ":";
+        out << fuzzJSONStructure(config, rnd, ":");
     }
 
     auto & val = next_node->value;
@@ -405,7 +417,11 @@ void fuzzJSONObject(
     if (val.fixed)
     {
         if (val.fixed->getType() == Field::Types::Which::String)
-            writeDoubleQuoted(val.fixed->get<String>(), out);
+        {
+            out << fuzzJSONStructure(config, rnd, "\"");
+            writeText(val.fixed->get<String>(), out);
+            out << fuzzJSONStructure(config, rnd, "\"");
+        }
         else
             writeFieldText(*val.fixed, out);
     }
@@ -414,19 +430,19 @@ void fuzzJSONObject(
         if (!val.array && !val.object)
             return;
 
-        const auto & [op, cl, node_list] = val.array ? std::make_tuple('[', ']', *val.array) : std::make_tuple('{', '}', *val.object);
+        const auto & [op, cl, node_list] = val.array ? std::make_tuple("[", "]", *val.array) : std::make_tuple("{", "}", *val.object);
 
-        out << op;
+        out << fuzzJSONStructure(config, rnd, op);
 
         bool first = true;
         for (const auto & ptr : node_list)
         {
-            if (node_count >= config.value_number_limit)
+            if (node_count >= StorageFuzzJSON::Configuration::value_number_limit)
                 break;
 
             WriteBufferFromOwnString child_out;
             if (!first)
-                child_out << ", ";
+                child_out << fuzzJSONStructure(config, rnd, ", ");
             first = false;
 
             fuzzJSONObject(ptr, child_out, config, rnd, depth + 1, node_count);
@@ -435,14 +451,14 @@ void fuzzJSONObject(
                 break;
             out << child_out.str();
         }
-        out << cl;
+        out << fuzzJSONStructure(config, rnd, cl);
     }
 }
 
 void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const StorageFuzzJSON::Configuration & config, pcg64 & rnd)
 {
     size_t node_count = 0;
-    return fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
+    fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
 class FuzzJSONSource : public ISource
@@ -465,7 +481,11 @@ protected:
     {
         Columns columns;
         columns.reserve(block_header.columns());
-        columns.emplace_back(createColumn());
+        for (const auto & col : block_header)
+        {
+            chassert(col.type->getTypeId() == TypeIndex::String);
+            columns.emplace_back(createColumn());
+        }
 
         return {std::move(columns), block_size};
     }
@@ -554,10 +574,11 @@ Pipe StorageFuzzJSON::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-static constexpr std::array<std::string_view, 13> optional_configuration_keys
+static constexpr std::array<std::string_view, 14> optional_configuration_keys
     = {"json_str",
        "random_seed",
        "reuse_output",
+       "malform_output",
        "probability",
        "max_output_length",
        "max_nesting_level",
@@ -583,6 +604,9 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     if (collection.has("reuse_output"))
         configuration.should_reuse_output = static_cast<bool>(collection.get<UInt64>("reuse_output"));
 
+    if (collection.has("malform_output"))
+        configuration.should_malform_output = static_cast<bool>(collection.get<UInt64>("malform_output"));
+
     if (collection.has("probability"))
     {
         configuration.probability = collection.get<Float64>("probability");
@@ -595,11 +619,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     {
         configuration.max_output_length = collection.get<UInt64>("max_output_length");
 
-        if (configuration.max_output_length < 2 || configuration.max_output_length > configuration.output_length_limit)
+        if (configuration.max_output_length < 2 || configuration.max_output_length > StorageFuzzJSON::Configuration::output_length_limit)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'max_output_length' argument must be within the interval [2, {}.]",
-                configuration.output_length_limit);
+                StorageFuzzJSON::Configuration::output_length_limit);
     }
 
     if (collection.has("max_nesting_level"))
@@ -614,11 +638,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     if (collection.has("max_string_value_length"))
     {
         auto max_string_value_length = collection.get<UInt64>("max_string_value_length");
-        if (max_string_value_length > configuration.output_length_limit)
+        if (max_string_value_length > StorageFuzzJSON::Configuration::output_length_limit)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'max_string_value_length' argument must be at most {}.",
-                configuration.output_length_limit);
+                StorageFuzzJSON::Configuration::output_length_limit);
 
         configuration.max_string_value_length = std::min(max_string_value_length, configuration.max_output_length);
     }
@@ -626,11 +650,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     if (collection.has("max_key_length"))
     {
         auto max_key_length = collection.get<UInt64>("max_key_length");
-        if (max_key_length > configuration.output_length_limit)
+        if (max_key_length > StorageFuzzJSON::Configuration::output_length_limit)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'max_key_length' argument must be less or equal than {}.",
-                configuration.output_length_limit);
+                StorageFuzzJSON::Configuration::output_length_limit);
         configuration.max_key_length = std::min(max_key_length, configuration.max_output_length);
         configuration.min_key_length = std::min(configuration.min_key_length, configuration.max_key_length);
     }
@@ -699,6 +723,11 @@ void registerStorageFuzzJSON(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzJSON must have arguments.");
 
             StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
+
+            for (const auto& col : args.columns)
+                if (col.type->getTypeId() != TypeIndex::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'StorageFuzzJSON' supports only columns of String type, got {}.", col.type->getName());
+
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         });
 }

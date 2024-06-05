@@ -116,7 +116,7 @@ public:
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -219,7 +219,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>({argument}, params, createResultType())
     {
         if (!argument->isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not Nullable data type passed to AggregateFunctionCountNotNullUnary");
     }
 
     String getName() const override { return "count"; }
@@ -267,7 +267,7 @@ public:
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

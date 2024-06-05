@@ -260,7 +260,7 @@ FORMAT Null;
 
 Ограничивает количество строк в хэш-таблице, используемой при соединении таблиц.
 
-Параметр применяется к операциям [SELECT… JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
+Параметр применяется к операциям [SELECT... JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -277,7 +277,7 @@ FORMAT Null;
 
 Ограничивает размер (в байтах) хэш-таблицы, используемой при объединении таблиц.
 
-Параметр применяется к операциям [SELECT… JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
+Параметр применяется к операциям [SELECT... JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
