@@ -232,7 +232,7 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     ParallelReplicasReadingCoordinatorPtr coordinator,
-    QueryPlanStepPtr read_from_merge_tree,
+    QueryPlanStepPtr analyzed_read_from_merge_tree,
     bool has_missing_objects)
 {
     checkStackSize();
@@ -273,10 +273,10 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     }
 
     chassert(reading);
-    if (!read_from_merge_tree)
-        read_from_merge_tree = std::move(node->step);
+    if (!analyzed_read_from_merge_tree)
+        analyzed_read_from_merge_tree = std::move(node->step);
 
-    auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(read_from_merge_tree.get());
+    auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
     /// if no analysis is done yet, let's do it (happens with JOINs)
     if (!analyzed_merge_tree->hasAnalyzedResult())
         analyzed_merge_tree->setAnalyzedResult(analyzed_merge_tree->selectRangesToRead());
