@@ -94,6 +94,7 @@ class Release:
         self._version = get_version_from_repo(git=self._git)
         self.release_version = self.version
         self._release_branch = ""
+        self._version_new_tag = None  # type: Optional[ClickHouseVersion]
         self._rollback_stack = []  # type: List[str]
 
     def run(
@@ -329,10 +330,16 @@ class Release:
         self.check_no_tags_after()
         # Create release branch
         self.read_version()
-        with self._create_branch(self.release_branch, self.release_commit):
-            with self._checkout(self.release_branch, True):
-                with self._bump_release_branch():
-                    yield
+        assert self._version_new_tag is not None
+        with self._create_tag(
+            self._version_new_tag.describe,
+            self.release_commit,
+            f"Initial commit for release {self._version_new_tag.major}.{self._version_new_tag.minor}",
+        ):
+            with self._create_branch(self.release_branch, self.release_commit):
+                with self._checkout(self.release_branch, True):
+                    with self._bump_release_branch():
+                        yield
 
     @contextmanager
     def patch_release(self):
@@ -445,6 +452,11 @@ class Release:
         self.version.with_description(VersionType.TESTING)
         self._update_cmake_contributors(self.version)
         self._commit_cmake_contributors(self.version)
+        # Create a version-new tag
+        self._version_new_tag = self.version.copy()
+        self._version_new_tag.tweak = 1
+        self._version_new_tag.with_description(VersionType.NEW)
+
         with self._push(helper_branch):
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
             # The following command is rolled back by deleting branch in self._push
