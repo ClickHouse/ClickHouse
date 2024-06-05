@@ -475,7 +475,7 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
-### kafka Table, named collection examples
+### Example of using named collections with a Kafka table
 
 Both of the following examples use the same named collection `my_kafka_cluster`:
 
