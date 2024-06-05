@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 **Engine Parameters**
 
-- `host:port` — MongoDB server address. 
+- `host:port` — MongoDB server address.
 
 - `database` — Remote database name.
 
