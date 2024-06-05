@@ -35,7 +35,7 @@ bool IColumnDummy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
 }
 
-StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const
 {
     /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
     char * res = arena.allocContinue(1, begin);
@@ -60,12 +60,9 @@ ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/
     return cloneDummy(bytes);
 }
 
-void IColumnDummy::expand(const IColumn::Filter & mask, bool inverted)
+void IColumnDummy::expand(const IColumn::Filter & mask, bool)
 {
-    size_t bytes = countBytesInFilter(mask);
-    if (inverted)
-        bytes = mask.size() - bytes;
-    s = bytes;
+    s = mask.size();
 }
 
 ColumnPtr IColumnDummy::permute(const Permutation & perm, size_t limit) const

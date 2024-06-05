@@ -75,7 +75,7 @@ void SerializationCustomSimpleText::serializeTextEscaped(const IColumn & column,
 void SerializationCustomSimpleText::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readEscapedString(str, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(str, istr) : readEscapedString(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
@@ -133,14 +133,14 @@ void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, si
 void SerializationCustomSimpleText::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readJSONString(str, istr);
+    readJSONString(str, istr, settings.json);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadJSONStringInto(str, istr))
+    if (!tryReadJSONStringInto(str, istr, settings.json))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }

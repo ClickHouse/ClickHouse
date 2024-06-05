@@ -1,6 +1,6 @@
 #include <Common/ProxyListConfigurationResolver.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/URI.h>
 
@@ -25,8 +25,6 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve()
     size_t index = proxies.size() > 1 ? (access_counter++) % proxies.size() : 0;
 
     auto & proxy = proxies[index];
-
-    LOG_DEBUG(getLogger("ProxyListConfigurationResolver"), "Use proxy: {}", proxies[index].toString());
 
     return ProxyConfiguration {
         proxy.getHost(),

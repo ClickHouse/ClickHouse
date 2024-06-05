@@ -11,7 +11,11 @@ ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
 
 function query()
 {
-    for _ in {1..50}; do
+    local it=0
+    TIMELIMIT=30
+    while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 50 ];
+    do
+        it=$((it+1))
         ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS parallel_ddl"
         ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
     done

@@ -25,7 +25,7 @@
   */
 template <typename T, typename U>
 constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
-    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U));
+    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U)); /// NOLINT(misc-redundant-expression)
 
 namespace DB
 {
@@ -284,7 +284,7 @@ public:
     }
 
     template <typename It1, typename It2>
-    inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
+    void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
     {
 #if !defined(NDEBUG)
         const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);
@@ -300,6 +300,8 @@ public:
         dealloc();
     }
 };
+
+/// NOLINTBEGIN(bugprone-sizeof-expression)
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
@@ -422,7 +424,7 @@ public:
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        new (t_end()) T(std::forward<U>(x));
+        new (reinterpret_cast<void*>(t_end())) T(std::forward<U>(x));
         this->c_end += sizeof(T);
     }
 
@@ -558,7 +560,7 @@ public:
     }
 
     template <typename... TAllocatorParams>
-    void swap(PODArray & rhs, TAllocatorParams &&... allocator_params)
+    void swap(PODArray & rhs, TAllocatorParams &&... allocator_params) /// NOLINT(performance-noexcept-swap)
     {
 #ifndef NDEBUG
         this->unprotect();
@@ -755,8 +757,10 @@ public:
     }
 };
 
+/// NOLINTEND(bugprone-sizeof-expression)
+
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
-void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs)
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs) /// NOLINT
 {
     lhs.swap(rhs);
 }

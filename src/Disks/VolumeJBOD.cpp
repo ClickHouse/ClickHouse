@@ -1,6 +1,6 @@
 #include "VolumeJBOD.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -22,6 +22,8 @@ VolumeJBOD::VolumeJBOD(
     , disks_by_size(disks.begin(), disks.end())
 {
     LoggerPtr logger = getLogger("StorageConfiguration");
+
+    volume_priority = config.getUInt64(config_prefix + ".volume_priority", std::numeric_limits<UInt64>::max());
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
@@ -85,7 +87,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         DiskSelectorPtr disk_selector)
     : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load();
     last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
@@ -110,7 +112,6 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
             return disks_by_size.top().disk;
         }
     }
-    UNREACHABLE();
 }
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
@@ -162,7 +163,6 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
         }
     }
-    UNREACHABLE();
 }
 
 bool VolumeJBOD::areMergesAvoided() const

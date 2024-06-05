@@ -123,6 +123,13 @@ class Cache:
                 local_s3_cache = Path(url[7:])
                 if local_s3_cache.is_file():
                     shutil.copy2(local_s3_cache, compressed_cache)
+                else:
+                    logging.warning(
+                        "The local cache file %s does not exist, creating empty directory",
+                        local_s3_cache,
+                    )
+                    self.directory.mkdir(parents=True, exist_ok=True)
+                    return
             else:
                 download_build_with_progress(url, compressed_cache)
         except DownloadException as e:
@@ -155,7 +162,7 @@ class Cache:
                 logging.info("Remote cache %s already exist, won't reupload", s3_path)
                 return
 
-        logging.info("Compressing cargo cache")
+        logging.info("Compressing cache")
         archive_path = self.temp_path / self.archive_name
         compress_fast(self.directory, archive_path)
         logging.info("Uploading %s to S3 path %s", archive_path, s3_path)
@@ -190,7 +197,6 @@ class CargoCache(Cache):
             logging.info("Cache for Cargo.lock md5 %s will be uploaded", self.lock_hash)
             self._force_upload_cache = True
             self.directory.mkdir(parents=True, exist_ok=True)
-            return
 
     def upload(self):
         self._upload(f"{self.PREFIX}/{self.archive_name}", self._force_upload_cache)

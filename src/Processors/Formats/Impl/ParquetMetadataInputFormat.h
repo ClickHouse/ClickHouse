@@ -83,7 +83,7 @@ private:
 class ParquetMetadataSchemaReader : public ISchemaReader
 {
 public:
-    ParquetMetadataSchemaReader(ReadBuffer & in_);
+    explicit ParquetMetadataSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };

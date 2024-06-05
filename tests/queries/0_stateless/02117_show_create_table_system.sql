@@ -1,6 +1,6 @@
 /* we will `use system` to bypass style check,
 because `show create table` statement
-cannot fit the requirement in check-sytle, which is as
+cannot fit the requirement in check-style, which is as
 
 "# Queries to:
 tables_with_database_column=(

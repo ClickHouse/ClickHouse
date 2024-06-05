@@ -11,13 +11,17 @@ assignees: ''
 
 > You have to provide the following information whenever possible.
 
+**Company or project name**
+
+> Put your company name or project description here
+
 **Describe what's wrong**
 
 > A clear and concise description of what works not as it is supposed to.
 
 > A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
 
-**Does it reproduce on recent release?**
+**Does it reproduce on the most recent release?**
 
 [The list of releases](https://github.com/ClickHouse/ClickHouse/blob/master/utils/list-versions/version_date.tsv)
 
@@ -34,11 +38,11 @@ assignees: ''
 **How to reproduce**
 
 * Which ClickHouse server version to use
-* Which interface to use, if matters
+* Which interface to use, if it matters
 * Non-default settings, if any
 * `CREATE TABLE` statements for all tables involved
 * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/master/programs/obfuscator/Obfuscator.cpp#L42-L80) if necessary
-* Queries to run that lead to unexpected result
+* Queries to run that lead to an unexpected result
 
 **Expected behavior**
 

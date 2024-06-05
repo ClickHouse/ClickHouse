@@ -4,7 +4,6 @@
 
 import argparse
 import logging
-
 from datetime import datetime
 from os import getenv
 from pprint import pformat
@@ -14,11 +13,15 @@ from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
 
-from commit_status_helper import get_commit_filtered_statuses
+from commit_status_helper import (
+    get_commit_filtered_statuses,
+    get_commit,
+    trigger_mergeable_check,
+)
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-
+from report import SUCCESS
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -175,6 +178,17 @@ def parse_args() -> argparse.Namespace:
         help="if set, the script won't merge the PR, just check the conditions",
     )
     parser.add_argument(
+        "--set-ci-status",
+        action="store_true",
+        help="if set, only update/set Mergeable Check status",
+    )
+    parser.add_argument(
+        "--wf-status",
+        type=str,
+        default="",
+        help="overall workflow status [success|failure]. used with --set-ci-status only",
+    )
+    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
@@ -227,6 +241,20 @@ def main():
     token = args.token or get_best_robot_token()
     gh = GitHub(token)
     repo = gh.get_repo(args.repo)
+
+    if args.set_ci_status:
+        assert args.wf_status in ("failure", "success")
+        # set mergeable check status and exit
+        commit = get_commit(gh, args.pr_info.sha)
+        statuses = get_commit_filtered_statuses(commit)
+        trigger_mergeable_check(
+            commit,
+            statuses,
+            set_if_green=True,
+            workflow_failed=(args.wf_status != "success"),
+        )
+        return
+
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access
@@ -269,7 +297,7 @@ def main():
         failed_statuses = [
             status.context
             for status in get_commit_filtered_statuses(commit)
-            if status.state != "success"
+            if status.state != SUCCESS
         ]
         if failed_statuses:
             logging.warning(

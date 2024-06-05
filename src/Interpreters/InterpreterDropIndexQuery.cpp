@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>

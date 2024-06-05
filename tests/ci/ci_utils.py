@@ -1,7 +1,7 @@
-from contextlib import contextmanager
 import os
-from typing import List, Union, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Iterator, List, Union
 
 
 class WithIter(type):
@@ -27,9 +27,16 @@ def is_hex(s):
         return False
 
 
+def normalize_string(string: str) -> str:
+    res = string.lower()
+    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_"), ("-", "_")):
+        res = res.replace(*r)
+    return res
+
+
 class GHActions:
     @staticmethod
-    def print_in_group(group_name: str, lines: Union[str, List[str]]) -> None:
+    def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
         lines = list(lines)
         print(f"::group::{group_name}")
         for line in lines:

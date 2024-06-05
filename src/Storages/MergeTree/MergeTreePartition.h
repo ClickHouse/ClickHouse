@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <base/types.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
-#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <base/types.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -45,17 +44,14 @@ public:
 
     /// Store functions return write buffer with written but not finalized data.
     /// User must call finish() for returned object.
-    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(
+        StorageMetadataPtr metadata_snapshot, ContextPtr storage_context,
+        IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const;
     [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const;
 
     void assign(const MergeTreePartition & other) { value = other.value; }
 
     void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
-
-    /// Copy of MergeTreePartition::create, but also validates if min max partition keys are equal. If they are different,
-    /// it means the partition can't be created because the data doesn't belong to the same partition.
-    void createAndValidateMinMaxPartitionIds(
-        const StorageMetadataPtr & metadata_snapshot, Block block_with_min_max_partition_ids, ContextPtr context);
 
     static void appendFiles(const MergeTreeData & storage, Strings & files);
 

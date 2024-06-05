@@ -4,11 +4,11 @@ sidebar_position: 50
 sidebar_label: VIEW
 ---
 
-# ALTER TABLE … MODIFY QUERY Statement
+# ALTER TABLE ... MODIFY QUERY Statement
 
-You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE … MODIFY QUERY` statement without interrupting ingestion process.
+You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
-This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underling storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
+This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underlying storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
 
 **Example with TO table**
 
@@ -78,8 +78,6 @@ ORDER BY ts, event_type;
 │ 2020-01-03 00:00:00 │ click      │         │          2 │    0 │
 │ 2020-01-03 00:00:00 │ imp        │         │          2 │    0 │
 └─────────────────────┴────────────┴─────────┴────────────┴──────┘
-
-SET allow_experimental_alter_materialized_view_structure=1;
 
 ALTER TABLE mv MODIFY QUERY
   SELECT toStartOfDay(ts) ts, event_type, browser,
@@ -178,7 +176,6 @@ SELECT * FROM mv;
 └───┘
 ```
 ```sql
-set allow_experimental_alter_materialized_view_structure=1;
 ALTER TABLE mv MODIFY QUERY SELECT a * 2 as a FROM src_table;
 INSERT INTO src_table (a) VALUES (3), (4);
 SELECT * FROM mv;
@@ -198,6 +195,6 @@ SELECT * FROM mv;
 
 `ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](../create/view.md#live-view). See [Force Live View Refresh](../create/view.md#live-view-alter-refresh).
 
-## ALTER TABLE … MODIFY REFRESH Statement
+## ALTER TABLE ... MODIFY REFRESH Statement
 
 `ALTER TABLE ... MODIFY REFRESH` statement changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view). See [Changing Refresh Parameters](../create/view.md#changing-refresh-parameters).

@@ -112,7 +112,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
-std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
+MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final)
@@ -132,11 +132,19 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     if (!optimize_result)
         return {};
 
-    auto filter_actions = reconstructDAG(optimize_result->where_conditions);
-    auto prewhere_filter_actions = reconstructDAG(optimize_result->prewhere_conditions);
+    std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
+    std::list<const ActionsDAG::Node *> prewhere_conditions_list;
+    for (const auto & condition : optimize_result->prewhere_conditions)
+    {
+        const ActionsDAG::Node * condition_node = condition.node.getDAGNode();
+        if (prewhere_conditions.insert(condition_node).second)
+            prewhere_conditions_list.push_back(condition_node);
+    }
 
-    FilterActionsOptimizeResult result = { std::move(filter_actions), std::move(prewhere_filter_actions) };
-    return result;
+    return {
+        .prewhere_nodes = std::move(prewhere_conditions),
+        .prewhere_nodes_list = std::move(prewhere_conditions_list),
+        .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
 static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)
@@ -253,9 +261,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         cond.columns_size = getColumnsSize(cond.table_columns);
 
         cond.viable =
-            !has_invalid_column &&
+            !has_invalid_column
             /// Condition depend on some column. Constant expressions are not moved.
-            !cond.table_columns.empty()
+            && !cond.table_columns.empty()
             && !cannotBeMoved(node, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
@@ -265,17 +273,15 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Do not move conditions involving all queried columns.
             && cond.table_columns.size() < queried_columns.size();
 
-        if (cond.viable)
-            cond.good = isConditionGood(node, table_columns);
-
         if (where_optimizer_context.use_statistic)
         {
             cond.good = cond.viable;
-
             cond.selectivity = estimator.estimateSelectivity(node);
-
-            if (node.getASTNode() != nullptr)
-                LOG_TEST(log, "Condition {} has selectivity {}", node.getASTNode()->dumpTree(), cond.selectivity);
+            LOG_TEST(log, "Condition {} has selectivity {}", node.getColumnName(), cond.selectivity);
+        }
+        else if (cond.viable)
+        {
+            cond.good = isConditionGood(node, table_columns);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
@@ -343,20 +349,6 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     return function;
 }
 
-ActionsDAGPtr MergeTreeWhereOptimizer::reconstructDAG(const Conditions & conditions)
-{
-    if (conditions.empty())
-        return {};
-
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
-    filter_nodes.reserve(conditions.size());
-
-    for (const auto & condition : conditions)
-        filter_nodes.push_back(condition.node.getDAGNode());
-
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes);
-}
-
 std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::optimizeImpl(const RPNBuilderTreeNode & node,
     const WhereOptimizerContext & where_optimizer_context) const
 {
@@ -369,6 +361,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
+        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
         prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
@@ -377,9 +370,14 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
         {
             if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
+            {
+                LOG_TRACE(log, "Condition {} moved to PREWHERE", jt->node.getColumnName());
                 prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
+            }
             else
+            {
                 ++jt;
+            }
         }
     };
 

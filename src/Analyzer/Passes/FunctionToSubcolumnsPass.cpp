@@ -215,7 +215,7 @@ public:
     }
 
 private:
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
@@ -224,7 +224,7 @@ private:
 
 }
 
-void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     FunctionToSubcolumnsVisitor visitor(context);
     visitor.visit(query_tree_node);

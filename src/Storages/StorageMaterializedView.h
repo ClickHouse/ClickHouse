@@ -18,7 +18,7 @@ public:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_,
+        LoadingStrictnessLevel mode,
         const String & comment);
 
     std::string getName() const override { return "MaterializedView"; }
@@ -32,6 +32,7 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
+    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -75,11 +76,10 @@ public:
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
 
-    /// Get the virtual column of the target table;
-    NamesAndTypesList getVirtuals() const override;
-
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -110,6 +110,10 @@ private:
     bool refresh_on_start = false;
 
     bool has_inner_table = false;
+
+    /// If false, inner table is replaced on each refresh. In that case, target_table_id doesn't
+    /// have UUID, and we do inner table lookup by name instead.
+    bool fixed_uuid = true;
 
     friend class RefreshTask;
 

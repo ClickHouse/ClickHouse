@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
+import csv
+import datetime
+import json
+import logging
+import os
 from ast import literal_eval
 from dataclasses import asdict, dataclass
+from html import escape
 from pathlib import Path
 from typing import (
     Dict,
@@ -13,17 +19,11 @@ from typing import (
     Tuple,
     Union,
 )
-from html import escape
-import csv
-import datetime
-import json
-import logging
-import os
 
 from build_download_helper import get_gh_api
-from ci_config import BuildConfig, CI_CONFIG
+from ci_config import CI_CONFIG, BuildConfig
+from ci_utils import normalize_string
 from env_helper import REPORT_PATH, TEMP_PATH
-
 
 logger = logging.getLogger(__name__)
 
@@ -34,28 +34,40 @@ SUCCESS: Final = "success"
 
 OK: Final = "OK"
 FAIL: Final = "FAIL"
+SKIPPED: Final = "SKIPPED"
 
 StatusType = Literal["error", "failure", "pending", "success"]
+STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
+
+
 # The order of statuses from the worst to the best
-_STATES = {ERROR: 0, FAILURE: 1, PENDING: 2, SUCCESS: 3}
+def _state_rank(status: str) -> int:
+    "return the index of status or index of SUCCESS in case of wrong status"
+    try:
+        return STATUSES.index(status)  # type: ignore
+    except ValueError:
+        return 3
 
 
-def get_worst_status(statuses: Iterable[str]) -> str:
-    worst_status = None
+def get_status(status: str) -> StatusType:
+    "function to get the StatusType for a status or ERROR"
+    try:
+        ind = STATUSES.index(status)  # type: ignore
+        return STATUSES[ind]
+    except ValueError:
+        return ERROR
+
+
+def get_worst_status(statuses: Iterable[str]) -> StatusType:
+    worst_status = SUCCESS  # type: StatusType
     for status in statuses:
-        if _STATES.get(status) is None:
-            continue
-        if worst_status is None:
-            worst_status = status
-            continue
-        if _STATES.get(status) < _STATES.get(worst_status):
-            worst_status = status
+        ind = _state_rank(status)
+        if ind < _state_rank(worst_status):
+            worst_status = STATUSES[ind]
 
         if worst_status == ERROR:
             break
 
-    if worst_status is None:
-        return ""
     return worst_status
 
 
@@ -276,7 +288,7 @@ class JobReport:
     start_time: str
     duration: float
     additional_files: Union[Sequence[str], Sequence[Path]]
-    # clcikhouse version, build job only
+    # clickhouse version, build job only
     version: str = ""
     # checkname to set in commit status, set if differs from jjob name
     check_name: str = ""
@@ -285,14 +297,18 @@ class JobReport:
     # if False no GH commit status will be created by CI
     need_commit_status: bool = True
 
+    def __post_init__(self):
+        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
+
     @classmethod
     def exist(cls) -> bool:
         return JOB_REPORT_FILE.is_file()
 
     @classmethod
-    def load(cls):  # type: ignore
+    def load(cls, from_file=None):  # type: ignore
         res = {}
-        with open(JOB_REPORT_FILE, "r") as json_file:
+        from_file = from_file or JOB_REPORT_FILE
+        with open(from_file, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
             # Deserialize the nested lists of TestResult
             test_results_data = res.get("test_results", [])
@@ -305,13 +321,14 @@ class JobReport:
         if JOB_REPORT_FILE.exists():
             JOB_REPORT_FILE.unlink()
 
-    def dump(self):
+    def dump(self, to_file=None):
         def path_converter(obj):
             if isinstance(obj, Path):
                 return str(obj)
             raise TypeError("Type not serializable")
 
-        with open(JOB_REPORT_FILE, "w") as json_file:
+        to_file = to_file or JOB_REPORT_FILE
+        with open(to_file, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
 
 
@@ -384,36 +401,46 @@ class BuildResult:
     @classmethod
     def load_any(cls, build_name: str, pr_number: int, head_ref: str):  # type: ignore
         """
-        loads report from suitable report file with the following priority:
-            1. report from PR with the same @pr_number
-            2. report from branch with the same @head_ref
-            3. report from the master
-            4. any other report
+        loads build report from one of all available report files (matching the job digest)
+        with the following priority:
+            1. report for the current PR @pr_number (might happen in PR' wf with or without job reuse)
+            2. report for the current branch @head_ref (might happen in release/master' wf with or without job reuse)
+            3. report for master branch (might happen in any workflow in case of job reuse)
+            4. any other report (job reuse from another PR, if master report is not available yet)
         """
-        reports = []
+        pr_report = None
+        ref_report = None
+        master_report = None
+        any_report = None
         for file in Path(REPORT_PATH).iterdir():
             if f"{build_name}.json" in file.name:
-                reports.append(file)
-        if not reports:
+                any_report = file
+                if "_master_" in file.name:
+                    master_report = file
+                elif f"_{head_ref}_" in file.name:
+                    ref_report = file
+                elif pr_number and f"_{pr_number}_" in file.name:
+                    pr_report = file
+
+        if not any_report:
             return None
-        file_path = None
-        for file in reports:
-            if pr_number and f"_{pr_number}_" in file.name:
-                file_path = file
-                break
-            if f"_{head_ref}_" in file.name:
-                file_path = file
-                break
-            if "_master_" in file.name:
-                file_path = file
-                break
-        return cls.load_from_file(file_path or reports[-1])
+
+        if pr_report:
+            file_path = pr_report
+        elif ref_report:
+            file_path = ref_report
+        elif master_report:
+            file_path = master_report
+        else:
+            file_path = any_report
+
+        return cls.load_from_file(file_path)
 
     @classmethod
     def load_from_file(cls, file: Union[Path, str]):  # type: ignore
         if not Path(file).exists():
             return None
-        with open(file, "r") as json_file:
+        with open(file, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
         return BuildResult(**res)
 
@@ -447,6 +474,12 @@ class BuildResult:
         if self.build_config is None:
             return self._wrong_config_message
         return self.build_config.sanitizer
+
+    @property
+    def coverage(self) -> str:
+        if self.build_config is None:
+            return self._wrong_config_message
+        return str(self.build_config.coverage)
 
     @property
     def grouped_urls(self) -> List[List[str]]:
@@ -549,7 +582,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or self.head_ref
+            self.build_name, self.pr_number or normalize_string(self.head_ref)
         )
         path.write_text(
             json.dumps(
@@ -586,7 +619,6 @@ class ReportColorTheme:
         blue = "#00B4FF"
 
     default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
-    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
 
 
 ColorTheme = Tuple[str, str, str]
@@ -774,6 +806,7 @@ HTML_BASE_BUILD_TEMPLATE = (
 <th>Build type</th>
 <th>Version</th>
 <th>Sanitizer</th>
+<th>Coverage</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -814,6 +847,8 @@ def create_build_html_report(
                 row.append(f"<td>{build_result.sanitizer}</td>")
             else:
                 row.append("<td>none</td>")
+
+            row.append(f"<td>{build_result.coverage}</td>")
 
             if build_result.status:
                 style = _get_status_style(build_result.status)
