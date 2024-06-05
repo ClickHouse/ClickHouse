@@ -75,15 +75,10 @@ def get_gh_api(
     """
 
     def set_auth_header():
-        if "headers" in kwargs:
-            if "Authorization" not in kwargs["headers"]:
-                kwargs["headers"][
-                    "Authorization"
-                ] = f"Bearer {grt.get_best_robot_token()}"
-        else:
-            kwargs["headers"] = {
-                "Authorization": f"Bearer {grt.get_best_robot_token()}"
-            }
+        headers = kwargs.get("headers", {})
+        if "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {grt.get_best_robot_token()}"
+        kwargs["headers"] = headers
 
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
