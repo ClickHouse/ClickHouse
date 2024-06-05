@@ -126,7 +126,7 @@ public:
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
-    virtual std::string getRemotePath(const std::string & file_name) const = 0;
+    virtual std::string getRemotePath(const std::string & file_name, bool if_exists) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
