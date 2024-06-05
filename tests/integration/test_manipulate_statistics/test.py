@@ -34,14 +34,14 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
         [
             "bash",
             "-c",
-            "find {p} -type f -name statistic_{col}.stat".format(
+            "find {p} -type f -name statistics_{col}.stats".format(
                 p=part_path, col=column_name
             ),
         ],
         privileged=True,
     )
     logging.debug(
-        f"Checking stat file in {part_path} for column {column_name}, got {output}"
+        f"Checking stats file in {part_path} for column {column_name}, got {output}"
     )
     if exist:
         assert len(output) != 0
@@ -56,26 +56,26 @@ def run_test_single_node(started_cluster):
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "c", True)
 
-    node1.query("ALTER TABLE test_stat DROP STATISTIC a type tdigest")
+    node1.query("ALTER TABLE test_stat DROP STATISTICS a")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "a", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "c", True)
 
-    node1.query("ALTER TABLE test_stat CLEAR STATISTIC b, c type tdigest")
+    node1.query("ALTER TABLE test_stat CLEAR STATISTICS b, c")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_3", "a", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_3", "b", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_3", "c", False)
 
-    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC b, c type tdigest")
+    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTICS b, c")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "a", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "c", True)
 
-    node1.query("ALTER TABLE test_stat ADD STATISTIC a type tdigest")
-    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC a type tdigest")
+    node1.query("ALTER TABLE test_stat ADD STATISTICS a type tdigest")
+    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTICS a")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "a", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "b", True)
@@ -104,7 +104,7 @@ def test_single_node_wide(started_cluster):
 
     node1.query(
         """
-        CREATE TABLE test_stat(a Int64 STATISTIC(tdigest), b Int64 STATISTIC(tdigest), c Int64 STATISTIC(tdigest))
+        CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
         ENGINE = MergeTree() ORDER BY a
         SETTINGS min_bytes_for_wide_part = 0;
     """
@@ -117,7 +117,7 @@ def test_single_node_normal(started_cluster):
 
     node1.query(
         """
-        CREATE TABLE test_stat(a Int64 STATISTIC(tdigest), b Int64 STATISTIC(tdigest), c Int64 STATISTIC(tdigest))
+        CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
         ENGINE = MergeTree() ORDER BY a;
     """
     )

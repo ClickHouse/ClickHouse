@@ -448,9 +448,9 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (column.stat)
+        if (!column.statistics.empty())
         {
-            column_declaration->stat_type = column.stat->ast;
+            column_declaration->stat_type = column.statistics.getAST();
             column_declaration->children.push_back(column_declaration->stat_type);
         }
 
@@ -675,11 +675,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
+        column.statistics.column_name = column.name; /// We assign column name here for better exception error message.
         if (col_decl.stat_type)
         {
-            if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistic)
-                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
-            column.stat = StatisticDescription::getStatisticFromColumnDeclaration(col_decl);
+            if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistics)
+                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
+            column.statistics = ColumnStatisticsDescription::fromColumnDeclaration(col_decl);
+            column.statistics.data_type = column.type;
         }
 
         if (col_decl.ttl)
