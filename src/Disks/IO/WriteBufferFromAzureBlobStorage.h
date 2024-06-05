@@ -80,6 +80,7 @@ private:
     bool first_buffer=true;
 
     std::unique_ptr<TaskTracker> task_tracker;
+    bool check_objects_after_upload;
 };
 
 }

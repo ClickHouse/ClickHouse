@@ -32,7 +32,8 @@ struct AzureObjectStorageSettings
         size_t max_inflight_parts_for_one_file_,
         size_t strict_upload_part_size_,
         size_t upload_part_size_multiply_factor_,
-        size_t upload_part_size_multiply_parts_count_threshold_)
+        size_t upload_part_size_multiply_parts_count_threshold_,
+        bool check_objects_after_upload_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
@@ -47,6 +48,7 @@ struct AzureObjectStorageSettings
         , strict_upload_part_size(strict_upload_part_size_)
         , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
         , upload_part_size_multiply_parts_count_threshold(upload_part_size_multiply_parts_count_threshold_)
+        , check_objects_after_upload(check_objects_after_upload_)
     {
     }
 
@@ -67,6 +69,7 @@ struct AzureObjectStorageSettings
     size_t strict_upload_part_size = 0;
     size_t upload_part_size_multiply_factor = 2;
     size_t upload_part_size_multiply_parts_count_threshold = 500;
+    bool check_objects_after_upload = false;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

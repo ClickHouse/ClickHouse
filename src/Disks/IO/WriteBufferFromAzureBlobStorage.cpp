@@ -19,6 +19,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int AZURE_BLOB_STORAGE_ERROR;
+}
+
 struct WriteBufferFromAzureBlobStorage::PartData
 {
     Memory<> memory;
@@ -59,6 +64,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
               limitedLog))
+    , check_objects_after_upload(settings_->check_objects_after_upload)
 {
     allocateBuffer();
 }
@@ -150,6 +156,33 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+    }
+
+    if (check_objects_after_upload)
+    {
+        Azure::Storage::Blobs::ListBlobsOptions options;
+        options.Prefix = blob_path;
+        options.PageSizeHint = 1;
+
+        auto blobs_list_response = blob_container_client->ListBlobs(options);
+        auto blobs_list = blobs_list_response.Blobs;
+
+        bool found = false;
+
+        for (const auto & blob : blobs_list)
+        {
+            if (blob_path == blob.Name)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                    "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
+                    blob_path);
     }
 }
 
