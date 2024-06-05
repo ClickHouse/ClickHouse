@@ -557,6 +557,8 @@ MinHash
 MinIO
 MinMax
 MindsDB
+mlock
+mlockall
 Mongodb
 Monotonicity
 MsgPack
