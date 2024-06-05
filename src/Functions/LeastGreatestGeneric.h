@@ -123,7 +123,7 @@ public:
         if (types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
-        if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
+        if (types.size() == 2 && isNumber(removeNullable(types[0])) && isNumber(removeNullable(types[1])))
             return SpecializedFunction::create(context)->getReturnTypeImpl(types);
 
         return getLeastSupertype(types);
