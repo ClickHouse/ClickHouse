@@ -1811,8 +1811,10 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
-    return *result_ptr;
+    if (!analyzed_result_ptr)
+        analyzed_result_ptr = selectRangesToRead();
+
+    return *analyzed_result_ptr;
 }
 
 bool ReadFromMergeTree::isQueryWithSampling() const
