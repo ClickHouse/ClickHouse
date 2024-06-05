@@ -185,6 +185,8 @@ S3QueueMetadata::FileMetadataPtr S3QueueMetadata::getFileMetadata(
                 file_status,
                 settings.s3queue_loading_retries,
                 log);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown S3QueueMode {}", settings.mode);
     }
 }
 
