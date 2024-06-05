@@ -514,6 +514,7 @@ jobs:
 #############################################################################################
   RegressionTestsRelease:
     needs: [BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -523,6 +524,7 @@ jobs:
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   RegressionTestsAarch64:
     needs: [BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -532,6 +534,7 @@ jobs:
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   SignRelease:
     needs: [BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     timeout-minutes: 180
     steps:
@@ -545,9 +548,9 @@ jobs:
         run: |
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Download json reports
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: Sign release
@@ -559,7 +562,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 sign_release.py
       - name: Upload signed hashes
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: signed-hashes
           path: ${{ env.TEMP_PATH }}/*.gpg
