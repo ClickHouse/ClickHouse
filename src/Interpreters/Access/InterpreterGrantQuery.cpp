@@ -442,6 +442,7 @@ BlockIO InterpreterGrantQuery::execute()
     String current_database = getContext()->getCurrentDatabase();
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
+    query.access_rights_elements.replaceEmptyDatabase(current_database);
 
     /// Executing on cluster.
     if (!query.cluster.empty())
