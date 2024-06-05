@@ -144,7 +144,7 @@ if [ $database_error -ne 2 ]; then
     exit 1
 fi
 
-#table_error should be 1
+# table_error should be 1
 if [ $table_error -ne 1 ]; then
     echo "table_error should be 1, but now -s $table_error. Tried to create 11 tables, 10 should be created and 1 should fail"
     echo "Limitation is 10 tables"
