@@ -1,5 +1,26 @@
-const column
-UTC	1426860704886947840	2021-08-15 10:57:56	DateTime(\'UTC\')	2021-08-15 10:57:56.492	DateTime64(3, \'UTC\')
-Asia/Shanghai	1426860704886947840	2021-08-15 18:57:56	DateTime(\'Asia/Shanghai\')	2021-08-15 18:57:56.492	DateTime64(3, \'Asia/Shanghai\')
-1
-1
+-- non-const path
+Row 1:
+──────
+tz:               UTC
+i64:              1426860704886947840
+dt:               2021-08-15 10:57:56
+toTypeName(dt):   DateTime('UTC')
+dt64:             2021-08-15 10:57:56.492
+toTypeName(dt64): DateTime64(3, 'UTC')
+Row 1:
+──────
+tz:               Asia/Shanghai
+i64:              1426860704886947840
+dt:               2021-08-15 18:57:56
+toTypeName(dt):   DateTime('Asia/Shanghai')
+dt64:             2021-08-15 18:57:56.492
+toTypeName(dt64): DateTime64(3, 'Asia/Shanghai')
+-- non-const path
+Row 1:
+──────
+tz:               UTC
+i64:              1426860704886947840
+dt:               2021-08-15 10:57:56
+toTypeName(dt):   DateTime
+dt64:             2021-08-15 10:57:56.492
+toTypeName(dt64): DateTime64(3)
