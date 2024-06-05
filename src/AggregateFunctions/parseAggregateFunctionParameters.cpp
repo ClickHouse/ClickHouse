@@ -81,7 +81,8 @@ void getAggregateFunctionNameAndParametersArray(
     ParserExpressionList params_parser(false);
     ASTPtr args_ast = parseQuery(params_parser,
         parameters_str.data(), parameters_str.data() + parameters_str.size(),
-        "parameters of aggregate function in " + error_context, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        "parameters of aggregate function in " + error_context,
+        0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     if (args_ast->children.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect list of parameters to aggregate function {}",

@@ -12,13 +12,15 @@ bool ParserTransactionControl::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ASTTransactionControl::QueryType action;
     UInt64 snapshot = 0;
 
-    if (ParserKeyword("BEGIN TRANSACTION").ignore(pos, expected))
+    if (ParserKeyword(Keyword::BEGIN_TRANSACTION).ignore(pos, expected))
         action = ASTTransactionControl::BEGIN;
-    else if (ParserKeyword("COMMIT").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::START_TRANSACTION).ignore(pos, expected))
+        action = ASTTransactionControl::BEGIN;
+    else if (ParserKeyword(Keyword::COMMIT).ignore(pos, expected))
         action = ASTTransactionControl::COMMIT;
-    else if (ParserKeyword("ROLLBACK").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::ROLLBACK).ignore(pos, expected))
         action = ASTTransactionControl::ROLLBACK;
-    else if (ParserKeyword("SET TRANSACTION SNAPSHOT").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::SET_TRANSACTION_SNAPSHOT).ignore(pos, expected))
     {
         action = ASTTransactionControl::SET_SNAPSHOT;
         ASTPtr ast;

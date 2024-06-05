@@ -32,6 +32,7 @@ public:
 
     void finalizeImpl() override
     {
+        Base::finalizeImpl();
         try
         {
             finalizeBefore();

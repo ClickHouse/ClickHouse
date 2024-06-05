@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropFunctionQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
 
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     ASTDropFunctionQuery & drop_function_query = updated_query_ptr->as<ASTDropFunctionQuery &>();

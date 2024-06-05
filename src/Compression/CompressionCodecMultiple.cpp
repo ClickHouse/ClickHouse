@@ -1,14 +1,9 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <Common/PODArray.h>
-#include <base/unaligned.h>
 #include <Compression/CompressionFactory.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <base/hex.h>
 
 
 namespace DB
@@ -88,14 +83,34 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
         const auto codec = CompressionCodecFactory::instance().get(compression_method);
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
-        compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
+        if (compressed_buf.size() >= 1_GiB)
+            throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
+
+        {
+            UInt32 bytes_to_resize;
+            if (common::addOverflow(static_cast<UInt32>(compressed_buf.size()), additional_size_at_the_end_of_buffer, bytes_to_resize))
+                throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
+
+            compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
+        }
+
         UInt32 uncompressed_size = readDecompressedBlockSize(compressed_buf.data());
+
+        if (uncompressed_size >= 1_GiB)
+            throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception(decompression_error_code, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
                 uncompressed_size, decompressed_size);
 
-        uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
+        {
+            UInt32 bytes_to_resize;
+            if (common::addOverflow(uncompressed_size, additional_size_at_the_end_of_buffer, bytes_to_resize))
+                throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
+
+            uncompressed_buf.resize(bytes_to_resize);
+        }
+
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
         uncompressed_buf.swap(compressed_buf);
         source_size = uncompressed_size;

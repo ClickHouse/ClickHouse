@@ -70,7 +70,7 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
@@ -100,12 +100,11 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
+        RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
 public:
     std::mutex read_request_queue_mutex;
-
-    std::atomic<uint64_t> our_last_committed_log_idx = 0;
 
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;
@@ -177,6 +176,11 @@ public:
         return server->isObserver();
     }
 
+    bool isExceedingMemorySoftLimit() const
+    {
+        return server->isExceedingMemorySoftLimit();
+    }
+
     uint64_t getLogDirSize() const;
 
     uint64_t getSnapDirSize() const;
@@ -240,12 +244,12 @@ public:
     /// Yield leadership and become follower.
     void yieldLeadership()
     {
-        return server->yieldLeadership();
+        server->yieldLeadership();
     }
 
     void recalculateStorageStats()
     {
-        return server->recalculateStorageStats();
+        server->recalculateStorageStats();
     }
 
     static void cleanResources();

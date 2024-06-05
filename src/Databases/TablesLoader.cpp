@@ -29,7 +29,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , async_loader(global_context->getAsyncLoader())
 {
     metadata.default_database = global_context->getCurrentDatabase();
-    log = &Poco::Logger::get("TablesLoader");
+    log = getLogger("TablesLoader");
 }
 
 LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
@@ -199,7 +199,7 @@ void TablesLoader::removeUnresolvableDependencies()
         return true; /// Exclude this dependency.
     };
 
-    all_loading_dependencies.removeTablesIf(need_exclude_dependency);
+    all_loading_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
     if (all_loading_dependencies.getNumberOfTables() != metadata.parsed_tables.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be loaded is not as expected. It's a bug");

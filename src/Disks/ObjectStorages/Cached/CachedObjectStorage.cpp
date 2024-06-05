@@ -1,6 +1,5 @@
 #include "CachedObjectStorage.h"
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
@@ -25,16 +24,9 @@ CachedObjectStorage::CachedObjectStorage(
     , cache(cache_)
     , cache_settings(cache_settings_)
     , cache_config_name(cache_config_name_)
-    , log(&Poco::Logger::get(getName()))
+    , log(getLogger(getName()))
 {
     cache->initialize();
-}
-
-DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
-{
-    auto wrapped_object_storage_data_source = object_storage->getDataSourceDescription();
-    wrapped_object_storage_data_source.is_cached = true;
-    return wrapped_object_storage_data_source;
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
@@ -47,14 +39,15 @@ ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string
     return object_storage->generateObjectKeyForPath(path);
 }
 
+ObjectStorageKey CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
+{
+    return object_storage->generateObjectKeyPrefixForDirectoryPath(path);
+}
+
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
-
-    if (!canUseReadThroughCache(read_settings))
-        modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
     return object_storage->patchSettings(modified_settings);
 }
 
@@ -114,6 +107,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
+            FileCache::getCommonUser(),
             Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 
@@ -126,7 +120,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeKeyIfExists(getCacheKey(path_key_for_cache));
+    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
@@ -187,7 +181,7 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
 }
@@ -203,24 +197,15 @@ void CachedObjectStorage::shutdown()
 }
 
 void CachedObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    ContextPtr context, const ApplyNewSettingsOptions & options)
 {
-    object_storage->applyNewSettings(config, config_prefix, context);
+    object_storage->applyNewSettings(config, config_prefix, context, options);
 }
 
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
-}
-
-bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
-{
-    if (!settings.avoid_readthrough_cache_outside_query_context)
-        return true;
-
-    return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
-        && !CurrentThread::getQueryId().empty();
 }
 
 }

@@ -39,7 +39,7 @@ ISystemLog::~ISystemLog() = default;
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
-    : log(&Poco::Logger::get("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
+    : log(getLogger("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
     , settings(settings_)
 
 {
@@ -86,8 +86,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
             const uint64_t queue_end = queue_front_index + queue.size();
-            if (requested_flush_up_to < queue_end)
-                requested_flush_up_to = queue_end;
+            requested_flush_up_to = std::max(requested_flush_up_to, queue_end);
 
             flush_event.notify_all();
         }

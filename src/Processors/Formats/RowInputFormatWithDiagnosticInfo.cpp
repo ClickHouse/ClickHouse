@@ -57,13 +57,11 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
 
     max_length_of_column_name = 0;
     for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
-            max_length_of_column_name = header.safeGetByPosition(i).name.size();
+        max_length_of_column_name = std::max(header.safeGetByPosition(i).name.size(), max_length_of_column_name);
 
     max_length_of_data_type_name = 0;
     for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
-            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
+        max_length_of_data_type_name = std::max(header.safeGetByPosition(i).type->getName().size(), max_length_of_data_type_name);
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
@@ -136,7 +134,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     auto * curr_position = in->position();
 
     if (curr_position < prev_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: parsing is non-deterministic.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing is non-deterministic.");
 
     if (isNativeNumber(type) || isDate(type) || isDateTime(type) || isDateTime64(type))
     {

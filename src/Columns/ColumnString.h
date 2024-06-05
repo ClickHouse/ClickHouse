@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstring>
-#include <cassert>
 
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -11,6 +10,8 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+
+#include <base/defines.h>
 
 
 class Collator;
@@ -23,14 +24,14 @@ class Arena;
 
 /** Column for String values.
   */
-class ColumnString final : public COWHelper<IColumn, ColumnString>
+class ColumnString final : public COWHelper<IColumnHelper<ColumnString>, ColumnString>
 {
 public:
     using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
 private:
-    friend class COWHelper<IColumn, ColumnString>;
+    friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
 
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
     Offsets offsets;
@@ -42,7 +43,11 @@ private:
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
+    size_t ALWAYS_INLINE sizeAt(ssize_t i) const
+    {
+        chassert(offsets[i] > offsets[i - 1]);
+        return offsets[i] - offsets[i - 1];
+    }
 
     struct ComparatorBase;
 
@@ -79,7 +84,7 @@ public:
 
     size_t byteSizeAt(size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return sizeAt(n) + sizeof(offsets[0]);
     }
 
@@ -94,25 +99,25 @@ public:
 
     Field operator[](size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
-        assert(n < size());
+        chassert(n < size());
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     bool isDefaultAt(size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return sizeAt(n) == 1;
     }
 
@@ -126,6 +131,15 @@ public:
         chars.resize(new_size);
         memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
+    }
+
+    bool tryInsert(const Field & x) override
+    {
+        if (x.getType() != Field::Types::Which::String)
+            return false;
+
+        insert(x);
+        return true;
     }
 
     void insertFrom(const IColumn & src_, size_t n) override
@@ -151,6 +165,8 @@ public:
         }
     }
 
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+
     void insertData(const char * pos, size_t length) override
     {
         const size_t old_size = chars.size();
@@ -170,7 +186,10 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -225,12 +244,6 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
-
-    bool hasEqualValues() const override;
-
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
 
@@ -247,42 +260,22 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
+    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
+
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
-    {
-        return scatterImpl<ColumnString>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
 
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;
-
 
     bool canBeInsideNullable() const override { return true; }
 
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnString);
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return getNumberOfDefaultRowsImpl<ColumnString>();
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndicesOfNonDefaultRowsImpl<ColumnString>(indices, from, limit);
     }
 
     Chars & getChars() { return chars; }

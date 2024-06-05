@@ -39,7 +39,7 @@ private:
     std::optional<Aws::S3::Model::GetObjectResult> read_result;
     std::unique_ptr<ReadBuffer> impl;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
+    LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
     ReadBufferFromS3(
@@ -55,7 +55,7 @@ public:
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt);
 
-    ~ReadBufferFromS3() override;
+    ~ReadBufferFromS3() override = default;
 
     bool nextImpl() override;
 
@@ -74,7 +74,7 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) override;
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
 
@@ -89,8 +89,6 @@ private:
     bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
-
-    bool readAllRangeSuccessfully() const;
 
     ReadSettings read_settings;
 

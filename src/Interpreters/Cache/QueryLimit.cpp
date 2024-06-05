@@ -1,5 +1,7 @@
-#include <Interpreters/Cache/QueryLimit.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/Metadata.h>
+#include <Interpreters/Cache/QueryLimit.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -15,7 +17,7 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheGuard::Lock &)
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CachePriorityGuard::Lock &)
 {
     if (!isQueryInitialized())
         return nullptr;
@@ -24,7 +26,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(con
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
-void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CacheGuard::Lock &)
+void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::Lock &)
 {
     auto query_iter = query_map.find(query_id);
     if (query_iter == query_map.end())
@@ -40,7 +42,7 @@ void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
     const ReadSettings & settings,
-    const CacheGuard::Lock &)
+    const CachePriorityGuard::Lock &)
 {
     if (query_id.empty())
         return nullptr;
@@ -68,9 +70,10 @@ void FileCacheQueryLimit::QueryContext::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const CacheGuard::Lock & lock)
+    const FileCache::UserInfo & user,
+    const CachePriorityGuard::Lock & lock)
 {
-    auto it = getPriority().add(key_metadata, offset, size, lock);
+    auto it = getPriority().add(key_metadata, offset, size, user, lock);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
@@ -85,7 +88,7 @@ void FileCacheQueryLimit::QueryContext::add(
 void FileCacheQueryLimit::QueryContext::remove(
     const Key & key,
     size_t offset,
-    const CacheGuard::Lock & lock)
+    const CachePriorityGuard::Lock & lock)
 {
     auto record = records.find({key, offset});
     if (record == records.end())
@@ -98,13 +101,36 @@ void FileCacheQueryLimit::QueryContext::remove(
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset,
-    const CacheGuard::Lock &)
+    const CachePriorityGuard::Lock &)
 {
     auto it = records.find({key, offset});
     if (it == records.end())
         return nullptr;
     return it->second;
 
+}
+
+FileCacheQueryLimit::QueryContextHolder::QueryContextHolder(
+    const String & query_id_,
+    FileCache * cache_,
+    FileCacheQueryLimit * query_limit_,
+    FileCacheQueryLimit::QueryContextPtr context_)
+    : query_id(query_id_)
+    , cache(cache_)
+    , query_limit(query_limit_)
+    , context(context_)
+{
+}
+
+FileCacheQueryLimit::QueryContextHolder::~QueryContextHolder()
+{
+    /// If only the query_map and the current holder hold the context_query,
+    /// the query has been completed and the query_context is released.
+    if (context && context.use_count() == 2)
+    {
+        auto lock = cache->lockCache();
+        query_limit->removeQueryContext(query_id, lock);
+    }
 }
 
 }

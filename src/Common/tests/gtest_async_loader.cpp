@@ -35,6 +35,7 @@ namespace DB::ErrorCodes
     extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int ASYNC_LOAD_WAIT_FAILED;
 }
 
 struct Initializer {
@@ -50,7 +51,7 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(std::vector<Initializer> initializers)
-        : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false)
+        : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false, /* log_events = */ false)
     {
         loader.stop(); // All tests call `start()` manually to better control ordering
     }
@@ -262,7 +263,8 @@ TEST(AsyncLoader, CancelPendingJob)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -288,7 +290,8 @@ TEST(AsyncLoader, CancelPendingTask)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 
     try
@@ -298,7 +301,8 @@ TEST(AsyncLoader, CancelPendingTask)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -325,7 +329,8 @@ TEST(AsyncLoader, CancelPendingDependency)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 
     try
@@ -335,7 +340,8 @@ TEST(AsyncLoader, CancelPendingDependency)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -427,9 +433,7 @@ TEST(AsyncLoader, CancelExecutingTask)
     }
 }
 
-// This test is disabled due to `MemorySanitizer: use-of-uninitialized-value` issue in `collectSymbolsFromProgramHeaders` function
-// More details: https://github.com/ClickHouse/ClickHouse/pull/48923#issuecomment-1545415482
-TEST(AsyncLoader, DISABLED_JobFailure)
+TEST(AsyncLoader, JobFailure)
 {
     AsyncLoaderTest t;
     t.loader.start();
@@ -453,8 +457,9 @@ TEST(AsyncLoader, DISABLED_JobFailure)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_FAILED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains(error_message));
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_FAILED"));
     }
 }
 
@@ -491,8 +496,9 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
+        ASSERT_TRUE(e.message().contains(error_message));
     }
     try
     {
@@ -501,8 +507,9 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
+        ASSERT_TRUE(e.message().contains(error_message));
     }
 }
 
@@ -533,7 +540,8 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
     try
     {
@@ -542,7 +550,8 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -622,7 +631,13 @@ TEST(AsyncLoader, CustomDependencyFailure)
     auto dependent_job1 = makeLoadJob({ collect_job }, "dependent_job1", dependent_job_func);
     auto dependent_job2 = makeLoadJob({ collect_job }, "dependent_job2", dependent_job_func);
     auto dependent_job3 = makeLoadJob({ collect_job }, "dependent_job3", dependent_job_func);
-    auto task = t.schedule({ dependent_job1, dependent_job2, dependent_job3 }); // Other jobs should be discovery automatically
+    auto task = t.schedule({
+            dependent_job1, dependent_job2, dependent_job3,
+            collect_job,
+            late_dep1, late_dep2, late_dep3,
+            good_dep1, good_dep2, good_dep3,
+            evil_dep1, evil_dep2, evil_dep3,
+        });
 
     t.loader.wait(collect_job, true);
     canceled_sync.arrive_and_wait(); // (A)
@@ -637,6 +652,72 @@ TEST(AsyncLoader, CustomDependencyFailure)
     ASSERT_EQ(dependent_job2->status(), LoadStatus::CANCELED);
     ASSERT_EQ(dependent_job3->status(), LoadStatus::CANCELED);
     ASSERT_EQ(good_count.load(), 3);
+}
+
+TEST(AsyncLoader, WaitersLimit)
+{
+    AsyncLoaderTest t(16);
+
+    std::atomic<int> waiters_total{0};
+    int waiters_limit = 5;
+    auto waiters_inc = [&] (const LoadJobPtr &) {
+        int value = waiters_total.load();
+        while (true)
+        {
+            if (value >= waiters_limit)
+                throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "Too many waiters: {}", value);
+            if (waiters_total.compare_exchange_strong(value, value + 1))
+                break;
+        }
+    };
+    auto waiters_dec = [&] (const LoadJobPtr &) {
+        waiters_total.fetch_sub(1);
+    };
+
+    std::barrier sync(2);
+    t.loader.start();
+
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+    };
+
+    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
+    auto task = t.schedule({job});
+
+    std::atomic<int> failure{0};
+    std::atomic<int> success{0};
+    std::vector<std::thread> waiters;
+    waiters.reserve(10);
+    auto waiter = [&] {
+        try
+        {
+            t.loader.wait(job);
+            success.fetch_add(1);
+        }
+        catch(...)
+        {
+            failure.fetch_add(1);
+        }
+    };
+
+    for (int i = 0; i < 10; i++)
+        waiters.emplace_back(waiter);
+
+    while (failure.load() != 5)
+        std::this_thread::yield();
+
+    ASSERT_EQ(job->waitersCount(), 5);
+
+    sync.arrive_and_wait(); // (A)
+
+    for (auto & thread : waiters)
+        thread.join();
+
+    ASSERT_EQ(success.load(), 5);
+    ASSERT_EQ(failure.load(), 5);
+    ASSERT_EQ(waiters_total.load(), 0);
+
+    t.loader.wait();
 }
 
 TEST(AsyncLoader, TestConcurrency)
@@ -886,6 +967,55 @@ TEST(AsyncLoader, DynamicPriorities)
     }
 }
 
+TEST(AsyncLoader, JobPrioritizedWhileWaited)
+{
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority{0}},
+        {.max_threads = 1, .priority{-1}},
+    });
+
+    std::barrier sync(2);
+
+    LoadJobPtr job_to_wait; // and then to prioritize
+
+    auto running_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait();
+    };
+
+    auto dependent_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+    };
+
+    auto waiting_job_func = [&] (AsyncLoader & loader, const LoadJobPtr &)
+    {
+        loader.wait(job_to_wait);
+    };
+
+    std::vector<LoadJobPtr> jobs;
+    jobs.push_back(makeLoadJob({}, 0, "running", running_job_func));
+    jobs.push_back(makeLoadJob({jobs[0]}, 0, "dependent", dependent_job_func));
+    jobs.push_back(makeLoadJob({}, 0, "waiting", waiting_job_func));
+    auto task = t.schedule({ jobs.begin(), jobs.end() });
+
+    job_to_wait = jobs[1];
+
+    t.loader.start();
+
+    while (job_to_wait->waitersCount() == 0)
+        std::this_thread::yield();
+
+    ASSERT_EQ(t.loader.suspendedWorkersCount(0), 1);
+
+    t.loader.prioritize(job_to_wait, 1);
+    sync.arrive_and_wait();
+
+    t.loader.wait();
+    t.loader.stop();
+    ASSERT_EQ(t.loader.suspendedWorkersCount(1), 0);
+    ASSERT_EQ(t.loader.suspendedWorkersCount(0), 0);
+}
+
 TEST(AsyncLoader, RandomIndependentTasks)
 {
     AsyncLoaderTest t(16);
@@ -973,8 +1103,10 @@ TEST(AsyncLoader, SetMaxThreads)
     };
 
     // Generate enough independent jobs
+    std::vector<LoadTaskPtr> tasks;
+    tasks.reserve(1000);
     for (int i = 0; i < 1000; i++)
-        t.schedule({makeLoadJob({}, "job", job_func)})->detach();
+        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
 
     t.loader.start();
     while (sync_index < syncs.size())

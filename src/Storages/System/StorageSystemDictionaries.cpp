@@ -16,7 +16,6 @@
 #include <Core/Names.h>
 
 #include <base/map.h>
-#include <mutex>
 
 namespace DB
 {
@@ -52,45 +51,55 @@ catch (const DB::Exception &)
 
 }
 
-NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
+StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
+    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
 {
-    return {
-        {"database", std::make_shared<DataTypeString>()},
-        {"name", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
-        {"origin", std::make_shared<DataTypeString>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"key.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"key.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"bytes_allocated", std::make_shared<DataTypeUInt64>()},
-        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>()},
-        {"query_count", std::make_shared<DataTypeUInt64>()},
-        {"hit_rate", std::make_shared<DataTypeFloat64>()},
-        {"found_rate", std::make_shared<DataTypeFloat64>()},
-        {"element_count", std::make_shared<DataTypeUInt64>()},
-        {"load_factor", std::make_shared<DataTypeFloat64>()},
-        {"source", std::make_shared<DataTypeString>()},
-        {"lifetime_min", std::make_shared<DataTypeUInt64>()},
-        {"lifetime_max", std::make_shared<DataTypeUInt64>()},
-        {"loading_start_time", std::make_shared<DataTypeDateTime>()},
-        {"last_successful_update_time", std::make_shared<DataTypeDateTime>()},
-        {"loading_duration", std::make_shared<DataTypeFloat32>()},
-        {"last_exception", std::make_shared<DataTypeString>()},
-        {"comment", std::make_shared<DataTypeString>()}
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
+}
+
+ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
+{
+    return ColumnsDescription
+    {
+        {"database", std::make_shared<DataTypeString>(), "Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries."},
+        {"name", std::make_shared<DataTypeString>(), "Dictionary name."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "Dictionary UUID."},
+        {"status", std::make_shared<DataTypeEnum8>(getExternalLoaderStatusEnumAllPossibleValues()),
+            "Dictionary status. Possible values: "
+            "NOT_LOADED — Dictionary was not loaded because it was not used, "
+            "LOADED — Dictionary loaded successfully, "
+            "FAILED — Unable to load the dictionary as a result of an error, "
+            "LOADING — Dictionary is loading now, "
+            "LOADED_AND_RELOADING — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: SYSTEM RELOAD DICTIONARY query, timeout, dictionary config has changed), "
+            "FAILED_AND_RELOADING — Could not load the dictionary as a result of an error and is loading now."
+        },
+        {"origin", std::make_shared<DataTypeString>(), "Path to the configuration file that describes the dictionary."},
+        {"type", std::make_shared<DataTypeString>(), "Type of a dictionary allocation. Storing Dictionaries in Memory."},
+        {"key.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of key names provided by the dictionary."},
+        {"key.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Corresponding array of key types provided by the dictionary."},
+        {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of attribute names provided by the dictionary."},
+        {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Corresponding array of attribute types provided by the dictionary."},
+        {"bytes_allocated", std::make_shared<DataTypeUInt64>(), "Amount of RAM allocated for the dictionary."},
+        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>(), "Amount of RAM allocated for hierarchical index."},
+        {"query_count", std::make_shared<DataTypeUInt64>(), "Number of queries since the dictionary was loaded or since the last successful reboot."},
+        {"hit_rate", std::make_shared<DataTypeFloat64>(), "For cache dictionaries, the percentage of uses for which the value was in the cache."},
+        {"found_rate", std::make_shared<DataTypeFloat64>(), "The percentage of uses for which the value was found."},
+        {"element_count", std::make_shared<DataTypeUInt64>(), "Number of items stored in the dictionary."},
+        {"load_factor", std::make_shared<DataTypeFloat64>(), "Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table)."},
+        {"source", std::make_shared<DataTypeString>(), "Text describing the data source for the dictionary."},
+        {"lifetime_min", std::make_shared<DataTypeUInt64>(), "Minimum lifetime of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if invalidate_query is set, then only if it has changed). Set in seconds."},
+        {"lifetime_max", std::make_shared<DataTypeUInt64>(), "Maximum lifetime of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if invalidate_query is set, then only if it has changed). Set in seconds."},
+        {"loading_start_time", std::make_shared<DataTypeDateTime>(), "Start time for loading the dictionary."},
+        {"last_successful_update_time", std::make_shared<DataTypeDateTime>(), "End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes."},
+        {"loading_duration", std::make_shared<DataTypeFloat32>(), "Duration of a dictionary loading."},
+        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created."},
+        {"comment", std::make_shared<DataTypeString>(), "Text of the comment to dictionary."}
     };
 }
 
-NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
-{
-    return {
-        {"key", std::make_shared<DataTypeString>()}
-    };
-}
-
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & /*query_info*/) const
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);

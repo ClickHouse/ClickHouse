@@ -122,6 +122,9 @@ def test_dependent_tables(started_cluster):
     )
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
+    for i in range(2, 100):
+        query(f"insert into system.join values (1, {i})")
+
     query(
         "create table src (n int, m default joinGet('system.join', 'm', 1::int),"
         "t default dictGetOrNull('a.d', 'm', toUInt64(3)),"

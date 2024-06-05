@@ -23,7 +23,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-enum class ChangeableWithoutRestart
+enum class ChangeableWithoutRestart : uint8_t
 {
     No,
     IncreaseOnly,
@@ -31,7 +31,7 @@ enum class ChangeableWithoutRestart
     Yes
 };
 
-NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
+ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
 {
     auto changeable_without_restart_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -42,19 +42,20 @@ NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
             {"Yes",             static_cast<Int8>(ChangeableWithoutRestart::Yes)},
         });
 
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeString>()},
-        {"default", std::make_shared<DataTypeString>()},
-        {"changed", std::make_shared<DataTypeUInt8>()},
-        {"description", std::make_shared<DataTypeString>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"changeable_without_restart", std::move(changeable_without_restart_type)},
-        {"is_obsolete", std::make_shared<DataTypeUInt8>()}
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Server setting name."},
+        {"value", std::make_shared<DataTypeString>(), "Server setting value."},
+        {"default", std::make_shared<DataTypeString>(), "Server setting default value."},
+        {"changed", std::make_shared<DataTypeUInt8>(), "Shows whether a setting was specified in config.xml"},
+        {"description", std::make_shared<DataTypeString>(), "Short server setting description."},
+        {"type", std::make_shared<DataTypeString>(), "Server setting value type."},
+        {"changeable_without_restart", std::move(changeable_without_restart_type), "Shows whether a setting can be changed at runtime."},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."}
     };
 }
 
-void StorageSystemServerSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemServerSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
     /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
@@ -69,6 +70,7 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         {"max_concurrent_queries", {std::to_string(context->getProcessList().getMaxSize()), ChangeableWithoutRestart::Yes}},
         {"max_concurrent_insert_queries", {std::to_string(context->getProcessList().getMaxInsertQueriesAmount()), ChangeableWithoutRestart::Yes}},
         {"max_concurrent_select_queries", {std::to_string(context->getProcessList().getMaxSelectQueriesAmount()), ChangeableWithoutRestart::Yes}},
+        {"max_waiting_queries", {std::to_string(context->getProcessList().getMaxWaitingQueriesAmount()), ChangeableWithoutRestart::Yes}},
 
         {"background_buffer_flush_schedule_pool_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
         {"background_schedule_pool_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},

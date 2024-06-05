@@ -133,10 +133,10 @@ struct DDLTaskBase
 
     virtual void createSyncedNodeIfNeed(const ZooKeeperPtr & /*zookeeper*/) {}
 
-    inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
-    inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
-    inline String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
-    inline String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
+    String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
+    String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
+    String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
+    String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -146,9 +146,9 @@ struct DDLTask : public DDLTaskBase
 {
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
+    bool findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
 
-    void setClusterInfo(ContextPtr context, Poco::Logger * log);
+    void setClusterInfo(ContextPtr context, LoggerPtr log);
 
     String getShardID() const override;
 

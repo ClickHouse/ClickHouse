@@ -32,7 +32,7 @@ class HTTPHandler : public HTTPRequestHandler
 {
 public:
     HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
-    virtual ~HTTPHandler() override;
+    ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -75,32 +75,33 @@ private:
         bool finalized = false;
 
         bool exception_is_written = false;
+        std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        inline bool hasDelayed() const
+        bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
         }
 
-        inline void finalize()
+        void finalize()
         {
             if (finalized)
                 return;
             finalized = true;
 
-            if (out_maybe_compressed)
-                out_maybe_compressed->finalize();
-            else if (out)
+            if (out_compressed_holder)
+                out_compressed_holder->finalize();
+            if (out)
                 out->finalize();
         }
 
-        inline bool isFinalized() const
+        bool isFinalized() const
         {
             return finalized;
         }
     };
 
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -143,6 +144,12 @@ private:
 
     void trySendExceptionToClient(
         const std::string & s,
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
+
+    void formatExceptionForClient(
         int exception_code,
         HTTPServerRequest & request,
         HTTPServerResponse & response,

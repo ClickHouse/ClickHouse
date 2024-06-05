@@ -147,8 +147,24 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    TCPHandler(
+        IServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        bool parse_proxy_protocol_,
+        String server_display_name_,
+        String host_name_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    TCPHandler(
+        IServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        TCPProtocolStackData & stack_data,
+        String server_display_name_,
+        String host_name_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     ~TCPHandler() override;
 
     void run() override;
@@ -160,7 +176,7 @@ private:
     IServer & server;
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     String forwarded_for;
     String certificate;
@@ -200,7 +216,7 @@ private:
 
     String default_database;
 
-    bool is_ssh_based_auth = false;
+    bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     bool is_interserver_authenticated = false;
@@ -225,13 +241,13 @@ private:
 
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
+    String host_name;
 
     void runImpl();
 
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
-    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
@@ -260,8 +276,6 @@ private:
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
 
     void processTablesStatusRequest();
 

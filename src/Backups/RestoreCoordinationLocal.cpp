@@ -6,7 +6,7 @@
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(&Poco::Logger::get("RestoreCoordinationLocal"))
+RestoreCoordinationLocal::RestoreCoordinationLocal() : log(getLogger("RestoreCoordinationLocal"))
 {
 }
 
@@ -80,8 +80,6 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
     }
 
     auto new_uuids = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true);
-
-    String new_query_str = serializeAST(create_query);
 
     {
         std::lock_guard lock{mutex};

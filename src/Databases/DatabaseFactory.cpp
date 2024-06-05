@@ -9,7 +9,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
+
 
 namespace fs = std::filesystem;
 

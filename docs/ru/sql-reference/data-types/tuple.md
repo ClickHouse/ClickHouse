@@ -4,7 +4,7 @@ sidebar_position: 54
 sidebar_label: Tuple(T1, T2, ...)
 ---
 
-# Tuple(T1, T2, …) {#tuplet1-t2}
+# Tuple(T1, T2, ...) {#tuplet1-t2}
 
 Кортеж из элементов любого [типа](index.md#data_types). Элементы кортежа могут быть одного или разных типов.
 

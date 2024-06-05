@@ -1,28 +1,19 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstddef>
 #include <iterator>
-#include <map>
-#include <mutex>
 #include <numeric>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <consistent_hashing.h>
 
 #include <IO/Progress.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/MergeTree/IntersectionsIndexes.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <base/defines.h>
-#include <base/types.h>
 #include <boost/algorithm/string/split.hpp>
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -31,7 +22,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
+
 
 using namespace DB;
 
@@ -56,6 +47,32 @@ takeFromRange(const MarkRange & range, size_t min_number_of_marks, size_t & curr
     current_marks_amount += range_we_take.getNumberOfMarks();
     return range_we_take.getNumberOfMarks();
 }
+
+void sortResponseRanges(RangesInDataPartsDescription & result)
+{
+    std::ranges::sort(result, [](const auto & lhs, const auto & rhs) { return lhs.info < rhs.info; });
+
+    RangesInDataPartsDescription new_result;
+
+    /// Aggregate ranges for each part within a single entry
+    for (auto & ranges_in_part : result)
+    {
+        if (new_result.empty() || new_result.back().info != ranges_in_part.info)
+            new_result.push_back(RangesInDataPartDescription{.info = ranges_in_part.info});
+
+        new_result.back().ranges.insert(
+            new_result.back().ranges.end(),
+            std::make_move_iterator(ranges_in_part.ranges.begin()),
+            std::make_move_iterator(ranges_in_part.ranges.end()));
+        ranges_in_part.ranges.clear();
+    }
+
+    /// Sort ranges for each part
+    for (auto & ranges_in_part : new_result)
+        std::sort(ranges_in_part.ranges.begin(), ranges_in_part.ranges.end());
+
+    result = std::move(new_result);
+}
 }
 
 namespace ProfileEvents
@@ -71,11 +88,9 @@ extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
 extern const Event ParallelReplicasReadAssignedMarks;
 extern const Event ParallelReplicasReadUnassignedMarks;
 extern const Event ParallelReplicasReadAssignedForStealingMarks;
-}
 
-namespace ProfileEvents
-{
-    extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUnavailableCount;
 }
 
 namespace DB
@@ -152,6 +167,7 @@ public:
     Stats stats;
     size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
+    size_t sent_initial_requests{0};
     ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
@@ -162,8 +178,16 @@ public:
     virtual ~ImplInterface() = default;
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
-    virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
+    virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
+
+    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+    {
+        if (++sent_initial_requests > replicas_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas");
+
+        doHandleInitialAllRangesAnnouncement(std::move(announcement));
+    }
 
     void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
@@ -200,7 +224,7 @@ public:
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
 
-    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
+    void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
 
     void markReplicaAsUnavailable(size_t replica_number) override;
 
@@ -208,7 +232,6 @@ private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
     const size_t mark_segment_size{0};
 
-    size_t sent_initial_requests{0};
     bool state_initialized{false};
     size_t finished_replicas{0};
 
@@ -219,7 +242,7 @@ private:
     };
     std::vector<ReplicaStatus> replica_status;
 
-    Poco::Logger * log = &Poco::Logger::get("DefaultCoordinator");
+    LoggerPtr log = getLogger("DefaultCoordinator");
 
     /// Workflow of a segment:
     /// 0. `all_parts_to_read` contains all the parts and thus all the segments initially present there (virtually)
@@ -276,7 +299,7 @@ private:
 
     void setProgressCallback();
 
-    enum class ScanMode
+    enum class ScanMode : uint8_t
     {
         /// Main working set for the replica
         TakeWhatsMineByHash,
@@ -407,7 +430,7 @@ void DefaultCoordinator::setProgressCallback()
     }
 }
 
-void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     const auto replica_num = announcement.replica_num;
 
@@ -422,19 +445,23 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
     ++stats[replica_num].number_of_requests;
     replica_status[replica_num].is_announcement_received = true;
 
-    ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
 
-    if (sent_initial_requests == replicas_count)
+    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
         setProgressCallback();
 
     /// Sift the queue to move out all invisible segments
-    for (const auto & segment : distribution_by_hash_queue[replica_num])
+    for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
     {
-        if (!part_visibility[segment.info.getPartNameV1()].contains(replica_num))
+        if (!part_visibility[segment_it->info.getPartNameV1()].contains(replica_num))
         {
-            chassert(segment.ranges.size() == 1);
-            enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
+            chassert(segment_it->ranges.size() == 1);
+            enqueueToStealerOrStealingQueue(segment_it->info, segment_it->ranges.front());
+            segment_it = distribution_by_hash_queue[replica_num].erase(segment_it);
+        }
+        else
+        {
+            ++segment_it;
         }
     }
 }
@@ -599,6 +626,8 @@ void DefaultCoordinator::processPartsFurther(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
 
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
+
     for (const auto & part : all_parts_to_read)
     {
         if (current_marks_amount >= min_number_of_marks)
@@ -622,7 +651,7 @@ void DefaultCoordinator::processPartsFurther(
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
                 const auto owner = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
-                if (owner == replica_num)
+                if (owner == replica_num && replica_can_read_part(replica_num, part.description.info))
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
@@ -681,7 +710,7 @@ void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const Ma
     {
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
         distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
-        LOG_TEST(log, "Segment {} is added to its owner's ({}) queue", segment, owner);
+        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info.getPartNameV1(), owner);
     }
     else
         enqueueToStealerOrStealingQueue(info, segment);
@@ -695,12 +724,12 @@ void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo
     if (possiblyCanReadPart(stealer_by_hash, info))
     {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
-        LOG_TEST(log, "Segment {} is added to its stealer's ({}) queue", segment, stealer_by_hash);
+        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info.getPartNameV1(), stealer_by_hash);
     }
     else
     {
         ranges_for_stealing_queue.push_back(std::move(range));
-        LOG_TEST(log, "Segment {} is added to stealing queue", segment);
+        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, info.getPartNameV1());
     }
 }
 
@@ -759,6 +788,11 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         {
             /// Nobody will come to process any more data
 
+            for (const auto & part : all_parts_to_read)
+                if (!part.description.ranges.empty())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Some segments were left unread for the part {}", part.description.describe());
+
             if (!ranges_for_stealing_queue.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Some orphaned segments were left unread");
 
@@ -767,6 +801,8 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty distribution_by_hash_queue for replica {}", replica);
         }
     }
+
+    sortResponseRanges(response.description);
 
     LOG_DEBUG(
         log,
@@ -794,13 +830,13 @@ public:
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
-    void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
+    void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
 
-    Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
+    LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
 template <CoordinationMode mode>
@@ -816,7 +852,7 @@ void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 }
 
 template <CoordinationMode mode>
-void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     LOG_TRACE(log, "Received an announcement {}", announcement.describe());
 
@@ -957,12 +993,9 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
-        mode = announcement.mode;
-        initialize();
-    }
+        initialize(announcement.mode);
 
-    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+    pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -972,10 +1005,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
-        mode = request.mode;
-        initialize();
-    }
+        initialize(request.mode);
 
     const auto replica_num = request.replica_num;
     auto response = pimpl->handleRequest(std::move(request));
@@ -990,6 +1020,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
 void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasUnavailableCount);
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)
@@ -998,7 +1030,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
         pimpl->markReplicaAsUnavailable(replica_number);
 }
 
-void ParallelReplicasReadingCoordinator::initialize()
+void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
     switch (mode)
     {

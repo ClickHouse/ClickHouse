@@ -14,7 +14,7 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -41,7 +41,7 @@ jobs:
         id: runconfig
         run: |
             echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --rebuild-all-binaries --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
             echo "::group::CI run configure results"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
@@ -68,8 +68,6 @@ jobs:
       test_name: Compatibility check (amd64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -78,8 +76,6 @@ jobs:
       test_name: Compatibility check (aarch64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
@@ -91,6 +87,8 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
   BuilderDebAarch64:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -99,6 +97,8 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -142,6 +142,8 @@ jobs:
       build_name: binary_darwin
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
   BuilderBinDarwinAarch64:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -150,24 +152,27 @@ jobs:
       build_name: binary_darwin_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
-  DockerServerImages:
+  DockerServerImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Docker server and keeper images
+      test_name: Docker server image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      checkout_depth: 0
-      run_command: |
-        cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type head --no-push \
-          --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
-        python3 docker_server.py --release-type head --no-push \
-          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
+  DockerKeeperImage:
+    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Docker keeper image
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -186,37 +191,20 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   BuilderSpecialReport:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderDebRelease
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
     needs:
@@ -224,13 +212,27 @@ jobs:
       - BuilderBinDarwinAarch64
       - BuilderDebRelease
       - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
+      - name: Debug
+        run: |
+          echo need with different filters
+          cat << 'EOF'
+          ${{ toJSON(needs) }}
+          ${{ toJSON(needs.*.result) }}
+          no failures ${{ !contains(needs.*.result, 'failure') }}
+          no skips ${{ !contains(needs.*.result, 'skipped') }}
+          no both ${{ !(contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
+          EOF
+      - name: Not ready
+        # fail the job to be able restart it
+        if: ${{ contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure') }}
+        run: exit 1
       - name: Check out repository code
+        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
       - name: Mark Commit Release Ready
+        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 mark_release_ready.py
@@ -434,7 +436,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Integration tests (asan, analyzer)
+      test_name: Integration tests (asan, old analyzer)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
@@ -456,7 +458,8 @@ jobs:
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
     needs:
-      - DockerServerImages
+      - DockerServerImage
+      - DockerKeeperImage
       - BuilderReport
       - BuilderSpecialReport
       - MarkReleaseReady

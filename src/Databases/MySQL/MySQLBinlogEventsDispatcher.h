@@ -18,7 +18,7 @@ class BinlogFromDispatcher;
 class BinlogEventsDispatcher final : boost::noncopyable
 {
 public:
-    BinlogEventsDispatcher(const String & logger_name_ = "BinlogDispatcher", size_t max_bytes_in_buffer_ = 1_MiB, UInt64 max_flush_ms_ = 1000);
+    explicit BinlogEventsDispatcher(const String & logger_name_ = "BinlogDispatcher", size_t max_bytes_in_buffer_ = 1_MiB, UInt64 max_flush_ms_ = 1000);
     ~BinlogEventsDispatcher();
 
     /// Moves all IBinlog objects to \a to if it has the same position
@@ -110,7 +110,7 @@ private:
     const String logger_name;
     const size_t max_bytes_in_buffer = 0;
     const UInt64 max_flush_ms = 0;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
 
     BinlogPtr binlog_read_from;
 

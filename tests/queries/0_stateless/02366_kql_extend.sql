@@ -12,19 +12,16 @@
 --     'Costco','Snargaluff',200,'2016-09-10',
 -- ]
 
-
 DROP TABLE IF EXISTS Ledger;
 CREATE TABLE Ledger
-(
+(    
    Supplier Nullable(String),
    Fruit String ,
    Price Float64,
-   Purchase Date
+   Purchase Date 
 ) ENGINE = Memory;
 INSERT INTO Ledger VALUES  ('Aldi','Apple',4,'2016-09-10'), ('Costco','Apple',2,'2016-09-11'), ('Aldi','Apple',6,'2016-09-10'), ('Costco','Snargaluff',100,'2016-09-12'), ('Aldi','Apple',7,'2016-09-12'), ('Aldi','Snargaluff',400,'2016-09-11'),('Costco','Snargaluff',104,'2016-09-12'),('Aldi','Apple',5,'2016-09-12'),('Aldi','Snargaluff',600,'2016-09-11'),('Costco','Snargaluff',200,'2016-09-10');
 
--- This test requies sorting after some of aggregations but I don't know KQL, sorry
-set max_bytes_before_external_group_by = 0;
 set dialect = 'kusto';
 
 print '-- extend #1 --';
@@ -34,7 +31,7 @@ print '-- extend #2 --';
 Ledger | extend PriceInCents = 100 * Price | sort by PriceInCents asc | project Fruit, PriceInCents | take 2;
 
 print '-- extend #3 --';
-Ledger | extend PriceInCents = 100 * Price | sort by PriceInCents asc | project Fruit, PriceInCents | summarize AveragePrice = avg(PriceInCents), Purchases = count() by Fruit | extend Sentence = strcat(Fruit, ' cost ', tostring(AveragePrice), ' on average based on ', tostring(Purchases), ' samples.') | project Sentence;
+Ledger | extend PriceInCents = 100 * Price | sort by PriceInCents asc | project Fruit, PriceInCents | summarize AveragePrice = avg(PriceInCents), Purchases = count() by Fruit | extend Sentence = strcat(Fruit, ' cost ', tostring(AveragePrice), ' on average based on ', tostring(Purchases), ' samples.') | project Sentence | sort by Sentence asc;
 
 print '-- extend #4 --';
 Ledger | extend a = Price | extend b = a | extend c = a, d = b + 500 | extend Pass = bool(b == a and c == a and d == b + 500) | summarize binary_all_and(Pass);
