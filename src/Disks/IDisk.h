@@ -14,6 +14,7 @@
 #include <Disks/DirectoryIterator.h>
 
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
@@ -115,18 +116,13 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , copying_thread_pool(
-              CurrentMetrics::IDiskCopierThreads,
-              CurrentMetrics::IDiskCopierThreadsActive,
-              CurrentMetrics::IDiskCopierThreadsScheduled,
-              config.getUInt(config_prefix + ".thread_pool_size", 16))
+        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , copying_thread_pool(
-              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
     {
     }
 
@@ -470,19 +466,8 @@ public:
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
-#if USE_AWS_S3
-    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getS3StorageClient() is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
-#endif
-
-
 protected:
-    friend class DiskDecorator;
+    friend class DiskReadOnlyWrapper;
 
     const String name;
 
@@ -562,6 +547,27 @@ inline String fileName(const String & path)
 inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
+}
+
+static std::string_view normalizePath(std::string_view path)
+{
+    if (!path.empty() && path.ends_with('/'))
+        return path.substr(0, path.size() - 1);
+    return path;
+}
+
+inline bool isPrefixPath(std::string_view prefix, std::string_view path)
+{
+    prefix = normalizePath(prefix);
+    path = normalizePath(path);
+
+    return path.starts_with(prefix) &&
+        (path.size() == prefix.size() || path[prefix.size()] == '/');
+}
+
+inline bool arePathsEqual(std::string_view lhs, std::string_view rhs)
+{
+    return normalizePath(lhs) == normalizePath(rhs);
 }
 
 }
