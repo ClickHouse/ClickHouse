@@ -457,13 +457,11 @@ compatibility_test_common_params = {
 }
 statless_test_common_params = {
     "digest": stateless_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME"',
-    "timeout": 10800,
+    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
 }
 stateful_test_common_params = {
     "digest": stateful_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME"',
-    "timeout": 3600,
+    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
 }
 stress_test_common_params = {
     "digest": stress_check_digest,
