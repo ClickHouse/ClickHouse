@@ -221,7 +221,7 @@ void addRequestedPathFileAndSizeVirtualsToChunk(
         else if (virtual_column.name == "_time")
         {
             if (last_modified)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), last_modified->utcTime())->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
