@@ -332,7 +332,7 @@ private:
 #ifdef __SSE4_1__
         Vectorize::Yes
 #else
-        Vectorize::Nos
+        Vectorize::No
 #endif
     >
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode, vectorize>;

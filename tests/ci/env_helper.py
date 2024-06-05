@@ -39,6 +39,7 @@ S3_ARTIFACT_DOWNLOAD_TEMPLATE = (
     f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
     "{pr_or_release}/{commit}/{build_name}/{artifact}"
 )
+CI_CONFIG_PATH = f"{TEMP_PATH}/ci_config.json"
 
 # These parameters are set only on demand, and only once
 _GITHUB_JOB_ID = ""

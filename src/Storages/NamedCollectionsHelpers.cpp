@@ -1,6 +1,7 @@
 #include "NamedCollectionsHelpers.h"
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
