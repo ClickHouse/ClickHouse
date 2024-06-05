@@ -1289,6 +1289,7 @@ const
 contrib
 convertCharset
 coroutines
+corrMatrix
 cosineDistance
 countDigits
 countEqual
