@@ -481,11 +481,13 @@ Both of the following examples use the same named collection `my_kafka_cluster`:
 
 
 ```sql
-CREATE TABLE queue(
+CREATE TABLE queue
+(
     timestamp UInt64,
     level String,
     message String
-)ENGINE = Kafka(my_kafka_cluster)
+)
+ENGINE = Kafka(my_kafka_cluster)
 
 
 CREATE TABLE queue
