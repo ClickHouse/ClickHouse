@@ -455,7 +455,7 @@ compatibility_test_common_params = {
     "digest": compatibility_check_digest,
     "run_command": "compatibility_check.py",
 }
-stateless_test_common_params = {
+statless_test_common_params = {
     "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME"',
     "timeout": 10800,
