@@ -17,4 +17,4 @@ body:
       label: Question
       description: Please put your question here.
     validations:
-      required: false
+      required: true
