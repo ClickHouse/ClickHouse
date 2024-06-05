@@ -94,13 +94,17 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 break;
             ++pos;
         }
+        if (!isValidKQLPos(pos))
+        {
+            return false;
+        }
         --pos;
         kql_statement = String(pos_start->begin, pos->end);
         ++pos;
     }
 
-    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size());
-    IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
+    Tokens tokens_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
+    IParser::Pos pos_kql(tokens_kql, pos.max_depth, pos.max_backtracks);
 
     Expected kql_expected;
     kql_expected.enable_highlighting = false;
