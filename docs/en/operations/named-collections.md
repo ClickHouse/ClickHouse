@@ -489,7 +489,6 @@ CREATE TABLE queue
 )
 ENGINE = Kafka(my_kafka_cluster)
 
-
 CREATE TABLE queue
 (
     timestamp UInt64,
