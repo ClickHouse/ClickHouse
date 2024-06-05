@@ -47,7 +47,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
-    RelativeSize range_upper = 0;
+    RelativeSize range_upper = RelativeSize(0);
     RelativeSize range_lower = RelativeSize(filter.range_lower);
     DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
 
