@@ -989,6 +989,7 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
+UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -1357,6 +1358,7 @@ cond
 conf
 config
 configs
+conformant
 congruential
 conjuction
 conjuctive
@@ -1365,6 +1367,10 @@ const
 contrib
 convertCharset
 coroutines
+corrMatrix
+corrStable
+corrmatrix
+corrstable
 cosineDistance
 countDigits
 countEqual
@@ -1374,10 +1380,19 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF
 covarPop
+covarPopMatrix
+covarPopStable
 covarSamp
+covarSampMatrix
+covarSampStable
+covarStable
 covariates
 covarpop
+covarpopmatrix
+covarpopstable
 covarsamp
+covarsampmatrix
+covarsampstable
 covid
 cpp
 cppkafka
@@ -1413,8 +1428,12 @@ cutQueryString
 cutQueryStringAndFragment
 cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
+cutToFirstSignificantSubdomainCustomRFC
 cutToFirstSignificantSubdomainCustomWithWWW
+cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainRFC
 cutToFirstSignificantSubdomainWithWWW
+cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 cyrus
@@ -1501,7 +1520,10 @@ displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
+doesnt
+domainRFC
 domainWithoutWWW
+domainWithoutWWWRFC
 dont
 dotProduct
 downsampling
@@ -1574,8 +1596,11 @@ filesystems
 finalizeAggregation
 fips
 firstLine
+firstSignficantSubdomain
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
+firstSignificantSubdomainCustomRFC
+firstSignificantSubdomainRFC
 fixedstring
 flamegraph
 flatbuffers
@@ -1598,6 +1623,7 @@ formated
 formatschema
 formatter
 formatters
+frac
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1617,6 +1643,7 @@ gcem
 generateRandom
 generateRandomStructure
 generateSeries
+generateSnowflakeID
 generateULID
 generateUUIDv
 geoDistance
@@ -1723,6 +1750,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
+hilbertDecode
+hilbertEncode
 hiveHash
 holistics
 homebrew
@@ -2154,6 +2183,7 @@ polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
 popcnt
+portRFC
 porthttps
 positionCaseInsensitive
 positionCaseInsensitiveUTF
@@ -2651,8 +2681,11 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
+toStartOfMicrosecond
+toStartOfMillisecond
 toStartOfMinute
 toStartOfMonth
+toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
@@ -2688,6 +2721,7 @@ toolset
 topK
 topKWeighted
 topLevelDomain
+topLevelDomainRFC
 topk
 topkweighted
 transactional

@@ -61,7 +61,7 @@ HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    ProxyConfiguration proxy_config = {}
+    const ProxyConfiguration & proxy_config = {}
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
