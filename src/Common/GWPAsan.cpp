@@ -54,12 +54,7 @@ static bool guarded_alloc_initialized = []
 
     auto & opts = gwp_asan::options::getOptions();
     opts.Backtrace = getBackTrace;
-    opts.MaxSimultaneousAllocations = 256; /// for testing
     GuardedAlloc.init(opts);
-
-    ///std::cerr << "GwpAsan is initialized, the options are { Enabled: " << opts.Enabled
-    ///          << ", MaxSimultaneousAllocations: " << opts.MaxSimultaneousAllocations
-    ///          << ", SampleRate: " << opts.SampleRate << " }\n";
 
     return true;
 }();
