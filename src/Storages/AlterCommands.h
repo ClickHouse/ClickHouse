@@ -38,8 +38,9 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
-        ADD_STATISTIC,
-        DROP_STATISTIC,
+        ADD_STATISTICS,
+        DROP_STATISTICS,
+        MODIFY_STATISTICS,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -123,9 +124,9 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistic_decl = nullptr;
-    std::vector<String> statistic_columns;
-    String statistic_type;
+    ASTPtr statistics_decl = nullptr;
+    std::vector<String> statistics_columns;
+    std::vector<String> statistics_types;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;

@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AWS_S3
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -16,7 +15,7 @@
 
 namespace DB
 {
-class S3QueueFilesMetadata;
+class S3QueueMetadata;
 
 class StorageS3Queue : public IStorage, WithContext
 {
@@ -59,9 +58,8 @@ private:
 
     const std::unique_ptr<S3QueueSettings> s3queue_settings;
     const fs::path zk_path;
-    const S3QueueAction after_processing;
 
-    std::shared_ptr<S3QueueFilesMetadata> files_metadata;
+    std::shared_ptr<S3QueueMetadata> files_metadata;
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
@@ -86,20 +84,15 @@ private:
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<StorageS3QueueSource> createSource(
+        size_t processor_id,
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
-        size_t processing_id,
         size_t max_block_size,
         ContextPtr local_context);
 
     bool hasDependencies(const StorageID & table_id);
     bool streamToViews();
     void threadFunc();
-
-    void createOrCheckMetadata(const StorageInMemoryMetadata & storage_metadata);
-    void checkTableStructure(const String & zookeeper_prefix, const StorageInMemoryMetadata & storage_metadata);
 };
 
 }
-
-#endif
