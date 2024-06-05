@@ -700,7 +700,7 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
         auto name_in_storage = Nested::splitName(required_column).first;
         auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
 
-        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumns())
+        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumnsDeprecated())
             return true;
     }
 
@@ -1986,8 +1986,17 @@ void registerStorageDistributed(StorageFactory & factory)
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
 {
-    if (!data_volume)
+    if (!storage_policy || !data_volume)
         return true;
+
+    auto new_storage_policy = getContext()->getStoragePolicy(storage_policy->getName());
+    auto new_data_volume = new_storage_policy->getVolume(0);
+    if (new_storage_policy->getVolumes().size() > 1)
+        LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
+                            "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
+
+    std::atomic_store(&storage_policy, new_storage_policy);
+    std::atomic_store(&data_volume, new_data_volume);
 
     for (auto & disk : data_volume->getDisks())
     {

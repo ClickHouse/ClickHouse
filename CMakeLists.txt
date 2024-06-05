@@ -68,8 +68,9 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         set (RLIMIT_AS 20000000000)
     endif()
 
-    # For some files currently building RISCV64 might be too slow. TODO: Improve compilation times per file
-    if (ARCH_RISCV64)
+    # For some files currently building RISCV64/LOONGARCH64 might be too slow.
+    # TODO: Improve compilation times per file
+    if (ARCH_RISCV64 OR ARCH_LOONGARCH64)
         set (RLIMIT_CPU 1800)
     endif()
 
@@ -120,6 +121,8 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
+
+include (cmake/instrument.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -206,8 +209,6 @@ endif()
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
-
-option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 if (NOT BUILD_STANDALONE_KEEPER)

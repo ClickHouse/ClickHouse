@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/localBackup.h>
+#include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
@@ -2432,6 +2432,38 @@ void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
     is_broken = true;
     exception = message;
     exception_code = code;
+}
+
+ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) const
+{
+    const size_t total_mark = getMarksCount();
+    /// If column doesn't have dynamic subcolumns or part has no data, just create column using it's type.
+    if (!column.type->hasDynamicSubcolumns() || !total_mark)
+        return column.type->createColumn();
+
+    /// Otherwise, read sample column with 0 rows from the part, so it will load dynamic structure.
+    NamesAndTypesList cols;
+    cols.emplace_back(column);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    MergeTreeReaderPtr reader = getReader(
+        cols,
+        storage_snapshot_ptr,
+        MarkRanges{MarkRange(0, 1)},
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
+        storage.getContext()->getMarkCache().get(),
+        std::make_shared<AlterConversions>(),
+        MergeTreeReaderSettings{},
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    Columns result;
+    result.resize(1);
+    reader->readRows(0, 1, false, 0, result);
+    return result[0];
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
