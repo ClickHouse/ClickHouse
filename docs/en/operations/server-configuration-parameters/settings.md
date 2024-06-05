@@ -1355,7 +1355,7 @@ Examples:
 
 ## listen_try {#listen_try}
 
-Server does not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
 
 Examples:
 
@@ -1365,7 +1365,7 @@ Examples:
 
 ## listen_reuse_port {#listen_reuse_port}
 
-Allow multiple servers to listen on the same address:port. Enabling this setting is not recommended.
+Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
 
 Examples:
 
