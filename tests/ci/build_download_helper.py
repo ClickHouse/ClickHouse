@@ -10,8 +10,20 @@ from typing import Any, Callable, List, Optional, Union
 
 import requests
 
-import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
+
+try:
+    # A work around for scripts using this downloading module without required deps
+    import get_robot_token as grt  # we need an updated ROBOT_TOKEN
+except ImportError:
+
+    class grt:  # type: ignore
+        ROBOT_TOKEN = None
+
+        @staticmethod
+        def get_best_robot_token() -> str:
+            return ""
+
 
 DOWNLOAD_RETRIES_COUNT = 5
 
