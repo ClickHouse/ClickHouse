@@ -214,3 +214,15 @@ target_include_directories(_boost_circular_buffer SYSTEM BEFORE INTERFACE ${LIBR
 add_library(_boost_heap INTERFACE)
 add_library(boost::heap ALIAS _boost_heap)
 target_include_directories(_boost_heap SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
+
+#thread
+set (SRCS_THREADS
+    "${LIBRARY_DIR}/libs/thread/src/pthread/thread.cpp"
+    "${LIBRARY_DIR}/libs/thread/src/pthread/once.cpp"
+    "${LIBRARY_DIR}/libs/thread/src/pthread/once_atomic.cpp"
+)
+
+add_library (_boost_thread ${SRCS_THREADS})
+add_library (boost::thread ALIAS _boost_thread)
+target_include_directories (_boost_thread PRIVATE ${LIBRARY_DIR})
+target_link_libraries(_boost_thread PRIVATE _boost_regex)
