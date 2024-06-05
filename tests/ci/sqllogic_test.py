@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Tuple
 
 from build_download_helper import download_all_deb_packages
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from report import (
     ERROR,
     FAIL,
@@ -42,6 +42,7 @@ def get_run_command(
         f"--volume={repo_tests_path}:/clickhouse-tests "
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {image}"
     )
 
@@ -71,11 +72,6 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default="",
     )
-    parser.add_argument(
-        "--kill-timeout",
-        required=False,
-        default=0,
-    )
     return parser.parse_args()
 
 
@@ -95,10 +91,6 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
-    assert (
-        kill_timeout > 0
-    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
 
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
@@ -126,7 +118,7 @@ def main():
     )
     logging.info("Going to run func tests: %s", run_command)
 
-    with TeePopen(run_command, run_log_path, timeout=kill_timeout) as process:
+    with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")

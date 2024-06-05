@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray.h>
 #include <IO/CompressionMethod.h>

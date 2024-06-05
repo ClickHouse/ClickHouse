@@ -2,7 +2,6 @@
 
 #if USE_ARROW || USE_PARQUET
 
-// #include <base/Decimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -10,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <arrow/api.h>
 #include <arrow/builder.h>
 #include <arrow/type.h>
@@ -418,7 +419,7 @@ namespace DB
         /// Convert dictionary values to arrow array.
         auto value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
         std::unique_ptr<arrow::ArrayBuilder> values_builder;
-        arrow::MemoryPool* pool = arrow::default_memory_pool();
+        arrow::MemoryPool* pool = ArrowMemoryPool::instance();
         arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
         checkStatus(status, column->getName(), format_name);
 
@@ -1025,7 +1026,7 @@ namespace DB
                     arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
                 }
 
-                arrow::MemoryPool * pool = arrow::default_memory_pool();
+                arrow::MemoryPool * pool = ArrowMemoryPool::instance();
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
                 arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);

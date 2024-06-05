@@ -67,7 +67,6 @@ static FillColumnDescription::StepFunction getStepFunction(
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
     }
-    UNREACHABLE();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
@@ -237,10 +236,21 @@ FillingTransform::FillingTransform(
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
-    std::set<size_t> unique_positions;
+    std::unordered_set<size_t> ordinary_sort_positions;
+    for (const auto & desc : sort_description)
+    {
+        if (!desc.with_fill)
+            ordinary_sort_positions.insert(header_.getPositionByName(desc.column_name));
+    }
+
+    std::unordered_set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
+    {
         if (!unique_positions.insert(pos).second)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
+        if (ordinary_sort_positions.contains(pos))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "ORDER BY containing the same expression with and without WITH FILL modifier is not supported");
+    }
 
     if (use_with_fill_by_sorting_prefix)
     {
@@ -534,8 +544,7 @@ size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
 
     const size_t linear_probe_threadhold = 16;
     size_t linear_probe_end = begin + linear_probe_threadhold;
-    if (linear_probe_end > end)
-        linear_probe_end = end;
+    linear_probe_end = std::min(linear_probe_end, end);
 
     for (size_t pos = begin; pos < linear_probe_end; ++pos)
     {

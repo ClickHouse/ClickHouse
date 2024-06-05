@@ -10,6 +10,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/escapeForFileName.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 namespace DB
 {
 

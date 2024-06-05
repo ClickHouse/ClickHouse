@@ -49,11 +49,14 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -74,7 +77,7 @@ public:
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
-    bool supportsTrivialCountOptimization() const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -116,10 +119,11 @@ private:
     template <typename F>
     void forEachTable(F && func) const;
 
-    NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+
+    static VirtualColumnsDescription createVirtuals();
 
     bool tableSupportsPrewhere() const;
 
@@ -189,7 +193,7 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    SelectQueryInfo getModifiedQueryInfo(const ContextPtr & modified_context,
+    SelectQueryInfo getModifiedQueryInfo(const ContextMutablePtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot,
         Names required_column_names,
@@ -281,6 +285,8 @@ private:
         ContextPtr query_context,
         bool filter_by_database_virtual_column,
         bool filter_by_table_virtual_column) const;
+
+    // static VirtualColumnsDescription createVirtuals(StoragePtr first_table);
 };
 
 }

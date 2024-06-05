@@ -152,9 +152,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     grep -vP $EXCLUDE_DIRS |
     xargs xmllint --noout --nonet
 
-# FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
-
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
@@ -293,8 +290,6 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
-    # DUMP()
-    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -345,7 +340,7 @@ done
 
 expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
+    pattern="^exp_internal -f \$CLICKHOUSE_TMP/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 
     if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then

@@ -45,6 +45,7 @@ struct RangesInDataPart
     AlterConversionsPtr alter_conversions;
     size_t part_index_in_query;
     MarkRanges ranges;
+    MarkRanges exact_ranges;
 
     RangesInDataPart() = default;
 
@@ -67,7 +68,7 @@ struct RangesInDataPart
 
 struct RangesInDataParts: public std::vector<RangesInDataPart>
 {
-    using std::vector<RangesInDataPart>::vector;
+    using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
     RangesInDataPartsDescription getDescriptions() const;
 

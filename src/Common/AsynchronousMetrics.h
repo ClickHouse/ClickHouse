@@ -44,7 +44,7 @@ struct ProtocolServerMetrics
     size_t current_threads;
 };
 
-/** Periodically (by default, each minute, starting at 30 seconds offset)
+/** Periodically (by default, each second)
   *  calculates and updates some metrics,
   *  that are not updated automatically (so, need to be asynchronously calculated).
   *
@@ -64,7 +64,7 @@ public:
     using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
 
     AsynchronousMetrics(
-        int update_period_seconds,
+        unsigned update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     virtual ~AsynchronousMetrics();
@@ -122,6 +122,9 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
+
+    std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
 

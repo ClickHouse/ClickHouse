@@ -19,19 +19,18 @@ namespace DB
 
 ColumnsDescription StorageSystemCertificates::getColumnsDescription()
 {
-    /// TODO: Fill in all the comments.
     return ColumnsDescription
     {
-        {"version",         std::make_shared<DataTypeNumber<Int32>>()},
-        {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"signature_algo",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"not_before",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"pkey_algo",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"path",            std::make_shared<DataTypeString>()},
-        {"default",         std::make_shared<DataTypeNumber<UInt8>>()}
+        {"version",         std::make_shared<DataTypeNumber<Int32>>(), "Version of the certificate. Values are 0 for v1, 1 for v2, 2 for v3."},
+        {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Serial Number of the certificate assigned by the issuer."},
+        {"signature_algo",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Signature Algorithm - an algorithm used by the issuer to sign this certificate."},
+        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Issuer - an unique identifier for the Certificate Authority issuing this certificate."},
+        {"not_before",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The beginning of the time window when this certificate is valid."},
+        {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The end of the time window when this certificate is valid."},
+        {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Subject - identifies the owner of the public key."},
+        {"pkey_algo",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Public Key Algorithm defines the algorithm the public key can be used with."},
+        {"path",            std::make_shared<DataTypeString>(), "Path to the file or directory containing this certificate."},
+        {"default",         std::make_shared<DataTypeNumber<UInt8>>(), "Certificate is in the default certificate location."}
     };
 }
 
@@ -169,7 +168,7 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
 
 #endif
 
-void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
+void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
 #if USE_SSL
     const auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();

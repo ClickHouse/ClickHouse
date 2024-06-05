@@ -158,6 +158,11 @@ void ColumnMap::insertFrom(const IColumn & src, size_t n)
     nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
+void ColumnMap::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
+}
+
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     nested->insertRangeFrom(
@@ -305,6 +310,15 @@ ColumnPtr ColumnMap::compress() const
     {
         return ColumnMap::create(my_compressed->decompress());
     });
+}
+
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
 }

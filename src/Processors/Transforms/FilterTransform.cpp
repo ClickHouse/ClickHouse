@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 static void replaceFilterToConstant(Block & block, const String & filter_column_name)
@@ -81,7 +82,11 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
             auto mutable_holder = ColumnUInt8::create(num_rows, 0);
             auto & data = mutable_holder->getData();
             for (auto idx : selected_by_indices)
+            {
+                if (idx >= num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range {}", idx, num_rows);
                 data[idx] = 1;
+            }
 
             /// AND two filters
             auto * begin = data.data();
@@ -174,26 +179,22 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
 }
 
 Block FilterTransform::transformHeader(
-    Block header,
-    const ActionsDAG * expression,
-    const String & filter_column_name,
-    bool remove_filter_column)
+    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
 {
-    if (expression)
-        header = expression->updateHeader(std::move(header));
+    Block result = expression ? expression->updateHeader(header) : header;
 
-    auto filter_type = header.getByName(filter_column_name).type;
+    auto filter_type = result.getByName(filter_column_name).type;
     if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
-        header.erase(filter_column_name);
+        result.erase(filter_column_name);
     else
-        replaceFilterToConstant(header, filter_column_name);
+        replaceFilterToConstant(result, filter_column_name);
 
-    return header;
+    return result;
 }
 
 FilterTransform::FilterTransform(
@@ -265,6 +266,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+    DataTypes types;
     auto select_final_indices_info = getSelectByFinalIndices(chunk);
 
     {
@@ -275,6 +277,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
+        types = block.getDataTypes();
     }
 
     if (constant_filter_description.always_true || on_totals)
@@ -323,14 +326,21 @@ void FilterTransform::doTransform(Chunk & chunk)
       *  or calculate number of set bytes in the filter.
       */
     size_t first_non_constant_column = num_columns;
+    size_t min_size_in_memory = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (i != filter_column_position && !isColumnConst(*columns[i]))
+        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
+        if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
         {
-            first_non_constant_column = i;
-            break;
+            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
+            if (size_in_memory < min_size_in_memory)
+            {
+                min_size_in_memory = size_in_memory;
+                first_non_constant_column = i;
+            }
         }
     }
+    (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)

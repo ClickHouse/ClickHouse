@@ -35,22 +35,22 @@ size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & column
 
 MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
+    VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
-    const Names & virtual_column_names_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
+        std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
         column_names_,
-        virtual_column_names_,
         settings_,
         context_)
     , min_marks_for_concurrent_read(pool_settings.min_marks_for_concurrent_read)
@@ -80,8 +80,7 @@ MergeTreeReadPool::MergeTreeReadPool(
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             const auto heuristic_min_marks = std::min<size_t>(total_marks / pool_settings.threads, min_bytes_per_task / avg_mark_bytes);
 
-            if (heuristic_min_marks > min_marks_for_concurrent_read)
-                min_marks_for_concurrent_read = heuristic_min_marks;
+            min_marks_for_concurrent_read = std::max(heuristic_min_marks, min_marks_for_concurrent_read);
         }
     }
 

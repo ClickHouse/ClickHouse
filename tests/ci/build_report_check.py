@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import json
 import logging
 import os
 import sys
@@ -13,6 +13,8 @@ from env_helper import (
     GITHUB_SERVER_URL,
     REPORT_PATH,
     TEMP_PATH,
+    CI_CONFIG_PATH,
+    CI,
 )
 from pr_info import PRInfo
 from report import (
@@ -50,9 +52,21 @@ def main():
 
     builds_for_check = CI_CONFIG.get_builds_for_report(
         build_check_name,
-        release=pr_info.is_release(),
-        backport=pr_info.head_ref.startswith("backport"),
+        release=pr_info.is_release,
+        backport=pr_info.head_ref.startswith("backport/"),
     )
+    if CI:
+        # In CI only specific builds might be manually selected, or some wf does not build all builds.
+        #   Filtering @builds_for_check to verify only builds that are present in the current CI workflow
+        with open(CI_CONFIG_PATH, encoding="utf-8") as jfd:
+            ci_config = json.load(jfd)
+        all_ci_jobs = (
+            ci_config["jobs_data"]["jobs_to_skip"]
+            + ci_config["jobs_data"]["jobs_to_do"]
+        )
+        builds_for_check = [job for job in builds_for_check if job in all_ci_jobs]
+        print(f"NOTE: following build reports will be accounted: [{builds_for_check}]")
+
     required_builds = len(builds_for_check)
     missing_builds = 0
 
@@ -139,7 +153,8 @@ def main():
         additional_files=[report_path],
     ).dump()
 
-    if summary_status == ERROR:
+    # We should fail the report job to rerun it in the following attempts
+    if summary_status != SUCCESS:
         sys.exit(1)
 
 

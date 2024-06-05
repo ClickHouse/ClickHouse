@@ -44,6 +44,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -1070,7 +1071,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     auto current_context = data.getContext();
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
     {
         Array parameters;
         if (node.parameters)
@@ -1086,7 +1087,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
 
-        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     }
 
     if (!function_builder)
@@ -1129,12 +1130,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             const auto * query_parameter = child->as<ASTQueryParameter>();
             if (function && function->name == "lambda")
             {
+                if (!isASTLambdaFunction(*function))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
+
                 /// If the argument is a lambda expression, just remember its approximate type.
-                if (function->arguments->children.size() != 2)
-                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
-
                 const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
-
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
 
@@ -1323,7 +1323,9 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
     DataTypePtr type;
-    if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
+    if (literal.custom_type)
+        type = literal.custom_type;
+    else if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);

@@ -40,7 +40,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 
         if (!settings.allow_experimental_object_type)
         {
-            if (data_type.hasDynamicSubcolumns())
+            if (data_type.hasDynamicSubcolumnsDeprecated())
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -86,6 +86,10 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 {
                     for (size_t j = i + 1; j < variants.size(); ++j)
                     {
+                        /// Don't consider bool as similar to something (like number).
+                        if (isBool(variants[i]) || isBool(variants[j]))
+                            continue;
+
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
                         {
                             throw Exception(
@@ -103,6 +107,18 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 }
             }
         }
+
+        if (!settings.allow_experimental_dynamic_type)
+        {
+            if (data_type.hasDynamicSubcolumns())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental Dynamic type is not allowed. "
+                    "Set setting allow_experimental_dynamic_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+        }
     };
 
     validate_callback(*type_to_check);
@@ -115,13 +131,13 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
+    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false, false);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
         validateDataType(type, validation_settings);
@@ -136,7 +152,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
     ASTPtr columns_list_raw = tryParseQuery(
-        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
+        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks, true);
     if (!columns_list_raw)
         return false;
 
@@ -149,7 +165,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false, false);
+        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
             validateDataType(type, validation_settings);

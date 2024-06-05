@@ -126,7 +126,7 @@ public:
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
-    virtual std::string getRemotePath(const std::string & file_name) const = 0;
+    virtual std::string getRemotePath(const std::string & file_name, bool if_exists) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
@@ -223,7 +223,9 @@ public:
         const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs) const = 0;
+        TemporaryFilesOnDisks * temp_dirs,
+        bool is_projection_part,
+        bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
     /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
@@ -255,6 +257,15 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
+
+    virtual std::shared_ptr<IDataPartStorage> freezeRemote(
+    const std::string & to,
+    const std::string & dir_path,
+    const DiskPtr & dst_disk,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(

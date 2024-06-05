@@ -14,6 +14,7 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
@@ -413,6 +414,25 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
     }
 }
 
+template<typename T>
+size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        StringRef value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
+    }
+    return elements.size();
+}
+
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
@@ -458,6 +478,28 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
         return static_cast<Float32>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
+}
+
+template <typename T>
+bool ColumnVector<T>::tryInsert(const DB::Field & x)
+{
+    NearestFieldType<T> value;
+    if (!x.tryGet<NearestFieldType<T>>(value))
+    {
+        if constexpr (std::is_same_v<T, UInt8>)
+        {
+            /// It's also possible to insert boolean values into UInt8 column.
+            bool boolean_value;
+            if (x.tryGet<bool>(boolean_value))
+            {
+                data.push_back(static_cast<T>(boolean_value));
+                return true;
+            }
+        }
+        return false;
+    }
+    data.push_back(static_cast<T>(value));
+    return true;
 }
 
 template <typename T>

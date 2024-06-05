@@ -35,7 +35,7 @@ SELECT accurateCast('1xxx', 'Date');   -- { serverError CANNOT_PARSE_DATE }
 SELECT accurateCast('2023-05-30', 'Date');
 SELECT accurateCast(19, 'Date');
 
-select accurateCast('test', 'Nullable(Bool)');
+select accurateCast('test', 'Nullable(Bool)');   -- { serverError CANNOT_PARSE_BOOL }
 select accurateCast('test', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
 select accurateCast('truex', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
 select accurateCast('xfalse', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }

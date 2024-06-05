@@ -11,8 +11,8 @@ ORDER BY key;
 
 INSERT INTO alter_drop_version VALUES (1, '1', 1);
 
-ALTER TABLE alter_drop_version DROP COLUMN ver; --{serverError 524}
-ALTER TABLE alter_drop_version RENAME COLUMN ver TO rev; --{serverError 524}
+ALTER TABLE alter_drop_version DROP COLUMN ver; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
+ALTER TABLE alter_drop_version RENAME COLUMN ver TO rev; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 DETACH TABLE alter_drop_version;
 

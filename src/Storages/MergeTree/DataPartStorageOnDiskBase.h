@@ -58,7 +58,9 @@ public:
         const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs) const override;
+        TemporaryFilesOnDisks * temp_dirs,
+        bool is_projection_part,
+        bool allow_backup_broken_projection) const override;
 
     MutableDataPartStoragePtr freeze(
         const std::string & to,
@@ -67,6 +69,15 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const override;
+
+    MutableDataPartStoragePtr freezeRemote(
+    const std::string & to,
+    const std::string & dir_path,
+    const DiskPtr & dst_disk,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    const ClonePartParams & params) const override;
 
     MutableDataPartStoragePtr clonePart(
         const std::string & to,

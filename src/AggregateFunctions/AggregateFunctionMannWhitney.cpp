@@ -17,18 +17,18 @@
 #include <boost/math/distributions/normal.hpp>
 
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace DB
 {
 
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -39,7 +39,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
      *the probability of X being greater than Y is equal to the probability of Y being greater than X".
      *Or "the distribution F of first sample equals to the distribution G of second sample".
      *Then alternative for this hypothesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,
@@ -141,7 +141,7 @@ public:
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require two parameter or less", getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require two parameter or less", getName());
 
         if (params.empty())
         {
@@ -205,35 +205,35 @@ public:
         UInt8 is_second = columns[1]->getUInt(row_num);
 
         if (is_second)
-            this->data(place).addY(value, arena);
+            data(place).addY(value, arena);
         else
-            this->data(place).addX(value, arena);
+            data(place).addX(value, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto & a = this->data(place);
-        const auto & b = this->data(rhs);
+        auto & a = data(place);
+        const auto & b = data(rhs);
 
         a.merge(b, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (!this->data(place).size_x || !this->data(place).size_y)
+        if (!data(place).size_x || !data(place).size_y)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
-        auto [u_statistic, p_value] = this->data(place).getResult(alternative, continuity_correction);
+        auto [u_statistic, p_value] = data(place).getResult(alternative, continuity_correction);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));

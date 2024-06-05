@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -35,10 +35,11 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <cassert>
 #include <chrono>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -47,8 +48,6 @@
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -255,7 +254,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
     }
 
     settings.getter = create_stream_getter(false);
@@ -299,6 +298,7 @@ public:
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
         , lock(std::move(lock_))
     {
         if (!lock)
@@ -343,6 +343,7 @@ public:
 private:
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     WriteLock lock;
     bool done = false;
 
@@ -476,13 +477,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            const auto & columns = metadata_snapshot->getColumns();
-
-            CompressionCodecPtr compression;
-            if (name_and_type.name == BlockNumberColumn::name)
-                compression = BlockNumberColumn::compression_codec;
-            else
-                compression = columns.getCodecOrDefault(name_and_type.name);
+            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -838,8 +833,7 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    if (num_streams > max_streams)
-        num_streams = max_streams;
+    num_streams = std::min(num_streams, max_streams);
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);

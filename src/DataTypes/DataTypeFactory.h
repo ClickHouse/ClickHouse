@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -101,5 +100,6 @@ void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
 void registerDataTypeObject(DataTypeFactory & factory);
 void registerDataTypeVariant(DataTypeFactory & factory);
+void registerDataTypeDynamic(DataTypeFactory & factory);
 
 }

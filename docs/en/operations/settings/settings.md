@@ -7,6 +7,8 @@ toc_max_heading_level: 2
 
 # Core Settings
 
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
 ## additional_table_filters
 
 An additional filter expression that is applied after reading
@@ -1689,6 +1691,18 @@ Possible values:
 
 Default value: `throw`.
 
+## query_cache_system_table_handling {#query-cache-system-table-handling}
+
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
+
+Possible values:
+
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
+
+Default value: `throw`.
+
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
 Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
@@ -1776,7 +1790,7 @@ Default value: 0 (no restriction).
 ## insert_quorum {#insert_quorum}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1819,7 +1833,7 @@ See also:
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1840,7 +1854,7 @@ See also:
 ## select_sequential_consistency {#select_sequential_consistency}
 
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree. 
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -1911,7 +1925,9 @@ Default value: `16`.
 
 ### wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` as soon it has received the data, but it might still fail to parse or insert it later (You can check in system.asynchronous_insert_log)
+
+If you want to use asynchronous inserts, we need to also enable [`async_insert`](#async-insert).
 
 Possible values:
 
@@ -1940,7 +1956,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `10485760`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -2232,7 +2248,7 @@ Default value: 0.
 
 ## count_distinct_implementation {#count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
 Possible values:
 
@@ -2816,6 +2832,17 @@ Possible values:
 - 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
 Default value: 0.
+
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
+
+Enables skipping read-only replicas for INSERT queries into Distributed.
+
+Possible values:
+
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
+
+Default value: `0`
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
@@ -3638,6 +3665,26 @@ Possible values:
 
 Default value: `0`.
 
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## s3_validate_request_settings {#s3_validate_request_settings}
+
+Enables s3 request settings validation.
+
+Possible values:
+- 1 — validate settings.
+- 0 — do not validate settings.
+
+Default value: `1`.
+
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3663,6 +3710,56 @@ Default value: `0`.
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_skip_empty_files {#azure_skip_empty_files}
+
+Enables or disables skipping empty files in S3 engine.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
@@ -3908,19 +4005,6 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
 
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-Cloud default value: `1`.
-
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -3954,6 +4038,7 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+- `none_only_active` - similar to `none`, but doesn't wait for inactive replicas of the `Replicated` database. Note: with this mode it's impossible to figure out that the query was not executed on some replica and will be executed in background.
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
@@ -4335,6 +4420,18 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
+
+
+## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
+
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+
+Possible values:
+
+- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
+- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
+
+Default value: `1`.
 
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
@@ -5278,7 +5375,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
 
 Default value: `false`.
 
@@ -5429,3 +5526,27 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
+
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
+
+Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## mysql_datatypes_support_level
+
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
+- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
+- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
+- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+
+## cross_join_min_rows_to_compress
+
+Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `10000000`.
+
+## cross_join_min_bytes_to_compress
+
+Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `1GiB`.

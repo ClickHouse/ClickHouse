@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
-import subprocess
-import sys
-from typing import List, Sequence, Tuple
 import csv
 import logging
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Sequence, Tuple
 
-from report import (
-    ERROR,
-    FAILURE,
-    SKIPPED,
-    SUCCESS,
-    FAIL,
-    OK,
-    TestResult,
-    TestResults,
-    JobReport,
-)
-from env_helper import TEMP_PATH
-from stopwatch import Stopwatch
 from ci_config import JobNames
 from ci_utils import normalize_string
+from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
+from report import (
+    ERROR,
+    FAIL,
+    FAILURE,
+    OK,
+    SKIPPED,
+    SUCCESS,
+    JobReport,
+    TestResult,
+    TestResults,
+)
+from stopwatch import Stopwatch
 
 
 def post_commit_status_from_file(file_path: Path) -> List[str]:
     with open(file_path, "r", encoding="utf-8") as f:
         res = list(csv.reader(f, delimiter="\t"))
     if len(res) < 1:
-        raise Exception(f'Can\'t read from "{file_path}"')
+        raise IndexError(f'Can\'t read from "{file_path}"')
     if len(res[0]) != 3:
-        raise Exception(f'Can\'t read from "{file_path}"')
+        raise IndexError(f'Can\'t read from "{file_path}"')
     return res[0]
 
 
@@ -109,12 +109,12 @@ def main():
         test_script = jobs_scripts[test_job]
         if report_file.exists():
             report_file.unlink()
-        extra_timeout_option = ""
-        if test_job == JobNames.STATELESS_TEST_RELEASE:
-            extra_timeout_option = str(3600)
         # "bugfix" must be present in checkname, as integration test runner checks this
         check_name = f"Validate bugfix: {test_job}"
-        command = f"python3 {test_script} '{check_name}' {extra_timeout_option} --validate-bugfix --report-to-file {report_file}"
+        command = (
+            f"python3 {test_script} '{check_name}' "
+            f"--validate-bugfix --report-to-file {report_file}"
+        )
         print(f"Going to validate job [{test_job}], command [{command}]")
         _ = subprocess.run(
             command,
