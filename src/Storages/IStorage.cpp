@@ -18,7 +18,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/SinkToSubscribers.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/Statistics/Estimator.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Streaming/QueueStreamSubscription.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
@@ -316,7 +316,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const
 {
     return {};
 }

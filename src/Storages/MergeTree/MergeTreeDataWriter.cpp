@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -464,7 +465,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     if (context->getSettingsRef().materialize_skip_indexes_on_insert)
         indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
 
-    Statistics statistics;
+    ColumnsStatistics statistics;
     if (context->getSettingsRef().materialize_statistics_on_insert)
         statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
 
@@ -498,6 +499,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
+    if (data.getSettings()->allow_experimental_optimized_row_order)
+    {
+        RowOrderOptimizer::optimize(block, sort_description, perm);
+        perm_ptr = &perm;
+    }
+
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
     {
@@ -508,9 +515,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    /// If optimize_on_insert is true, block may become empty after merge.
-    /// There is no need to create empty part.
-    if (expected_size == 0)
+    /// If optimize_on_insert is true, block may become empty after merge. There
+    /// is no need to create empty part. Since expected_size could be zero when
+    /// part only contains empty tuples. As a result, check rows instead.
+    if (block.rows() == 0)
         return temp_part;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
@@ -718,6 +726,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
+    if (data.getSettings()->allow_experimental_optimized_row_order)
+    {
+        RowOrderOptimizer::optimize(block, sort_description, perm);
+        perm_ptr = &perm;
+    }
+
     if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
@@ -736,7 +750,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
+        /// TODO(hanfei): It should be helpful to write statistics for projection result.
+        ColumnsStatistics{},
         compression_codec,
         Tx::PrehistoricTID,
         false, false, data.getContext()->getWriteSettings());

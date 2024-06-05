@@ -124,7 +124,7 @@ public:
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
     uint64_t getKeyArenaSize() const;
-    uint64_t getLatestSnapshotBufSize() const;
+    uint64_t getLatestSnapshotSize() const;
 
     void recalculateStorageStats();
 
@@ -135,7 +135,7 @@ private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    SnapshotFileInfo latest_snapshot_info;
+    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     /// Main state machine logic
