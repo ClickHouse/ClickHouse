@@ -47,7 +47,7 @@ An example:
         <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size>
+        <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
@@ -77,6 +77,11 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 - `OSWriteChars`
 - `OSReadBytes`
 - `OSWriteBytes`
+
+:::note
+`OSIOWaitMicroseconds` is disabled by default in Linux kernels starting from 5.14.x.
+You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `.conf` file in `/etc/sysctl.d/` with `kernel.task_delayacct = 1`
+:::
 
 ## Related content
 

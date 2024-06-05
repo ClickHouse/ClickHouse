@@ -3,16 +3,24 @@
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Parsers/IAST_fwd.h>
-#include <Processors/Sources/SourceFromChunks.h>
+#include <Parsers/IAST.h>
 #include <Processors/Chunk.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
+#include <base/UUID.h>
+
+#include <optional>
 
 namespace DB
 {
 
+struct Settings;
+
 /// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
+
+/// Does AST contain system tables like "system.processes"?
+bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -24,7 +32,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage
+    enum class Usage : uint8_t
     {
         Unknown,  /// we don't know what what happened
         None,     /// query result neither written nor read into/from query cache
@@ -38,8 +46,10 @@ public:
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
+
+        /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        const ASTPtr ast;
+        IAST::Hash ast_hash;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
@@ -51,8 +61,15 @@ public:
         /// Result metadata for constructing the pipe.
         const Block header;
 
-        /// The user who executed the query.
-        const String user_name;
+        /// The id and current roles of the user who executed the query.
+        /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
+        /// the same roles. Example attack scenarios:
+        /// - after DROP USER, it must not be possible to create a new user with with the dropped user name and access the dropped user's
+        ///   query cache entries
+        /// - different roles of the same user may be tied to different row-level policies. It must not be possible to switch role and
+        ///   access another role's cache entries
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_user_roles;
 
         /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
@@ -73,13 +90,16 @@ public:
 
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
+            const String & current_database,
+            const Settings & settings,
             Block header_,
-            const String & user_name_, bool is_shared_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, const String & user_name_);
+        Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
@@ -128,7 +148,7 @@ public:
 
         Writer(const Writer & other);
 
-        enum class ChunkType {Result, Totals, Extremes};
+        enum class ChunkType : uint8_t {Result, Totals, Extremes};
         void buffer(Chunk && chunk, ChunkType chunk_type);
 
         void finalizeWrite();
@@ -145,7 +165,7 @@ public:
         Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<Entry>();
         std::atomic<bool> skip_insert = false;
         bool was_finalized = false;
-        Poco::Logger * logger = &Poco::Logger::get("QueryCache");
+        LoggerPtr logger = getLogger("QueryCache");
 
         Writer(Cache & cache_, const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
@@ -172,7 +192,7 @@ public:
         std::unique_ptr<SourceFromChunks> source_from_chunks;
         std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
         std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
-        Poco::Logger * logger = &Poco::Logger::get("QueryCache");
+        LoggerPtr logger = getLogger("QueryCache");
         friend class QueryCache; /// for createReader()
     };
 

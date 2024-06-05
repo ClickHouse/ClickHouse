@@ -1,0 +1,13 @@
+tablefunc01	StorageProxy		CREATE TABLE default.tablefunc01 (`x` Int32) AS postgresql(\'127.121.0.1:5432\', \'postgres_db\', \'postgres_table\', \'postgres_user\', \'[HIDDEN]\')	[]	1	1
+tablefunc02	StorageProxy		CREATE TABLE default.tablefunc02 (`x` Int32) AS mysql(\'127.123.0.1:3306\', \'mysql_db\', \'mysql_table\', \'mysql_user\', \'[HIDDEN]\')	[]	1	1
+tablefunc03	StorageProxy		CREATE TABLE default.tablefunc03 (`a` Int32) AS sqlite(\'db_path\', \'table_name\')	[]	1	1
+tablefunc04	StorageProxy		CREATE TABLE default.tablefunc04 (`a` Int32) AS mongodb(\'127.0.0.1:27017\', \'test\', \'my_collection\', \'test_user\', \'[HIDDEN]\', \'a Int\')	[]	1	1
+tablefunc05	StorageProxy		CREATE TABLE default.tablefunc05 (`a` Int32) AS redis(\'127.0.0.1:6379\', \'key\', \'key UInt32\')	[]	1	1
+tablefunc06	StorageProxy		CREATE TABLE default.tablefunc06 (`a` Int32) AS s3(\'http://some_addr:9000/cloud-storage-01/data.tsv\', \'M9O7o0SX5I4udXhWxI12\', \'[HIDDEN]\', \'TSV\')	[]	1	1
+tablefunc01	StorageProxy		CREATE TABLE default.tablefunc01 (`x` Int32) AS postgresql(\'127.121.0.1:5432\', \'postgres_db\', \'postgres_table\', \'postgres_user\', \'[HIDDEN]\')	[]	1	1
+tablefunc02	StorageProxy		CREATE TABLE default.tablefunc02 (`x` Int32) AS mysql(\'127.123.0.1:3306\', \'mysql_db\', \'mysql_table\', \'mysql_user\', \'[HIDDEN]\')	[]	1	1
+tablefunc03	StorageProxy		CREATE TABLE default.tablefunc03 (`a` Int32) AS sqlite(\'db_path\', \'table_name\')	[]	1	1
+tablefunc04	StorageProxy		CREATE TABLE default.tablefunc04 (`a` Int32) AS mongodb(\'127.0.0.1:27017\', \'test\', \'my_collection\', \'test_user\', \'[HIDDEN]\', \'a Int\')	[]	1	1
+tablefunc05	StorageProxy		CREATE TABLE default.tablefunc05 (`a` Int32) AS redis(\'127.0.0.1:6379\', \'key\', \'key UInt32\')	[]	1	1
+tablefunc06	StorageProxy		CREATE TABLE default.tablefunc06 (`a` Int32) AS s3(\'http://some_addr:9000/cloud-storage-01/data.tsv\', \'M9O7o0SX5I4udXhWxI12\', \'[HIDDEN]\', \'TSV\')	[]	1	1
+StorageProxy

@@ -124,11 +124,11 @@ void MemoryWriteBuffer::addChunk()
 }
 
 
-std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
+std::unique_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
     finalize();
 
-    auto res = std::make_shared<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
+    auto res = std::make_unique<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
 
     /// invalidate members
     chunk_list.clear();

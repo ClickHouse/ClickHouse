@@ -13,6 +13,7 @@ namespace DB
 
 struct MergeTreeMutationStatus
 {
+/// NOLINTBEGIN(readability-redundant-string-init)
     String id = "";
     String command = "";
     time_t create_time = 0;
@@ -30,6 +31,7 @@ struct MergeTreeMutationStatus
 
     /// FIXME: currently unused, but would be much better to report killed mutations with this flag.
     bool is_killed = false;
+/// NOLINTEND(readability-redundant-string-init)
 };
 
 /// Check mutation status and throw exception in case of error during mutation

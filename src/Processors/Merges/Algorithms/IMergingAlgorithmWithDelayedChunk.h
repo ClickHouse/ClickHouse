@@ -24,13 +24,24 @@ protected:
     void initializeQueue(Inputs inputs);
     void updateCursor(Input & input, size_t source_num);
     bool skipLastRowFor(size_t input_number) const { return current_inputs[input_number].skip_last_row; }
+    void setRowRef(detail::RowRef & row, SortCursor & cursor) { row.set(cursor); }
+    bool rowsHaveDifferentSortColumns(const detail::RowRef & lhs, const detail::RowRef & rhs)
+    {
+        /// By the time this method is called, `inputs_origin_merge_tree_part_level[lhs.source_stream_index]` must have been
+        /// initialized in either `initializeQueue` or `updateCursor`
+        if (lhs.source_stream_index == rhs.source_stream_index && inputs_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
+            return true;
+        return !lhs.hasEqualSortColumnsWith(rhs);
+    }
 
-private:
     Block header;
 
+private:
     /// Inputs currently being merged.
     Inputs current_inputs;
     SortCursorImpls cursors;
+
+    std::vector<size_t> inputs_origin_merge_tree_part_level;
 
     /// In merging algorithm, we need to compare current sort key with the last one.
     /// So, sorting columns for last row needed to be stored.

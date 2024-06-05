@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 
+set output_format_pretty_color = 1, output_format_pretty_row_numbers = 0;
 set output_format_write_statistics=0;
 
 {% for format in ['CSV', 'TSV', 'XML', 'Vertical', 'Pretty', 'JSON', 'JSONCompact'] -%}
@@ -19,4 +20,3 @@ select sum(number) from numbers(10) group by number % 2 with totals format {{ fo
 select '';
 
 {% endfor -%}
-

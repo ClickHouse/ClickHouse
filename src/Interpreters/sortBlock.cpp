@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/iota.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -155,8 +156,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     {
         size_t size = block.rows();
         permutation.resize(size);
-        for (size_t i = 0; i < size; ++i)
-            permutation[i] = i;
+        iota(permutation.data(), size, IColumn::Permutation::value_type(0));
 
         if (limit >= size)
             limit = 0;
@@ -166,7 +166,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
         for (const auto & column_with_sort_description : columns_with_sort_descriptions)
         {
-            while (!ranges.empty() && limit && limit <= ranges.back().first)
+            while (!ranges.empty() && limit && limit <= ranges.back().from)
                 ranges.pop_back();
 
             if (ranges.empty())

@@ -29,9 +29,6 @@ protected:
     virtual void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) = 0;
     virtual bool isGarbageAfterField(size_t after_input_pos_idx, ReadBuffer::Position pos) = 0;
 
-    /// For convenient diagnostics in case of an error.
-    size_t row_num = 0;
-
 private:
     /// How many bytes were read, not counting those still in the buffer.
     size_t bytes_read_at_start_of_buffer_on_current_row = 0;

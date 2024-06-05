@@ -1,3 +1,4 @@
+#include <Common/re2.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/IParserBase.h>
@@ -6,10 +7,10 @@
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 #include <format>
-#include <regex>
 
 namespace DB
 {
@@ -51,7 +52,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     else
     {
         auto start = pos;
-        while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
         {
             ++pos;
             if (pos->type == TokenType::ClosingRoundBracket)
@@ -77,7 +78,7 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::OpeningCurlyBrace)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property bags are not supported for now in {}", function_name);
 
-    while (!pos->isEnd() && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
     {
         if (const auto token_type = pos->type; token_type == TokenType::BareWord || token_type == TokenType::Number
             || token_type == TokenType::QuotedIdentifier || token_type == TokenType::StringLiteral)
@@ -117,7 +118,7 @@ bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
     else
     {
         auto start = pos;
-        while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
         {
             ++pos;
             if (pos->type == TokenType::ClosingRoundBracket)
@@ -136,7 +137,6 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
-    String guid_str;
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
@@ -224,13 +224,14 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     --pos;
     arg = getArgument(fn_name, pos);
 
-    //NULL expr returns NULL not exception
-    static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
-    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(std::regex_match(arg, expr));
+    /// NULL expr returns NULL not exception
+    static const re2::RE2 expr("^[0-9]+e[+-]?[0-9]+");
+    assert(expr.ok());
+    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(re2::RE2::FullMatch(arg, expr));
     if (is_string)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);
 
-    if (std::regex_match(arg, expr))
+    if (re2::RE2::FullMatch(arg, expr))
     {
         auto exponential_pos = arg.find('e');
         if (arg[exponential_pos + 1] == '+' || arg[exponential_pos + 1] == '-')

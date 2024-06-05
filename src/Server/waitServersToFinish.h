@@ -1,4 +1,7 @@
 #pragma once
+
+#include <mutex>
+
 #include <Core/Types.h>
 
 namespace DB

@@ -3,9 +3,9 @@
 namespace DB
 {
 
-Block ExpressionTransform::transformHeader(Block header, const ActionsDAG & expression)
+Block ExpressionTransform::transformHeader(const Block & header, const ActionsDAG & expression)
 {
-    return expression.updateHeader(std::move(header));
+    return expression.updateHeader(header);
 }
 
 
@@ -23,14 +23,6 @@ void ExpressionTransform::transform(Chunk & chunk)
     expression->execute(block, num_rows);
 
     chunk.setColumns(block.getColumns(), num_rows);
-}
-
-ProcessorPtr ExpressionTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
-{
-    const auto & header = getInputPort().getHeader();
-    auto result = std::make_shared<ExpressionTransform>(header, expression);
-    result->setDescription("(Partial result)");
-    return result;
 }
 
 ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionActionsPtr expression_)

@@ -21,10 +21,15 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
+class IWindowFunction;
+
 // Runtime data for computing one window function.
 struct WindowFunctionWorkspace
 {
     AggregateFunctionPtr aggregate_function;
+
+    // Cached value of aggregate function isState virtual method
+    bool is_aggregate_function_state = false;
 
     // This field is set for pure window functions. When set, we ignore the
     // window_function.aggregate_function, and work through this interface

@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include "Storages/KeyDescription.h"
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 
@@ -175,6 +176,8 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
+
+    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -235,15 +238,20 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
 
         const auto & array_joined_columns = array_join->arrayJoin()->columns;
 
-        /// Remove array joined columns from outputs.
-        /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-        ActionsDAG::NodeRawConstPtrs outputs;
-        outputs.reserve(dag->getOutputs().size());
-
-        for (const auto & output : dag->getOutputs())
+        if (dag)
         {
-            if (!array_joined_columns.contains(output->result_name))
-                outputs.push_back(output);
+            /// Remove array joined columns from outputs.
+            /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
+            ActionsDAG::NodeRawConstPtrs outputs;
+            outputs.reserve(dag->getOutputs().size());
+
+            for (const auto & output : dag->getOutputs())
+            {
+                if (!array_joined_columns.contains(output->result_name))
+                    outputs.push_back(output);
+            }
+
+            dag->getOutputs() = std::move(outputs);
         }
     }
 }
@@ -325,8 +333,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     const FixedColumns & fixed_columns,
     const ActionsDAGPtr & dag,
     const SortDescription & description,
-    const ActionsDAG & sorting_key_dag,
-    const Names & sorting_key_columns,
+    const KeyDescription & sorting_key,
     size_t limit)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
@@ -336,9 +343,11 @@ InputOrderInfoPtr buildInputOrderInfo(
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
 
+    const auto & sorting_key_dag = sorting_key.expression->getActionsDAG();
+
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -364,14 +373,20 @@ InputOrderInfoPtr buildInputOrderInfo(
     size_t next_description_column = 0;
     size_t next_sort_key = 0;
 
-    while (next_description_column < description.size() && next_sort_key < sorting_key_columns.size())
+    while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
-        const auto & sorting_key_column = sorting_key_columns[next_sort_key];
+        const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
         const auto & sort_column_description = description[next_description_column];
 
         /// If required order depend on collation, it cannot be matched with primary key order.
         /// Because primary keys cannot have collations.
         if (sort_column_description.collator)
+            break;
+
+        /// Since sorting key columns are always sorted with NULLS LAST, reading in order
+        /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
+        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
+        if (column_is_nullable && sort_column_description.nulls_direction != 1)
             break;
 
         /// Direction for current sort key.
@@ -507,7 +522,7 @@ AggregationInputOrder buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -684,12 +699,11 @@ InputOrderInfoPtr buildInputOrderInfo(
     size_t limit)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderInfo(
         fixed_columns,
         dag, description,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns,
+        sorting_key,
         limit);
 }
 
@@ -707,15 +721,14 @@ InputOrderInfoPtr buildInputOrderInfo(
     {
         auto storage = std::get<StoragePtr>(table);
         const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
-        const auto & sorting_key_columns = sorting_key.column_names;
 
-        if (sorting_key_columns.empty())
+        if (sorting_key.column_names.empty())
             return nullptr;
 
         auto table_order_info = buildInputOrderInfo(
             fixed_columns,
             dag, description,
-            sorting_key.expression->getActionsDAG(), sorting_key_columns,
+            sorting_key,
             limit);
 
         if (!table_order_info)
@@ -997,7 +1010,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 }
 
-/// This optimisation is obsolete and will be removed.
+/// This optimization is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {
@@ -1073,10 +1086,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
     UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
 
-    auto order_info = order_optimizer->getInputOrder(
-            query_info.projection ? query_info.projection->desc->metadata : read_from_merge_tree->getStorageMetadata(),
-            context,
-            limit);
+    auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
 
     if (order_info)
     {

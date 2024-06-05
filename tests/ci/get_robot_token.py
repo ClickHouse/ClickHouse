@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import logging
+import random
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
 import boto3  # type: ignore
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
+from github.GithubException import BadCredentialsException
 from github.NamedUser import NamedUser
 
 
@@ -14,6 +16,9 @@ class Token:
     user: Union[AuthenticatedUser, NamedUser]
     value: str
     rest: int
+
+
+SAFE_REQUESTS_LIMIT = 1000
 
 
 def get_parameter_from_ssm(
@@ -68,20 +73,34 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
     }
     assert tokens
 
-    for value in tokens.values():
-        gh = Github(value, per_page=100)
-        # Do not spend additional request to API by accessin user.login unless
-        # the token is chosen by the remaining requests number
-        user = gh.get_user()
-        rest, _ = gh.rate_limiting
-        logging.info("Get token with %s remaining requests", rest)
-        if ROBOT_TOKEN is None:
-            ROBOT_TOKEN = Token(user, value, rest)
-            continue
-        if ROBOT_TOKEN.rest < rest:
-            ROBOT_TOKEN.user, ROBOT_TOKEN.value, ROBOT_TOKEN.rest = user, value, rest
+    token_items = list(tokens.items())
+    random.shuffle(token_items)
 
-    assert ROBOT_TOKEN
+    best_token: Optional[Token] = None
+
+    for name, value in token_items:
+        gh = Github(value, per_page=100)
+        try:
+            # Do not spend additional request to API by accessing user.login unless
+            # the token is chosen by the remaining requests number
+            user = gh.get_user()
+            rest, _ = gh.rate_limiting
+        except BadCredentialsException:
+            logging.error(
+                "The token %(name)s has expired, please update it\n"
+                "::error::Token %(name)s has expired, it must be updated",
+                {"name": name},
+            )
+            continue
+        logging.info("Get token with %s remaining requests", rest)
+        if best_token is None:
+            best_token = Token(user, value, rest)
+        elif best_token.rest < rest:
+            best_token = Token(user, value, rest)
+        if best_token.rest > SAFE_REQUESTS_LIMIT:
+            break
+    assert best_token
+    ROBOT_TOKEN = best_token
     logging.info(
         "User %s with %s remaining requests is used",
         ROBOT_TOKEN.user.login,

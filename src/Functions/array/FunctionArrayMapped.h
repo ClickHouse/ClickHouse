@@ -74,6 +74,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
@@ -315,7 +317,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                    column_array = &checkAndGetColumn<ColumnArray>(*column_array_ptr);
                 }
 
                 if (!array_type)
@@ -333,7 +335,11 @@ public:
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                            "Arrays passed to {} must have equal size. Argument {} has size {} which differs with the size of another argument, {}",
+                            getName(),
+                            i + 1,
+                            column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
+                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().back());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
@@ -349,7 +355,7 @@ public:
                     {
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
-                            recursiveRemoveLowCardinality(type_tuple.getElement(j)),
+                            type_tuple.getElement(j),
                             array_with_type_and_name.name + "." + tuple_names[j]);
                     }
                 }
@@ -357,7 +363,7 @@ public:
                 {
                     arrays.emplace_back(
                         column_array->getDataPtr(),
-                        recursiveRemoveLowCardinality(array_type->getNestedType()),
+                        array_type->getNestedType(),
                         array_with_type_and_name.name);
                 }
 
@@ -370,10 +376,10 @@ public:
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
-            auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-            replicated_column_function->appendArguments(arrays);
+            auto & replicated_column_function = typeid_cast<ColumnFunction &>(*replicated_column_function_ptr);
+            replicated_column_function.appendArguments(arrays);
 
-            auto lambda_result = replicated_column_function->reduce();
+            auto lambda_result = replicated_column_function.reduce();
 
             /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
             /// because we removed LowCardinality from return type of lambda expression.

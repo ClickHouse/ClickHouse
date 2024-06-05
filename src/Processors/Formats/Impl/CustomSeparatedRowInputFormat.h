@@ -18,9 +18,9 @@ public:
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
 
-    void resetParser() override;
     String getName() const override { return "CustomSeparatedRowInputFormat"; }
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     CustomSeparatedRowInputFormat(
@@ -80,7 +80,7 @@ public:
     bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
 
     bool checkForSuffixImpl(bool check_eof);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
+    void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
 
     EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 

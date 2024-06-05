@@ -1,14 +1,14 @@
 ---
 slug: /en/sql-reference/data-types/nullable
-sidebar_position: 55
-sidebar_label: Nullable
+sidebar_position: 44
+sidebar_label: Nullable(T)
 ---
 
-# Nullable(typename)
+# Nullable(T)
 
-Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes “missing value” alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
+Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes “missing value” alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
-For a `TypeName`, you can’t use composite data types [Array](../../sql-reference/data-types/array.md), [Map](../../sql-reference/data-types/map.md) and [Tuple](../../sql-reference/data-types/tuple.md). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
+`T` can’t be any of the composite data types [Array](../../sql-reference/data-types/array.md), [Map](../../sql-reference/data-types/map.md) and [Tuple](../../sql-reference/data-types/tuple.md) but composite data types can contain `Nullable` type values, e.g. `Array(Nullable(Int8))`.
 
 A `Nullable` type field can’t be included in table indexes.
 

@@ -28,6 +28,7 @@ public:
     std::string doGetName() const override { return fmt::format("Interval{}", kind.toString()); }
     const char * getFamilyName() const override { return "Interval"; }
     TypeIndex getTypeId() const override { return TypeIndex::Interval; }
+    TypeIndex getColumnType() const override { return TypeIndex::Int64; }
 
     bool equals(const IDataType & rhs) const override;
 

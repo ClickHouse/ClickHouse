@@ -1,5 +1,14 @@
-#include <Core/Settings.h>
 #include <Databases/DatabaseLazy.h>
+
+#include <base/sort.h>
+#include <iomanip>
+#include <filesystem>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -7,16 +16,18 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 
-#include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
-#include <base/sort.h>
-#include <iomanip>
-#include <filesystem>
 
 namespace fs = std::filesystem;
+
+
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTable;
+}
+
 
 namespace DB
 {
@@ -27,6 +38,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -142,7 +154,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -174,6 +186,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
+    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -189,6 +202,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;
 }
@@ -241,7 +255,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();
             String table_data_path_relative = getTableDataPath(ast_create);
-            table = createTableFromAST(ast_create, getDatabaseName(), table_data_path_relative, context_copy, false).second;
+            table = createTableFromAST(ast_create, getDatabaseName(), table_data_path_relative, context_copy, LoadingStrictnessLevel::ATTACH).second;
         }
 
         if (!ast || !endsWith(table->getName(), "Log"))
@@ -345,4 +359,26 @@ const StoragePtr & DatabaseLazyIterator::table() const
     return current_storage;
 }
 
+void registerDatabaseLazy(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
+
+        const auto & arguments = engine->arguments->children;
+
+        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
+
+        return make_shared<DatabaseLazy>(
+            args.database_name,
+            args.metadata_path,
+            cache_expiration_time_seconds,
+            args.context);
+    };
+    factory.registerDatabase("Lazy", create_fn);
+}
 }

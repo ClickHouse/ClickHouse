@@ -14,8 +14,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-namespace
-{
 
 using namespace GatherUtils;
 
@@ -152,7 +150,5 @@ private:
         return needle_pos == needle_end;
     }
 };
-
-}
 
 }

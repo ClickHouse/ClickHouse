@@ -1,9 +1,12 @@
+# Please do not use 'branch = ...' tags with submodule entries. Such tags make updating submodules a
+# little bit more convenient but they do *not* specify the tracked submodule branch. Thus, they are
+# more confusing than useful.
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/ClickHouse/lz4
+	url = https://github.com/lz4/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -19,9 +22,6 @@
 [submodule "contrib/capnproto"]
 	path = contrib/capnproto
 	url = https://github.com/ClickHouse/capnproto
-[submodule "contrib/double-conversion"]
-	path = contrib/double-conversion
-	url = https://github.com/google/double-conversion
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2
@@ -96,7 +96,7 @@
 	url = https://github.com/awslabs/aws-c-event-stream
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
-	url = https://github.com/ClickHouse/aws-c-common
+	url = https://github.com/awslabs/aws-c-common.git
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
@@ -173,9 +173,6 @@
 [submodule "contrib/libpq"]
 	path = contrib/libpq
 	url = https://github.com/ClickHouse/libpq
-[submodule "contrib/boringssl"]
-	path = contrib/boringssl
-	url = https://github.com/ClickHouse/boringssl
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
@@ -242,6 +239,12 @@
 [submodule "contrib/idxd-config"]
 	path = contrib/idxd-config
 	url = https://github.com/intel/idxd-config
+[submodule "contrib/QAT-ZSTD-Plugin"]
+	path = contrib/QAT-ZSTD-Plugin
+	url = https://github.com/intel/QAT-ZSTD-Plugin
+[submodule "contrib/qatlib"]
+	path = contrib/qatlib
+	url = https://github.com/intel/qatlib
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -269,9 +272,6 @@
 [submodule "contrib/crc32-s390x"]
 	path = contrib/crc32-s390x
 	url = https://github.com/linux-on-ibm-z/crc32-s390x
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/openssl/openssl
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark
@@ -317,6 +317,9 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/expected"]
+	path = contrib/expected
+	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
@@ -351,3 +354,21 @@
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/pocketfft"]
+	path = contrib/pocketfft
+	url = https://github.com/mreineck/pocketfft.git
+[submodule "contrib/sqids-cpp"]
+	path = contrib/sqids-cpp
+	url = https://github.com/sqids/sqids-cpp.git
+[submodule "contrib/idna"]
+	path = contrib/idna
+	url = https://github.com/ada-url/idna.git
+[submodule "contrib/rust_vendor"]
+	path = contrib/rust_vendor
+	url = https://github.com/ClickHouse/rust_vendor.git
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/ClickHouse/openssl.git
+[submodule "contrib/double-conversion"]
+	path = contrib/double-conversion
+	url = https://github.com/ClickHouse/double-conversion.git

@@ -1,9 +1,10 @@
 #pragma once
+
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "ColumnsNumber.h"
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -23,9 +24,9 @@ namespace ErrorCodes
  *
  * @note The indices column always contains the default value (empty StringRef) with the first index.
  */
-class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
+class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>
 {
-    friend class COWHelper<IColumn, ColumnLowCardinality>;
+    friend class COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
 
     ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
@@ -34,7 +35,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWHelper<IColumn, ColumnLowCardinality>;
+    using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
     static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
     {
         return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
@@ -74,6 +75,7 @@ public:
     }
 
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
     void insertFrom(const IColumn & src, size_t n) override;
@@ -87,7 +89,10 @@ public:
 
     void popBack(size_t n) override { idx.popBack(n); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -95,7 +100,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
-        return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
+        getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -124,10 +129,6 @@ public:
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
-
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
     bool hasEqualValues() const override;
@@ -144,6 +145,8 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
+    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
+
     ColumnPtr replicate(const Offsets & offsets) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
@@ -151,14 +154,13 @@ public:
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
     void getExtremes(Field & min, Field & max) const override
     {
-        return dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
+    void shrinkToFit() override { idx.shrinkToFit(); }
 
     /// Don't count the dictionary size as it can be shared between different blocks.
     size_t byteSize() const override { return idx.getPositions()->byteSize(); }
@@ -208,7 +210,7 @@ public:
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
@@ -295,6 +297,7 @@ public:
 
         void popBack(size_t n) { positions->popBack(n); }
         void reserve(size_t n) { positions->reserve(n); }
+        void shrinkToFit() { positions->shrinkToFit(); }
 
         UInt64 getMaxPositionForCurrentType() const;
 
@@ -311,6 +314,8 @@ public:
         bool containsDefault() const;
 
         void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
+
+        void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
     private:
         WrappedPtr positions;
