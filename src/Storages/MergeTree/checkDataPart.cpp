@@ -353,7 +353,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 {
                     chassert(is_projection_part);
                     throw Exception(
-                        ErrorCodes::BROKEN_PROJECTION,
+                        ErrorCodes::LOGICAL_ERROR,
                         "Remote path for {} does not exist for projection path. Projection {} is broken",
                         file_name, data_part->name);
                 }
