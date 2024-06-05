@@ -38,7 +38,7 @@ struct S3QueueTableMetadata
     String toString() const;
 
     void checkEquals(const S3QueueTableMetadata & from_zk) const;
-    static void checkEquals(const S3QueueSettings & lhs, const S3QueueSettings & rhs);
+    static void checkEquals(const S3QueueSettings & current, const S3QueueSettings & expected);
 
 private:
     void checkImmutableFieldsEquals(const S3QueueTableMetadata & from_zk) const;

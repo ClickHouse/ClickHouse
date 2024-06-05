@@ -701,7 +701,6 @@ class CiCache:
             len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT
             and round_cnt < MAX_ROUNDS_TO_WAIT
         ):
-            await_finished: Set[str] = set()
             round_cnt += 1
             GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
@@ -713,6 +712,7 @@ class CiCache:
             expired_sec = 0
             start_at = int(time.time())
             while expired_sec < TIMEOUT and self.jobs_to_wait:
+                await_finished: Set[str] = set()
                 time.sleep(poll_interval_sec)
                 self.update()
                 for job_name, job_config in self.jobs_to_wait.items():
@@ -758,11 +758,6 @@ class CiCache:
                 expired_sec = int(time.time()) - start_at
                 print(
                     f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                )
-            if await_finished:
-                GHActions.print_in_group(
-                    f"Finished jobs, round [{round_cnt}]: [{list(await_finished)}]",
-                    list(await_finished),
                 )
 
         GHActions.print_in_group(
