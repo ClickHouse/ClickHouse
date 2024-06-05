@@ -459,10 +459,10 @@ class Release:
 
     @contextmanager
     def _checkout(self, ref: str, with_checkout_back: bool = False) -> Iterator[None]:
+        self._git.update()
         orig_ref = self._git.branch or self._git.sha
-        need_rollback = False
+        rollback_cmd = ""
         if ref not in (self._git.branch, self._git.sha):
-            need_rollback = True
             self.run(f"git checkout {ref}")
             # checkout is not put into rollback_stack intentionally
             rollback_cmd = f"git checkout {orig_ref}"
@@ -475,7 +475,7 @@ class Release:
             self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
         # Normal flow when we need to checkout back
-        if with_checkout_back and need_rollback:
+        if with_checkout_back and rollback_cmd:
             self.run(rollback_cmd)
 
     @contextmanager
