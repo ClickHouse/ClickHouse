@@ -749,6 +749,7 @@ std::string BaseDaemon::getDefaultConfigFileName() const
 
 void BaseDaemon::closeFDs()
 {
+#if !defined(USE_XRAY)
     /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
     fs::path proc_path{"/dev/fd"};
@@ -796,13 +797,13 @@ void BaseDaemon::closeFDs()
             }
         }
     }
+#endif
 }
 
 
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
-
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
