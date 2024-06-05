@@ -735,6 +735,8 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
+The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
+
 **Syntax**
 
 ```sql
@@ -765,6 +767,8 @@ Result:
 ## formatReadableSize
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
+
+The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
 
 **Syntax**
 
@@ -888,6 +892,122 @@ SELECT
 │              12345 │ 205 minutes and 45 seconds                     │
 │ 432546534.00000006 │ 7209108 minutes, 54 seconds and 60 nanoseconds │
 └────────────────────┴────────────────────────────────────────────────┘
+```
+
+## parseReadableSize
+
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
+If the function is unable to parse the input value, it throws an exception.
+
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
+**Syntax**
+
+```sql
+formatReadableSize(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes,  
+    parseReadableSize(readable_sizes) AS sizes;
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KiB      │    5442 │
+└────────────────┴─────────┘
+```
+
+## parseReadableSizeOrNull
+
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
+If the function is unable to parse the input value, it returns `NULL`.
+
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
+**Syntax**
+
+```sql
+parseReadableSizeOrNull(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes,  
+    parseReadableSizeOrNull(readable_sizes) AS sizes;
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │    ᴺᵁᴸᴸ │
+└────────────────┴─────────┘
+```
+
+## parseReadableSizeOrZero
+
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`.
+
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
+
+**Syntax**
+
+```sql
+parseReadableSizeOrZero(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit  ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes,  
+    parseReadableSizeOrZero(readable_sizes) AS sizes;
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │       0 │
+└────────────────┴─────────┘
 ```
 
 ## parseTimeDelta

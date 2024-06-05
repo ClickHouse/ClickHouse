@@ -3777,7 +3777,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                     scope.scope_node->formatASTForErrorMessage());
 
             auto & table_node = node->as<TableNode &>();
-            result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
+            if (result_projection_names.empty())
+                result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
 
             break;
         }
@@ -5475,7 +5476,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         /// Add current alias to non cached set, because in case of cyclic alias identifier should not be substituted from cache.
         /// See 02896_cyclic_aliases_crash.
-        resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;
 
@@ -5484,7 +5485,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         {
             has_node_in_alias_table = true;
 
-            if (!it->second->isEqual(*node))
+            bool matched = it->second->isEqual(*node);
+            if (!matched)
+                /// Table expression could be resolved as scalar subquery,
+                /// but for duplicating alias we allow table expression to be returned.
+                /// So, check constant node source expression as well.
+                if (const auto * constant_node = it->second->as<ConstantNode>())
+                    if (const auto & source_expression = constant_node->getSourceExpression())
+                        matched = source_expression->isEqual(*node);
+
+            if (!matched)
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
                     node->formatASTForErrorMessage(),
