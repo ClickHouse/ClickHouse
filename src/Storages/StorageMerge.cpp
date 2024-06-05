@@ -1228,7 +1228,7 @@ QueryPlan ReadFromMerge::createPlanForTable(
 
         if (allow_experimental_analyzer)
         {
-            InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
+            InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree->toAST(),
                 modified_context,
                 SelectQueryOptions(processed_stage));
 
