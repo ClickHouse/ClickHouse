@@ -38,6 +38,18 @@ CreatingSetsTransform::~CreatingSetsTransform()
             tryLogCurrentException(log, "Failed to set_exception for promise");
         }
     }
+
+    if (executor)
+    {
+        try
+        {
+            executor->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to cancel PushingPipelineExecutor");
+        }
+    }
 }
 
 CreatingSetsTransform::CreatingSetsTransform(
@@ -151,7 +163,7 @@ void CreatingSetsTransform::startSubquery()
     done_with_table = !external_table;
 
     if ((done_with_set && !set_from_cache) && done_with_table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: nothing to do with subquery");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to do with subquery");
 
     if (table_out.initialized())
     {

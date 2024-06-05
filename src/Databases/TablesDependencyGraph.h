@@ -60,7 +60,7 @@ public:
     /// Removes all dependencies of "table_id", returns those dependencies.
     std::vector<StorageID> removeDependencies(const StorageID & table_id, bool remove_isolated_tables = false);
 
-    /// Removes a table from the graph and removes all references to in from the graph (both from its dependencies and dependents).
+    /// Removes a table from the graph and removes all references to it from the graph (both from its dependencies and dependents).
     bool removeTable(const StorageID & table_id);
 
     /// Removes tables from the graph by a specified filter.
@@ -107,8 +107,11 @@ public:
     /// tables which depend on the tables which depend on the tables without dependencies, and so on.
     std::vector<StorageID> getTablesSortedByDependency() const;
 
-    /// The same as getTablesSortedByDependency() but make a list for parallel processing.
-    std::vector<std::vector<StorageID>> getTablesSortedByDependencyForParallel() const;
+    /// Returns a list of lists of tables by the number of dependencies they have:
+    /// tables without dependencies are in the first list, then
+    /// tables which depend on the tables without dependencies are in the second list, then
+    /// tables which depend on the tables which depend on the tables without dependencies are in the third list, and so on.
+    std::vector<std::vector<StorageID>> getTablesSplitByDependencyLevel() const;
 
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;
@@ -166,7 +169,7 @@ private:
     mutable bool levels_calculated = false;
 
     const String name_for_logging;
-    mutable Poco::Logger * logger = nullptr;
+    mutable LoggerPtr logger = nullptr;
 
     Node * findNode(const StorageID & table_id) const;
     Node * addOrUpdateNode(const StorageID & table_id);
@@ -178,7 +181,7 @@ private:
     void setNeedRecalculateLevels() const;
     const NodesSortedByLevel & getNodesSortedByLevel() const;
 
-    Poco::Logger * getLogger() const;
+    LoggerPtr getLogger() const;
 };
 
 }

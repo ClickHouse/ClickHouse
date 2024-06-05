@@ -28,7 +28,7 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 {
 }
 
-Chunk ArrowBlockInputFormat::generate()
+Chunk ArrowBlockInputFormat::read()
 {
     Chunk res;
     block_missing_values.clear();
@@ -64,7 +64,7 @@ Chunk ArrowBlockInputFormat::generate()
         {
             auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
             if (!rows.ok())
-                throw ParsingException(
+                throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
             return getChunkForCount(*rows);
         }
@@ -73,12 +73,12 @@ Chunk ArrowBlockInputFormat::generate()
     }
 
     if (!batch_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
@@ -86,7 +86,7 @@ Chunk ArrowBlockInputFormat::generate()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, (*table_result)->num_rows(), block_missing_values_ptr);
+    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), block_missing_values_ptr);
 
     /// There is no easy way to get original record batch size from Arrow metadata.
     /// Let's just use the number of bytes read from read buffer.
@@ -115,7 +115,9 @@ const BlockMissingValues & ArrowBlockInputFormat::getMissingValues() const
 
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
 {
-    auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
+    auto options = arrow::ipc::IpcReadOptions::Defaults();
+    options.memory_pool = ArrowMemoryPool::instance();
+    auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                         "Error while opening a table: {}", stream_reader_status.status().ToString());
@@ -128,7 +130,9 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
     if (is_stopped)
         return nullptr;
 
-    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file);
+    auto options = arrow::ipc::IpcReadOptions::Defaults();
+    options.memory_pool = ArrowMemoryPool::instance();
+    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
             "Error while opening a table: {}", file_reader_status.status().ToString());
@@ -213,7 +217,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
 
     auto rows = file_reader->CountRows();
     if (!rows.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
 
     return *rows;
 }

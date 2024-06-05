@@ -3,7 +3,7 @@
         <mysql1>
             <user>root</user>
             <password>clickhouse</password>
-            <host>mysql57</host>
+            <host>mysql80</host>
             <port>3306</port>
             <database>test_database</database>
         </mysql1>
@@ -15,7 +15,7 @@
         <mysql3>
             <user>root</user>
             <password>clickhouse</password>
-            <host>mysql57</host>
+            <host>mysql80</host>
             <port>1111</port>
             <database>clickhouse</database>
         </mysql3>

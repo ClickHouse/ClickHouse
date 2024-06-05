@@ -1,8 +1,8 @@
 Test 1: select from hdfs database
 1	2	3
-test1
+test_hdfs_1
 1	2	3
-test2
+test_hdfs_2
 Test 2: check exceptions
 BAD_ARGUMENTS
 OK

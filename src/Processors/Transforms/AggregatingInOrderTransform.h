@@ -83,7 +83,7 @@ private:
     Chunk current_chunk;
     Chunk to_push_chunk;
 
-    Poco::Logger * log = &Poco::Logger::get("AggregatingInOrderTransform");
+    LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };
 
 

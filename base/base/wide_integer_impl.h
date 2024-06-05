@@ -6,13 +6,12 @@
 
 #include "throwError.h"
 
+#include <bit>
 #include <cmath>
 #include <cfloat>
 #include <cassert>
 #include <tuple>
 #include <limits>
-
-#include <boost/math/special_functions/fpclassify.hpp>
 
 // NOLINTBEGIN(*)
 
@@ -21,6 +20,7 @@
 #define CONSTEXPR_FROM_DOUBLE constexpr
 using FromDoubleIntermediateType = long double;
 #else
+#include <boost/math/special_functions/fpclassify.hpp>
 #include <boost/multiprecision/cpp_bin_float.hpp>
 /// `wide_integer_from_builtin` can't be constexpr with non-literal `cpp_bin_float_double_extended`
 #define CONSTEXPR_FROM_DOUBLE
@@ -65,7 +65,7 @@ class IsTupleLike
     static void check(...);
 
 public:
-    static constexpr const bool value = !std::is_void<decltype(check<T>(nullptr))>::value;
+    static constexpr const bool value = !std::is_void_v<decltype(check<T>(nullptr))>;
 };
 
 }
@@ -79,7 +79,7 @@ class numeric_limits<wide::integer<Bits, Signed>>
 {
 public:
     static constexpr bool is_specialized = true;
-    static constexpr bool is_signed = is_same<Signed, signed>::value;
+    static constexpr bool is_signed = is_same_v<Signed, signed>;
     static constexpr bool is_integer = true;
     static constexpr bool is_exact = true;
     static constexpr bool has_infinity = false;
@@ -91,7 +91,7 @@ public:
     static constexpr bool is_iec559 = false;
     static constexpr bool is_bounded = true;
     static constexpr bool is_modulo = true;
-    static constexpr int digits = Bits - (is_same<Signed, signed>::value ? 1 : 0);
+    static constexpr int digits = Bits - (is_same_v<Signed, signed> ? 1 : 0);
     static constexpr int digits10 = digits * 0.30103 /*std::log10(2)*/;
     static constexpr int max_digits10 = 0;
     static constexpr int radix = 2;
@@ -104,7 +104,7 @@ public:
 
     static constexpr wide::integer<Bits, Signed> min() noexcept
     {
-        if (is_same<Signed, signed>::value)
+        if constexpr (is_same_v<Signed, signed>)
         {
             using T = wide::integer<Bits, signed>;
             T res{};
@@ -118,7 +118,7 @@ public:
     {
         using T = wide::integer<Bits, Signed>;
         T res{};
-        res.items[T::_impl::big(0)] = is_same<Signed, signed>::value
+        res.items[T::_impl::big(0)] = is_same_v<Signed, signed>
             ? std::numeric_limits<typename wide::integer<Bits, Signed>::signed_base_type>::max()
             : std::numeric_limits<typename wide::integer<Bits, Signed>::base_type>::max();
         for (unsigned i = 1; i < wide::integer<Bits, Signed>::_impl::item_count; ++i)
@@ -308,6 +308,13 @@ struct integer<Bits, Signed>::_impl
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
         static_assert(std::is_same_v<T, double> || std::is_same_v<T, FromDoubleIntermediateType>);
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
+#if (LDBL_MANT_DIG == 64)
+        if (!std::isfinite(t))
+        {
+            self = 0;
+            return;
+        }
+#else
         if constexpr (std::is_same_v<T, double>)
         {
             if (!std::isfinite(t))
@@ -324,6 +331,7 @@ struct integer<Bits, Signed>::_impl
                 return;
             }
         }
+#endif
 
         const T alpha = t / static_cast<T>(max_int);
 
@@ -1238,7 +1246,8 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T, class>
+template <class T>
+requires(std::is_arithmetic_v<T>)
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
     static_assert(std::numeric_limits<T>::is_integer);

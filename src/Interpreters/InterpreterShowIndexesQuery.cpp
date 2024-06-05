@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowIndexesQuery.h>
 
 #include <Common/quoteString.h>
@@ -101,8 +102,16 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowIndexesQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn);
+}
 
 }

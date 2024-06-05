@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: CREATE AS SELECT is disabled
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,14 +25,13 @@ function run_query_with_pure_parallel_replicas () {
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_disabled" \
-        --max_parallel_replicas 0
+        --max_parallel_replicas 1
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
-        --use_hedged_requests 0 \
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --allow_experimental_analyzer 0
@@ -40,7 +41,6 @@ function run_query_with_pure_parallel_replicas () {
         --query_id "${1}_pure_analyzer" \
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
-        --use_hedged_requests 0 \
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --allow_experimental_analyzer 1
@@ -50,13 +50,12 @@ function run_query_with_custom_key_parallel_replicas () {
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_disabled" \
-        --max_parallel_replicas 0
+        --max_parallel_replicas 1
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_custom_key" \
         --max_parallel_replicas 3 \
-        --use_hedged_requests 0 \
         --parallel_replicas_custom_key_filter_type 'default' \
         --parallel_replicas_custom_key "$2" \
         --allow_experimental_analyzer 0
@@ -65,7 +64,6 @@ function run_query_with_custom_key_parallel_replicas () {
         --query "$2" \
         --query_id "${1}_custom_key_analyzer" \
         --max_parallel_replicas 3 \
-        --use_hedged_requests 0 \
         --parallel_replicas_custom_key_filter_type 'default' \
         --parallel_replicas_custom_key "$2" \
         --allow_experimental_analyzer 1

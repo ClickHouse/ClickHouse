@@ -151,7 +151,9 @@ protected:
     void runCleanupThread();
 
     ContextMutablePtr context;
-    Poco::Logger * log;
+    LoggerPtr log;
+
+    std::optional<std::string> config_host_name; /// host_name from config
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
@@ -191,6 +193,9 @@ protected:
     std::atomic<UInt32> max_id = 0;
 
     ConcurrentSet entries_to_skip;
+
+    std::atomic_uint64_t subsequent_errors_count = 0;
+    String last_unexpected_error;
 
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;

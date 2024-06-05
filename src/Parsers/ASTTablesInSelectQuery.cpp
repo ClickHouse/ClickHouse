@@ -21,10 +21,10 @@ do \
 while (false)
 
 
-void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state) const
+void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(final);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -42,12 +42,12 @@ ASTPtr ASTTableExpression::clone() const
     return res;
 }
 
-void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state) const
+void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(locality);
     hash_state.update(strictness);
     hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTTableJoin::clone() const
@@ -61,10 +61,10 @@ ASTPtr ASTTableJoin::clone() const
     return res;
 }
 
-void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state) const
+void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTArrayJoin::clone() const
@@ -211,6 +211,9 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
         case JoinKind::Comma:
             settings.ostr << ",";
             break;
+        case JoinKind::Paste:
+            settings.ostr << "PASTE JOIN";
+            break;
     }
 
     settings.ostr << (settings.hilite ? hilite_none : "");
@@ -282,8 +285,6 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
 
 void ASTTablesInSelectQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-
     for (const auto & child : children)
         child->formatImpl(settings, state, frame);
 }

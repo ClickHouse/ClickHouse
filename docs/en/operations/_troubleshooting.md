@@ -17,12 +17,8 @@
 
 - The issue may be happened when the GPG key is changed.
 
-Please use the following scripts to resolve the issue:
+Please use the manual from the [setup](../getting-started/install.md#setup-the-debian-repository) page to update the repository configuration.
 
-```bash
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-sudo apt-get update
-```
 
 ### You Get Different Warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
 

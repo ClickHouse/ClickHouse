@@ -17,6 +17,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
@@ -38,7 +39,7 @@ ISystemLog::~ISystemLog() = default;
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
-    : log(&Poco::Logger::get("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
+    : log(getLogger("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
     , settings(settings_)
 
 {
@@ -85,8 +86,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
             const uint64_t queue_end = queue_front_index + queue.size();
-            if (requested_flush_up_to < queue_end)
-                requested_flush_up_to = queue_end;
+            requested_flush_up_to = std::max(requested_flush_up_to, queue_end);
 
             flush_event.notify_all();
         }
@@ -187,6 +187,9 @@ typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::
                                                                            bool & should_prepare_tables_anyway,
                                                                            bool & exit_this_thread)
 {
+    /// Call dtors and deallocate strings without holding the global lock
+    output.resize(0);
+
     std::unique_lock lock(mutex);
     flush_event.wait_for(lock,
         std::chrono::milliseconds(settings.flush_interval_milliseconds),
@@ -199,7 +202,6 @@ typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::
     queue_front_index += queue.size();
     // Swap with existing array from previous flush, to save memory
     // allocations.
-    output.resize(0);
     queue.swap(output);
 
     should_prepare_tables_anyway = is_force_prepare_tables;

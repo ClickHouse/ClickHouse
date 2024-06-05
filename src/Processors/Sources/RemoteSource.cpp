@@ -1,4 +1,3 @@
-#include <variant>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -35,6 +34,17 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
             addTotalBytes(value.total_bytes_to_read);
         progress(value.read_rows, value.read_bytes);
     });
+
+    query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
+    {
+        if (rows_before_limit)
+        {
+            if (info.hasAppliedLimit())
+                rows_before_limit->add(info.getRowsBeforeLimit());
+            else
+                manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+        }
+    });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -52,7 +62,7 @@ void RemoteSource::setStorageLimits(const std::shared_ptr<const StorageLimitsLis
 ISource::Status RemoteSource::prepare()
 {
     /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
-    if (was_query_canceled)
+    if (isCancelled())
     {
         getPort().finish();
         return Status::Finished;
@@ -61,39 +71,44 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
+    if (executor_finished)
+        return Status::Finished;
+
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        query_executor->finish();
         is_async_state = false;
-        return status;
+        need_drain = true;
+        return Status::Ready;
     }
 
     return status;
 }
 
+void RemoteSource::work()
+{
+    /// Connection drain is a heavy operation that may take a long time.
+    /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
+    /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
+    if (need_drain)
+    {
+        query_executor->finish();
+        executor_finished = true;
+        return;
+    }
+    ISource::work();
+}
+
 std::optional<Chunk> RemoteSource::tryGenerate()
 {
     /// onCancel() will do the cancel if the query was sent.
-    if (was_query_canceled)
+    if (isCancelled())
         return {};
 
     if (!was_query_sent)
     {
-        /// Get rows_before_limit result for remote query from ProfileInfo packet.
-        query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
-        {
-            if (rows_before_limit)
-            {
-                if (info.hasAppliedLimit())
-                    rows_before_limit->add(info.getRowsBeforeLimit());
-                else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-            }
-        });
-
         if (async_query_sending)
         {
             int fd_ = query_executor->sendQueryAsync();
@@ -169,7 +184,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
 void RemoteSource::onCancel()
 {
-    was_query_canceled = true;
     query_executor->cancel();
 }
 
@@ -177,7 +191,6 @@ void RemoteSource::onUpdatePorts()
 {
     if (getPort().isFinished())
     {
-        was_query_canceled = true;
         query_executor->finish();
     }
 }

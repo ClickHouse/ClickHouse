@@ -78,11 +78,13 @@ public:
     virtual ASTPtr clone() const = 0;
 
     /** Get hash code, identifying this element and its subtree.
+     *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
+     *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
       */
     using Hash = CityHash_v1_0_2::uint128;
-    Hash getTreeHash() const;
-    void updateTreeHash(SipHash & hash_state) const;
-    virtual void updateTreeHashImpl(SipHash & hash_state) const;
+    Hash getTreeHash(bool ignore_aliases) const;
+    void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
+    virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
     void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
     std::string dumpTree(size_t indent = 0) const;
@@ -254,6 +256,7 @@ public:
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
+        size_t list_element_index = 0;
         const IAST * current_select = nullptr;
     };
 

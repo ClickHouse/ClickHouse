@@ -47,9 +47,13 @@ public:
 
     std::unique_lock<std::mutex> lock();
 
-    template <typename T, bool locked = false> void set(const Key & key, const T & value);
+    template <typename T, bool locked = false>
+    void set(const Key & key, const T & value, std::optional<bool> is_overridable);
 
-    template <typename T, bool locked = false> void setOrUpdate(const Key & key, const T & value);
+    template <typename T, bool locked = false>
+    void setOrUpdate(const Key & key, const T & value, std::optional<bool> is_overridable);
+
+    bool isOverridable(const Key & key, bool default_value) const;
 
     template <bool locked = false> void remove(const Key & key);
 
@@ -88,60 +92,5 @@ private:
     const bool is_mutable;
     mutable std::mutex mutex;
 };
-
-/**
- * A factory of immutable named collections.
- */
-class NamedCollectionFactory : boost::noncopyable
-{
-public:
-    static NamedCollectionFactory & instance();
-
-    bool exists(const std::string & collection_name) const;
-
-    NamedCollectionPtr get(const std::string & collection_name) const;
-
-    NamedCollectionPtr tryGet(const std::string & collection_name) const;
-
-    MutableNamedCollectionPtr getMutable(const std::string & collection_name) const;
-
-    void add(const std::string & collection_name, MutableNamedCollectionPtr collection);
-
-    void add(NamedCollectionsMap collections);
-
-    void update(NamedCollectionsMap collections);
-
-    void remove(const std::string & collection_name);
-
-    void removeIfExists(const std::string & collection_name);
-
-    void removeById(NamedCollectionUtils::SourceId id);
-
-    NamedCollectionsMap getAll() const;
-
-private:
-    bool existsUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
-
-    MutableNamedCollectionPtr tryGetUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
-
-    void addUnlocked(
-        const std::string & collection_name,
-        MutableNamedCollectionPtr collection,
-        std::lock_guard<std::mutex> & lock);
-
-    bool removeIfExistsUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock);
-
-    mutable NamedCollectionsMap loaded_named_collections;
-
-    mutable std::mutex mutex;
-    bool is_initialized = false;
-};
-
 
 }
