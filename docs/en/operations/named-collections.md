@@ -465,11 +465,11 @@ kafka_max_block_size = '1048576';
 <clickhouse>
     <named_collections>
         <my_kafka_cluster>
-                <kafka_broker_list>localhost:9092</kafka_broker_list>
-                <kafka_topic_list>kafka_topic</kafka_topic_list>
-                <kafka_group_name>consumer_group</kafka_group_name>
-                <kafka_format>JSONEachRow</kafka_format>
-                <kafka_max_block_size>1048576</kafka_max_block_size>
+            <kafka_broker_list>localhost:9092</kafka_broker_list>
+            <kafka_topic_list>kafka_topic</kafka_topic_list>
+            <kafka_group_name>consumer_group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_max_block_size>1048576</kafka_max_block_size>
         </my_kafka_cluster>
     </named_collections>
 </clickhouse>
