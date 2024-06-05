@@ -36,6 +36,8 @@ std::string buildPocoRegexpEntryWithoutLeadingDot(const std::string & host)
     return RE2::QuoteMeta(view_without_leading_dot);
 }
 
+}
+
 /*
  * Even though there is not an RFC that defines NO_PROXY, it is usually a comma-separated list of domains.
  * Different tools implement their own versions of `NO_PROXY` support. Some support CIDR blocks, some support wildcard etc.
@@ -93,8 +95,6 @@ std::string buildPocoNonProxyHosts(const std::string & no_proxy_hosts_string)
     return result;
 }
 
-}
-
 Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const DB::ProxyConfiguration & proxy_configuration)
 {
     Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
@@ -104,7 +104,7 @@ Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(co
     poco_proxy_config.protocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.protocol);
     poco_proxy_config.tunnel = proxy_configuration.tunneling;
     poco_proxy_config.originalRequestProtocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
-    poco_proxy_config.nonProxyHosts = buildPocoNonProxyHosts(proxy_configuration.no_proxy_hosts);
+    poco_proxy_config.nonProxyHosts = proxy_configuration.no_proxy_hosts;
 
     return poco_proxy_config;
 }

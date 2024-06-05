@@ -1,6 +1,7 @@
 #include "EnvironmentProxyConfigurationResolver.h"
 
 #include <Common/logger_useful.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -77,7 +78,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
 {
     static const auto * http_proxy_host = getProxyHost(Protocol::HTTP);
     static const auto * https_proxy_host = getProxyHost(Protocol::HTTPS);
-    static const auto no_proxy_hosts_string = getNoProxyHostsString();
+    static const auto no_proxy_hosts_string = buildPocoNonProxyHosts(getNoProxyHostsString());
 
     static const auto http_proxy_configuration = buildProxyConfiguration(Protocol::HTTP, http_proxy_host, no_proxy_hosts_string);
     static const auto https_proxy_configuration = buildProxyConfiguration(Protocol::HTTPS, https_proxy_host, no_proxy_hosts_string);
