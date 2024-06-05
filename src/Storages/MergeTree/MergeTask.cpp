@@ -49,23 +49,23 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static Statistics getStatisticsForColumns(
+static ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
     const StorageMetadataPtr & metadata_snapshot)
 {
-    Statistics statistics;
+    ColumnsStatistics all_statistics;
     const auto & all_columns = metadata_snapshot->getColumns();
 
     for (const auto & column : columns_to_read)
     {
         const auto * desc = all_columns.tryGet(column.name);
-        if (desc && desc->stat)
+        if (desc && desc->statistics.empty())
         {
-            auto statistic = MergeTreeStatisticsFactory::instance().get(*desc->stat);
-            statistics.push_back(std::move(statistic));
+            auto statistics = MergeTreeStatisticsFactory::instance().get(desc->statistics);
+            all_statistics.push_back(std::move(statistics));
         }
     }
-    return statistics;
+    return all_statistics;
 }
 
 static void addMissedColumnsToSerializationInfos(
