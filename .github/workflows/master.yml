@@ -106,6 +106,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   # stage for jobs that do not prohibit merge
   Tests_3:
+    # Test_3 should not wait for Test_1/Test_2 and should not be blocked by them on master branch since all jobs need to run there.
     needs: [RunConfig, Builds_1, Builds_2]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
     uses: ./.github/workflows/reusable_test_stage.yml
