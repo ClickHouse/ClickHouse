@@ -7,7 +7,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
-#include "Core/NamesAndTypes.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -153,7 +152,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             auto it = global_ctx->skip_indexes_by_column.find(column.name);
             if (it != global_ctx->skip_indexes_by_column.end())
             {
-                for (auto && index : it->second)
+                for (auto & index : it->second)
                     global_ctx->merging_skip_indexes.push_back(std::move(index));
 
                 global_ctx->skip_indexes_by_column.erase(it);
@@ -997,8 +996,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    auto merging_column_names = global_ctx->merging_columns.getNames();
-
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
@@ -1006,7 +1003,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             *global_ctx->data,
             global_ctx->storage_snapshot,
             part,
-            merging_column_names,
+            global_ctx->merging_columns.getNames(),
             /*mark_ranges=*/ {},
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
