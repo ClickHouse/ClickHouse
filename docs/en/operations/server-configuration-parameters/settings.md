@@ -1353,6 +1353,26 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
+## listen_try {#listen_try}
+
+Server does not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+
+Examples:
+
+``` xml
+<listen_try>0</listen_try>
+```
+
+## listen_reuse_port {#listen_reuse_port}
+
+Allow multiple servers to listen on the same address:port. Enabling this setting is not recommended.
+
+Examples:
+
+``` xml
+<listen_reuse_port>0</listen_reuse_port>
+```
+
 ## listen_backlog {#listen_backlog}
 
 Backlog (queue size of pending connections) of the listen socket.
