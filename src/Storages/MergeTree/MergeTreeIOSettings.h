@@ -13,6 +13,11 @@ namespace DB
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
+enum class CompactPartsReadMethod : uint8_t
+{
+    SingleBuffer,
+    MultiBuffer,
+};
 
 struct MergeTreeReaderSettings
 {
@@ -25,12 +30,22 @@ struct MergeTreeReaderSettings
     bool checksum_on_read = true;
     /// True if we read in order of sorting key.
     bool read_in_order = false;
+    /// Use one buffer for each column or for all columns while reading from compact.
+    CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
+    /// True if we read stream for dictionary of LowCardinality type.
+    bool is_low_cardinality_dictionary = false;
+    /// True if data may be compressed by different codecs in one stream.
+    bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
     bool use_asynchronous_read_from_pool = false;
     /// If PREWHERE has multiple conditions combined with AND, execute them in separate read/filtering steps.
     bool enable_multiple_prewhere_read_steps = false;
+    /// If true, try to lower size of read buffer according to granule size and compressed block size.
+    bool adjust_read_buffer_size = true;
+    /// If true, it's allowed to read the whole part without reading marks.
+    bool can_read_part_without_marks = false;
 };
 
 struct MergeTreeWriterSettings
@@ -59,6 +74,8 @@ struct MergeTreeWriterSettings
         , blocks_are_granules_size(blocks_are_granules_size_)
         , query_write_settings(query_write_settings_)
         , max_threads_for_annoy_index_creation(global_settings.max_threads_for_annoy_index_creation)
+        , low_cardinality_max_dictionary_size(global_settings.low_cardinality_max_dictionary_size)
+        , low_cardinality_use_single_dictionary_for_part(global_settings.low_cardinality_use_single_dictionary_for_part != 0)
     {
     }
 
@@ -78,6 +95,9 @@ struct MergeTreeWriterSettings
     WriteSettings query_write_settings;
 
     size_t max_threads_for_annoy_index_creation;
+
+    size_t low_cardinality_max_dictionary_size;
+    bool low_cardinality_use_single_dictionary_for_part;
 };
 
 }

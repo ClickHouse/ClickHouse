@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # (i.e. "No active replica has part X or covering part")
 # does not appears as errors (level=Error), only as info message (level=Information).
 
-cluster=default
+cluster=test_shard_localhost
 if [[ $($CLICKHOUSE_CLIENT -q "select count()>0 from system.clusters where cluster = 'test_cluster_database_replicated'") = 1 ]]; then
     cluster=test_cluster_database_replicated
 fi

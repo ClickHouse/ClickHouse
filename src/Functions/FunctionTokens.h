@@ -14,7 +14,7 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -73,6 +73,8 @@ public:
     bool isVariadic() const override { return Generator::isVariadic(); }
 
     size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -184,12 +186,12 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
     const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     FunctionArgumentDescriptors mandatory_args{
-        {"separator", &isString<IDataType>, isColumnConst, "const String"},
-        {"s", &isString<IDataType>, nullptr, "String"}
+        {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
     };
 
     FunctionArgumentDescriptors optional_args{
-        {"max_substrings", &isNativeInteger<IDataType>, isColumnConst, "const Number"},
+        {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
     validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
@@ -198,11 +200,11 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
 static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     FunctionArgumentDescriptors mandatory_args{
-        {"s", &isString<IDataType>, nullptr, "String"},
+        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
     };
 
     FunctionArgumentDescriptors optional_args{
-        {"max_substrings", &isNativeInteger<IDataType>, isColumnConst, "const Number"},
+        {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
     validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);

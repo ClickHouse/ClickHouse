@@ -29,11 +29,11 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-:::note
-Security consideration: The cached query result is tied to the user executing it. Authorization checks are performed when the query is executed. This means that if there are any alterations to the user's role or permissions between the time the query is cached and when the cache is accessed, the result will not reflect these changes. We recommend using different users to distinguish between different levels of access, instead of actively toggling roles for a single user between queries, as this practice may lead to unexpected query results.
-:::
-
 ## Configuration Settings and Usage
+
+:::note
+In ClickHouse Cloud, you must use [query level settings](/en/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/en/operations/configuration-files) is currently not supported.
+:::
 
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
 current session should utilize the query cache. For example, the first execution of query
@@ -67,8 +67,7 @@ SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
 
 For maximum control, it is generally recommended to provide settings `use_query_cache`, `enable_writes_to_query_cache` and
 `enable_reads_from_query_cache` only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
-use_query_cache = true`) but one should keep in mind that all `SELECT` queries including monitoring or debugging queries to system tables
-may return cached results then.
+use_query_cache = true`) but one should keep in mind that all `SELECT` queries may return cached results then.
 
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
 [system.query_cache](system-tables/query_cache.md). The number of query cache hits and misses since database start are shown as events
@@ -174,6 +173,10 @@ Also, results of queries with non-deterministic functions are not cached by defa
 
 To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_nondeterministic_function_handling](settings/settings.md#query-cache-nondeterministic-function-handling).
+
+Results of queries that involve system tables, e.g. `system.processes` or `information_schema.tables`, are not cached by default. To force
+caching of results of queries with system tables regardless, use setting
+[query_cache_system_table_handling](settings/settings.md#query-cache-system-table-handling).
 
 :::note
 Prior to ClickHouse v23.11, setting 'query_cache_store_results_of_queries_with_nondeterministic_functions = 0 / 1' controlled whether

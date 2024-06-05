@@ -7,13 +7,14 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include "Server/PrometheusMetricsWriter.h"
 
 #include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace DB
 {
-void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     try
     {
@@ -23,14 +24,18 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         const auto & config = server.config();
         unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
+        /// In order to make keep-alive works.
+        if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
+            response.setChunkedTransferEncoding(true);
+
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
 
-        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
         try
         {
-            metrics_writer.write(wb);
+            metrics_writer->write(wb);
             wb.finalize();
         }
         catch (...)
@@ -44,13 +49,13 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
 }
 
-HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server,
+HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
+    IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
     const std::string & config_prefix)
 {
-    PrometheusMetricsWriter writer(config, config_prefix + ".handler", async_metrics);
+    auto writer = std::make_shared<PrometheusMetricsWriter>(config, config_prefix + ".handler", async_metrics);
     auto creator = [&server, writer]() -> std::unique_ptr<PrometheusRequestHandler>
     {
         return std::make_unique<PrometheusRequestHandler>(server, writer);
@@ -62,13 +67,12 @@ createPrometheusHandlerFactory(IServer & server,
 }
 
 HTTPRequestHandlerFactoryPtr createPrometheusMainHandlerFactory(
-    IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
+    IServer & server, const Poco::Util::AbstractConfiguration & config, PrometheusMetricsWriterPtr metrics_writer, const std::string & name)
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    PrometheusMetricsWriter writer(config, "prometheus", async_metrics);
-    auto creator = [&server, writer]() -> std::unique_ptr<PrometheusRequestHandler>
+    auto creator = [&server, metrics_writer]
     {
-        return std::make_unique<PrometheusRequestHandler>(server, writer);
+        return std::make_unique<PrometheusRequestHandler>(server, metrics_writer);
     };
 
     auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));

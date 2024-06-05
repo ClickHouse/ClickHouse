@@ -31,7 +31,7 @@ namespace
 
 struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 {
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,
@@ -293,32 +293,32 @@ public:
         Float64 value = columns[0]->getFloat64(row_num);
         UInt8 is_second = columns[1]->getUInt(row_num);
         if (is_second)
-            this->data(place).addY(value, arena);
+            data(place).addY(value, arena);
         else
-            this->data(place).addX(value, arena);
+            data(place).addX(value, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        data(place).merge(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (!this->data(place).size_x || !this->data(place).size_y)
+        if (!data(place).size_x || !data(place).size_y)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
-        auto [d_statistic, p_value] = this->data(place).getResult(alternative, method);
+        auto [d_statistic, p_value] = data(place).getResult(alternative, method);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));

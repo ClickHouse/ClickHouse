@@ -7,7 +7,6 @@
 
 #include <list>
 #include <memory>
-#include <set>
 #include <vector>
 
 namespace DB
@@ -82,7 +81,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
 

@@ -1,12 +1,9 @@
 #pragma once
 
 #include <string>
-#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
-#include <utility>
-#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/GinIndexStore.h>
@@ -170,7 +167,9 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+
+    virtual bool isVectorSearch() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -222,11 +221,11 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
+MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
+
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
-
-MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
-void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
@@ -241,7 +240,7 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
 void usearchIndexValidator(const IndexDescription& index, bool attach);
 #endif
 
-MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
-void invertedIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);
+void fullTextIndexValidator(const IndexDescription& index, bool attach);
 
 }

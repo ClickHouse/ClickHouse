@@ -57,70 +57,83 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->collation);
     }
 
+    if (settings)
+    {
+        res->settings = settings->clone();
+        res->children.push_back(res->settings);
+    }
+
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
     /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
-    settings.ostr << backQuote(name);
+    format_settings.ostr << backQuote(name);
 
     if (type)
     {
-        settings.ostr << ' ';
+        format_settings.ostr << ' ';
 
         FormatStateStacked type_frame = frame;
         type_frame.indent = 0;
 
-        type->formatImpl(settings, state, type_frame);
+        type->formatImpl(format_settings, state, type_frame);
     }
 
     if (null_modifier)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
-                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
+                      << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "");
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
         if (!ephemeral_default)
         {
-            settings.ostr << ' ';
-            default_expression->formatImpl(settings, state, frame);
+            format_settings.ostr << ' ';
+            default_expression->formatImpl(format_settings, state, frame);
         }
     }
 
     if (comment)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
-        comment->formatImpl(settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
+        comment->formatImpl(format_settings, state, frame);
     }
 
     if (codec)
     {
-        settings.ostr << ' ';
-        codec->formatImpl(settings, state, frame);
+        format_settings.ostr << ' ';
+        codec->formatImpl(format_settings, state, frame);
     }
 
     if (stat_type)
     {
-        settings.ostr << ' ';
-        stat_type->formatImpl(settings, state, frame);
+        format_settings.ostr << ' ';
+        stat_type->formatImpl(format_settings, state, frame);
     }
 
     if (ttl)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "TTL" << (settings.hilite ? hilite_none : "") << ' ';
-        ttl->formatImpl(settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ttl->formatImpl(format_settings, state, frame);
     }
 
     if (collation)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COLLATE" << (settings.hilite ? hilite_none : "") << ' ';
-        collation->formatImpl(settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
+        collation->formatImpl(format_settings, state, frame);
+    }
+
+    if (settings)
+    {
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
+        settings->formatImpl(format_settings, state, frame);
+        format_settings.ostr << ')';
     }
 }
 

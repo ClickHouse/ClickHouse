@@ -38,7 +38,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 void QueryPipelineBuilder::checkInitialized()
@@ -299,8 +298,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
         /// If one of pipelines uses more threads then current limit, will keep it.
         /// It may happen if max_distributed_connections > max_threads
-        if (pipeline.max_threads > max_threads_limit)
-            max_threads_limit = pipeline.max_threads;
+        max_threads_limit = std::max(pipeline.max_threads, max_threads_limit);
 
         concurrency_control = pipeline.getConcurrencyControl();
     }
@@ -358,7 +356,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
     if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paste JOIN requires sorted tables only");
+    {
+        left->pipe.resize(1, true);
+        right->pipe.resize(1, true);
+    }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port");
 

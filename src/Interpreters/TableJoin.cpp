@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <base/types.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <Core/Block.h>
@@ -103,10 +103,12 @@ bool forAllKeys(OnExpr & expressions, Func callback)
 
 }
 
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
+    , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
+    , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
@@ -115,6 +117,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , temporary_files_codec(settings.temporary_files_codec)
     , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
+    , tmp_data(tmp_data_)
 {
 }
 
@@ -376,7 +379,8 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
+            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -560,7 +564,9 @@ TableJoin::createConvertingActions(
     NameToNameMap left_column_rename;
     NameToNameMap right_column_rename;
 
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
+    /// FullSortingMerge join algorithm doesn't support joining keys with different types (e.g. String and Nullable(String))
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
@@ -614,11 +620,8 @@ TableJoin::createConvertingActions(
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool require_strict_keys_match)
 {
-    /// FullSortingMerge and PartialMerge join algorithms don't support joining keys with different types
-    /// (e.g. String and LowCardinality(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
 
@@ -683,7 +686,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         LOG_TRACE(
-            &Poco::Logger::get("TableJoin"),
+            getLogger("TableJoin"),
             "Infer supertype for joined columns. Left: [{}], Right: [{}]",
             formatTypeMap(left_type_map, left_types),
             formatTypeMap(right_type_map, right_types));
@@ -876,7 +879,7 @@ static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_co
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
-    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Adding join condition for {} table: {} -> {}",
+    LOG_TRACE(getLogger("TableJoin"), "Adding join condition for {} table: {} -> {}",
               (is_left ? "left" : "right"), ast ? queryToString(ast) : "NULL", cond_ast ? queryToString(cond_ast) : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
 }

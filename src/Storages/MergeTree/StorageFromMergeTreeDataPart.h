@@ -34,10 +34,11 @@ public:
         , partition_id(part_->info.partition_id)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_)
+    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
@@ -86,14 +87,10 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
-
-    NamesAndTypesList getVirtuals() const override
-    {
-        return storage.getVirtuals();
-    }
 
     String getPartitionId() const
     {
@@ -127,7 +124,7 @@ private:
     const std::vector<AlterConversionsPtr> alter_conversions;
     const MergeTreeData & storage;
     const String partition_id;
-    const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
+    const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

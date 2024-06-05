@@ -1805,6 +1805,7 @@ Example of settings:
 ``` xml
 <source>
   <postgresql>
+      <host>postgresql-hostname</hoat>
       <port>5432</port>
       <user>clickhouse</user>
       <password>qwerty</password>

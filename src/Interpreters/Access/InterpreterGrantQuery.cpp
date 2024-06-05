@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -177,6 +178,22 @@ namespace
                 elements_to_revoke.emplace_back(std::move(element_to_revoke));
         }
 
+        /// Additional check for REVOKE
+        ///
+        /// If user1 has the rights
+        /// GRANT SELECT ON *.* TO user1;
+        /// REVOKE SELECT ON system.* FROM user1;
+        /// REVOKE SELECT ON mydb.* FROM user1;
+        ///
+        /// And user2 has the rights
+        /// GRANT SELECT ON *.* TO user2;
+        /// REVOKE SELECT ON system.* FROM user2;
+        ///
+        /// the query `REVOKE SELECT ON *.* FROM user1` executed by user2 should succeed.
+        if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
+            return;
+
+        /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.
         current_user_access.checkGrantOption(elements_to_revoke);
     }
 
@@ -238,7 +255,7 @@ namespace
         if (roles_to_revoke.all)
             boost::range::set_difference(all_granted_roles_set, roles_to_revoke.except_ids, std::back_inserter(roles_to_revoke_ids));
         else
-            boost::range::remove_erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
+            std::erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
 
         roles_to_revoke = roles_to_revoke_ids;
         current_user_access.checkAdminOption(roles_to_revoke_ids);
@@ -478,6 +495,15 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery & query)
 {
     updateFromQuery(role, query);
+}
+
+void registerInterpreterGrantQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterGrantQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterGrantQuery", create_fn);
 }
 
 }

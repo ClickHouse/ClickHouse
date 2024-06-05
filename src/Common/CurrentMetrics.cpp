@@ -2,6 +2,8 @@
 
 
 /// Available metrics. Add something here as you wish.
+/// If the metric is generic (i.e. not server specific)
+/// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
@@ -87,7 +89,7 @@
     M(MarksLoaderThreads, "Number of threads in thread pool for loading marks.") \
     M(MarksLoaderThreadsActive, "Number of threads in the thread pool for loading marks running a task.") \
     M(MarksLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading marks.") \
-    M(IOPrefetchThreads, "Number of threads in the IO prefertch thread pool.") \
+    M(IOPrefetchThreads, "Number of threads in the IO prefetch thread pool.") \
     M(IOPrefetchThreadsActive, "Number of threads in the IO prefetch thread pool running a task.") \
     M(IOPrefetchThreadsScheduled, "Number of queued or active jobs in the IO prefetch thread pool.") \
     M(IOWriterThreads, "Number of threads in the IO writer thread pool.") \
@@ -125,6 +127,9 @@
     M(DestroyAggregatesThreads, "Number of threads in the thread pool for destroy aggregate states.") \
     M(DestroyAggregatesThreadsActive, "Number of threads in the thread pool for destroy aggregate states running a task.") \
     M(DestroyAggregatesThreadsScheduled, "Number of queued or active jobs in the thread pool for destroy aggregate states.") \
+    M(ConcurrentHashJoinPoolThreads, "Number of threads in the thread pool for concurrent hash join.") \
+    M(ConcurrentHashJoinPoolThreadsActive, "Number of threads in the thread pool for concurrent hash join running a task.") \
+    M(ConcurrentHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for concurrent hash join.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \
@@ -143,6 +148,8 @@
     M(AsynchronousInsertThreads, "Number of threads in the AsynchronousInsert thread pool.") \
     M(AsynchronousInsertThreadsActive, "Number of threads in the AsynchronousInsert thread pool running a task.") \
     M(AsynchronousInsertThreadsScheduled, "Number of queued or active jobs in the AsynchronousInsert thread pool.") \
+    M(AsynchronousInsertQueueSize, "Number of pending tasks in the AsynchronousInsert queue.") \
+    M(AsynchronousInsertQueueBytes, "Number of pending bytes in the AsynchronousInsert queue.") \
     M(StartupSystemTablesThreads, "Number of threads in the StartupSystemTables thread pool.") \
     M(StartupSystemTablesThreadsActive, "Number of threads in the StartupSystemTables thread pool running a task.") \
     M(StartupSystemTablesThreadsScheduled, "Number of queued or active jobs in the StartupSystemTables thread pool.") \
@@ -164,18 +171,32 @@
     M(ObjectStorageS3Threads, "Number of threads in the S3ObjectStorage thread pool.") \
     M(ObjectStorageS3ThreadsActive, "Number of threads in the S3ObjectStorage thread pool running a task.") \
     M(ObjectStorageS3ThreadsScheduled, "Number of queued or active jobs in the S3ObjectStorage thread pool.") \
+    M(StorageObjectStorageThreads, "Number of threads in the remote table engines thread pools.") \
+    M(StorageObjectStorageThreadsActive, "Number of threads in the remote table engines thread pool running a task.") \
+    M(StorageObjectStorageThreadsScheduled, "Number of queued or active jobs in remote table engines thread pool.") \
     M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
     M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(ObjectStorageAzureThreadsScheduled, "Number of queued or active jobs in the AzureObjectStorage thread pool.") \
+    \
+    M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
+    M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
+    M(DiskPlainRewritableS3DirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
+    \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
     M(MergeTreePartsLoaderThreadsScheduled, "Number of queued or active jobs in the MergeTree parts loader thread pool.") \
     M(MergeTreeOutdatedPartsLoaderThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreeOutdatedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(MergeTreeOutdatedPartsLoaderThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(MergeTreeUnexpectedPartsLoaderThreads, "Number of threads in the threadpool for loading Unexpected data parts.") \
+    M(MergeTreeUnexpectedPartsLoaderThreadsActive, "Number of active threads in the threadpool for loading Unexpected data parts.") \
+    M(MergeTreeUnexpectedPartsLoaderThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Unexpected data parts.") \
     M(MergeTreePartsCleanerThreads, "Number of threads in the MergeTree parts cleaner thread pool.") \
     M(MergeTreePartsCleanerThreadsActive, "Number of threads in the MergeTree parts cleaner thread pool running a task.") \
     M(MergeTreePartsCleanerThreadsScheduled, "Number of queued or active jobs in the MergeTree parts cleaner thread pool.") \
+    M(DatabaseReplicatedCreateTablesThreads, "Number of threads in the threadpool for table creation in DatabaseReplicated.") \
+    M(DatabaseReplicatedCreateTablesThreadsActive, "Number of active threads in the threadpool for table creation in DatabaseReplicated.") \
+    M(DatabaseReplicatedCreateTablesThreadsScheduled, "Number of queued or active jobs in the threadpool for table creation in DatabaseReplicated.") \
     M(IDiskCopierThreads, "Number of threads for copying data between disks of different types.") \
     M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(IDiskCopierThreadsScheduled, "Number of queued or active jobs for copying data between disks of different types.") \
@@ -214,12 +235,13 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
     M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
+    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
+    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
-    M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
@@ -242,7 +264,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(S3Requests, "S3 requests") \
+    M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
@@ -255,6 +277,34 @@
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
     M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
     M(RefreshingViews, "Number of materialized views currently executing a refresh") \
+    M(StorageBufferFlushThreads, "Number of threads for background flushes in StorageBuffer") \
+    M(StorageBufferFlushThreadsActive, "Number of threads for background flushes in StorageBuffer running a task") \
+    M(StorageBufferFlushThreadsScheduled, "Number of queued or active threads for background flushes in StorageBuffer") \
+    M(SharedMergeTreeThreads, "Number of threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
+    M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeFetch, "Number of fetches in progress") \
+    M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
+    M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
+    M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
+    M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
+    M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
+    \
+    M(StorageConnectionsStored, "Total count of sessions stored in the session pool for storages") \
+    M(StorageConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for storages") \
+    \
+    M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
+    M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
+    \
+    M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
+    M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
+    \
+    M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
+    M(AddressesBanned, "Total count of addresses which are banned as faulty for creation connections with connection pools")   \
+    \
+    M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
+    M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

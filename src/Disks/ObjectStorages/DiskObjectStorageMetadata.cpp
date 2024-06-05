@@ -15,19 +15,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
+    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 {
     readIntText(version, buf);
+    assertChar('\n', buf);
 
     if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_FULL_OBJECT_KEY)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
             metadata_file_path, toString(version), toString(VERSION_FULL_OBJECT_KEY));
-
-    assertChar('\n', buf);
 
     UInt32 keys_count;
     readIntText(keys_count, buf);
@@ -105,7 +105,7 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     if (version == VERSION_FULL_OBJECT_KEY && !storage_metadata_write_full_object_key)
     {
-        Poco::Logger * logger = &Poco::Logger::get("DiskObjectStorageMetadata");
+        LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
         LOG_WARNING(
             logger,
             "Metadata file {} is written with VERSION_FULL_OBJECT_KEY version"
@@ -122,6 +122,7 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     chassert(write_version >= VERSION_ABSOLUTE_PATHS && write_version <= VERSION_FULL_OBJECT_KEY);
     writeIntText(write_version, buf);
+
     writeChar('\n', buf);
 
     writeIntText(keys_with_meta.size(), buf);
@@ -192,7 +193,7 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
         bool storage_metadata_write_full_object_key = getWriteFullObjectKeySetting();
         if (!storage_metadata_write_full_object_key)
         {
-            Poco::Logger * logger = &Poco::Logger::get("DiskObjectStorageMetadata");
+            LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
             LOG_WARNING(
                 logger,
                 "Metadata file {} has at least one key {} without fixed common key prefix."
@@ -205,6 +206,18 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
 
     total_size += size;
     keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}});
+}
+
+ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
+{
+    if (keys_with_meta.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop last object from metadata {}. Metadata already empty", metadata_file_path);
+
+    ObjectKeyWithMetadata object = std::move(keys_with_meta.back());
+    keys_with_meta.pop_back();
+    total_size -= object.metadata.size_bytes;
+
+    return object;
 }
 
 bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()

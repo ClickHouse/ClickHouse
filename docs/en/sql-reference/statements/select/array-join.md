@@ -11,7 +11,7 @@ Its name comes from the fact that it can be looked at as executing `JOIN` with a
 
 Syntax:
 
-``` sql
+```sql
 SELECT <expr_list>
 FROM <left_subquery>
 [LEFT] ARRAY JOIN <array>
@@ -30,7 +30,7 @@ Supported types of `ARRAY JOIN` are listed below:
 
 The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let’s create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
 
-``` sql
+```sql
 CREATE TABLE arrays_test
 (
     s String,
@@ -41,7 +41,7 @@ INSERT INTO arrays_test
 VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 ```
 
-``` text
+```response
 ┌─s───────────┬─arr─────┐
 │ Hello       │ [1,2]   │
 │ World       │ [3,4,5] │
@@ -51,13 +51,13 @@ VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 
 The example below uses the `ARRAY JOIN` clause:
 
-``` sql
+```sql
 SELECT s, arr
 FROM arrays_test
 ARRAY JOIN arr;
 ```
 
-``` text
+```response
 ┌─s─────┬─arr─┐
 │ Hello │   1 │
 │ Hello │   2 │
@@ -69,13 +69,13 @@ ARRAY JOIN arr;
 
 The next example uses the `LEFT ARRAY JOIN` clause:
 
-``` sql
+```sql
 SELECT s, arr
 FROM arrays_test
 LEFT ARRAY JOIN arr;
 ```
 
-``` text
+```response
 ┌─s───────────┬─arr─┐
 │ Hello       │   1 │
 │ Hello       │   2 │
@@ -90,13 +90,13 @@ LEFT ARRAY JOIN arr;
 
 An alias can be specified for an array in the `ARRAY JOIN` clause. In this case, an array item can be accessed by this alias, but the array itself is accessed by the original name. Example:
 
-``` sql
+```sql
 SELECT s, arr, a
 FROM arrays_test
 ARRAY JOIN arr AS a;
 ```
 
-``` text
+```response
 ┌─s─────┬─arr─────┬─a─┐
 │ Hello │ [1,2]   │ 1 │
 │ Hello │ [1,2]   │ 2 │
@@ -108,13 +108,13 @@ ARRAY JOIN arr AS a;
 
 Using aliases, you can perform `ARRAY JOIN` with an external array. For example:
 
-``` sql
+```sql
 SELECT s, arr_external
 FROM arrays_test
 ARRAY JOIN [1, 2, 3] AS arr_external;
 ```
 
-``` text
+```response
 ┌─s───────────┬─arr_external─┐
 │ Hello       │            1 │
 │ Hello       │            2 │
@@ -130,13 +130,13 @@ ARRAY JOIN [1, 2, 3] AS arr_external;
 
 Multiple arrays can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Note that all the arrays must have the same size by default. Example:
 
-``` sql
+```sql
 SELECT s, arr, a, num, mapped
 FROM arrays_test
 ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped;
 ```
 
-``` text
+```response
 ┌─s─────┬─arr─────┬─a─┬─num─┬─mapped─┐
 │ Hello │ [1,2]   │ 1 │   1 │      2 │
 │ Hello │ [1,2]   │ 2 │   2 │      3 │
@@ -148,13 +148,13 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 
 The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
-``` sql
+```sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
 FROM arrays_test
 ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 ```
 
-``` text
+```response
 ┌─s─────┬─arr─────┬─a─┬─num─┬─arrayEnumerate(arr)─┐
 │ Hello │ [1,2]   │ 1 │   1 │ [1,2]               │
 │ Hello │ [1,2]   │ 2 │   2 │ [1,2]               │
@@ -163,6 +163,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 │ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
 └───────┴─────────┴───┴─────┴─────────────────────┘
 ```
+
 Multiple arrays with different sizes can be joined by using: `SETTINGS enable_unaligned_array_join = 1`. Example:
 
 ```sql
@@ -171,7 +172,7 @@ FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b
 SETTINGS enable_unaligned_array_join = 1;
 ```
 
-```text
+```response
 ┌─s───────┬─arr─────┬─a─┬─b─────────┐
 │ Hello   │ [1,2]   │ 1 │ ['a','b'] │
 │ Hello   │ [1,2]   │ 2 │ ['c']     │
@@ -187,7 +188,7 @@ SETTINGS enable_unaligned_array_join = 1;
 
 `ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/index.md):
 
-``` sql
+```sql
 CREATE TABLE nested_test
 (
     s String,
@@ -200,7 +201,7 @@ INSERT INTO nested_test
 VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
 ```
 
-``` text
+```response
 ┌─s───────┬─nest.x──┬─nest.y─────┐
 │ Hello   │ [1,2]   │ [10,20]    │
 │ World   │ [3,4,5] │ [30,40,50] │
@@ -208,13 +209,13 @@ VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', []
 └─────────┴─────────┴────────────┘
 ```
 
-``` sql
+```sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
 ARRAY JOIN nest;
 ```
 
-``` text
+```response
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -226,13 +227,13 @@ ARRAY JOIN nest;
 
 When specifying names of nested data structures in `ARRAY JOIN`, the meaning is the same as `ARRAY JOIN` with all the array elements that it consists of. Examples are listed below:
 
-``` sql
+```sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
 ARRAY JOIN `nest.x`, `nest.y`;
 ```
 
-``` text
+```response
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -244,13 +245,13 @@ ARRAY JOIN `nest.x`, `nest.y`;
 
 This variation also makes sense:
 
-``` sql
+```sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
 ARRAY JOIN `nest.x`;
 ```
 
-``` text
+```response
 ┌─s─────┬─nest.x─┬─nest.y─────┐
 │ Hello │      1 │ [10,20]    │
 │ Hello │      2 │ [10,20]    │
@@ -262,13 +263,13 @@ ARRAY JOIN `nest.x`;
 
 An alias may be used for a nested data structure, in order to select either the `JOIN` result or the source array. Example:
 
-``` sql
+```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
 FROM nested_test
 ARRAY JOIN nest AS n;
 ```
 
-``` text
+```response
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -280,13 +281,13 @@ ARRAY JOIN nest AS n;
 
 Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
-``` sql
+```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
 FROM nested_test
 ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 ```
 
-``` text
+```response
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
@@ -300,6 +301,11 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.
 
+### Incompatibility with short-circuit function evaluation
+
+[Short-circuit function evaluation](../../../operations/settings/index.md#short-circuit-function-evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
+
+`arrayJoin` is always executed and not supported for short circuit function evaluation. That's because it's a unique function processed separately from all other functions during query analysis and execution and requires additional logic that doesn't work with short circuit function execution. The reason is that the number of rows in the result depends on the arrayJoin result, and it's too complex and expensive to implement lazy execution of `arrayJoin`.
 
 ## Related content
 

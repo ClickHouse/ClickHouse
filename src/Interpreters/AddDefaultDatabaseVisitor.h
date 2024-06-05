@@ -163,7 +163,7 @@ private:
         if (identifier.compound())
             return;
         /// There is temporary table with such name, should not be rewritten.
-        if (external_tables.count(identifier.shortName()))
+        if (external_tables.contains(identifier.shortName()))
             return;
 
         auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
@@ -275,13 +275,7 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        for (ASTRenameQuery::Element & elem : node.elements)
-        {
-            if (!elem.from.database)
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
-            if (!elem.to.database)
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
-        }
+        node.setDatabaseIfNotExists(database_name);
     }
 
     void visitDDL(ASTAlterQuery & node, ASTPtr &) const

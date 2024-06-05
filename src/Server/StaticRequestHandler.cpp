@@ -33,9 +33,11 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static inline WriteBufferPtr
+static inline std::unique_ptr<WriteBuffer>
 responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, UInt64 keep_alive_timeout)
 {
+    auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout));
+
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
     CompressionMethod http_response_compression_method = CompressionMethod::None;
@@ -43,14 +45,11 @@ responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, 
     if (!http_response_compression_methods.empty())
         http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
 
-    bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
+    if (http_response_compression_method == CompressionMethod::None)
+        return buf;
 
-    return std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response,
-        request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
-        keep_alive_timeout,
-        client_supports_http_compression,
-        http_response_compression_method);
+    response.set("Content-Encoding", toContentEncodingName(http_response_compression_method));
+    return wrapWriteBufferWithCompressionMethod(std::move(buf), http_response_compression_method, 1);
 }
 
 static inline void trySendExceptionToClient(
@@ -69,7 +68,7 @@ static inline void trySendExceptionToClient(
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         if (!response.sent())
-            *response.send() << s << std::endl;
+            *response.send() << s << '\n';
         else
         {
             if (out.count() != out.offset())
@@ -88,10 +87,10 @@ static inline void trySendExceptionToClient(
     }
 }
 
-void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
-    const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
+    auto out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try
     {

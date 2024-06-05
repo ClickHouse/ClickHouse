@@ -11,7 +11,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 
 ``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path [, NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS]
     [mode = 'unordered',]
     [after_processing = 'keep',]
@@ -202,8 +202,7 @@ Example:
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
-        mode = 'unordered',
-        keeper_path = '/clickhouse/s3queue/';
+        mode = 'unordered';
 
   CREATE TABLE stats (name String, value UInt32)
     ENGINE = MergeTree() ORDER BY name;

@@ -246,7 +246,7 @@ ZipArchiveWriter::~ZipArchiveWriter()
         /// However it is suspicious to destroy instance without finalization at the green path.
         if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
         {
-            Poco::Logger * log = &Poco::Logger::get("ZipArchiveWriter");
+            LoggerPtr log = getLogger("ZipArchiveWriter");
             LOG_ERROR(log,
                        "ZipArchiveWriter is not finalized when destructor is called. "
                        "The zip archive might not be written at all or might be truncated. "
@@ -272,6 +272,11 @@ ZipArchiveWriter::~ZipArchiveWriter()
 std::unique_ptr<WriteBufferFromFileBase> ZipArchiveWriter::writeFile(const String & filename)
 {
     return std::make_unique<WriteBufferFromZipArchive>(std::static_pointer_cast<ZipArchiveWriter>(shared_from_this()), filename);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> ZipArchiveWriter::writeFile(const String & filename, [[maybe_unused]] size_t size)
+{
+    return ZipArchiveWriter::writeFile(filename);
 }
 
 bool ZipArchiveWriter::isWritingFile() const

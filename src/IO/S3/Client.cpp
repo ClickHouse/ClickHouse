@@ -1,9 +1,10 @@
 #include <IO/S3/Client.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
 #include <aws/core/client/CoreErrors.h>
-#include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -15,7 +16,6 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -30,6 +30,10 @@
 #include <base/sleep.h>
 
 
+#ifdef ADDRESS_SANITIZER
+#include <sanitizer/lsan_interface.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event S3WriteRequestsErrors;
@@ -37,6 +41,9 @@ namespace ProfileEvents
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3ReadRequestsErrors;
+
+    extern const Event S3Clients;
+    extern const Event TinyS3Clients;
 }
 
 namespace DB
@@ -167,7 +174,7 @@ Client::Client(
     , client_settings(client_settings_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
-    , log(&Poco::Logger::get("S3Client"))
+    , log(getLogger("S3Client"))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
@@ -199,6 +206,8 @@ Client::Client(
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
+
+    ProfileEvents::increment(ProfileEvents::S3Clients);
 }
 
 Client::Client(
@@ -215,10 +224,26 @@ Client::Client(
     , provider_type(other.provider_type)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
-    , log(&Poco::Logger::get("S3Client"))
+    , log(getLogger("S3Client"))
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+
+    ProfileEvents::increment(ProfileEvents::TinyS3Clients);
+}
+
+
+Client::~Client()
+{
+    try
+    {
+        ClientCacheRegistry::instance().unregisterClient(cache.get());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        throw;
+    }
 }
 
 Aws::Auth::AWSCredentials Client::getCredentials() const
@@ -284,6 +309,9 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
+
+    if (isS3ExpressBucket())
+        request.setIsS3ExpressBucket();
 
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
@@ -356,7 +384,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
+    return enrichErrorMessage(
+        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
@@ -376,7 +405,8 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
+    return enrichErrorMessage(
+        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
@@ -511,7 +541,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (client_settings.disable_checksum)
+
+    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
+    if (client_settings.is_s3express_bucket)
+        request.setIsS3ExpressBucket();
+    else if (client_settings.disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -620,14 +654,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 if constexpr (IsReadMethod)
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
                 }
                 else
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
@@ -657,6 +691,23 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     return doRequest(request, with_retries);
 }
 
+template <typename RequestResult>
+RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
+{
+    if (outcome.IsSuccess() || !isClientForDisk())
+        return std::forward<RequestResult>(outcome);
+
+    String enriched_message = fmt::format(
+        "{} {}",
+        outcome.GetError().GetMessage(),
+        "This error happened for S3 disk.");
+
+    auto error = outcome.GetError();
+    error.SetMessage(enriched_message);
+
+    return RequestResult(error);
+}
+
 bool Client::supportsMultiPartCopy() const
 {
     return provider_type != ProviderType::GCS;
@@ -670,9 +721,9 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     if (api_mode == ApiMode::GCS)
     {
         /// some GCS requests don't like S3 specific headers that the client sets
+        /// all "x-amz-*" headers have to be either converted or deleted
+        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
-        httpRequest->DeleteHeader("amz-sdk-invocation-id");
-        httpRequest->DeleteHeader("amz-sdk-request");
     }
 }
 
@@ -696,7 +747,7 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     if (outcome.IsSuccess())
     {
         const auto & result = outcome.GetResult();
-        region = result.GetRegion();
+        region = result.GetBucketRegion();
     }
     else
     {
@@ -819,7 +870,7 @@ void ClientCacheRegistry::clearCacheForAll()
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("ClientCacheRegistry"), "Deleting leftover S3 client cache");
+            LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
             it = client_caches.erase(it);
         }
     }
@@ -829,7 +880,14 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    Aws::InitAPI(aws_options);
+    {
+#ifdef ADDRESS_SANITIZER
+        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
+        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
+        __lsan::ScopedDisabler lsan_disabler;
+#endif
+        Aws::InitAPI(aws_options);
+    }
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
@@ -896,9 +954,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
-        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings
-    );
+        client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
+                                            : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        client_settings);
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
@@ -937,6 +995,11 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
+bool isS3ExpressEndpoint(const std::string & endpoint)
+{
+    /// On one hand this check isn't 100% reliable, on the other - all it will change is whether we attach checksums to the requests.
+    return endpoint.contains("s3express");
+}
 }
 
 }

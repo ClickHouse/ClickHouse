@@ -1,5 +1,5 @@
 #include <base/map.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
@@ -85,10 +85,7 @@ std::string DataTypeMap::doGetName() const
 std::string DataTypeMap::doGetPrettyName(size_t indent) const
 {
     WriteBufferFromOwnString s;
-    s << "Map(\n"
-      << fourSpaceIndent(indent + 1) << key_type->getPrettyName(indent + 1) << ",\n"
-      << fourSpaceIndent(indent + 1) << value_type->getPrettyName(indent + 1) << '\n'
-      << fourSpaceIndent(indent) << ')';
+    s << "Map(" << key_type->getPrettyName(indent) << ", " << value_type->getPrettyName(indent) << ')';
     return s.str();
 }
 
@@ -121,22 +118,7 @@ bool DataTypeMap::equals(const IDataType & rhs) const
 
 bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 {
-    if (key_type->getTypeId() == TypeIndex::LowCardinality)
-    {
-        const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*key_type);
-        if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
-            return false;
-    }
-    else if (!key_type->isValueRepresentedByInteger()
-             && !isStringOrFixedString(*key_type)
-             && !WhichDataType(key_type).isNothing()
-             && !WhichDataType(key_type).isIPv6()
-             && !WhichDataType(key_type).isUUID())
-    {
-        return false;
-    }
-
-    return true;
+    return !isNullableOrLowCardinalityNullable(key_type);
 }
 
 DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
@@ -144,6 +126,14 @@ DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
     const auto & from_array = assert_cast<const DataTypeArray &>(*nested);
     const auto & from_tuple = assert_cast<const DataTypeTuple &>(*from_array.getNestedType());
     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
+}
+
+void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
+{
+    callback(*key_type);
+    key_type->forEachChild(callback);
+    callback(*value_type);
+    value_type->forEachChild(callback);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

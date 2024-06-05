@@ -5,7 +5,6 @@
 #include <variant>
 
 #include <Client/IConnections.h>
-#include <Common/FiberStack.h>
 #include <Common/Fiber.h>
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
@@ -53,7 +52,7 @@ private:
 
     struct Task : public AsyncTask
     {
-        Task(PacketReceiver & receiver_) : receiver(receiver_) {}
+        explicit Task(PacketReceiver & receiver_) : receiver(receiver_) {}
 
         PacketReceiver & receiver;
 

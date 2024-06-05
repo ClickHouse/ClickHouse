@@ -25,7 +25,7 @@ struct BitBoolMaskAndImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
+    static Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
     {
         // Should be a logical error, but this function is callable from SQL.
         // Need to investigate this.

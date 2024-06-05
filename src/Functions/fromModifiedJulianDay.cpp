@@ -34,8 +34,8 @@ namespace DB
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecType = typename FromDataType::ColumnType;
-            const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get());
-            const typename ColVecType::Container & vec_from = col_from->getData();
+            const ColVecType & col_from = checkAndGetColumn<ColVecType>(*arguments[0].column);
+            const typename ColVecType::Container & vec_from = col_from.getData();
 
             auto col_to = ColumnString::create();
             ColumnString::Chars & data_to = col_to->getChars();
