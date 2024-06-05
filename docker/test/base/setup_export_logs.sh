@@ -110,6 +110,15 @@ function setup_logs_replication
     # The function is launched in a separate shell instance to not expose the
     # exported values from CLICKHOUSE_CI_LOGS_CREDENTIALS
     set +x
+
+    # Do not send logs to cloud for debug/sanitizers build
+    # Since this is too slow otherwise, i.e. flushing of query_log can take ~30 seconds
+    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
+    echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
+    if [[ "$debug_or_sanitizer_build" = 1 ]]; then
+        return
+    fi
+
     # disable output
     if ! [ -r "${CLICKHOUSE_CI_LOGS_CREDENTIALS}" ]; then
         echo "File $CLICKHOUSE_CI_LOGS_CREDENTIALS does not exist, do not setup"
@@ -126,9 +135,6 @@ function setup_logs_replication
 
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
-
-    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
-    echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
     # We will pre-create a table system.coverage_log.
     # It is normally created by clickhouse-test rather than the server,
@@ -150,15 +156,7 @@ function setup_logs_replication
         if [[ "$table" = "trace_log" ]]
         then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
-            # Do not try to resolve stack traces in case of debug/sanitizers
-            # build, since it is too slow (flushing of trace_log can take ~1min
-            # with such MV attached)
-            if [[ "$debug_or_sanitizer_build" = 1 ]]
-            then
-                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
-            else
-                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
-            fi
+            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
         elif [[ "$table" = "coverage_log" ]]
         then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
