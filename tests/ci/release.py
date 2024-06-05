@@ -180,7 +180,8 @@ class Release:
             )
             raise
 
-        self.check_commit_release_ready()
+        if self.release_type == self.PATCH:
+            self.check_commit_release_ready()
 
     def do(
         self, check_dirty: bool, check_run_from_master: bool, check_branch: bool
