@@ -146,7 +146,7 @@ ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr 
                 filter_by_engine = true;
 
         if (filter_by_engine)
-            engine_column= ColumnString::create();
+            engine_column = ColumnString::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
