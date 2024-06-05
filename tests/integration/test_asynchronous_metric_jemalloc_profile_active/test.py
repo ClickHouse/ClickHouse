@@ -26,7 +26,7 @@ def started_cluster():
 # asynchronous_metric_update_period_s is being set to 2s so that the metrics are populated faster and
 # are available for querying during the test.
 def test_event_time_microseconds_field(started_cluster):
-    res_t = node1.query("SYSTEM JEMALLOC ENABLE PROFILE")
+    node1.query("SYSTEM JEMALLOC ENABLE PROFILE")
     res_o = node1.query("SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;")
     assert (
         res_o== """Row 1:
