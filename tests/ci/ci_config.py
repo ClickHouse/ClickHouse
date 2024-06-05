@@ -593,8 +593,6 @@ class CIConfig:
                 stage_type = CIStages.BUILDS_2
         elif self.is_docs_job(job_name):
             stage_type = CIStages.TESTS_1
-        elif job_name == JobNames.BUILD_CHECK_SPECIAL:
-            stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
@@ -854,6 +852,14 @@ class CIConfig:
                     f"The requirement '{test_config}' for "
                     f"'{test_name}' is not found in builds"
                 )
+            if (
+                test_config.required_build
+                and test_config.required_build
+                not in self.builds_report_config[JobNames.BUILD_CHECK].builds
+            ):
+                errors.append(
+                    f"Test job' required build must be from [{JobNames.BUILD_CHECK}] list"
+                )
 
         if errors:
             raise KeyError("config contains errors", errors)
@@ -1068,6 +1074,8 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
                 Build.BINARY_RELEASE,
+                Build.PACKAGE_RELEASE_COVERAGE,
+                Build.FUZZERS,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -1084,8 +1092,6 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_LOONGARCH64,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
-                Build.PACKAGE_RELEASE_COVERAGE,
-                Build.FUZZERS,
             ]
         ),
     },
