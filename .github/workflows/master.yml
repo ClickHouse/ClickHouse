@@ -106,7 +106,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   # stage for jobs that do not prohibit merge
   Tests_3:
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Tests_1, Tests_2]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
