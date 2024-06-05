@@ -376,7 +376,7 @@ private:
                     /// If we have a time argument that has bigger scale than the interval can contain and interval is not default, we need
                     /// to return a value with bigger precision and thus we should multiply result on the scale difference.
                     result_data[i] = 0;
-                    result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_endtime)) * scale_diff;
+                    result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_endtime));
                 }
             }
             else
