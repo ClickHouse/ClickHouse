@@ -1,6 +1,5 @@
 name: Question
 description: Ask a question about ClickHouse
-title: ""
 labels: ["question"]
 body:
   - type: markdown
