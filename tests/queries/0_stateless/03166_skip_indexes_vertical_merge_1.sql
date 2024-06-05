@@ -32,7 +32,7 @@ SELECT
     groups[2] AS merged,
     groups[3] AS gathered
 FROM system.text_log
-WHERE query_id = uuid || '::all_1_2_1' AND notEmpty(groups)
+WHERE (query_id = uuid || '::all_1_2_1') OR (query_id = currentDatabase() || '.t_ind_merge_1::all_1_2_1') AND notEmpty(groups)
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_ind_merge_1;
