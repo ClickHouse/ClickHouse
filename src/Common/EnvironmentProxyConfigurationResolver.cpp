@@ -55,6 +55,11 @@ namespace
         const std::string & no_proxy_hosts_string,
         bool disable_tunneling_for_https_requests_over_http_proxy)
     {
+        if (uri.empty())
+        {
+            return {};
+        }
+
         const auto & host = uri.getHost();
         const auto & scheme = uri.getScheme();
         const auto port = uri.getPort();
