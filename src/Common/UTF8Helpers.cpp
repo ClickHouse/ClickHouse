@@ -103,7 +103,7 @@ template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
-    int isEscapeSequence = false;
+    bool is_escape_sequence = false;
     size_t width = 0;
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
@@ -116,10 +116,8 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
         while (i + 15 < size)
         {
-            if (isEscapeSequence)
-            {
+            if (is_escape_sequence)
                 break;
-            }
 
             __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
 
@@ -145,17 +143,15 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
         while (i < size && isPrintableASCII(data[i]))
         {
-            auto isParameterByte = isCSIParameterByte(data[i]);
-            auto isIntermediateByte = isCSIIntermediateByte(data[i]);
-            auto ignore_width = isEscapeSequence && (isParameterByte || isIntermediateByte);
+            bool ignore_width = is_escape_sequence && (isCSIParameterByte(data[i]) || isCSIIntermediateByte(data[i]));
 
-            if (ignore_width || (data[i] == '[' && isEscapeSequence))
+            if (ignore_width || (data[i] == '[' && is_escape_sequence))
             {
                 /// don't count the width
             }
-            else if (isEscapeSequence && isCSIFinalByte(data[i]))
+            else if (is_escape_sequence && isCSIFinalByte(data[i]))
             {
-                isEscapeSequence = false;
+                is_escape_sequence = false;
             }
             else
             {
