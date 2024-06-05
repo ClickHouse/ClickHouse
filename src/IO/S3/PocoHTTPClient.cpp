@@ -305,8 +305,7 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    const auto request_configuration = per_request_configuration();
-    makeRequestInternalImpl(request, request_configuration, response, readLimiter, writeLimiter);
+    makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
 String getMethod(const Aws::Http::HttpRequest & request)
@@ -330,7 +329,6 @@ String getMethod(const Aws::Http::HttpRequest & request)
 
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
-    const DB::ProxyConfiguration & proxy_configuration,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
@@ -383,6 +381,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
     try
     {
+        const auto proxy_configuration = per_request_configuration();
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
