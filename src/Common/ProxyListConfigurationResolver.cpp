@@ -29,11 +29,16 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve()
 
     auto & proxy = proxies[index];
 
+    bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
+        request_protocol,
+        ProxyConfiguration::protocolFromString(proxy.getScheme()),
+        disable_tunneling_for_https_requests_over_http_proxy);
+
     return ProxyConfiguration {
         proxy.getHost(),
         ProxyConfiguration::protocolFromString(proxy.getScheme()),
         proxy.getPort(),
-        useTunneling(request_protocol, ProxyConfiguration::protocolFromString(proxy.getScheme()), disable_tunneling_for_https_requests_over_http_proxy),
+        use_tunneling_for_https_requests_over_http_proxy,
         request_protocol,
         no_proxy_hosts
     };

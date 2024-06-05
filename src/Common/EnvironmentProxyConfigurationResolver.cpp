@@ -48,30 +48,33 @@ namespace
 
         return no_proxy;
     }
-}
 
-ProxyConfiguration EnvironmentProxyConfigurationResolver::buildProxyConfiguration(Protocol protocol, const char * proxy_host, const std::string & no_proxy_hosts_string)
-{
-    if (!proxy_host)
+    ProxyConfiguration buildProxyConfiguration(
+        ProxyConfiguration::Protocol request_protocol,
+        const Poco::URI & uri,
+        const std::string & no_proxy_hosts_string,
+        bool disable_tunneling_for_https_requests_over_http_proxy)
     {
-        return {};
+        const auto & host = uri.getHost();
+        const auto & scheme = uri.getScheme();
+        const auto port = uri.getPort();
+
+        const bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
+            request_protocol,
+            ProxyConfiguration::protocolFromString(scheme),
+            disable_tunneling_for_https_requests_over_http_proxy);
+
+        LOG_TRACE(getLogger("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
+
+        return ProxyConfiguration {
+            host,
+            ProxyConfiguration::protocolFromString(scheme),
+            port,
+            use_tunneling_for_https_requests_over_http_proxy,
+            request_protocol,
+            no_proxy_hosts_string
+        };
     }
-
-    auto uri = Poco::URI(proxy_host);
-    auto host = uri.getHost();
-    auto scheme = uri.getScheme();
-    auto port = uri.getPort();
-
-    LOG_TRACE(getLogger("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
-
-    return ProxyConfiguration {
-        host,
-        ProxyConfiguration::protocolFromString(scheme),
-        port,
-        useTunneling(protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
-        protocol,
-        no_proxy_hosts_string
-    };
 }
 
 ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
@@ -80,10 +83,15 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
     static const auto * https_proxy_host = getProxyHost(Protocol::HTTPS);
     static const auto no_proxy_hosts_string = buildPocoNonProxyHosts(getNoProxyHostsString());
 
-    static const auto http_proxy_configuration = buildProxyConfiguration(Protocol::HTTP, http_proxy_host, no_proxy_hosts_string);
-    static const auto https_proxy_configuration = buildProxyConfiguration(Protocol::HTTPS, https_proxy_host, no_proxy_hosts_string);
+    static const Poco::URI http_proxy_uri(http_proxy_host ? http_proxy_host : "");
+    static const Poco::URI https_proxy_uri(https_proxy_host ? https_proxy_host : "");
 
-    return request_protocol == Protocol::HTTP ? http_proxy_configuration : https_proxy_configuration;
+    return buildProxyConfiguration(
+        request_protocol,
+        request_protocol == Protocol::HTTP ? http_proxy_uri : https_proxy_uri,
+        no_proxy_hosts_string,
+        disable_tunneling_for_https_requests_over_http_proxy);
+
 }
 
 }

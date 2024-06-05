@@ -85,7 +85,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     auto proxy_protocol = ProxyConfiguration::protocolFromString(proxy_protocol_string);
 
-    bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
+    bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
         request_protocol,
         proxy_protocol,
         disable_tunneling_for_https_requests_over_http_proxy);
