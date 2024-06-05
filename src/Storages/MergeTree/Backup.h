@@ -24,8 +24,9 @@ struct WriteSettings;
   *
   * If `transaction` is provided, the changes will be added to it instead of performend on disk.
   */
-    void localBackup(
-        const DiskPtr & disk,
+    void Backup(
+        const DiskPtr & src_disk,
+        const DiskPtr & dst_disk,
         const String & source_path,
         const String & destination_path,
         const ReadSettings & read_settings,

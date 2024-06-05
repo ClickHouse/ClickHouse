@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import random
 import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from copy import deepcopy
@@ -8,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
-from ci_utils import WithIter
+from ci_utils import WithIter, normalize_string
 from integration_test_images import IMAGES
 
 
@@ -49,7 +50,7 @@ class CILabels(metaclass=WithIter):
     NO_CI_CACHE = "no_ci_cache"
     # to upload all binaries from build jobs
     UPLOAD_ALL_ARTIFACTS = "upload_all"
-    CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_SYNC = "ci_set_sync"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_NON_REQUIRED = "ci_set_non_required"
@@ -233,23 +234,25 @@ class JobConfig:
     run_command: str = ""
     # job timeout, seconds
     timeout: Optional[int] = None
-    # sets number of batches for multi-batch job
+    # sets number of batches for a multi-batch job
     num_batches: int = 1
-    # label that enables job in CI, if set digest won't be used
+    # label that enables job in CI, if set digest isn't used
     run_by_label: str = ""
     # to run always regardless of the job digest or/and label
     run_always: bool = False
-    # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
+    # if the job needs to be run on the release branch, including master (building packages, docker server).
     # NOTE: Subsequent runs on the same branch with the similar digest are still considered skip-able.
     required_on_release_branch: bool = False
     # job is for pr workflow only
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
-    # job will run if it's enabled in CI option
-    run_by_ci_option: bool = False
-    # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
+    # to randomly pick and run one job among jobs in the same @random_bucket (PR branches only).
     random_bucket: str = ""
+    # Do not set it. A list of batches to run. It will be set in runtime in accordance with ci cache and ci settings
+    batches: Optional[List[int]] = None
+    # Do not set it. A list of batches to await. It will be set in runtime in accordance with ci cache and ci settings
+    pending_batches: Optional[List[int]] = None
 
 
 builds_job_config = JobConfig(
@@ -552,9 +555,20 @@ class CIConfig:
     other_jobs_configs: TestConfigs
     label_configs: LabelConfigs
 
+    # Jobs that run for doc related updates
+    _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
+
+    # Jobs that run in Merge Queue if it's enabled
+    _MQ_JOBS = [
+        JobNames.STYLE_CHECK,
+        JobNames.FAST_TEST,
+        Build.BINARY_RELEASE,
+        JobNames.UNIT_TEST,
+    ]
+
     def get_label_config(self, label_name: str) -> Optional[LabelConfig]:
         for label, config in self.label_configs.items():
-            if self.normalize_string(label_name) == self.normalize_string(label):
+            if normalize_string(label_name) == normalize_string(label):
                 return config
         return None
 
@@ -670,21 +684,9 @@ class CIConfig:
 
         return result
 
-    @staticmethod
-    def normalize_string(input_string: str) -> str:
-        lowercase_string = input_string.lower()
-        normalized_string = (
-            lowercase_string.replace(" ", "_")
-            .replace("-", "_")
-            .replace("(", "")
-            .replace(")", "")
-            .replace(",", "")
-        )
-        return normalized_string
-
-    def get_job_with_parents(self, check_name: str) -> List[str]:
+    def get_job_parents(self, check_name: str) -> List[str]:
         res = []
-        check_name = self.normalize_string(check_name)
+        check_name = normalize_string(check_name)
 
         for config in (
             self.build_config,
@@ -693,23 +695,10 @@ class CIConfig:
             self.other_jobs_configs,
         ):
             for job_name in config:  # type: ignore
-                if check_name == self.normalize_string(job_name):
-                    res.append(job_name)
+                if check_name == normalize_string(job_name):
                     if isinstance(config[job_name], TestConfig):  # type: ignore
                         if config[job_name].required_build:  # type: ignore
                             res.append(config[job_name].required_build)  # type: ignore
-                    elif isinstance(config[job_name], BuildConfig):  # type: ignore
-                        pass
-                    elif isinstance(config[job_name], BuildReportConfig):  # type: ignore
-                        pass
-                    else:
-                        assert (
-                            False
-                        ), f"check commit message tags or FIXME: request for job [{check_name}] not yet supported"
-                    break
-        assert (
-            res
-        ), f"Error: Experimental feature... Invalid request or not supported job [{check_name}]"
         return res
 
     def get_digest_config(self, check_name: str) -> DigestConfig:
@@ -727,18 +716,49 @@ class CIConfig:
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
-    def job_generator(self, branch: str) -> Iterable[str]:
+    def get_workflow_jobs_with_configs(
+        self, is_mq: bool, is_docs_only: bool, is_master: bool
+    ) -> Dict[str, JobConfig]:
         """
-        traverses all check names in CI pipeline
+        get a list of all jobs for a workflow with configs
         """
-        assert branch
-        for config in (
-            self.other_jobs_configs,
-            self.build_config,
-            self.builds_report_config,
-            self.test_configs,
-        ):
-            yield from config  # type: ignore
+        jobs = []
+        if is_mq:
+            jobs = self._MQ_JOBS
+        elif is_docs_only:
+            jobs = self._DOCS_CHECK_JOBS
+        else:
+            for config in (
+                self.other_jobs_configs,
+                self.build_config,
+                self.builds_report_config,
+                self.test_configs,
+            ):
+                jobs += list(config)  # type:ignore
+            if is_master:
+                for job in self._MQ_JOBS:
+                    jobs.remove(job)
+
+        randomization_bucket_jobs = {}  # type: Dict[str, Dict[str, JobConfig]]
+        res = {}  # type: Dict[str, JobConfig]
+        for job in jobs:
+            job_config = self.get_job_config(job)
+
+            if job_config.random_bucket:
+                if job_config.random_bucket not in randomization_bucket_jobs:
+                    randomization_bucket_jobs[job_config.random_bucket] = {}
+                randomization_bucket_jobs[job_config.random_bucket][job] = job_config
+                continue
+
+            res[job] = job_config
+
+        # add to the result a random job from each random bucket, if any
+        for bucket, jobs_configs in randomization_bucket_jobs.items():
+            job = random.choice(list(jobs_configs))
+            print(f"Pick job [{job}] from randomization bucket [{bucket}]")
+            res[job] = jobs_configs[job]
+
+        return res
 
     def get_builds_for_report(
         self, report_name: str, release: bool = False, backport: bool = False
@@ -772,6 +792,16 @@ class CIConfig:
     @classmethod
     def is_docs_job(cls, job: str) -> bool:
         return job == JobNames.DOCS_CHECK
+
+    @staticmethod
+    def is_required(check_name: str) -> bool:
+        """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
+        _BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
+        if check_name in REQUIRED_CHECKS:
+            return True
+        if batch := _BATCH_REGEXP.search(check_name):
+            return check_name[: batch.start()] in REQUIRED_CHECKS
+        return False
 
     def validate(self) -> None:
         errors = []
@@ -852,8 +882,6 @@ REQUIRED_CHECKS = [
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
 ]
 
-BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
-
 CI_CONFIG = CIConfig(
     label_configs={
         CILabels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
@@ -878,22 +906,13 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
             ]
         ),
-        CILabels.CI_SET_REDUCED: LabelConfig(
+        CILabels.CI_SET_SYNC: LabelConfig(
             run_jobs=[
-                job
-                for job in JobNames
-                if not any(
-                    nogo in job
-                    for nogo in (
-                        "asan",
-                        "tsan",
-                        "msan",
-                        "ubsan",
-                        "coverage",
-                        # skip build report jobs as not all builds will be done
-                        "build check",
-                    )
-                )
+                Build.PACKAGE_ASAN,
+                JobNames.STYLE_CHECK,
+                JobNames.BUILD_CHECK,
+                JobNames.UNIT_TEST_ASAN,
+                JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
     },
@@ -1202,7 +1221,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **stateless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **stateless_test_common_params, release_only=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
@@ -1227,10 +1246,10 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True)  # type: ignore
         ),
         JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
@@ -1360,15 +1379,6 @@ CI_CONFIG = CIConfig(
 CI_CONFIG.validate()
 
 
-def is_required(check_name: str) -> bool:
-    """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
-    if check_name in REQUIRED_CHECKS:
-        return True
-    if batch := BATCH_REGEXP.search(check_name):
-        return check_name[: batch.start()] in REQUIRED_CHECKS
-    return False
-
-
 @dataclass
 class CheckDescription:
     name: str
@@ -1380,6 +1390,11 @@ class CheckDescription:
 
 
 CHECK_DESCRIPTIONS = [
+    CheckDescription(
+        "PR Check",
+        "Checks correctness of the PR's body",
+        lambda x: x == "PR Check",
+    ),
     CheckDescription(
         StatusNames.SYNC,
         "If it fails, ask a maintainer for help",
