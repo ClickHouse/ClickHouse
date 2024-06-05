@@ -1547,11 +1547,13 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
-            /// unlike tuple or array, here we do not want to make any of the variants nullable
-            /// so we do not call makeNullableRecursively
-            nested_types.push_back(nested_type);
+            auto is_low_cardinality = nested_type->lowCardinality();
+            auto has_sub_types = nested_type->haveSubtypes();
+            if (!is_low_cardinality && has_sub_types)
+                nested_types.push_back(makeNullableRecursively(nested_type));
+            else
+                nested_types.push_back(nested_type);
         }
-
         return std::make_shared<DataTypeVariant>(nested_types);
     }
 
