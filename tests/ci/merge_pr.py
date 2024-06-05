@@ -250,7 +250,6 @@ def main():
         trigger_mergeable_check(
             commit,
             statuses,
-            hide_url=False,
             set_if_green=True,
             workflow_failed=(args.wf_status != "success"),
         )
