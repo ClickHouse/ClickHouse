@@ -900,10 +900,9 @@ void HTTPHandler::processQuery(
     customizeContext(request, context, *in_post_maybe_compressed);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
-    if (http_response_headers_override) {
+    if (http_response_headers_override)
         for (auto [header_name, header_value] : *http_response_headers_override)
             response.set(header_name, header_value);
-    }
 
     auto set_query_result = [this, &response](const QueryResultDetails & details)
     {
