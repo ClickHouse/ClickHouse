@@ -513,7 +513,7 @@ jobs:
 ##################################### REGRESSION TESTS ######################################
 #############################################################################################
   RegressionTestsRelease:
-    needs: [BuilderReport]
+    needs: [BuilderDebRelease]
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -522,7 +522,7 @@ jobs:
       arch: release 
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   RegressionTestsAarch64:
-    needs: [BuilderReport]
+    needs: [BuilderDebAarch64]
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
