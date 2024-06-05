@@ -511,9 +511,9 @@ class Release:
 
     @contextmanager
     def _create_gh_release(self, as_prerelease: bool) -> Iterator[None]:
-        with self._create_tag():
+        tag = self.release_version.describe
+        with self._create_tag(tag, self.release_commit):
             # Preserve tag if version is changed
-            tag = self.release_version.describe
             prerelease = ""
             if as_prerelease:
                 prerelease = "--prerelease"
@@ -535,11 +535,12 @@ class Release:
                 raise
 
     @contextmanager
-    def _create_tag(self):
-        tag = self.release_version.describe
+    def _create_tag(
+        self, tag: str, commit: str, tag_message: str = ""
+    ) -> Iterator[None]:
+        tag_message = tag_message or "Release {tag}"
         self.run(
-            f"git tag -a -m 'Release {tag}' '{tag}' {self.release_commit}",
-            dry_run=self.dry_run,
+            f"git tag -a -m '{tag_message}' '{tag}' {commit}", dry_run=self.dry_run
         )
         rollback_cmd = f"{self.dry_run_prefix}git tag -d '{tag}'"
         self._rollback_stack.append(rollback_cmd)
