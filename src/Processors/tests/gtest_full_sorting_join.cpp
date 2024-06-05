@@ -151,7 +151,6 @@ public:
         size_t rows = current_chunk.front()->size();
         chunks.emplace_back(std::move(current_chunk), rows);
         current_chunk = header.cloneEmptyColumns();
-        return;
     }
 
     std::shared_ptr<ISource> getSource()
@@ -403,7 +402,7 @@ try
     auto expected_right = ColumnString::create();
 
     UInt64 k1 = 1;
-    String k2 = "";
+    String k2;
 
     auto get_attr = [&](const String & side, size_t idx) -> String
     {
@@ -601,7 +600,7 @@ try
     ColumnInt64::Container expected;
 
     UInt64 k1 = 1;
-    String k2 = "";
+    String k2;
     auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
@@ -690,7 +689,7 @@ try
     ColumnInt64::Container expected;
 
     UInt64 k1 = 1;
-    String k2 = "";
+    String k2;
     UInt64 left_t = 0;
 
     auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
