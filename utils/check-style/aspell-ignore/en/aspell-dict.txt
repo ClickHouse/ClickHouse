@@ -557,8 +557,6 @@ MinHash
 MinIO
 MinMax
 MindsDB
-mlock
-mlockall
 Mongodb
 Monotonicity
 MsgPack
@@ -2002,6 +2000,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
