@@ -33,6 +33,9 @@ struct ViewRuntimeData
     /// Info which is needed for query views log.
     std::unique_ptr<QueryViewsLogElement::ViewRuntimeStats> runtime_stats;
 
+    /// An overridden context bounded to this view with the correct SQL security grants.
+    ContextPtr context;
+
     void setException(std::exception_ptr e)
     {
         exception = e;

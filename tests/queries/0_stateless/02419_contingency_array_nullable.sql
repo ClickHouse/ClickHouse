@@ -1,1 +1,1 @@
-SELECT contingency(1, [1, NULL]); -- { serverError 48 }
+SELECT contingency(1, [1, NULL]); -- { serverError NOT_IMPLEMENTED }

@@ -2,7 +2,7 @@
 
 Description.
 
-For the switch setting, use the typical phrase: “Enables or disables something …”.
+For the switch setting, use the typical phrase: “Enables or disables something ...”.
 
 Possible values:
 

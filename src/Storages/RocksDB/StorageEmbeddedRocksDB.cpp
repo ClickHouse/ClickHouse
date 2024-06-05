@@ -189,6 +189,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
+    , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
 {
     setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
@@ -211,7 +212,7 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 
-    fs::remove_all(rocksdb_dir);
+    (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
 }
@@ -316,6 +317,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
 void StorageEmbeddedRocksDB::drop()
 {
+    std::lock_guard lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 }
@@ -463,18 +465,13 @@ void StorageEmbeddedRocksDB::initDB()
     {
         rocksdb::DB * db;
         if (read_only)
-        {
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
-        }
         else
-        {
             status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
-        }
+
         if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
-                rocksdb_dir, status.ToString());
-        }
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}", rocksdb_dir, status.ToString());
+
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
 }
@@ -578,7 +575,8 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
 
 void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const auto & sample_block = getOutputStream().header;
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
@@ -588,8 +586,12 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr  query_context, bool /*async_insert*/)
 {
     if (getSettings().optimize_for_bulk_insert)
+    {
+        LOG_DEBUG(log, "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
+    }
 
+    LOG_DEBUG(log, "Using regular insert");
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 

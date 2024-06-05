@@ -792,9 +792,32 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
+    /// This object will periodically calculate some metrics.
+    ServerAsynchronousMetrics async_metrics(
+        global_context,
+        server_settings.asynchronous_metrics_update_period_s,
+        server_settings.asynchronous_heavy_metrics_update_period_s,
+        [&]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> metrics;
+
+            std::lock_guard lock(servers_lock);
+            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+
+            for (const auto & server : servers_to_start_before_tables)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+
+            for (const auto & server : servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            return metrics;
+        }
+    );
+
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT({
+        async_metrics.stop();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -885,6 +908,16 @@ try
         server_settings.max_active_parts_loading_thread_pool_size
     );
 
+    getUnexpectedPartsLoadingThreadPool().initialize(
+        server_settings.max_unexpected_parts_loading_thread_pool_size,
+        0, // We don't need any threads once all the parts will be loaded
+        server_settings.max_unexpected_parts_loading_thread_pool_size);
+
+    /// It could grow if we need to synchronously wait until all the data parts will be loaded.
+    getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(
+        server_settings.max_active_parts_loading_thread_pool_size
+    );
+
     getPartsCleaningThreadPool().initialize(
         server_settings.max_parts_cleaning_thread_pool_size,
         0, // We don't need any threads one all the parts will be deleted
@@ -910,27 +943,6 @@ try
             ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
         }
     }
-
-    /// This object will periodically calculate some metrics.
-    ServerAsynchronousMetrics async_metrics(
-        global_context,
-        server_settings.asynchronous_metrics_update_period_s,
-        server_settings.asynchronous_heavy_metrics_update_period_s,
-        [&]() -> std::vector<ProtocolServerMetrics>
-        {
-            std::vector<ProtocolServerMetrics> metrics;
-
-            std::lock_guard lock(servers_lock);
-            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
-
-            for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
-
-            for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
-            return metrics;
-        }
-    );
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
@@ -1466,6 +1478,8 @@ try
             global_context->setMaxTableSizeToDrop(new_server_settings.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(new_server_settings.max_partition_size_to_drop);
             global_context->setMaxTableNumToWarn(new_server_settings.max_table_num_to_warn);
+            global_context->setMaxViewNumToWarn(new_server_settings.max_view_num_to_warn);
+            global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
@@ -1734,6 +1748,11 @@ try
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
 #endif
 
+    }
+
+    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+    {
+        PlacementInfo::PlacementInfo::instance().initialize(config());
     }
 
     {
@@ -2082,11 +2101,6 @@ try
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
                                          load_metadata_tasks);
-        }
-
-        if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-        {
-            PlacementInfo::PlacementInfo::instance().initialize(config());
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.

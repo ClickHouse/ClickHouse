@@ -39,7 +39,7 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
     size_t getFileSize() override { return getTotalSize(blobs_to_read); }
 

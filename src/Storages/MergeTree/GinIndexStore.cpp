@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
@@ -504,3 +506,5 @@ void GinIndexStoreFactory::remove(const String & part_path)
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

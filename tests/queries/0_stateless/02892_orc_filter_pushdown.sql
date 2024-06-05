@@ -13,9 +13,6 @@ set max_insert_threads = 1;
 
 SET session_timezone = 'UTC';
 
--- Analyzer breaks the queries with IN and some queries with BETWEEN.
-set allow_experimental_analyzer=0;
-
 
 -- Try all the types.
 insert into function file('02892.orc')
