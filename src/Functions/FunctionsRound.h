@@ -40,26 +40,22 @@ namespace ErrorCodes
 }
 
 
-/** Rounding Functions:
-    * round(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for floating point numbers.
-    * roundBankers(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for all numbers.
-    * floor(x, N) is the largest number <= x (N = 0 by default).
-    * ceil(x, N) is the smallest number >= x (N = 0 by default).
-    * trunc(x, N) - is the largest by absolute value number that is not greater than x by absolute value (N = 0 by default).
-    *
-    * The value of the parameter N (scale):
-    * - N > 0: round to the number with N decimal places after the decimal point
-    * - N < 0: round to an integer with N zero characters
-    * - N = 0: round to an integer
-    *
-    * Type of the result is the type of argument.
-    * For integer arguments, when passing negative scale, overflow can occur.
-    * In that case, the behavior is implementation specific.
-    */
+/// Rounding Functions:
+/// - round(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for floating point numbers.
+/// - roundBankers(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for all numbers.
+/// - floor(x, N) is the largest number <= x (N = 0 by default).
+/// - ceil(x, N) is the smallest number >= x (N = 0 by default).
+/// - trunc(x, N) - is the largest by absolute value number that is not greater than x by absolute value (N = 0 by default).
 
+/// The value of the parameter N (scale):
+/// - N > 0: round to the number with N decimal places after the decimal point
+/// - N < 0: round to an integer with N zero characters
+/// - N = 0: round to an integer
 
-/** This parameter controls the behavior of the rounding functions.
-  */
+/// Type of the result is the type of argument.
+/// For integer arguments, when passing negative scale, overflow can occur. In that case, the behavior is undefined.
+
+/// Controls the behavior of the rounding functions.
 enum class ScaleMode : uint8_t
 {
     Positive,   // round to a number with N decimal places after the decimal point
@@ -75,7 +71,7 @@ enum class RoundingMode : uint8_t
     Ceil    = _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC,
     Trunc   = _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC,
 #else
-    Round   = 8,    /// Values are correspond to above just in case.
+    Round   = 8,    /// Values correspond to above values, just in case.
     Floor   = 9,
     Ceil    = 10,
     Trunc   = 11,
@@ -84,16 +80,21 @@ enum class RoundingMode : uint8_t
 
 enum class TieBreakingMode : uint8_t
 {
-    Auto, // use banker's rounding for floating point numbers, round up otherwise
-    Bankers, // use banker's rounding
+    Auto,    /// banker's rounding for floating point numbers, round up otherwise
+    Bankers, /// banker's rounding
+};
+
+enum class Vectorize : uint8_t
+{
+    No,
+    Yes
 };
 
 /// For N, no more than the number of digits in the largest type.
 using Scale = Int16;
 
 
-/** Rounding functions for integer values.
-  */
+/// Rounding functions for integer values.
 template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, TieBreakingMode tie_breaking_mode>
 struct IntegerRoundingComputation
 {
@@ -150,7 +151,7 @@ struct IntegerRoundingComputation
             }
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -164,10 +165,11 @@ struct IntegerRoundingComputation
                 return computeImpl(x, scale);
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
+    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
+    requires std::integral<T>
     {
         if constexpr (sizeof(T) <= sizeof(scale) && scale_mode == ScaleMode::Negative)
         {
@@ -180,20 +182,23 @@ struct IntegerRoundingComputation
         *out = compute(*in, static_cast<T>(scale));
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out) requires(!std::integral<T>)
+    static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out)
+    requires(!std::integral<T>)
     {
         *out = compute(*in, scale);
     }
 };
 
 
-template <typename T, bool is_vectorized = true>
-class BaseFloatRoundingComputation;
+template <typename T, Vectorize vectorize>
+class FloatRoundingComputationBase;
 
 #ifdef __SSE4_1__
 
+/// Vectorized implementation for x86.
+
 template <>
-class BaseFloatRoundingComputation<Float32, true>
+class FloatRoundingComputationBase<Float32, Vectorize::Yes>
 {
 public:
     using ScalarType = Float32;
@@ -214,7 +219,7 @@ public:
 };
 
 template <>
-class BaseFloatRoundingComputation<Float64, true>
+class FloatRoundingComputationBase<Float64, Vectorize::Yes>
 {
 public:
     using ScalarType = Float64;
@@ -236,7 +241,7 @@ public:
 
 #endif
 
-/// Implementation for ARM/columnar scale argument. Not vectorized.
+/// Sequential implementation for ARM. Also used for scalar arguments.
 
 inline float roundWithMode(float x, RoundingMode mode)
 {
@@ -248,7 +253,7 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Trunc: return truncf(x);
     }
 
-    UNREACHABLE();
+    std::unreachable();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -261,11 +266,11 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Trunc: return trunc(x);
     }
 
-    UNREACHABLE();
+    std::unreachable();
 }
 
 template <typename T>
-class BaseFloatRoundingComputation<T, false>
+class FloatRoundingComputationBase<T, Vectorize::No>
 {
 public:
     using ScalarType = T;
@@ -288,10 +293,10 @@ public:
 
 /** Implementation of low-level round-off functions for floating-point values.
   */
-template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, bool is_vectorized>
-class FloatRoundingComputation : public BaseFloatRoundingComputation<T, is_vectorized>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, Vectorize vectorize>
+class FloatRoundingComputation : public FloatRoundingComputationBase<T, vectorize>
 {
-    using Base = BaseFloatRoundingComputation<T, is_vectorized>;
+    using Base = FloatRoundingComputationBase<T, vectorize>;
 
 public:
     static void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
@@ -323,14 +328,14 @@ struct FloatRoundingImpl
 private:
     static_assert(!is_decimal<T>);
 
-    template <bool is_vectorized =
+    template <Vectorize vectorize =
 #ifdef __SSE4_1__
-        true
+        Vectorize::Yes
 #else
-        false
+        Vectorize::Nos
 #endif
     >
-    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode, is_vectorized>;
+    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode, vectorize>;
     using Data = std::array<T, Op<>::data_count>;
     using ColumnType = ColumnVector<T>;
     using Container = typename ColumnType::Container;
@@ -370,7 +375,7 @@ public:
 
     static void applyOne(const T* __restrict in, size_t scale, T* __restrict out)
     {
-        using ScalarOp = Op<false>;
+        using ScalarOp = Op<Vectorize::No>;
         auto s = ScalarOp::prepare(scale);
         ScalarOp::compute(in, s, out);
     }
@@ -485,8 +490,7 @@ public:
     }
 };
 
-/** Select the appropriate processing algorithm depending on the scale.
-  */
+/// Select the appropriate processing algorithm depending on the scale.
 inline void validateScale(Int64 scale64)
 {
     if (scale64 > std::numeric_limits<Scale>::max() || scale64 < std::numeric_limits<Scale>::min())
@@ -495,7 +499,7 @@ inline void validateScale(Int64 scale64)
 
 inline Scale getScaleArg(const ColumnConst* scale_col)
 {
-    const auto& scale_field = scale_col->getField();
+    const auto & scale_field = scale_col->getField();
 
     Int64 scale64 = scale_field.get<Int64>();
     validateScale(scale64);
@@ -503,6 +507,7 @@ inline Scale getScaleArg(const ColumnConst* scale_col)
     return scale64;
 }
 
+/// Generic dispatcher
 template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 struct Dispatcher
 {
@@ -512,44 +517,44 @@ struct Dispatcher
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
     template <typename ScaleType>
-    static ColumnPtr apply(const IColumn * data_col, const IColumn * scale_col = nullptr)
+    static ColumnPtr apply(const IColumn * value_col, const IColumn * scale_col = nullptr)
     {
-        const auto & col = checkAndGetColumn<ColumnVector<T>>(*data_col);
+        const auto & value_col_typed = checkAndGetColumn<ColumnVector<T>>(*value_col);
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
-        vec_res.resize(col.getData().size());
+        vec_res.resize(value_col_typed.getData().size());
 
         if (!vec_res.empty())
         {
-            using ColVecScale = ColumnVector<ScaleType>;
             if (scale_col == nullptr || isColumnConst(*scale_col))
             {
-                auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColVecScale>(scale_col));
+                auto scale_arg = (scale_col == nullptr) ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
                 if (scale_arg == 0)
                 {
                     size_t scale = 1;
-                    FunctionRoundingImpl<ScaleMode::Zero>::apply(col.getData(), scale, vec_res);
+                    FunctionRoundingImpl<ScaleMode::Zero>::apply(value_col_typed.getData(), scale, vec_res);
                 }
                 else if (scale_arg > 0)
                 {
                     size_t scale = intExp10(scale_arg);
-                    FunctionRoundingImpl<ScaleMode::Positive>::apply(col.getData(), scale, vec_res);
+                    FunctionRoundingImpl<ScaleMode::Positive>::apply(value_col_typed.getData(), scale, vec_res);
                 }
                 else
                 {
                     size_t scale = intExp10(-scale_arg);
-                    FunctionRoundingImpl<ScaleMode::Negative>::apply(col.getData(), scale, vec_res);
+                    FunctionRoundingImpl<ScaleMode::Negative>::apply(value_col_typed.getData(), scale, vec_res);
                 }
             }
-            else if (const auto scale_typed = checkAndGetColumn<ColVecScale>(scale_col))
+            /// Non-const scale argument:
+            else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
             {
-                const auto & in = col.getData();
-                const auto & scale_data = scale_typed->getData();
-                const size_t count = in.size();
+                const auto & value_data = value_col_typed.getData();
+                const auto & scale_data = scale_col_typed->getData();
+                const size_t rows = value_data.size();
 
-                const T * end_in = in.data() + count;
-                const T * __restrict p_in = in.data();
+                const T * end_in = value_data.data() + rows;
+                const T * __restrict p_in = value_data.data();
                 const ScaleType * __restrict p_scale = scale_data.data();
                 T * __restrict p_out = vec_res.data();
 
@@ -585,36 +590,37 @@ struct Dispatcher
     }
 };
 
+/// Dispatcher for Decimal inputs
 template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 struct Dispatcher<T, rounding_mode, tie_breaking_mode>
 {
 public:
     template <typename ScaleType>
-    static ColumnPtr apply(const IColumn * data_col, const IColumn* scale_col = nullptr)
+    static ColumnPtr apply(const IColumn * value_col, const IColumn* scale_col = nullptr)
     {
-        const auto & col = checkAndGetColumn<ColumnDecimal<T>>(*data_col);
-        const typename ColumnDecimal<T>::Container & vec_src = col.getData();
+        const auto & value_col_typed = checkAndGetColumn<ColumnDecimal<T>>(*value_col);
+        const typename ColumnDecimal<T>::Container & vec_src = value_col_typed.getData();
 
-        auto col_res = ColumnDecimal<T>::create(vec_src.size(), col.getScale());
+        auto col_res = ColumnDecimal<T>::create(vec_src.size(), value_col_typed.getScale());
         auto & vec_res = col_res->getData();
 
         if (!vec_res.empty())
         {
-            using ColVecScale = ColumnVector<ScaleType>;
             if (scale_col == nullptr || isColumnConst(*scale_col))
             {
-                auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColVecScale>(scale_col));
-                DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col.getData(), col.getScale(), vec_res, scale_arg);
+                auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
+                DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(value_col_typed.getData(), value_col_typed.getScale(), vec_res, scale_arg);
             }
-            else if (const auto scale_typed = checkAndGetColumn<ColVecScale>(scale_col))
+            /// Non-cosnt scale argument
+            else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
             {
-                const auto & scale = scale_typed->getData();
-                const size_t count = vec_src.size();
+                const auto & scale = scale_col_typed->getData();
+                const size_t rows = vec_src.size();
 
                 using NativeType = typename T::NativeType;
                 const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(vec_src.data());
                 const ScaleType * __restrict p_scale = scale.data();
-                const NativeType * end_in = p_in + count;
+                const NativeType * end_in = p_in + rows;
                 NativeType * __restrict p_out = reinterpret_cast<NativeType *>(vec_res.data());
                 while (p_in < end_in)
                 {
@@ -622,7 +628,7 @@ public:
                     validateScale(scale64);
                     Scale raw_scale = scale64;
 
-                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(p_in, col.getScale(), p_out, raw_scale);
+                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(p_in, value_col_typed.getScale(), p_out, raw_scale);
                     ++p_in;
                     ++p_scale;
                     ++p_out;
@@ -634,9 +640,8 @@ public:
     }
 };
 
-/** A template for functions that round the value of an input parameter of type
-  * (U)Int8/16/32/64, Float32/64 or Decimal32/64/128, and accept an additional optional parameter (default is 0).
-  */
+/// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
+/// Accept an additional optional parameter (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class FunctionRounding : public IFunction
 {
@@ -644,16 +649,12 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
-
+    String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((arguments.empty()) || (arguments.size() > 2))
@@ -669,14 +670,12 @@ public:
         return arguments[0];
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & data_column = arguments[0];
+        const ColumnWithTypeAndName & value_arg = arguments[0];
 
         ColumnPtr res;
-        auto callData = [&](const auto & types) -> bool
+        auto call_data = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::RightType;
@@ -685,24 +684,24 @@ public:
             {
                 const ColumnWithTypeAndName & scale_column = arguments[1];
 
-                auto callScale = [&](const auto & scaleTypes) -> bool
+                auto call_scale = [&](const auto & scaleTypes) -> bool
                 {
                     using ScaleTypes = std::decay_t<decltype(scaleTypes)>;
                     using ScaleType = typename ScaleTypes::RightType;
 
-                    if (isColumnConst(*data_column.column) && !isColumnConst(*scale_column.column))
+                    if (isColumnConst(*value_arg.column) && !isColumnConst(*scale_column.column))
                         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale column must be const for const data column");
 
-                    res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<ScaleType>(data_column.column.get(), scale_column.column.get());
+                    res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<ScaleType>(value_arg.column.get(), scale_column.column.get());
                     return true;
                 };
 
                 TypeIndex right_index = scale_column.type->getTypeId();
-                if (!callOnBasicType<void, true, false, false, false>(right_index, callScale))
+                if (!callOnBasicType<void, true, false, false, false>(right_index, call_scale))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument for rounding functions must have integer type");
                 return true;
             }
-            res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(data_column.column.get());
+            res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(value_arg.column.get());
             return true;
         };
 
@@ -715,9 +714,9 @@ public:
                 throw Exception(ErrorCodes::CANNOT_SET_ROUNDING_MODE, "Cannot set floating point rounding mode");
 #endif
 
-        TypeIndex left_index = data_column.type->getTypeId();
-        if (!callOnBasicType<void, true, true, true, false>(left_index, callData))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", data_column.name, getName());
+        TypeIndex left_index = value_arg.type->getTypeId();
+        if (!callOnBasicType<void, true, true, true, false>(left_index, call_data))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_arg.name, getName());
 
         return res;
     }
@@ -734,9 +733,8 @@ public:
 };
 
 
-/** Rounds down to a number within explicitly specified array.
-  * If the value is less than the minimal bound - returns the minimal bound.
-  */
+/// Rounds down to a number within explicitly specified array.
+/// If the value is less than the minimal bound - returns the minimal bound.
 class FunctionRoundDown : public IFunction
 {
 public:
@@ -744,7 +742,6 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
-
     bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
