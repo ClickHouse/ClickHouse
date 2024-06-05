@@ -1956,7 +1956,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `10485760`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -5108,7 +5108,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
+## allow_experimental_statistics {#allow_experimental_statistics}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
