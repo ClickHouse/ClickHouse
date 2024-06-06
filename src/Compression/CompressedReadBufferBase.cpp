@@ -6,10 +6,11 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
@@ -48,8 +49,8 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
-        " Reference: " + getHexUIntLowercase(expected_checksum.first) + getHexUIntLowercase(expected_checksum.second)
-        + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
+        " Reference: " + getHexUIntLowercase(expected_checksum)
+        + ". Actual: " + getHexUIntLowercase(calculated_checksum)
         + ". Size of compressed block: " + toString(size);
 
     const char * message_hardware_failure = "This is most likely due to hardware failure. "
@@ -86,7 +87,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             {
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
-                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+                throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
             }
 
             flip_bit(tmp_data, bit_pos);    /// Restore
@@ -94,17 +95,17 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
-    size_t difference = std::popcount(expected_checksum.first ^ calculated_checksum.first)
-        + std::popcount(expected_checksum.second ^ calculated_checksum.second);
+    size_t difference = std::popcount(expected_checksum.low64 ^ calculated_checksum.low64)
+        + std::popcount(expected_checksum.high64 ^ calculated_checksum.high64);
 
     if (difference == 1)
     {
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
-        throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
     }
 
-    throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+    throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
 }
 
 static void readHeaderAndGetCodecAndSize(
@@ -113,7 +114,8 @@ static void readHeaderAndGetCodecAndSize(
     CompressionCodecPtr & codec,
     size_t & size_decompressed,
     size_t & size_compressed_without_checksum,
-    bool allow_different_codecs)
+    bool allow_different_codecs,
+    bool external_data)
 {
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
@@ -129,29 +131,29 @@ static void readHeaderAndGetCodecAndSize(
         }
         else
         {
-            throw Exception("Data compressed with different methods, given method byte 0x"
-                            + getHexUIntLowercase(method)
-                            + ", previous method byte 0x"
-                            + getHexUIntLowercase(codec->getMethodByte()),
-                            ErrorCodes::CANNOT_DECOMPRESS);
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Data compressed with different methods, given method "
+                            "byte 0x{}, previous method byte 0x{}",
+                            getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
         }
     }
 
-    size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(compressed_buffer);
-    size_decompressed = ICompressionCodec::readDecompressedBlockSize(compressed_buffer);
+    if (external_data)
+        codec->setExternalDataFlag();
+
+    size_compressed_without_checksum = codec->readCompressedBlockSize(compressed_buffer);
+    size_decompressed = codec->readDecompressedBlockSize(compressed_buffer);
 
     /// This is for clang static analyzer.
     assert(size_decompressed > 0);
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
-        throw Exception("Too large size_compressed_without_checksum: "
-                        + toString(size_compressed_without_checksum)
-                        + ". Most likely corrupted data.",
-                        ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
+                        "Most likely corrupted data.", size_compressed_without_checksum);
 
     if (size_compressed_without_checksum < header_size)
-        throw Exception("Can't decompress data: the compressed data size (" + toString(size_compressed_without_checksum)
-            + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
+            "the compressed data size ({}, this should include header size) is less than the header size ({})",
+            size_compressed_without_checksum, static_cast<size_t>(header_size));
 }
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
@@ -172,7 +174,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         codec,
         size_decompressed,
         size_compressed_without_checksum,
-        allow_different_codecs);
+        allow_different_codecs,
+        external_data);
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -194,7 +197,11 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     if (!disable_checksum)
     {
-        Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
+        Checksum checksum;
+        ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
+        readBinaryLittleEndian(checksum.low64, checksum_in);
+        readBinaryLittleEndian(checksum.high64, checksum_in);
+
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
     }
 
@@ -219,7 +226,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         codec,
         size_decompressed,
         size_compressed_without_checksum,
-        allow_different_codecs);
+        allow_different_codecs,
+        external_data);
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -234,7 +242,11 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 
         if (!disable_checksum)
         {
-            Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
+            Checksum checksum;
+            ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
+            readBinaryLittleEndian(checksum.low64, checksum_in);
+            readBinaryLittleEndian(checksum.high64, checksum_in);
+
             validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
         }
 
@@ -248,7 +260,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
     }
 }
 
-static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec, bool allow_different_codecs)
+static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
+                                  bool allow_different_codecs, bool external_data)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -267,24 +280,25 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
         }
         else
         {
-            throw Exception("Data compressed with different methods, given method byte 0x"
-                            + getHexUIntLowercase(method)
-                            + ", previous method byte 0x"
-                            + getHexUIntLowercase(codec->getMethodByte()),
-                            ErrorCodes::CANNOT_DECOMPRESS);
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Data compressed with different methods, given method "
+                            "byte 0x{}, previous method byte 0x{}",
+                            getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
         }
     }
+
+    if (external_data)
+        codec->setExternalDataFlag();
 }
 
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
     codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
 void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
 
     if (codec->isNone())
     {
@@ -316,13 +330,12 @@ void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mo
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_)
-    : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_)
+CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_, bool external_data_)
+    : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_), external_data(external_data_)
 {
 }
 
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
-
 
 }

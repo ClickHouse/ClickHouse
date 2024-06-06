@@ -46,7 +46,7 @@ AIOContext::AIOContext(unsigned int nr_events)
 {
     ctx = 0;
     if (io_setup(nr_events, &ctx) < 0)
-        DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
 }
 
 AIOContext::~AIOContext()
@@ -124,12 +124,12 @@ int io_submit(int ctx, long nr, struct iocb * iocbpp[])
         }
     }
 
-    return nr;
+    return static_cast<int>(nr);
 }
 
 int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    return kevent(ctx, nullptr, 0, events, max_nr, timeout);
+    return kevent(ctx, nullptr, 0, events, static_cast<int>(max_nr), timeout);
 }
 
 
@@ -137,7 +137,7 @@ AIOContext::AIOContext(unsigned int)
 {
     ctx = io_setup();
     if (ctx < 0)
-        DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
 }
 
 AIOContext::~AIOContext()

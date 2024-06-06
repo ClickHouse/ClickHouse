@@ -95,7 +95,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 以Unicode字符为单位反转UTF-8编码的字符串。如果字符串不是UTF-8编码，则可能获取到一个非预期的结果（不会抛出异常）。
 
-## format(pattern, s0, s1, …) {#formatpattern-s0-s1}
+## format(pattern, s0, s1, ...) {#formatpattern-s0-s1}
 
 使用常量字符串`pattern`格式化其他参数。`pattern`字符串中包含由大括号`{}`包围的«替换字段»。 未被包含在大括号中的任何内容都被视为文本内容，它将原样保留在返回值中。 如果你需要在文本内容中包含一个大括号字符，它可以通过加倍来转义：`{{ '{{' }}`和`{{ '{{' }} '}}' }}`。 字段名称可以是数字（从零开始）或空（然后将它们视为连续数字）
 
@@ -113,11 +113,11 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## concat(s1, s2, …) {#concat-s1-s2}
+## concat(s1, s2, ...) {#concat-s1-s2}
 
 将参数中的多个字符串拼接，不带分隔符。
 
-## concatAssumeInjective(s1, s2, …) {#concatassumeinjectives1-s2}
+## concatAssumeInjective(s1, s2, ...) {#concatassumeinjectives1-s2}
 
 与[concat](#concat-s1-s2)相同，区别在于，你需要保证concat(s1, s2, s3) -\> s4是单射的，它将用于GROUP BY的优化。
 
@@ -169,4 +169,14 @@ SELECT format('{} {}', 'Hello', 'World')
 
 返回一个字符串，用于删除任一侧的空白字符。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/string_functions/) <!--hide-->
+## soundex(s)
+
+返回一个字符串的soundex值。输出类型是FixedString，示例如下：
+
+``` sql
+select soundex('aksql');
+
+┌─soundex('aksel')─┐
+│ A240             │
+└──────────────────┘
+```

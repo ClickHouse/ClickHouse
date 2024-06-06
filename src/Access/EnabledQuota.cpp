@@ -29,11 +29,11 @@ struct EnabledQuota::Impl
         std::chrono::system_clock::time_point end_of_interval)
     {
         const auto & type_info = QuotaTypeInfo::get(quota_type);
-        throw Exception(
-            "Quota for user " + backQuote(user_name) + " for " + to_string(duration) + " has been exceeded: "
-                + type_info.valueToStringWithName(used) + "/" + type_info.valueToString(max) + ". "
-                + "Interval will end at " + to_string(end_of_interval) + ". " + "Name of quota template: " + backQuote(quota_name),
-            ErrorCodes::QUOTA_EXCEEDED);
+        throw Exception(ErrorCodes::QUOTA_EXCEEDED, "Quota for user {} for {} has been exceeded: {}/{}. "
+                        "Interval will end at {}. Name of quota template: {}",
+                        backQuote(user_name), to_string(duration),
+                        type_info.valueToStringWithName(used),
+                        type_info.valueToString(max), to_string(end_of_interval), backQuote(quota_name));
     }
 
 
@@ -104,6 +104,16 @@ struct EnabledQuota::Impl
         auto count = std::chrono::duration_cast<std::chrono::system_clock::duration>(max).count();
         std::uniform_int_distribution<Int64> distribution{0, count - 1};
         return std::chrono::system_clock::duration(distribution(thread_local_rng));
+    }
+
+    static void resetQuotaValue(const Intervals & intervals, QuotaType quota_type, QuotaValue value, std::chrono::system_clock::time_point current_time)
+    {
+        const auto quota_type_i = static_cast<size_t>(quota_type);
+        for (const auto & interval : intervals.intervals)
+        {
+            interval.used[quota_type_i] = value;
+            interval.getEndOfInterval(current_time);
+        }
     }
 };
 
@@ -284,6 +294,12 @@ void EnabledQuota::checkExceeded(QuotaType quota_type) const
     Impl::checkExceeded(getUserName(), *loaded, quota_type, std::chrono::system_clock::now());
 }
 
+
+void EnabledQuota::reset(QuotaType quota_type) const
+{
+    const auto loaded = intervals.load();
+    Impl::resetQuotaValue(*loaded, quota_type, 0, std::chrono::system_clock::now());
+}
 
 std::optional<QuotaUsage> EnabledQuota::getUsage() const
 {

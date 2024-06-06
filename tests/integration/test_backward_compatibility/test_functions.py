@@ -5,15 +5,15 @@
 
 import logging
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
-upstream = cluster.add_instance("upstream")
+upstream = cluster.add_instance("upstream", use_old_analyzer=True)
 backward = cluster.add_instance(
     "backward",
     image="clickhouse/clickhouse-server",
-    tag="22.9",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
 )
 
@@ -138,7 +138,21 @@ def test_string_functions(start_cluster):
         "position",
         "substring",
         "CAST",
+        "getTypeSerializationStreams",
         # NOTE: no need to ignore now()/now64() since they will fail because they don't accept any argument
+        # 22.8 Backward Incompatible Change: Extended range of Date32
+        "toDate32OrZero",
+        "toDate32OrDefault",
+        # 23.9 changed the base64-handling library from Turbo base64 to aklomp-base64. They differ in the way they deal with base64 values
+        # that are not properly padded by '=', for example below test value v='foo'. (Depending on the specification/context, padding is
+        # mandatory or optional). The former lib produces a value based on implicit padding, the latter lib throws an error.
+        "FROM_BASE64",
+        "base64Decode",
+        # PR #56913 (in v23.11) corrected the way tryBase64Decode() behaved with invalid inputs. Old versions return garbage, new versions
+        # return an empty string (as it was always documented).
+        "tryBase64Decode",
+        # Removed in 23.9
+        "meiliMatch",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 
@@ -149,14 +163,15 @@ def test_string_functions(start_cluster):
     failed = 0
     passed = 0
 
-    def get_function_value(node, function_name, value="foo"):
+    def get_function_value(node, function_name, value):
         return node.query(f"select {function_name}('{value}')").strip()
 
+    v = "foo"
     for function in functions:
-        logging.info("Checking %s", function)
+        logging.info("Checking %s('%s')", function, v)
 
         try:
-            backward_value = get_function_value(backward, function)
+            backward_value = get_function_value(backward, function, v)
         except QueryRuntimeException as e:
             error_message = str(e)
             allowed_errors = [
@@ -199,11 +214,12 @@ def test_string_functions(start_cluster):
             failed += 1
             continue
 
-        upstream_value = get_function_value(upstream, function)
+        upstream_value = get_function_value(upstream, function, v)
         if upstream_value != backward_value:
-            logging.info(
-                "Failed %s, %s (backward) != %s (upstream)",
+            logging.warning(
+                "Failed %s('%s') %s (backward) != %s (upstream)",
                 function,
+                v,
                 backward_value,
                 upstream_value,
             )

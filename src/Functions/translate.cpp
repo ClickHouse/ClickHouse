@@ -1,11 +1,17 @@
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/UTF8Helpers.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/iota.h>
+
+#include <numeric>
+
 
 namespace DB
 {
@@ -27,14 +33,14 @@ struct TranslateImpl
         const std::string & map_to)
     {
         if (map_from.size() != map_to.size())
-            throw Exception("Second and trird arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::iota(map.begin(), map.end(), 0);
+        iota(map.data(), map.size(), UInt8(0));
 
         for (size_t i = 0; i < map_from.size(); ++i)
         {
             if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
-                throw Exception("Second and trird arguments must be ASCII strings", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
 
             map[map_from[i]] = map_to[i];
         }
@@ -125,9 +131,9 @@ struct TranslateUTF8Impl
         auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
 
         if (map_from_size != map_to_size)
-            throw Exception("Second and trird arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::iota(map_ascii.begin(), map_ascii.end(), 0);
+        iota(map_ascii.data(), map_ascii.size(), UInt32(0));
 
         const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
         const UInt8 * map_from_end = map_from_ptr + map_from.size();
@@ -148,10 +154,10 @@ struct TranslateUTF8Impl
                 res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
 
             if (!res_from)
-                throw Exception("Second argument must be a valid UTF-8 string", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be a valid UTF-8 string");
 
             if (!res_to)
-                throw Exception("Third argument must be a valid UTF-8 string", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
 
             if (*map_from_ptr <= ascii_upper_bound)
                 map_ascii[*map_from_ptr] = *res_to;
@@ -257,7 +263,7 @@ struct TranslateUTF8Impl
         const std::string & /*map_to*/,
         ColumnString::Chars & /*res_data*/)
     {
-        throw Exception("Function translateUTF8 does not support FixedString argument", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function translateUTF8 does not support FixedString argument");
     }
 
 private:
@@ -284,21 +290,25 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                arguments[0]->getName(), getName());
 
         if (!isStringOrFixedString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                arguments[1]->getName(), getName());
 
         if (!isStringOrFixedString(arguments[2]))
-            throw Exception(
-                "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
+                arguments[2]->getName(), getName());
 
-        return std::make_shared<DataTypeString>();
+        if (isString(arguments[0]))
+            return std::make_shared<DataTypeString>();
+        else
+        {
+            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+            chassert(ptr);
+            return std::make_shared<DataTypeFixedString>(ptr->getN());
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -308,7 +318,7 @@ public:
         const ColumnPtr column_map_to = arguments[2].column;
 
         if (!isColumnConst(*column_map_from) || !isColumnConst(*column_map_to))
-            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants.", getName());
 
         const IColumn * c1 = arguments[1].column.get();
         const IColumn * c2 = arguments[2].column.get();
@@ -330,9 +340,8 @@ public:
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 

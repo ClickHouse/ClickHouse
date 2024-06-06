@@ -78,9 +78,9 @@ public:
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Intersected parts detected: {} on replica {} and {} on replica {}",
-                    part.info.getPartName(),
+                    part.info.getPartNameForLogs(),
                     *part.replica_name,
-                    new_part_info.getPartName(),
+                    new_part_info.getPartNameForLogs(),
                     *replica_name);
             }
             ++last_it;
@@ -149,16 +149,17 @@ private:
 BackupCoordinationReplicatedTables::BackupCoordinationReplicatedTables() = default;
 BackupCoordinationReplicatedTables::~BackupCoordinationReplicatedTables() = default;
 
-void BackupCoordinationReplicatedTables::addPartNames(
-    const String & table_shared_id,
-    const String & table_name_for_logs,
-    const String & replica_name,
-    const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica && part_names)
 {
+    const auto & table_zk_path = part_names.table_zk_path;
+    const auto & table_name_for_logs = part_names.table_name_for_logs;
+    const auto & replica_name = part_names.replica_name;
+    const auto & part_names_and_checksums = part_names.part_names_and_checksums;
+
     if (prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after preparing");
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.table_name_for_logs = table_name_for_logs;
 
     if (!table_info.covered_parts_finder)
@@ -184,11 +185,10 @@ void BackupCoordinationReplicatedTables::addPartNames(
                 const String & other_replica_name = **other.replica_names.begin();
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Table {} on replica {} has part {} which is different from the part on replica {}. Must be the same",
-                    table_name_for_logs,
-                    replica_name,
-                    part_name,
-                    other_replica_name);
+                    "Table {} on replica {} has part {} different from the part on replica {} "
+                    "(checksum '{}' on replica {} != checksum '{}' on replica {})",
+                    table_name_for_logs, replica_name, part_name, other_replica_name,
+                    getHexUIntLowercase(checksum), replica_name, getHexUIntLowercase(other.checksum), other_replica_name);
             }
         }
 
@@ -200,11 +200,11 @@ void BackupCoordinationReplicatedTables::addPartNames(
     }
 }
 
-Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_shared_id, const String & replica_name) const
+Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_zk_path, const String & replica_name) const
 {
     prepare();
 
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -216,16 +216,17 @@ Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_sh
     return it2->second;
 }
 
-void BackupCoordinationReplicatedTables::addMutations(
-    const String & table_shared_id,
-    const String & table_name_for_logs,
-    const String & replica_name,
-    const std::vector<MutationInfo> & mutations)
+void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica && mutations_for_table_replica)
 {
+    const auto & table_zk_path = mutations_for_table_replica.table_zk_path;
+    const auto & table_name_for_logs = mutations_for_table_replica.table_name_for_logs;
+    const auto & replica_name = mutations_for_table_replica.replica_name;
+    const auto & mutations = mutations_for_table_replica.mutations;
+
     if (prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMutations() must not be called after preparing");
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.table_name_for_logs = table_name_for_logs;
     for (const auto & [mutation_id, mutation_entry] : mutations)
         table_info.mutations.emplace(mutation_id, mutation_entry);
@@ -235,11 +236,11 @@ void BackupCoordinationReplicatedTables::addMutations(
 }
 
 std::vector<MutationInfo>
-BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id, const String & replica_name) const
+BackupCoordinationReplicatedTables::getMutations(const String & table_zk_path, const String & replica_name) const
 {
     prepare();
 
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -254,15 +255,18 @@ BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id,
     return res;
 }
 
-void BackupCoordinationReplicatedTables::addDataPath(const String & table_shared_id, const String & data_path)
+void BackupCoordinationReplicatedTables::addDataPath(DataPathForTableReplica && data_path_for_table_replica)
 {
-    auto & table_info = table_infos[table_shared_id];
+    const auto & table_zk_path = data_path_for_table_replica.table_zk_path;
+    const auto & data_path = data_path_for_table_replica.data_path;
+
+    auto & table_info = table_infos[table_zk_path];
     table_info.data_paths.emplace(data_path);
 }
 
-Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_shared_id) const
+Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_zk_path) const
 {
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 

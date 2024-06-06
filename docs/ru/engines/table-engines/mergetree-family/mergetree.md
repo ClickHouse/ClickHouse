@@ -20,9 +20,9 @@ sidebar_label: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-    :::info
-    Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-    :::
+:::info Примечание
+Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
+:::
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -89,7 +89,7 @@ ORDER BY expr
     -   `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
     -   `merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием для удаления данных с истекшим TTL. По умолчанию: `14400` секунд (4 часа).
     -   `merge_with_recompression_ttl_timeout` — минимальное время в секундах перед повторным слиянием для повторного сжатия данных с истекшим TTL. По умолчанию: `14400` секунд (4 часа).
-    -   `try_fetch_recompressed_part_timeout` — время ожидания (в секундах) перед началом слияния с повторным сжатием. В течение этого времени ClickHouse пытается извлечь сжатую часть из реплики, которая назначила это слияние. Значение по умолчанию: `7200` секунд (2 часа).   
+    -   `try_fetch_recompressed_part_timeout` — время ожидания (в секундах) перед началом слияния с повторным сжатием. В течение этого времени ClickHouse пытается извлечь сжатую часть из реплики, которая назначила это слияние. Значение по умолчанию: `7200` секунд (2 часа).
     -   `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
     -   `merge_max_block_size` — максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
     -   `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
@@ -115,7 +115,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 
@@ -337,7 +337,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     Поддерживаемые типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions#hasany), [hasAll](../../../sql-reference/functions/array-functions#hasall).
+    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md#equals), [notEquals](../../../sql-reference/functions/comparison-functions.md#notequals), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions.md#hasany), [hasAll](../../../sql-reference/functions/array-functions.md#hasall).
 
 **Примеры**
 
@@ -354,21 +354,24 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 
 | Функция (оператор) / Индекс                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
-| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
-| [in](../../../sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [empty](../../../sql-reference/functions/array-functions#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [less (\<)](../../../sql-reference/functions/comparison-functions.md#less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [has](../../../sql-reference/functions/array-functions.md#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
+| [hasAny](../../../sql-reference/functions/array-functions.md#function-hasAny)                                 | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
+| [hasAll](../../../sql-reference/functions/array-functions.md#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Функции с постоянным агрументом, который меньше, чем размер ngram не могут использовать индекс `ngrambf_v1` для оптимизации запроса.
@@ -391,12 +394,12 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 ## Проекции {#projections}
 Проекции похожи на [материализованные представления](../../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
 
-Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#force-optimize-projection).
+Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [optimize_use_projections](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#optimize_use_projections).
 
 Проекции не поддерживаются для запросов `SELECT` с модификатором [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
 
 ### Запрос проекции {#projection-query}
-Запрос проекции — это то, что определяет проекцию. Такой запрос неявно выбирает данные из родительской таблицы. 
+Запрос проекции — это то, что определяет проекцию. Такой запрос неявно выбирает данные из родительской таблицы.
 **Синтаксис**
 
 ```sql
@@ -406,9 +409,9 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 Проекции можно изменить или удалить с помощью запроса [ALTER](../../../sql-reference/statements/alter/projection.md).
 
 ### Хранение проекции {#projection-storage}
-Проекции хранятся в каталоге куска данных. Это похоже на хранение индексов, но используется подкаталог, в котором хранится анонимный кусок таблицы `MergeTree`. Таблица создается запросом определения проекции. 
-Если присутствует секция `GROUP BY`, то используется движок [AggregatingMergeTree](aggregatingmergetree.md), а все агрегатные функции преобразуются в `AggregateFunction`. 
-Если присутствует секция `ORDER BY`, таблица `MergeTree` использует ее в качестве выражения для первичного ключа. 
+Проекции хранятся в каталоге куска данных. Это похоже на хранение индексов, но используется подкаталог, в котором хранится анонимный кусок таблицы `MergeTree`. Таблица создается запросом определения проекции.
+Если присутствует секция `GROUP BY`, то используется движок [AggregatingMergeTree](aggregatingmergetree.md), а все агрегатные функции преобразуются в `AggregateFunction`.
+Если присутствует секция `ORDER BY`, таблица `MergeTree` использует ее в качестве выражения для первичного ключа.
 Во время процесса слияния кусок данных проекции объединяется с помощью процедуры слияния хранилища. Контрольная сумма куска данных родительской таблицы включает кусок данных проекции. Другие процедуры аналогичны индексам пропуска данных.
 
 ### Анализ запросов {#projection-query-analysis}
@@ -499,7 +502,7 @@ TTL expr
 За каждым `TTL` выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату `TTL` выражения:
 
 -   `DELETE` - удалить данные (действие по умолчанию);
--   `RECOMPRESS codec_name` - повторно сжать данные с помощью кодека `codec_name`;   
+-   `RECOMPRESS codec_name` - повторно сжать данные с помощью кодека `codec_name`;
 -   `TO DISK 'aaa'` - переместить данные на диск `aaa`;
 -   `TO VOLUME 'bbb'` - переместить данные на том `bbb`;
 -   `GROUP BY` -  агрегировать данные.
@@ -523,7 +526,7 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH [DELETE],
+TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 1 WEEK TO VOLUME 'aaa',
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
@@ -584,7 +587,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 Данные с истекшим `TTL` удаляются, когда ClickHouse мёржит куски данных.
 
-Когда ClickHouse видит, что некоторые данные устарели, он выполняет внеплановые мёржи. Для управление частотой подобных мёржей, можно задать настройку `merge_with_ttl_timeout`. Если её значение слишком низкое, придется выполнять много внеплановых мёржей, которые могут начать потреблять значительную долю ресурсов сервера.
+Когда ClickHouse видит, что некоторые данные устарели, он выполняет внеплановые мёржи. Для управления частотой подобных мёржей, можно задать настройку `merge_with_ttl_timeout`. Если её значение слишком низкое, придется выполнять много внеплановых мёржей, которые могут начать потреблять значительную долю ресурсов сервера.
 
 Если вы выполните запрос `SELECT` между слияниями вы можете получить устаревшие данные. Чтобы избежать этого используйте запрос [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) перед `SELECT`.
 
@@ -676,12 +679,20 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 Тэги:
 
--   `policy_name_N` — название политики. Названия политик должны быть уникальны.
--   `volume_name_N` — название тома. Названия томов должны быть уникальны.
--   `disk` — диск, находящийся внутри тома.
--   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома. Если в результате слияния размер куска ожидается больше, чем max_data_part_size_bytes, то этот кусок будет записан в следующий том. В основном эта функция позволяет хранить новые / мелкие куски на горячем (SSD) томе и перемещать их на холодный (HDD) том, когда они достигают большого размера. Не используйте этот параметр, если политика имеет только один том. 
--   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1). Для перемещения куски сортируются по размеру от большего к меньшему (по убыванию) и выбираются куски, совокупный размер которых достаточен для соблюдения условия `move_factor`, если совокупный размер всех партов недостаточен, будут перемещены все парты.
--   `prefer_not_to_merge` — Отключает слияние кусков данных, хранящихся на данном томе. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
+- `policy_name_N` — название политики. Названия политик должны быть уникальны.
+- `volume_name_N` — название тома. Названия томов должны быть уникальны.
+- `disk` — диск, находящийся внутри тома.
+- `max_data_part_size_bytes` — максимальный размер куска данных, который может находиться на любом из дисков этого тома. Если в результате слияния размер куска ожидается больше, чем max_data_part_size_bytes, то этот кусок будет записан в следующий том. В основном эта функция позволяет хранить новые / мелкие куски на горячем (SSD) томе и перемещать их на холодный (HDD) том, когда они достигают большого размера. Не используйте этот параметр, если политика имеет только один том.
+- `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1). Для перемещения куски сортируются по размеру от большего к меньшему (по убыванию) и выбираются куски, совокупный размер которых достаточен для соблюдения условия `move_factor`, если совокупный размер всех партов недостаточен, будут перемещены все парты.
+- `perform_ttl_move_on_insert` — отключает перемещение данных с истекшим TTL при вставке. По умолчанию (если включено), если мы вставляем часть данных, которая уже просрочилась по правилу перемещения по сроку жизни, она немедленно перемещается на том / диск, указанный в правиле перемещения. Это может значительно замедлить вставку в случае, если целевой том / диск медленный (например, S3). Если отключено, то просроченная часть данных записывается на том по умолчанию, а затем сразу перемещается на том, указанный в правиле для истёкшего TTL.
+- `load_balancing` - политика балансировки дисков, `round_robin` или `least_used`.
+- `least_used_ttl_ms` - устанавливает таймаут (в миллисекундах) для обновления доступного пространства на всех дисках (`0` - обновлять всегда, `-1` - никогда не обновлять, значение по умолчанию - `60000`). Обратите внимание, если диск используется только ClickHouse и не будет подвергаться изменению размеров файловой системы на лету, можно использовать значение `-1`. Во всех остальных случаях это не рекомендуется, так как в конечном итоге это приведет к неправильному распределению пространства.
+- `prefer_not_to_merge` — эту настройку лучше не использовать. Она отключает слияние частей данных на этом томе (что потенциально вредно и может привести к замедлению). Когда эта настройка включена (не делайте этого), объединение данных на этом томе запрещено (что плохо). Это позволяет (но вам это не нужно) контролировать (если вы хотите что-то контролировать, вы делаете ошибку), как ClickHouse взаимодействует с медленными дисками (но ClickHouse лучше знает, поэтому, пожалуйста, не используйте эту настройку).
+- `volume_priority` — Определяет приоритет (порядок), в котором заполняются тома. Чем меньше значение -- тем выше приоритет. Значения параметра должны быть натуральными числами и охватывать диапазон от 1 до N (N - наибольшее значение параметра из указанных) без пропусков.
+  * Если _все_ тома имеют этот параметр, они приоритизируются в указанном порядке.
+  * Если его имеют лишь _некоторые_, то не имеющие этого параметра тома имеют самый низкий приоритет. Те, у которых он указан, приоритизируются в соответствии со значением тега, приоритет остальных определяется порядком описания в конфигурационном файле относительно друг друга.
+  * Если _ни одному_ тому не присвоен этот параметр, их порядок определяется порядком описания в конфигурационном файле.
+  * Приоритет нескольких томов не может быть одинаковым.
 
 Примеры конфигураций:
 
@@ -718,7 +729,6 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
                 </main>
                 <external>
                     <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>
@@ -730,9 +740,9 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 В приведенном примере, политика `hdd_in_order` реализует прицип [round-robin](https://ru.wikipedia.org/wiki/Round-robin_(%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC)). Так как в политике есть всего один том (`single`), то все записи производятся на его диски по круговому циклу. Такая политика может быть полезна при наличии в системе нескольких похожих дисков, но при этом не сконфигурирован RAID. Учтите, что каждый отдельный диск ненадёжен и чтобы не потерять важные данные это необходимо скомпенсировать за счет хранения данных в трёх копиях.
 
-Если система содержит диски различных типов, то может пригодиться политика `moving_from_ssd_to_hdd`. В томе `hot` находится один SSD-диск (`fast_ssd`), а также задается ограничение на максимальный размер куска, который может храниться на этом томе (1GB). Все куски такой таблицы больше 1GB будут записываться сразу на том `cold`, в котором содержится один HDD-диск `disk1`. Также, при заполнении диска `fast_ssd` более чем на 80% данные будут переносится на диск `disk1` фоновым процессом.
+Если система содержит диски различных типов, то может пригодиться политика `moving_from_ssd_to_hdd`. В томе `hot` находится один SSD-диск (`fast_ssd`), а также задается ограничение на максимальный размер куска, который может храниться на этом томе (1GB). Все куски такой таблицы больше 1GB будут записываться сразу на том `cold`, в котором содержится один HDD-диск `disk1`. Также при заполнении диска `fast_ssd` более чем на 80% данные будут переноситься на диск `disk1` фоновым процессом.
 
-Порядок томов в политиках хранения важен, при достижении условий на переполнение тома данные переносятся на следующий. Порядок дисков в томах так же важен, данные пишутся по очереди на каждый из них.
+Порядок томов в политиках хранения важен в случае, если приоритеты томов (`volume_priority`) не указаны явно: при достижении условий на переполнение тома данные переносятся на следующий. Порядок дисков в томах так же важен, данные пишутся по очереди на каждый из них.
 
 После задания конфигурации политик хранения их можно использовать, как настройку при создании таблиц:
 
@@ -752,7 +762,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 Изменить политику хранения после создания таблицы можно при помощи запроса [ALTER TABLE ... MODIFY SETTING]. При этом необходимо учесть, что новая политика должна содержать все тома и диски предыдущей политики с теми же именами.
 
 
-Количество потоков для фоновых перемещений кусков между дисками можно изменить с помощью настройки [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size)
+Количество потоков для фоновых перемещений кусков между дисками можно изменить с помощью настройки [background_move_pool_size](../../../operations/server-configuration-parameters/settings.md#background_move_pool_size)
 
 ### Особенности работы {#details}
 
@@ -761,7 +771,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   В результате вставки (запрос `INSERT`).
 -   В фоновых операциях слияний и [мутаций](../../../sql-reference/statements/alter/index.md#mutations).
 -   При скачивании данных с другой реплики.
--   В результате заморозки партиций [ALTER TABLE … FREEZE PARTITION](../../../engines/table-engines/mergetree-family/mergetree.md#alter_freeze-partition).
+-   В результате заморозки партиций [ALTER TABLE ... FREEZE PARTITION](../../../engines/table-engines/mergetree-family/mergetree.md#alter_freeze-partition).
 
 Во всех случаях, кроме мутаций и заморозки партиций, при записи куска выбирается том и диск в соответствии с указанной конфигурацией хранилища:
 
@@ -771,7 +781,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 Мутации и запросы заморозки партиций в реализации используют [жесткие ссылки](https://ru.wikipedia.org/wiki/%D0%96%D1%91%D1%81%D1%82%D0%BA%D0%B0%D1%8F_%D1%81%D1%81%D1%8B%D0%BB%D0%BA%D0%B0). Жесткие ссылки между различными дисками не поддерживаются, поэтому в случае таких операций куски размещаются на тех же дисках, что и исходные.
 
 В фоне куски перемещаются между томами на основе информации о занятом месте (настройка `move_factor`) по порядку, в котором указаны тома в конфигурации. Данные никогда не перемещаются с последнего тома и на первый том. Следить за фоновыми перемещениями можно с помощью системных таблиц [system.part_log](../../../engines/table-engines/mergetree-family/mergetree.md#system_tables-part-log) (поле `type = MOVE_PART`) и [system.parts](../../../engines/table-engines/mergetree-family/mergetree.md#system_tables-parts) (поля `path` и `disk`). Также подробная информация о перемещениях доступна в логах сервера.
-С помощью запроса [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../engines/table-engines/mergetree-family/mergetree.md#alter_move-partition) пользователь может принудительно перенести кусок или партицию с одного раздела на другой. При этом учитываются все ограничения, указанные для фоновых операций. Запрос самостоятельно инициирует процесс перемещения не дожидаясь фоновых операций. В случае недостатка места или неудовлетворения ограничениям пользователь получит сообщение об ошибке.
+С помощью запроса [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](../../../engines/table-engines/mergetree-family/mergetree.md#alter_move-partition) пользователь может принудительно перенести кусок или партицию с одного раздела на другой. При этом учитываются все ограничения, указанные для фоновых операций. Запрос самостоятельно инициирует процесс перемещения не дожидаясь фоновых операций. В случае недостатка места или неудовлетворения ограничениям пользователь получит сообщение об ошибке.
 
 Перемещения данных не взаимодействуют с репликацией данных, поэтому на разных репликах одной и той же таблицы могут быть указаны разные политики хранения.
 
@@ -805,8 +815,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
     </disks>
@@ -832,8 +840,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `single_read_retries` — число попыток выполнения запроса в случае возникновения ошибки в процессе чтения. Значение по умолчанию: `4`.
 -   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт.
 -   `metadata_path` — путь к локальному файловому хранилищу для хранения файлов с метаданными для S3. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/`.
--   `cache_enabled` — признак, разрешено ли хранение кэша засечек и файлов индекса в локальной файловой системе. Значение по умолчанию: `true`.
--   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
 
 Диск S3 может быть сконфигурирован как `main` или `cold`:
@@ -883,4 +889,3 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `_part_uuid` — Уникальный идентификатор куска (если включена MergeTree настройка `assign_part_uuids`).
 -   `_partition_value` — Значения (кортеж) выражения `partition by`.
 -   `_sample_factor` — Коэффициент сэмплирования (из запроса).
-

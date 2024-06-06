@@ -25,12 +25,12 @@ struct BitBoolMaskAndImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
+    static Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
     {
         // Should be a logical error, but this function is callable from SQL.
         // Need to investigate this.
         if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
-            throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskAnd.", ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only UInt8 type is supported by __bitBoolMaskAnd.");
 
         auto left_bits = littleBits<A>(left);
         auto right_bits = littleBits<B>(right);

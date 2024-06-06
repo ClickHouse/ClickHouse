@@ -3,11 +3,21 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/MaskOperations.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -17,6 +27,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -36,13 +48,23 @@ class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        const auto & settings = context_->getSettingsRef();
+        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+    }
+
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
+        : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
+        , allow_experimental_variant_type(allow_experimental_variant_type_)
+        , use_variant_as_common_type(use_variant_as_common_type_)
+    {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments != 3);
         settings.force_enable_lazy_execution = false;
         return true;
@@ -50,6 +72,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
@@ -79,8 +103,7 @@ public:
         };
 
         if (!(args.size() >= 3 && args.size() % 2 == 1))
-            throw Exception{"Invalid number of arguments for function " + getName(),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
 
         for_conditions([&](const DataTypePtr & arg)
         {
@@ -99,9 +122,8 @@ public:
             }
 
             if (!WhichDataType(nested_type).isUInt8())
-                throw Exception{"Illegal type " + arg->getName() + " of argument (condition) "
-                    "of function " + getName() + ". Must be UInt8.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
+                    "Must be UInt8.", arg->getName(), getName());
         });
 
         DataTypes types_of_branches;
@@ -112,36 +134,39 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
+        if (allow_experimental_variant_type && use_variant_as_common_type)
+            return getLeastSupertypeOrVariant(types_of_branches);
+
         return getLeastSupertype(types_of_branches);
     }
 
+    struct Instruction
+    {
+        IColumn::Ptr condition = nullptr;
+        IColumn::Ptr source = nullptr;
+
+        bool condition_always_true = false;
+        bool condition_is_nullable = false;
+        bool source_is_constant = false;
+    };
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Fast path when data is empty
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
-        struct Instruction
-        {
-            IColumn::Ptr condition = nullptr;
-            IColumn::Ptr source = nullptr;
-
-            bool condition_always_true = false;
-            bool condition_is_nullable = false;
-            bool source_is_constant = false;
-
-            bool condition_is_short = false;
-            bool source_is_short = false;
-            size_t condition_index = 0;
-            size_t source_index = 0;
-        };
 
         std::vector<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
-        converted_columns_holder.reserve(instructions.size());
+        converted_columns_holder.reserve(instructions.capacity());
 
         const DataTypePtr & return_type = result_type;
 
@@ -168,7 +193,7 @@ public:
                 if (cond_col->onlyNull())
                     continue;
 
-                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col))
+                if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*cond_col))
                 {
                     Field value = column_const->getField();
 
@@ -184,12 +209,9 @@ public:
                     instruction.condition = cond_col;
                     instruction.condition_is_nullable = instruction.condition->isNullable();
                 }
-
-                instruction.condition_is_short = cond_col->size() < arguments[0].column->size();
             }
 
             const ColumnWithTypeAndName & source_col = arguments[source_idx];
-            instruction.source_is_short = source_col.column->size() < arguments[0].column->size();
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column;
@@ -210,44 +232,111 @@ public:
                 break;
         }
 
-        MutableColumnPtr res = return_type->createColumn();
-
         /// Special case if first instruction condition is always true and source is constant
         if (instructions.size() == 1 && instructions.front().source_is_constant
             && instructions.front().condition_always_true)
         {
+            MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
             res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
-        size_t rows = input_rows_count;
+        const WhichDataType which(removeNullable(result_type));
+        bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
+            && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
+                || which.isEnum() || which.isIPv4() || which.isIPv6());
 
+        size_t rows = input_rows_count;
+        if (!execute_multiif_columnar)
+        {
+            MutableColumnPtr res = return_type->createColumn();
+            res->reserve(rows);
+            executeInstructions(instructions, rows, res);
+            return std::move(res);
+        }
+
+#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, FIELD, INDEX) \
+    if (which.is##TYPE()) \
+    { \
+        MutableColumnPtr res = result_type->createColumn(); \
+        if (result_type->isNullable()) \
+        { \
+            auto & res_nullable = assert_cast<ColumnNullable &>(*res); \
+            auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(res_nullable.getNestedColumn()).getData(); \
+            auto & res_null_map = res_nullable.getNullMapData(); \
+            executeInstructionsColumnar<FIELD, INDEX, true>(instructions, rows, res_data, &res_null_map); \
+        } \
+        else \
+        { \
+            auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(*res).getData(); \
+            executeInstructionsColumnar<FIELD, INDEX, false>(instructions, rows, res_data, nullptr); \
+        } \
+        return std::move(res); \
+    }
+
+#define ENUMERATE_NUMERIC_TYPES(M, INDEX) \
+    M(UInt8, UInt8, INDEX) \
+    M(UInt16, UInt16, INDEX) \
+    M(UInt32, UInt32, INDEX) \
+    M(UInt64, UInt64, INDEX) \
+    M(Int8, Int8, INDEX) \
+    M(Int16, Int16, INDEX) \
+    M(Int32, Int32, INDEX) \
+    M(Int64, Int64, INDEX) \
+    M(Float32, Float32, INDEX) \
+    M(Float64, Float64, INDEX) \
+    M(UInt128, UInt128, INDEX) \
+    M(UInt256, UInt256, INDEX) \
+    M(Int128, Int128, INDEX) \
+    M(Int256, Int256, INDEX) \
+    M(Decimal32, Decimal32, INDEX) \
+    M(Decimal64, Decimal64, INDEX) \
+    M(Decimal128, Decimal128, INDEX) \
+    M(Decimal256, Decimal256, INDEX) \
+    M(Date, UInt16, INDEX) \
+    M(Date32, Int32, INDEX) \
+    M(DateTime, UInt32, INDEX) \
+    M(DateTime64, DateTime64, INDEX) \
+    M(Enum8, Int8, INDEX) \
+    M(Enum16, Int16, INDEX) \
+    M(IPv4, IPv4, INDEX) \
+    M(IPv6, IPv6, INDEX) \
+    throw Exception( \
+        ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
+
+        ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, UInt8)
+    }
+#undef ENUMERATE_NUMERIC_TYPES
+#undef EXECUTE_INSTRUCTIONS_COLUMNAR
+
+private:
+
+    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
         for (size_t i = 0; i < rows; ++i)
         {
             for (auto & instruction : instructions)
             {
                 bool insert = false;
 
-                size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : i;
                 if (instruction.condition_always_true)
                     insert = true;
                 else if (!instruction.condition_is_nullable)
-                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[condition_index];
+                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
                 else
                 {
                     const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                     const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                     const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
-                    insert = !condition_null_map[condition_index] && condition_nested.getData()[condition_index];
+                    insert = !condition_null_map[i] && condition_nested.getData()[i];
                 }
 
                 if (insert)
                 {
-                    size_t source_index = instruction.source_is_short ? instruction.source_index++ : i;
                     if (!instruction.source_is_constant)
-                        res->insertFrom(*instruction.source, source_index);
+                        res->insertFrom(*instruction.source, i);
                     else
                         res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
 
@@ -255,11 +344,109 @@ public:
                 }
             }
         }
-
-        return res;
     }
 
-private:
+    /// We should read source from which instruction on each row?
+    template <typename S>
+    static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    {
+        for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
+        {
+            const auto & instruction = instructions[i];
+            if (instruction.condition_always_true)
+            {
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                    inserts[row_i] = i;
+            }
+            else if (!instruction.condition_is_nullable)
+            {
+                const auto & cond_data = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData();
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    /// Equivalent to below code. But it is able to utilize SIMD instructions.
+                    /// if (cond_data[row_i])
+                    ///     inserts[row_i] = i;
+
+                    inserts[row_i] += (!!cond_data[row_i]) * (i - inserts[row_i]);
+                }
+            }
+            else
+            {
+                const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
+                const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const auto & condition_nested_data = condition_nested.getData();
+                const NullMap & condition_null_map = condition_nullable.getNullMapData();
+
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    /// Equivalent to below code. But it is able to utilize SIMD instructions.
+                    /// if (!condition_null_map[row_i] && condition_nested_data[row_i])
+                    ///     inserts[row_i] = i;
+                    inserts[row_i] += (~condition_null_map[row_i] & (!!condition_nested_data[row_i])) * (i - inserts[row_i]);
+                }
+            }
+        }
+    }
+
+    template <typename T, typename S, bool nullable_result = false>
+    static NO_INLINE void executeInstructionsColumnar(
+        const std::vector<Instruction> & instructions,
+        size_t rows,
+        PaddedPODArray<T> & res_data,
+        PaddedPODArray<UInt8> * res_null_map = nullptr)
+    {
+        PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
+        calculateInserts(instructions, rows, inserts);
+
+        res_data.resize_exact(rows);
+        if constexpr (nullable_result)
+        {
+            if (!res_null_map)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid result null_map while result type is nullable");
+
+            res_null_map->resize_exact(rows);
+        }
+
+        std::vector<const T *> data_cols(instructions.size(), nullptr);
+        std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
+        for (size_t i = 0; i < instructions.size(); ++i)
+        {
+            const auto & instruction = instructions[i];
+            const IColumn * non_const_col = instructions[i].source_is_constant
+                ? &assert_cast<const ColumnConst &>(*instruction.source).getDataColumn()
+                : instruction.source.get();
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(non_const_col);
+            data_cols[i] = nullable_col ? assert_cast<const ColumnVectorOrDecimal<T> &>(nullable_col->getNestedColumn()).getData().data()
+                                        : assert_cast<const ColumnVectorOrDecimal<T> &>(*non_const_col).getData().data();
+            null_map_cols[i] = nullable_col ? assert_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData().data() : nullptr;
+        }
+
+        std::unique_ptr<PaddedPODArray<UInt8>> shared_null_map;
+        if constexpr (nullable_result)
+        {
+            for (auto & col : null_map_cols)
+            {
+                if (!col)
+                {
+                    if (!shared_null_map)
+                        shared_null_map = std::make_unique<PaddedPODArray<UInt8>>(rows, 0);
+
+                    col = shared_null_map->data();
+                }
+            }
+        }
+
+        for (size_t row_i = 0; row_i < rows; ++row_i)
+        {
+            S insert = inserts[row_i];
+            const auto & instruction = instructions[insert];
+            size_t index = instruction.source_is_constant ? 0 : row_i;
+            res_data[row_i] = *(data_cols[insert] + index);
+            if constexpr (nullable_result)
+                (*res_null_map)[row_i] = *(null_map_cols[insert] + index);
+        }
+    }
+
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
@@ -328,6 +515,10 @@ private:
         for (; i <= last_short_circuit_argument_index; ++i)
             executeColumnIfNeeded(arguments[i], true);
     }
+
+    const bool allow_execute_multiif_columnar;
+    const bool allow_experimental_variant_type;
+    const bool use_variant_as_common_type;
 };
 
 }
@@ -337,10 +528,13 @@ REGISTER_FUNCTION(MultiIf)
     factory.registerFunction<FunctionMultiIf>();
 
     /// These are obsolete function names.
-    factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
-    factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
+    factory.registerAlias("caseWithoutExpr", "multiIf");
+    factory.registerAlias("caseWithoutExpression", "multiIf");
+}
+
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
 }
 
 }
-
-

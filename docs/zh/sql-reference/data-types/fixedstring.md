@@ -18,8 +18,8 @@ slug: /zh/sql-reference/data-types/fixedstring
 可以有效存储在`FixedString`类型的列中的值的示例：
 
 -   二进制表示的IP地址（IPv6使用`FixedString(16)`）
--   语言代码（ru_RU, en_US … ）
--   货币代码（USD, RUB … ）
+-   语言代码（ru_RU, en_US ... ）
+-   货币代码（USD, RUB ... ）
 -   二进制表示的哈希值（MD5使用`FixedString(16)`，SHA256使用`FixedString(32)`）
 
 请使用[UUID](uuid.md)数据类型来存储UUID值，。
@@ -55,5 +55,3 @@ WHERE a = 'b\0'
 这种方式与MySQL的`CHAR`类型的方式不同（MySQL中使用空格填充字符串，并在输出时删除空格）。
 
 请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[length](../../sql-reference/functions/array-functions.md#array_functions-length)返回值为`N`,而函数[empty](../../sql-reference/functions/string-functions.md#empty)的返回值为`1`。
-
-[来源文章](https://clickhouse.com/docs/en/data_types/fixedstring/) <!--hide-->

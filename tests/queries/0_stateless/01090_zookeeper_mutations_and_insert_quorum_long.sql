@@ -1,8 +1,8 @@
 -- Tags: long, zookeeper, no-replicated-database
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 
-DROP TABLE IF EXISTS mutations_and_quorum1;
-DROP TABLE IF EXISTS mutations_and_quorum2;
+DROP TABLE IF EXISTS mutations_and_quorum1 SYNC;
+DROP TABLE IF EXISTS mutations_and_quorum2 SYNC;
 
 CREATE TABLE mutations_and_quorum1 (`server_date` Date, `something` String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01090/mutations_and_quorum', '1') PARTITION BY toYYYYMM(server_date) ORDER BY (server_date, something);
 CREATE TABLE mutations_and_quorum2 (`server_date` Date, `something` String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01090/mutations_and_quorum', '2') PARTITION BY toYYYYMM(server_date) ORDER BY (server_date, something);
@@ -19,5 +19,5 @@ SELECT COUNT() FROM mutations_and_quorum2;
 
 SELECT COUNT() FROM system.mutations WHERE database = currentDatabase() AND table like 'mutations_and_quorum%' and is_done = 0;
 
-DROP TABLE IF EXISTS mutations_and_quorum1;
-DROP TABLE IF EXISTS mutations_and_quorum2;
+DROP TABLE IF EXISTS mutations_and_quorum1 SYNC;
+DROP TABLE IF EXISTS mutations_and_quorum2 SYNC;

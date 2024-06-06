@@ -9,6 +9,8 @@
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
   * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  *
+  * Please keep in sync with PackedHashMap.h
   */
 
 namespace DB
@@ -53,13 +55,13 @@ PairNoInit<std::decay_t<First>, std::decay_t<Second>> makePairNoInit(First && fi
 }
 
 
-template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
+template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState, typename Pair = PairNoInit<Key, TMapped>>
 struct HashMapCell
 {
     using Mapped = TMapped;
     using State = TState;
 
-    using value_type = PairNoInit<Key, Mapped>;
+    using value_type = Pair;
     using mapped_type = Mapped;
     using key_type = Key;
 
@@ -151,14 +153,14 @@ struct HashMapCell
 namespace std
 {
 
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
+    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
+    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState, Pair>> : std::integral_constant<size_t, 2> { };
 
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState>> { using type = Key; };
+    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
+    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = Key; };
 
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState>> { using type = TMapped; };
+    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
+    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = TMapped; };
 }
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
@@ -205,7 +207,7 @@ public:
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         DB::PrefetchingHelper prefetching;
-        size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
+        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
 
         size_t i = 0;
         auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
@@ -214,10 +216,10 @@ public:
         {
             if constexpr (prefetch)
             {
-                if (i == prefetching.iterationsToMeasure())
+                if (i == DB::PrefetchingHelper::iterationsToMeasure())
                 {
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
                 }
 
                 if (prefetch_it != end)
@@ -289,16 +291,29 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new (&it->getMapped()) typename Cell::Mapped();
+            new (reinterpret_cast<void*>(&it->getMapped())) typename Cell::Mapped();
 
         return it->getMapped();
+    }
+
+    /// Only inserts the value if key isn't already present
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
     }
 
     const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
     {
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
-        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find element in HashMap::at method");
     }
 
 private:

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -10,20 +11,19 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/NATS/NATSSink.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
-#include <Storages/NATS/WriteBufferToNATSProducer.h>
+#include <Storages/NATS/NATSProducer.h>
+#include <Storages/MessageQueueSink.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <QueryPipeline/Pipe.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
-#include <Common/parseAddress.h>
 #include <Common/setThreadName.h>
 
 #include <openssl/ssl.h>
@@ -50,23 +50,24 @@ StorageNATS::StorageNATS(
     ContextPtr context_,
     const ColumnsDescription & columns_,
     std::unique_ptr<NATSSettings> nats_settings_,
-    bool is_attach_)
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
     , subjects(parseList(getContext()->getMacros()->expand(nats_settings->nats_subjects), ','))
     , format_name(getContext()->getMacros()->expand(nats_settings->nats_format))
-    , row_delimiter(nats_settings->nats_row_delimiter.value)
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
     , num_consumers(nats_settings->nats_num_consumers.value)
-    , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
+    , max_rows_per_message(nats_settings->nats_max_rows_per_message)
+    , log(getLogger("StorageNATS (" + table_id_.table_name + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-    , is_attach(is_attach_)
+    , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
 {
     auto nats_username = getContext()->getMacros()->expand(nats_settings->nats_username);
     auto nats_password = getContext()->getMacros()->expand(nats_settings->nats_password);
     auto nats_token = getContext()->getMacros()->expand(nats_settings->nats_token);
+    auto nats_credential_file = getContext()->getMacros()->expand(nats_settings->nats_credential_file);
 
     configuration =
     {
@@ -75,6 +76,7 @@ StorageNATS::StorageNATS(
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
+        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
         .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
         .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value
@@ -86,6 +88,7 @@ StorageNATS::StorageNATS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals(nats_settings->nats_handle_error_mode));
 
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
@@ -114,7 +117,7 @@ StorageNATS::StorageNATS(
     catch (...)
     {
         tryLogCurrentException(log);
-        if (!is_attach)
+        if (throw_on_startup_failure)
             throw;
     }
 
@@ -129,6 +132,19 @@ StorageNATS::StorageNATS(
     connection_task->deactivate();
 }
 
+VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
+}
 
 Names StorageNATS::parseList(const String & list, char delim)
 {
@@ -157,7 +173,11 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
+    if (nats_settings->nats_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
+        modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
+    else
+        modified_context->setSetting("input_format_allow_errors_num", Field{0});
+
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
 
@@ -238,11 +258,11 @@ void StorageNATS::connectionFunc()
 bool StorageNATS::initBuffers()
 {
     size_t num_initialized = 0;
-    for (auto & buffer : buffers)
+    for (auto & consumer : consumers)
     {
         try
         {
-            buffer->subscribe();
+            consumer->subscribe();
             ++num_initialized;
         }
         catch (...)
@@ -253,10 +273,10 @@ bool StorageNATS::initBuffers()
     }
 
     startLoop();
-    const bool are_buffers_initialized = num_initialized == num_created_consumers;
-    if (are_buffers_initialized)
+    const bool are_consumers_initialized = num_initialized == num_created_consumers;
+    if (are_consumers_initialized)
         consumers_ready.store(true);
-    return are_buffers_initialized;
+    return are_consumers_initialized;
 }
 
 
@@ -292,7 +312,7 @@ void StorageNATS::read(
         size_t /* num_streams */)
 {
     if (!consumers_ready)
-        throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be lost");
 
     if (num_created_consumers == 0)
         return;
@@ -320,7 +340,7 @@ void StorageNATS::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1);
+        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, nats_settings->nats_handle_error_mode);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -343,18 +363,18 @@ void StorageNATS::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
 }
 
 
-SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = addSettings(local_context);
     std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
@@ -365,8 +385,9 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
         if (subjects.size() > 1)
         {
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "This NATS engine reads from multiple subjects. "
+                            "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
         else
         {
@@ -381,8 +402,13 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    return std::make_shared<NATSSink>(*this, metadata_snapshot, local_context, createWriteBuffer(subject));
-}
+    auto producer = std::make_unique<NATSProducer>(configuration, subject, shutdown_called, log);
+    size_t max_rows = max_rows_per_message;
+    /// Need for backward compatibility.
+    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
+        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
+    return std::make_shared<MessageQueueSink>(
+        metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
 
 
 void StorageNATS::startup()
@@ -391,13 +417,13 @@ void StorageNATS::startup()
     {
         try
         {
-            auto buffer = createReadBuffer();
-            pushReadBuffer(std::move(buffer));
+            auto consumer = createConsumer();
+            pushConsumer(std::move(consumer));
             ++num_created_consumers;
         }
         catch (...)
         {
-            if (!is_attach)
+            if (throw_on_startup_failure)
                 throw;
             tryLogCurrentException(log);
         }
@@ -408,7 +434,7 @@ void StorageNATS::startup()
 }
 
 
-void StorageNATS::shutdown()
+void StorageNATS::shutdown(bool /* is_drop */)
 {
     shutdown_called = true;
 
@@ -425,14 +451,14 @@ void StorageNATS::shutdown()
     {
         if (drop_table)
         {
-            for (auto & buffer : buffers)
-                buffer->unsubscribe();
+            for (auto & consumer : consumers)
+                consumer->unsubscribe();
         }
 
         connection->disconnect();
 
         for (size_t i = 0; i < num_created_consumers; ++i)
-            popReadBuffer();
+            popConsumer();
     }
     catch (...)
     {
@@ -440,23 +466,23 @@ void StorageNATS::shutdown()
     }
 }
 
-void StorageNATS::pushReadBuffer(ConsumerBufferPtr buffer)
+void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
 {
-    std::lock_guard lock(buffers_mutex);
-    buffers.push_back(buffer);
+    std::lock_guard lock(consumers_mutex);
+    consumers.push_back(consumer);
     semaphore.set();
 }
 
 
-ConsumerBufferPtr StorageNATS::popReadBuffer()
+NATSConsumerPtr StorageNATS::popConsumer()
 {
-    return popReadBuffer(std::chrono::milliseconds::zero());
+    return popConsumer(std::chrono::milliseconds::zero());
 }
 
 
-ConsumerBufferPtr StorageNATS::popReadBuffer(std::chrono::milliseconds timeout)
+NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 {
-    // Wait for the first free buffer
+    // Wait for the first free consumer
     if (timeout == std::chrono::milliseconds::zero())
         semaphore.wait();
     else
@@ -465,29 +491,21 @@ ConsumerBufferPtr StorageNATS::popReadBuffer(std::chrono::milliseconds timeout)
             return nullptr;
     }
 
-    // Take the first available buffer from the list
-    std::lock_guard lock(buffers_mutex);
-    auto buffer = buffers.back();
-    buffers.pop_back();
+    // Take the first available consumer from the list
+    std::lock_guard lock(consumers_mutex);
+    auto consumer = consumers.back();
+    consumers.pop_back();
 
-    return buffer;
+    return consumer;
 }
 
 
-ConsumerBufferPtr StorageNATS::createReadBuffer()
+NATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<ReadBufferFromNATSConsumer>(
+    return std::make_shared<NATSConsumer>(
         connection, *this, subjects,
         nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
-        log, row_delimiter, queue_size, shutdown_called);
-}
-
-
-ProducerBufferPtr StorageNATS::createWriteBuffer(const std::string & subject)
-{
-    return std::make_shared<WriteBufferToNATSProducer>(
-        configuration, getContext(), subject, shutdown_called, log,
-        row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
+        log, queue_size, shutdown_called);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
@@ -535,24 +553,24 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
         return true;
 
     // Check the dependencies are ready?
-    for (const auto & db_tab : dependencies)
+    for (const auto & view_id : view_ids)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
-        if (!table)
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+        if (!view)
             return false;
 
         // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(db_tab))
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -568,10 +586,10 @@ void StorageNATS::streamingToViewsFunc()
         auto table_id = getStorageID();
 
         // Check if at least one direct dependency is attached
-        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         bool nats_connected = connection->isConnected() || connection->reconnect();
 
-        if (dependencies_count && nats_connected)
+        if (num_views && nats_connected)
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -583,7 +601,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 if (streamToViews())
                 {
@@ -619,7 +637,7 @@ bool StorageNATS::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -643,8 +661,8 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        LOG_DEBUG(log, "Current queue size: {}", buffers[0]->queueSize());
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
+        LOG_DEBUG(log, "Current queue size: {}", consumers[0]->queueSize());
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, nats_settings->nats_handle_error_mode);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -713,34 +731,33 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        bool with_named_collection = getExternalDataSourceConfiguration(args.engine_args, *nats_settings, args.getLocalContext());
-        if (!with_named_collection && !args.storage_def->settings)
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        {
+            for (const auto & setting : nats_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    nats_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
+        }
+        else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
         nats_settings->loadFromQuery(*args.storage_def);
 
         if (!nats_settings->nats_url.changed && !nats_settings->nats_server_list.changed)
-            throw Exception(
-                "You must specify either `nats_url` or `nats_server_list` settings", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
 
         if (!nats_settings->nats_format.changed)
-            throw Exception("You must specify `nats_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_format` setting");
 
         if (!nats_settings->nats_subjects.changed)
-            throw Exception("You must specify `nats_subjects` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
-        return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.attach);
+        return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.mode);
     };
 
     factory.registerStorage("NATS", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
-}
-
-
-NamesAndTypesList StorageNATS::getVirtuals() const
-{
-    return NamesAndTypesList{
-            {"_subject", std::make_shared<DataTypeString>()}
-    };
 }
 
 }

@@ -13,11 +13,12 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTDeleteQuery>();
     node = query;
 
-    ParserKeyword s_delete("DELETE");
-    ParserKeyword s_from("FROM");
-    ParserKeyword s_where("WHERE");
+    ParserKeyword s_delete(Keyword::DELETE);
+    ParserKeyword s_from(Keyword::FROM);
+    ParserKeyword s_where(Keyword::WHERE);
     ParserExpression parser_exp_elem;
-    ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_on{Keyword::ON};
 
     if (s_delete.ignore(pos, expected))
     {
@@ -26,6 +27,14 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
             return false;
+
+        if (s_on.ignore(pos, expected))
+        {
+            String cluster_str;
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+            query->cluster = cluster_str;
+        }
 
         if (!s_where.ignore(pos, expected))
             return false;

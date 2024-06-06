@@ -1,0 +1,9 @@
+ <clickhouse>
+    <postgresql_port>5433</postgresql_port>
+    <mysql_port>9001</mysql_port>
+    <grpc_port>9100</grpc_port>
+    <grpc replace="replace">
+        <!-- Enable if you want very detailed logs -->
+        <verbose_logs>false</verbose_logs>
+    </grpc>
+ </clickhouse>

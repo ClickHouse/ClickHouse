@@ -17,7 +17,11 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 using Key = UInt64;
 using Value = UInt64;
@@ -27,6 +31,13 @@ using Source = std::vector<Key>;
 using Map = HashMap<Key, Value>;
 using MapTwoLevel = TwoLevelHashMap<Key, Value>;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
 
 struct SmallLock
 {
@@ -197,7 +208,7 @@ static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexe
                 else
                 {
                     size_t hash_value = global_map.hash(*it);
-                    size_t bucket = global_map.getBucketFromHash(hash_value);
+                    size_t bucket = MapTwoLevel::getBucketFromHash(hash_value);
 
                     if (mutexes[bucket].try_lock())
                     {
@@ -247,7 +258,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(num_threads);
+    SimpleThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
 
     Source data(n);
 

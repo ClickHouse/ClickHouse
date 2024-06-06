@@ -51,7 +51,7 @@ struct CRC32IEEEImpl : public CRCImpl<UInt32, CRC32_IEEE>
     static constexpr auto name = "CRC32IEEE";
 };
 
-struct CRC32ZLIBImpl
+struct CRC32ZLibImpl
 {
     using ReturnType = UInt32;
     static constexpr auto name = "CRC32";
@@ -107,12 +107,22 @@ struct CRCFunctionWrapper
 
     [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
     {
-        throw Exception("Cannot apply function " + std::string(Impl::name) + " to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", std::string(Impl::name));
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
     {
-        throw Exception("Cannot apply function " + std::string(Impl::name) + " to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", std::string(Impl::name));
+    }
+
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", std::string(Impl::name));
+    }
+
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", std::string(Impl::name));
     }
 
 private:
@@ -123,13 +133,14 @@ private:
     }
 };
 
-template <class T>
+template <typename T>
 using FunctionCRC = FunctionStringOrArrayToT<CRCFunctionWrapper<T>, T, typename T::ReturnType>;
+
 // The same as IEEE variant, but uses 0xffffffff as initial value
 // This is the default
 //
-// (And zlib is used here, since it has optimized version)
-using FunctionCRC32ZLIB = FunctionCRC<CRC32ZLIBImpl>;
+// (And ZLib is used here, since it has optimized version)
+using FunctionCRC32ZLib = FunctionCRC<CRC32ZLibImpl>;
 // Uses CRC-32-IEEE 802.3 polynomial
 using FunctionCRC32IEEE = FunctionCRC<CRC32IEEEImpl>;
 // Uses CRC-64-ECMA polynomial
@@ -137,17 +148,11 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 
 }
 
-template <class T>
-void registerFunctionCRCImpl(FunctionFactory & factory)
-{
-    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
-}
-
 REGISTER_FUNCTION(CRC)
 {
-    registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
-    registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);
-    registerFunctionCRCImpl<FunctionCRC64ECMA>(factory);
+    factory.registerFunction<FunctionCRC32ZLib>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCRC32IEEE>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCRC64ECMA>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

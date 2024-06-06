@@ -29,7 +29,16 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
     if (second_with_brackets)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "(";
 
-    second->formatImpl(settings, state, frame);
+    if (!settings.show_secrets && (first == "password"))
+    {
+        /// Hide password in the definition of a dictionary:
+        /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
+        settings.ostr << "'[HIDDEN]'";
+    }
+    else
+    {
+        second->formatImpl(settings, state, frame);
+    }
 
     if (second_with_brackets)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ")";
@@ -38,12 +47,18 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
 }
 
 
-void ASTPair::updateTreeHashImpl(SipHash & hash_state) const
+bool ASTPair::hasSecretParts() const
+{
+    return first == "password";
+}
+
+
+void ASTPair::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(first.size());
     hash_state.update(first);
     hash_state.update(second_with_brackets);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -77,12 +92,12 @@ void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & setting
 }
 
 
-void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state) const
+void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
     hash_state.update(has_brackets);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }

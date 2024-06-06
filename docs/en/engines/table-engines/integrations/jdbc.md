@@ -1,10 +1,15 @@
 ---
 slug: /en/engines/table-engines/integrations/jdbc
-sidebar_position: 3
+sidebar_position: 100
 sidebar_label: JDBC
 ---
 
 # JDBC
+
+:::note
+clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 
+ClickHouse recommend using built-in table functions in ClickHouse which provide a better alternative for ad-hoc querying scenarios (Postgres, MySQL, MongoDB, etc).
+:::
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
@@ -25,14 +30,14 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 **Engine Parameters**
 
 
--   `datasource_uri` — URI or name of an external DBMS.
+- `datasource_uri` — URI or name of an external DBMS.
 
     URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
--   `external_database` — Database in an external DBMS.
+- `external_database` — Database in an external DBMS.
 
--   `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
+- `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
 ## Usage Example {#usage-example}
 
@@ -91,6 +96,4 @@ FROM system.numbers
 
 ## See Also {#see-also}
 
--   [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/jdbc/) <!--hide-->
+- [JDBC table function](../../../sql-reference/table-functions/jdbc.md).

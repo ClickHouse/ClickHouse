@@ -19,9 +19,6 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -37,7 +34,7 @@ struct ArrayCompactImpl
         using ColVecType = ColumnVectorOrDecimal<T>;
 
         const ColVecType * check_values_column = checkAndGetColumn<ColVecType>(mapped.get());
-        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(array.getData());
+        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(&array.getData());
 
         if (!src_values_column || !check_values_column)
             return false;
@@ -151,7 +148,8 @@ struct ArrayCompactImpl
             executeType<Float64>(mapped, array, res)) ||
             executeType<Decimal32>(mapped, array, res) ||
             executeType<Decimal64>(mapped, array, res) ||
-            executeType<Decimal128>(mapped, array, res))
+            executeType<Decimal128>(mapped, array, res) ||
+            executeType<Decimal256>(mapped, array, res))
         {
             executeGeneric(mapped, array, res);
         }
@@ -168,4 +166,3 @@ REGISTER_FUNCTION(ArrayCompact)
 }
 
 }
-

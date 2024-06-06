@@ -266,8 +266,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 执行时 `INSERT` 查询时，将省略的输入列值替换为相应列的默认值。 此选项仅适用于 [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) 和 [TabSeparated](../../interfaces/formats.md#tabseparated) 格式。
 
-!!! note "注"
-    启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
+:::note
+启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
+:::
 
 可能的值:
 
@@ -648,10 +649,21 @@ log_query_threads=1
 
 ## max_query_size {#settings-max_query_size}
 
-查询的最大部分，可以被带到RAM用于使用SQL解析器进行解析。
-插入查询还包含由单独的流解析器（消耗O(1)RAM）处理的插入数据，这些数据不包含在此限制中。
+SQL 解析器解析的查询字符串的最大字节数。 INSERT 查询的 VALUES 子句中的数据由单独的流解析器（消耗 O(1) RAM）处理，并且不受此限制的影响。
 
 默认值：256KiB。
+
+
+## max_parser_depth {#max_parser_depth}
+
+限制递归下降解析器中的最大递归深度。允许控制堆栈大小。
+
+可能的值：
+
+- 正整数。
+- 0 — 递归深度不受限制。
+
+默认值：1000。
 
 ## interactive_delay {#interactive-delay}
 
@@ -990,7 +1002,7 @@ ClickHouse生成异常
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) 建筑。
+指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) 建筑。
 
 可能的值:
 
@@ -1063,6 +1075,28 @@ ClickHouse生成异常
 
 默认值：0。
 
+## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
+
+启用或禁用通过将某些函数转换为读取子列的优化。这减少了要读取的数据量。
+
+这些函数可以转化为：
+
+- [length](../../sql-reference/functions/array-functions.md/#array_functions-length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [empty](../../sql-reference/functions/array-functions.md/#empty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [notEmpty](../../sql-reference/functions/array-functions.md/#notempty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [isNull](../../sql-reference/operators/index.md#operator-is-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
+- [isNotNull](../../sql-reference/operators/index.md#is-not-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
+- [count](../../sql-reference/aggregate-functions/reference/count.md) 读取 [null](../../sql-reference/data-types/nullable.md/#finding-null) 子列。
+- [mapKeys](../../sql-reference/functions/tuple-map-functions.mdx/#mapkeys) 读取 [keys](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
+- [mapValues](../../sql-reference/functions/tuple-map-functions.mdx/#mapvalues) 读取 [values](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
+
+可能的值：
+
+- 0 — 禁用优化。
+- 1 — 优化已启用。
+
+默认值：`0`。
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   类型：秒
@@ -1087,7 +1121,7 @@ ClickHouse生成异常
 -   [表引擎分布式](../../engines/table-engines/special/distributed.md)
 -   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
 对于基本间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 在发生错误时，实际间隔呈指数级增长。
 
@@ -1097,9 +1131,9 @@ ClickHouse生成异常
 
 默认值：100毫秒。
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
 
-的最大间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) 设置。
+的最大间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) 设置。
 
 可能的值:
 
@@ -1107,7 +1141,7 @@ ClickHouse生成异常
 
 默认值：30000毫秒（30秒）。
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_background_insert_batch {#distributed_background_insert_batch}
 
 启用/禁用批量发送插入的数据。
 
@@ -1202,7 +1236,7 @@ ClickHouse生成异常
 -   类型：布尔
 -   默认值：True
 
-启用数据格式的保序并行分析。 仅支持TSV，TKSV，CSV和JSONEachRow格式。
+启用数据格式的保序并行分析。 仅支持TSV，TSKV，CSV和JSONEachRow格式。
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 

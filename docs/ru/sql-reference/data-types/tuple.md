@@ -4,7 +4,7 @@ sidebar_position: 54
 sidebar_label: Tuple(T1, T2, ...)
 ---
 
-# Tuple(T1, T2, …) {#tuplet1-t2}
+# Tuple(T1, T2, ...) {#tuplet1-t2}
 
 Кортеж из элементов любого [типа](index.md#data_types). Элементы кортежа могут быть одного или разных типов.
 
@@ -34,7 +34,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 
 ## Особенности работы с типами данных {#osobennosti-raboty-s-tipami-dannykh}
 
-При создании кортежа «на лету» ClickHouse автоматически определяет тип каждого аргументов как минимальный из типов, который может сохранить значение аргумента. Если аргумент — [NULL](../../sql-reference/data-types/tuple.md#null-literal), то тип элемента кортежа — [Nullable](nullable.md).
+При создании кортежа «на лету» ClickHouse автоматически определяет тип всех аргументов как минимальный из типов, который может сохранить значение аргумента. Если аргумент — [NULL](../../sql-reference/data-types/tuple.md#null-literal), то тип элемента кортежа — [Nullable](nullable.md).
 
 Пример автоматического определения типа данных:
 

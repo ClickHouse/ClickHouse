@@ -55,15 +55,15 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 如果指定`POPULATE`，则在创建视图时将现有表数据插入到视图中，就像创建一个`CREATE TABLE ... AS SELECT ...`一样。 否则，查询仅包含创建视图后插入表中的数据。 我们**不建议**使用POPULATE，因为在创建视图期间插入表中的数据不会插入其中。
 
-`SELECT` 查询可以包含`DISTINCT`、`GROUP BY`、`ORDER BY`、`LIMIT`……请注意，相应的转换是在每个插入数据块上独立执行的。 例如，如果设置了`GROUP BY`，则在插入期间聚合数据，但仅在插入数据的单个数据包内。 数据不会被进一步聚合。 例外情况是使用独立执行数据聚合的`ENGINE`，例如`SummingMergeTree`。
+`SELECT` 查询可以包含`DISTINCT`、`GROUP BY`、`ORDER BY`、`LIMIT`...请注意，相应的转换是在每个插入数据块上独立执行的。 例如，如果设置了`GROUP BY`，则在插入期间聚合数据，但仅在插入数据的单个数据包内。 数据不会被进一步聚合。 例外情况是使用独立执行数据聚合的`ENGINE`，例如`SummingMergeTree`。
 
 在物化视图上执行[ALTER](../../../sql-reference/statements/alter/index.md)查询有局限性，因此可能不方便。 如果物化视图使用构造`TO [db.]name`，你可以`DETACH`视图，为目标表运行`ALTER`，然后`ATTACH`先前分离的（`DETACH`）视图。
 
 请注意，物化视图受[optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert)设置的影响。 在插入视图之前合并数据。
 
-视图看起来与普通表相同。 例如，它们列在1SHOW TABLES1查询的结果中。
+视图看起来与普通表相同。 例如，它们列在`SHOW TABLES`查询的结果中。
 
-删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop#drop-view). `DROP TABLE`也适用于视图。
+删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). `DROP TABLE`也适用于视图。
 
 ## Live View (实验性) {#live-view}
 
@@ -72,7 +72,7 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 使用[allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view)设置启用实时视图和`WATCH`查询的使用。 输入命令`set allow_experimental_live_view = 1`。
 
 ```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
+CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH REFRESH [value_in_sec]] AS SELECT ...
 ```
 
 实时视图存储相应[SELECT](../../../sql-reference/statements/select/index.md)查询的结果，并在查询结果更改时随时更新。 查询结果以及与新数据结合所需的部分结果存储在内存中，为重复查询提供更高的性能。当使用[WATCH](../../../sql-reference/statements/watch.md)查询更改查询结果时，实时视图可以提供推送通知。
@@ -210,7 +210,7 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - 监视表更改并触发后续选择查询。
 - 使用定期刷新从系统表中查看指标。
 
-[原始文章](https://clickhouse.com/docs/en/sql-reference/statements/create/view/) <!--hide-->
+
 
 ## Window View [Experimental] {#window-view}
 

@@ -20,10 +20,10 @@ struct BitShiftLeftImpl
     static const constexpr bool allow_string_integer = true;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftLeft is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) << static_cast<UInt32>(b);
         else
@@ -34,7 +34,7 @@ struct BitShiftLeftImpl
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets)
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftLeft is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else
         {
             UInt8 word_size = 8;
@@ -99,7 +99,7 @@ struct BitShiftLeftImpl
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnFixedString::Chars & out_vec)
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftLeft is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else
         {
             UInt8 word_size = 8;
@@ -145,10 +145,10 @@ struct BitShiftLeftImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception("BitShiftLeftImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftLeftImpl expected an integral type");
         return b.CreateShl(left, right);
     }
 #endif

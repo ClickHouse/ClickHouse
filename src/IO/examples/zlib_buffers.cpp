@@ -21,7 +21,7 @@ try
     Stopwatch stopwatch;
 
     {
-        auto buf = std::make_unique<DB::WriteBufferFromFile>("test_zlib_buffers.gz", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+        auto buf = std::make_unique<DB::WriteBufferFromFile>("test_zlib_buffers.gz", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
         DB::ZlibDeflatingWriteBuffer deflating_buf(std::move(buf), DB::CompressionMethod::Gzip, /* compression_level = */ 3);
 
         stopwatch.restart();
@@ -50,7 +50,7 @@ try
             inflating_buf.ignore();
 
             if (x != i)
-                throw DB::Exception("Failed!, read: " + std::to_string(x) + ", expected: " + std::to_string(i), 0);
+                throw DB::Exception(0, "Failed!, read: {}, expected: {}", x, i);
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."

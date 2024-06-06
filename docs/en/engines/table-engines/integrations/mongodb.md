@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/mongodb
-sidebar_position: 5
+sidebar_position: 135
 sidebar_label: MongoDB
 ---
 
@@ -21,17 +21,27 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 **Engine Parameters**
 
--   `host:port` — MongoDB server address.
+- `host:port` — MongoDB server address.
 
--   `database` — Remote database name.
+- `database` — Remote database name.
 
--   `collection` — Remote collection name.
+- `collection` — Remote collection name.
 
--   `user` — MongoDB user.
+- `user` — MongoDB user.
 
--   `password` — User password.
+- `password` — User password.
 
--   `options` — MongoDB connection string options (optional parameter).
+- `options` — MongoDB connection string options (optional parameter).
+
+:::tip
+If you are using the MongoDB Atlas cloud offering:
+
+```
+- connection url can be obtained from 'Atlas SQL' option
+- use options: 'connectTimeoutMS=10000&ssl=true&authSource=admin'
+```
+
+:::
 
 ## Usage Example {#usage-example}
 
@@ -76,5 +86,3 @@ CREATE TABLE mongo_table
     data String
 ) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'connectTimeoutMS=100000');
 ```
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->

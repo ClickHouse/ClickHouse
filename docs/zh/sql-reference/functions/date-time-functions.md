@@ -443,7 +443,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 `toISOWeek()`是一个兼容函数，等效于`toWeek(date,3)`。
 下表描述了mode参数的工作方式。
 
-| Mode | First day of week | Range | Week 1 is the first week …    |
+| Mode | First day of week | Range | Week 1 is the first week ...    |
 |------|-------------------|-------|-------------------------------|
 | 0    | Sunday            | 0-53  | with a Sunday in this year    |
 | 1    | Monday            | 0-53  | with 4 or more days this year |
@@ -539,7 +539,7 @@ date_trunc(unit, value[, timezone])
 
 -   按指定的单位向前取整后的DateTime。
 
-类型: [Datetime](../../sql-reference/data-types/datetime.md).
+类型: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **示例**
 
@@ -643,6 +643,9 @@ date_diff('unit', startdate, enddate, [timezone])
 -   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
     可能的值：
 
+    - `nanosecond`
+    - `microsecond`
+    - `millisecond`
     - `second`
     - `minute`
     - `hour`
@@ -850,7 +853,7 @@ now([timezone])
 
 -   当前日期和时间。
 
-类型: [Datetime](../../sql-reference/data-types/datetime.md).
+类型: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **示例**
 
@@ -1223,5 +1226,3 @@ SELECT fromModifiedJulianDayOrNull(58849);
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->

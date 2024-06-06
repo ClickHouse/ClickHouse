@@ -13,31 +13,33 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void TableStatus::write(WriteBuffer & out) const
+void TableStatus::write(WriteBuffer & out, UInt64 client_protocol_revision) const
 {
     writeBinary(is_replicated, out);
     if (is_replicated)
     {
         writeVarUInt(absolute_delay, out);
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_TABLE_READ_ONLY_CHECK)
+            writeVarUInt(is_readonly, out);
     }
 }
 
-void TableStatus::read(ReadBuffer & in)
+void TableStatus::read(ReadBuffer & in, UInt64 server_protocol_revision)
 {
     absolute_delay = 0;
     readBinary(is_replicated, in);
     if (is_replicated)
     {
         readVarUInt(absolute_delay, in);
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_TABLE_READ_ONLY_CHECK)
+            readVarUInt(is_readonly, in);
     }
 }
 
 void TablesStatusRequest::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-        throw Exception(
-                "Logical error: method TablesStatusRequest::write is called for unsupported server revision",
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method TablesStatusRequest::write is called for unsupported server revision");
 
     writeVarUInt(tables.size(), out);
     for (const auto & table_name : tables)
@@ -50,15 +52,13 @@ void TablesStatusRequest::write(WriteBuffer & out, UInt64 server_protocol_revisi
 void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-        throw Exception(
-                "method TablesStatusRequest::read is called for unsupported client revision",
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusRequest::read is called for unsupported client revision");
 
     size_t size = 0;
     readVarUInt(size, in);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception("Too large collection size.", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -72,34 +72,30 @@ void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
 void TablesStatusResponse::write(WriteBuffer & out, UInt64 client_protocol_revision) const
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-        throw Exception(
-                "method TablesStatusResponse::write is called for unsupported client revision",
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusResponse::write is called for unsupported client revision");
 
     writeVarUInt(table_states_by_id.size(), out);
-    for (const auto & kv: table_states_by_id)
+    for (const auto & kv : table_states_by_id)
     {
         const QualifiedTableName & table_name = kv.first;
         writeBinary(table_name.database, out);
         writeBinary(table_name.table, out);
 
         const TableStatus & status = kv.second;
-        status.write(out);
+        status.write(out, client_protocol_revision);
     }
 }
 
 void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision)
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-        throw Exception(
-                "method TablesStatusResponse::read is called for unsupported server revision",
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusResponse::read is called for unsupported server revision");
 
     size_t size = 0;
     readVarUInt(size, in);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception("Too large collection size.", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -108,7 +104,7 @@ void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision
         readBinary(table_name.table, in);
 
         TableStatus status;
-        status.read(in);
+        status.read(in, server_protocol_revision);
         table_states_by_id.emplace(std::move(table_name), std::move(status));
     }
 }

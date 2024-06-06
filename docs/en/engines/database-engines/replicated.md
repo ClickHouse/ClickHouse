@@ -4,7 +4,7 @@ sidebar_position: 30
 sidebar_label: Replicated
 ---
 
-# [experimental] Replicated
+# Replicated
 
 The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
@@ -17,9 +17,9 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 **Engine Parameters**
 
--   `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
--   `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
--   `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
+- `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
+- `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
+- `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
 For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 
@@ -35,7 +35,9 @@ The [system.clusters](../../operations/system-tables/clusters.md) system table c
 
 When creating a new replica of the database, this replica creates tables by itself. If the replica has been unavailable for a long time and has lagged behind the replication log — it checks its local metadata with the current metadata in ZooKeeper, moves the extra tables with data to a separate non-replicated database (so as not to accidentally delete anything superfluous), creates the missing tables, updates the table names if they have been renamed. The data is replicated at the `ReplicatedMergeTree` level, i.e. if the table is not replicated, the data will not be replicated (the database is responsible only for metadata).
 
-[`ALTER TABLE ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.md) queries are allowed but not replicated. The database engine will only add/fetch/remove the partition/part to the current replica. However, if the table itself uses a Replicated table engine, then the data will be replicated after using `ATTACH`.
+[`ALTER TABLE FREEZE|ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.md) queries are allowed but not replicated. The database engine will only add/fetch/remove the partition/part to the current replica. However, if the table itself uses a Replicated table engine, then the data will be replicated after using `ATTACH`.
+
+In case you need only configure a cluster without maintaining table replication, refer to [Cluster Discovery](../../operations/cluster-discovery.md) feature.
 
 ## Usage Example {#usage-example}
 
@@ -86,7 +88,7 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 ``` text
 ┌─hosts─┬─groupArray(n)─┐
-│ node1 │  [1,3,5,7,9]  │
+│ node3 │  [1,3,5,7,9]  │
 │ node2 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```

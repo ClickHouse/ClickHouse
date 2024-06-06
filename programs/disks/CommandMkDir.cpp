@@ -1,7 +1,7 @@
-#pragma once
-
 #include "ICommand.h"
+
 #include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -11,18 +11,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandMkDir : public ICommand
+class CommandMkDir final : public ICommand
 {
 public:
     CommandMkDir()
     {
         command_name = "mkdir";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Create directory or directories recursively";
+        description = "Create a directory";
         usage = "mkdir [OPTION]... <PATH>";
         command_option_description->add_options()
-            ("recursive", "recursively create directories")
-            ;
+            ("recursive", "recursively create directories");
     }
 
     void processOptions(
@@ -35,28 +34,28 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
+        const String & path = command_arguments[0];
 
-        DiskPtr disk = global_context->getDisk(disk_name);
+        DiskPtr disk = disk_selector->get(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String relative_path = validatePathAndGetAsRelative(path);
         bool recursive = config.getBool("recursive", false);
 
         if (recursive)
-            disk->createDirectories(full_path);
+            disk->createDirectories(relative_path);
         else
-            disk->createDirectory(full_path);
+            disk->createDirectory(relative_path);
     }
 };
 }

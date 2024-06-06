@@ -1,5 +1,6 @@
 #include <Planner/PlannerWindowFunctions.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
 
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace
 {
@@ -65,6 +71,11 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
 
         auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node_typed.getWindowNode(), planner_context);
+
+        auto frame_type = function_window_description.frame.type;
+        if (frame_type != WindowFrame::FrameType::ROWS && frame_type != WindowFrame::FrameType::RANGE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window frame '{}' is not implemented", frame_type);
+
         auto window_name = function_window_description.window_name;
 
         auto [it, _] = window_name_to_description.emplace(window_name, std::move(function_window_description));
@@ -81,7 +92,7 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
         for (const auto & parameter_node : parameters_nodes)
         {
             /// Function parameters constness validated during analysis stage
-            window_function.function_parameters.push_back(parameter_node->getConstantValue().getValue());
+            window_function.function_parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
         }
 
         const auto & arguments_nodes = window_function_node_typed.getArguments().getNodes();

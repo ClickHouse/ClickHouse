@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
+#include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 #include <Poco/Logger.h>
@@ -14,11 +16,11 @@ namespace DB
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     Block header,
     AggregatingTransformParamsPtr params_,
-    InputOrderInfoPtr group_by_info_,
+    const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_)
     : AggregatingInOrderTransform(std::move(header), std::move(params_),
-        group_by_info_, group_by_description_,
+        sort_description_for_merging, group_by_description_,
         max_block_size_, max_block_bytes_,
         std::make_unique<ManyAggregatedData>(1), 0)
 {
@@ -26,7 +28,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     Block header, AggregatingTransformParamsPtr params_,
-    InputOrderInfoPtr group_by_info_,
+    const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
     ManyAggregatedDataPtr many_data_, size_t current_variant)
@@ -35,8 +37,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
-    , group_by_info(group_by_info_)
-    , sort_description()
+    , sort_description(group_by_description_)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
@@ -44,16 +45,15 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
 
-    LOG_DEBUG(&Poco::Logger::get("AggregatingInOrderTransform"), "Will use sort description: {}",
-        dumpSortDescription(sort_description));
+    LOG_TEST(&Poco::Logger::get("AggregatingInOrderTransform"), "Will use sort description: {}", dumpSortDescription(sort_description));
 
-    for (size_t i = 0; i < group_by_info->sort_description_for_merging.size(); ++i)
+    for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
     {
         const auto & column_description = group_by_description_[i];
         group_by_description.emplace_back(column_description, res_header.getPositionByName(column_description.column_name));
     }
 
-    if (group_by_info->sort_description_for_merging.size() < group_by_description_.size())
+    if (sort_description_for_merging.size() < group_by_description_.size())
     {
         group_by_key = true;
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
@@ -168,7 +168,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                 if (group_by_key)
                     params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
                 else
-                    params->aggregator.mergeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_columns_data);
+                    params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data, is_cancelled);
             }
             else
             {
@@ -180,11 +180,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                     equal_ranges.push_back({range_start, range_end});
                 }
                 else
-                    params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data());
+                    params->aggregator.executeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_function_instructions.data());
             }
         }
 
-        current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
+        current_memory_usage = std::max<Int64>(getCurrentMemoryUsage() - initial_memory_usage, 0);
 
         /// We finalize last key aggregation state if a new key found.
         if (key_end != rows)

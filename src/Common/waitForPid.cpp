@@ -2,13 +2,16 @@
 #include <Common/VersionNumber.h>
 #include <Poco/Environment.h>
 #include <Common/Stopwatch.h>
+/// for abortOnFailedAssertion() via chassert() (dependency chain looks odd)
+#include <Common/Exception.h>
+#include <base/defines.h>
 
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wgnu-statement-expression"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-statement-expression"
 #define HANDLE_EINTR(x) ({ \
     decltype(x) eintr_wrapper_result; \
     do { \
@@ -38,9 +41,13 @@ enum PollPidResult
         #define SYS_pidfd_open 434
     #elif defined(__aarch64__)
         #define SYS_pidfd_open 434
-    #elif defined(__ppc64__)
+    #elif defined(__powerpc64__)
         #define SYS_pidfd_open 434
     #elif defined(__riscv)
+        #define SYS_pidfd_open 434
+    #elif defined(__s390x__)
+        #define SYS_pidfd_open 434
+    #elif defined(__loongarch64)
         #define SYS_pidfd_open 434
     #else
         #error "Unsupported architecture"
@@ -105,7 +112,8 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (ready <= 0)
         return PollPidResult::FAILED;
 
-    close(pid_fd);
+    int err = close(pid_fd);
+    chassert(!err || errno == EINTR);
 
     return PollPidResult::RESTART;
 }
@@ -126,7 +134,9 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (kq == -1)
         return PollPidResult::FAILED;
 
-    struct kevent change = {.ident = 0};
+    struct kevent change{};
+    change.ident = 0;
+
     EV_SET(&change, pid, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
 
     int event_add_result = HANDLE_EINTR(kevent(kq, &change, 1, NULL, 0, NULL));
@@ -138,7 +148,9 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         return PollPidResult::FAILED;
     }
 
-    struct kevent event = {.ident = 0};
+    struct kevent event{};
+    event.ident = 0;
+
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};
     int ready = HANDLE_EINTR(kevent(kq, nullptr, 0, &event, 1, &remaining_timespec));
     PollPidResult result = ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;
@@ -196,4 +208,4 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
 }
 
 }
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop

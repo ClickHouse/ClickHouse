@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
 
@@ -51,7 +50,10 @@ namespace DB
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
   * For functions `dictGet` and its variations and for function `joinGet` identifier as first argument is handled properly.
+  * Replace `countDistinct` and `countIfDistinct` aggregate functions using setting count_distinct_implementation.
+  * Add -OrNull suffix to aggregate functions if setting aggregate_functions_null_for_empty is true.
   * Function `exists` is converted into `in`.
+  * Functions `in`, `notIn`, `globalIn`, `globalNotIn` converted into `nullIn`, `notNullIn`, `globalNullIn`, `globalNotNullIn` if setting transform_null_in is true.
   *
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
   * based on group by kind and group by keys positions.
@@ -69,13 +71,13 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    QueryAnalysisPass() = default;
+    explicit QueryAnalysisPass(bool only_analyze_ = false);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
       * Table expression node must have query, union, table, table function type.
       */
-    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_);
+    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_ = false);
 
     String getName() override
     {
@@ -87,10 +89,11 @@ public:
         return "Resolve type for each query expression. Replace identifiers, matchers with query expressions. Perform constant folding. Evaluate scalar subqueries.";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 private:
     QueryTreeNodePtr table_expression;
+    const bool only_analyze;
 };
 
 }

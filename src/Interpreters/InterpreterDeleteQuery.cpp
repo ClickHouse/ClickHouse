@@ -1,19 +1,20 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
@@ -23,6 +24,8 @@ namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -33,7 +36,7 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
@@ -58,8 +61,7 @@ BlockIO InterpreterDeleteQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
-    if (!merge_tree)
+    if (table->supportsDelete())
     {
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
@@ -71,43 +73,64 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
+        MutationsInterpreter::Settings settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }
+    else if (table->supportsLightweightDelete())
+    {
+        if (!getContext()->getSettingsRef().enable_lightweight_delete)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Lightweight delete mutate is disabled. "
+                            "Set `enable_lightweight_delete` setting to enable it");
 
-    if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight delete mutate is experimental. Set `allow_experimental_lightweight_delete` setting to enable it");
+        /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
+        String alter_query =
+            "ALTER TABLE " + table->getStorageID().getFullTableName()
+            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
+            + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
 
-    /// Convert to MutationCommand
-    MutationCommands mutation_commands;
-    MutationCommand mut_command;
+        ParserAlterQuery parser;
+        ASTPtr alter_ast = parseQuery(
+            parser,
+            alter_query.data(),
+            alter_query.data() + alter_query.size(),
+            "ALTER query",
+            0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    /// Build "UPDATE _row_exists = 0 WHERE predicate" query
-    mut_command.type = MutationCommand::Type::UPDATE;
-    mut_command.predicate = delete_query.predicate;
+        auto context = Context::createCopy(getContext());
+        context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
+        InterpreterAlterQuery alter_interpreter(alter_ast, context);
+        return alter_interpreter.execute();
+    }
+    else
+    {
+        /// Currently just better exception for the case of a table with projection,
+        /// can act differently according to the setting.
+        if (table->hasProjection())
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE query is not supported for table {} as it has projections. "
+                "User should drop all the projections manually before running the query",
+                table->getStorageID().getFullTableName());
+        }
 
-    auto command = std::make_shared<ASTAlterCommand>();
-    command->type = ASTAlterCommand::UPDATE;
-    command->predicate = delete_query.predicate;
-    command->update_assignments = std::make_shared<ASTExpressionList>();
-    auto set_row_does_not_exist = std::make_shared<ASTAssignment>();
-    set_row_does_not_exist->column_name = LightweightDeleteDescription::FILTER_COLUMN.name;
-    auto zero_value = std::make_shared<ASTLiteral>(DB::Field(UInt8(0)));
-    set_row_does_not_exist->children.push_back(zero_value);
-    command->update_assignments->children.push_back(set_row_does_not_exist);
-    command->children.push_back(command->predicate);
-    command->children.push_back(command->update_assignments);
-    mut_command.column_to_update_expression[set_row_does_not_exist->column_name] = zero_value;
-    mut_command.ast = command->ptr();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "DELETE query is not supported for table {}",
+            table->getStorageID().getFullTableName());
+    }
+}
 
-    mutation_commands.emplace_back(mut_command);
-
-    table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-    MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-    table->mutate(mutation_commands, getContext());
-
-    return {};
+void registerInterpreterDeleteQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
 }
 
 }

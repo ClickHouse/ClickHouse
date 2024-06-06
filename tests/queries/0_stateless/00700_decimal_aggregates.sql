@@ -24,7 +24,7 @@ SELECT (uniq(a), uniq(b), uniq(c)),
     (uniqCombined(a), uniqCombined(b), uniqCombined(c)),
     (uniqCombined(17)(a), uniqCombined(17)(b), uniqCombined(17)(c)),
     (uniqExact(a), uniqExact(b), uniqExact(c)),
-    (uniqHLL12(a), uniqHLL12(b), uniqHLL12(c))
+    (102 - uniqHLL12(a) >= 0, 102 - uniqHLL12(b) >= 0, 102 - uniqHLL12(c) >= 0, uniqHLL12(a) - 99 >= 0, uniqHLL12(b) - 99 >= 0, uniqHLL12(c) - 99 >= 0)
 FROM (SELECT * FROM decimal ORDER BY a);
 
 SELECT uniqUpTo(10)(a), uniqUpTo(10)(b), uniqUpTo(10)(c) FROM decimal WHERE a >= 0 AND a < 5;
@@ -105,9 +105,9 @@ SELECT stddevPop(toFloat64(a)), stddevPop(toFloat64(b)), stddevPop(toFloat64(c))
 SELECT stddevSamp(a) AS da, stddevSamp(b) AS db, stddevSamp(c) AS dc, toTypeName(da), toTypeName(db), toTypeName(dc) FROM decimal;
 SELECT stddevSamp(toFloat64(a)), stddevSamp(toFloat64(b)), stddevSamp(toFloat64(c)) FROM decimal;
 
-SELECT covarPop(a, a), covarPop(b, b), covarPop(c, c) FROM decimal; -- { serverError 43 }
-SELECT covarSamp(a, a), covarSamp(b, b), covarSamp(c, c) FROM decimal; -- { serverError 43 }
-SELECT corr(a, a), corr(b, b), corr(c, c) FROM decimal; -- { serverError 43 }
+SELECT covarPop(a, a), covarPop(b, b), covarPop(c, c) FROM decimal; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT covarSamp(a, a), covarSamp(b, b), covarSamp(c, c) FROM decimal; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT corr(a, a), corr(b, b), corr(c, c) FROM decimal; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT 1 LIMIT 0;
 
 DROP TABLE decimal;

@@ -14,6 +14,8 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -34,13 +36,13 @@ QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 void QueryPlan::checkInitialized() const
 {
     if (!isInitialized())
-        throw Exception("QueryPlan was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was not initialized");
 }
 
 void QueryPlan::checkNotCompleted() const
 {
     if (isCompleted())
-        throw Exception("QueryPlan was already completed", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was already completed");
 }
 
 bool QueryPlan::isCompleted() const
@@ -58,8 +60,7 @@ const DataStream & QueryPlan::getCurrentDataStream() const
 void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
-        throw Exception("Cannot unite plans because current QueryPlan is already initialized",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
 
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
@@ -177,7 +178,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
-            last_pipeline = nullptr; //-V1048
+            last_pipeline = nullptr;
         }
 
         size_t next_child = frame.pipelines.size();
@@ -274,6 +275,14 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
         }
         else
         {
+            auto child_plans = frame.node->step->getChildPlans();
+
+            if (!frame.children_array && !child_plans.empty())
+                frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & child_plan : child_plans)
+                frame.children_array->add(child_plan->explainPlan(options));
+
             if (frame.children_array)
                 frame.node_map->add("Plans", std::move(frame.children_array));
 
@@ -359,7 +368,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
 {
     checkInitialized();
 
@@ -381,7 +390,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
         if (!frame.is_description_printed)
         {
-            settings.offset = (stack.size() - 1) * settings.indent;
+            settings.offset = (indent + stack.size() - 1) * settings.indent;
             explainStep(*frame.node->step, settings, options);
             frame.is_description_printed = true;
         }
@@ -392,7 +401,14 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
             ++frame.next_child;
         }
         else
+        {
+            auto child_plans = frame.node->step->getChildPlans();
+
+            for (const auto & child_plan : child_plans)
+                child_plan->explainPlan(buffer, options, indent + stack.size());
+
             stack.pop();
+        }
     }
 }
 
@@ -445,10 +461,52 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
+static void updateDataStreams(QueryPlan::Node & root)
+{
+    class UpdateDataStreams : public QueryPlanVisitor<UpdateDataStreams, false>
+    {
+    public:
+        explicit UpdateDataStreams(QueryPlan::Node * root_) : QueryPlanVisitor<UpdateDataStreams, false>(root_) { }
+
+        static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
+
+        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
+        {
+            auto & current_step = *current_node->step;
+            if (!current_step.canUpdateInputStream() || current_node->children.empty())
+                return;
+
+            for (const auto * child : current_node->children)
+            {
+                if (!child->step->hasOutputStream())
+                    return;
+            }
+
+            DataStreams streams;
+            streams.reserve(current_node->children.size());
+            for (const auto * child : current_node->children)
+                streams.emplace_back(child->step->getOutputStream());
+
+            current_step.updateInputStreams(std::move(streams));
+        }
+    };
+
+    UpdateDataStreams(&root).visit();
+}
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
+    /// optimization need to be applied before "mergeExpressions" optimization
+    /// it removes redundant sorting steps, but keep underlying expressions,
+    /// so "mergeExpressions" optimization handles them afterwards
+    if (optimization_settings.remove_redundant_sorting)
+        QueryPlanOptimizations::tryRemoveRedundantSorting(root);
+
+    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
+
+    updateDataStreams(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)
@@ -462,10 +520,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
-
-        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
-        {
-        }
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
@@ -504,6 +558,11 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
     }
+}
+
+std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
+{
+    return {std::move(plan.nodes), std::move(plan.resources)};
 }
 
 }

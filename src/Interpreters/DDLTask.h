@@ -44,6 +44,9 @@ struct HostID
     explicit HostID(const Cluster::Address & address)
         : host_name(address.host_name), port(address.port) {}
 
+    HostID(const String & host_name_, UInt16 port_)
+        : host_name(host_name_), port(port_) {}
+
     static HostID fromString(const String & host_port_str);
 
     String toString() const
@@ -71,10 +74,12 @@ struct DDLLogEntry
     static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
     static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
+    static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
+    static constexpr const UInt64 BACKUP_RESTORE_FLAG_IN_ZK_VERSION = 6;
     /// Add new version here
 
     /// Remember to update the value below once new version is added
-    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 4;
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 6;
 
     UInt64 version = 1;
     String query;
@@ -82,6 +87,8 @@ struct DDLLogEntry
     String initiator; // optional
     std::optional<SettingsChanges> settings;
     OpenTelemetry::TracingContext tracing_context;
+    String initial_query_id;
+    bool is_backup_restore = false;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
@@ -99,6 +106,9 @@ struct DDLTaskBase
     String host_id_str;
     ASTPtr query;
 
+    String query_str;
+    String query_for_logging;
+
     bool is_initial_query = false;
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
@@ -114,6 +124,7 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+    void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
 
@@ -122,10 +133,10 @@ struct DDLTaskBase
 
     virtual void createSyncedNodeIfNeed(const ZooKeeperPtr & /*zookeeper*/) {}
 
-    inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
-    inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
-    inline String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
-    inline String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
+    String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
+    String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
+    String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
+    String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -135,9 +146,9 @@ struct DDLTask : public DDLTaskBase
 {
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool findCurrentHostID(ContextPtr global_context, Poco::Logger * log);
+    bool findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
 
-    void setClusterInfo(ContextPtr context, Poco::Logger * log);
+    void setClusterInfo(ContextPtr context, LoggerPtr log);
 
     String getShardID() const override;
 

@@ -31,6 +31,8 @@ public:
 
     void replaceEmptyDatabase(const String & current_database);
 
+    QueryKind getQueryKind() const override { return QueryKind::Show; }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 

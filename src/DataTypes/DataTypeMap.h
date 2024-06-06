@@ -23,11 +23,13 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
+    explicit DataTypeMap(const DataTypePtr & nested_);
     explicit DataTypeMap(const DataTypes & elems);
     DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
+    std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Map"; }
 
     bool canBeInsideNullable() const override { return false; }
@@ -40,15 +42,19 @@ public:
     bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
+    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
     const DataTypePtr & getNestedType() const { return nested; }
+    DataTypePtr getNestedTypeWithUnnamedTuple() const;
 
     SerializationPtr doGetDefaultSerialization() const override;
 
-    static bool checkKeyType(DataTypePtr key_type);
+    static bool isValidKeyType(DataTypePtr key_type);
+
+    void forEachChild(const ChildCallback & callback) const override;
 
 private:
     void assertKeyType() const;

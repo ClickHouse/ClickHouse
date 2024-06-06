@@ -7,6 +7,8 @@
 #include <Poco/String.h>
 #include <IO/ReadBuffer.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <IO/WriteHelpers.h>
@@ -44,6 +46,12 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
+CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return CompressionCodecFactory::instance().get(ast, nullptr);
+}
 
 CompressionCodecPtr CompressionCodecFactory::get(
     const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
@@ -70,7 +78,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
                 codec_arguments = ast_func->arguments;
             }
             else
-                throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
 
             CompressionCodecPtr codec;
             if (codec_family_name == DEFAULT_CODEC_NAME)
@@ -94,7 +102,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
             return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception("Unexpected AST structure for compression codec: " + queryToString(ast), ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
 }
 
 
@@ -103,7 +111,7 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
     if (family_code_and_creator == family_code_with_codec.end())
-        throw Exception("Unknown codec family code: " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family code: {}", toString(byte_code));
 
     return family_code_and_creator->second({}, nullptr);
 }
@@ -112,12 +120,12 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
     if (family_name == "Multiple")
-        throw Exception("Codec Multiple cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Codec Multiple cannot be specified directly");
 
     const auto family_and_creator = family_name_with_codec.find(family_name);
 
     if (family_and_creator == family_name_with_codec.end())
-        throw Exception("Unknown codec family: " + family_name, ErrorCodes::UNKNOWN_CODEC);
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
 
     return family_and_creator->second(arguments, column_type);
 }
@@ -128,15 +136,17 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
     CreatorWithType creator)
 {
     if (creator == nullptr)
-        throw Exception("CompressionCodecFactory: the codec family " + family_name + " has been provided a null constructor",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: "
+                        "the codec family {} has been provided a null constructor", family_name);
 
     if (!family_name_with_codec.emplace(family_name, creator).second)
-        throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: the codec family name '{}' is not unique", family_name);
 
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
-            throw Exception("CompressionCodecFactory: the codec family code '" + std::to_string(*byte_code) + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "CompressionCodecFactory: the codec family code '{}' is not unique",
+                            std::to_string(*byte_code));
 }
 
 void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator)
@@ -165,22 +175,24 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+#ifdef ENABLE_ZSTD_QAT_CODEC
+void registerCodecZSTDQAT(CompressionCodecFactory & factory);
+#endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
+#ifdef ENABLE_QPL_COMPRESSION
 void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
-#ifndef KEEPER_STANDALONE_BUILD
-
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
-#if USE_BORINGSSL
 void registerCodecEncrypted(CompressionCodecFactory & factory);
-#endif
 void registerCodecFPC(CompressionCodecFactory & factory);
-
+void registerCodecGCD(CompressionCodecFactory & factory);
 #endif
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -188,20 +200,22 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
+#ifdef ENABLE_ZSTD_QAT_CODEC
+    registerCodecZSTDQAT(*this);
+#endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
-#ifndef KEEPER_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
-#if USE_BORINGSSL
     registerCodecEncrypted(*this);
-#endif
     registerCodecFPC(*this);
-    #ifdef ENABLE_QPL_COMPRESSION
-        registerCodecDeflateQpl(*this);
-    #endif
+#ifdef ENABLE_QPL_COMPRESSION
+    registerCodecDeflateQpl(*this);
+#endif
+    registerCodecGCD(*this);
 #endif
 
     default_codec = get("LZ4", {});

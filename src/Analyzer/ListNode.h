@@ -16,6 +16,9 @@ using ListNodePtr = std::shared_ptr<ListNode>;
 class ListNode final : public IQueryTreeNode
 {
 public:
+    using iterator = QueryTreeNodes::iterator;
+    using const_iterator = QueryTreeNodes::const_iterator;
+
     /// Initialize list node with empty nodes
     ListNode();
 
@@ -41,14 +44,20 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    iterator begin() { return children.begin(); }
+    const_iterator begin() const { return children.begin(); }
 
-    void updateTreeHashImpl(HashState &) const override;
+    iterator end() { return children.end(); }
+    const_iterator end() const { return children.end(); }
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+
+    void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 };
 
 }

@@ -19,14 +19,14 @@ class JITModuleMemoryManager;
 class JITSymbolResolver;
 class JITCompiler;
 
-/** Custom jit implementation
+/** Custom JIT implementation.
   * Main use cases:
   * 1. Compiled functions in module.
   * 2. Release memory for compiled functions.
   *
   * In LLVM library there are 2 main JIT stacks MCJIT and ORCv2.
   *
-  * Main reasons for custom implementation vs MCJIT
+  * Main reasons for custom implementation vs MCJIT.
   * MCJIT keeps llvm::Module and compiled object code before linking process after module was compiled.
   * llvm::Module can be removed, but compiled object code cannot be removed. Memory for compiled code
   * will be release only during MCJIT instance destruction. It is too expensive to create MCJIT
@@ -85,7 +85,7 @@ public:
 
     /** Total compiled code size for module that are currently valid.
       */
-    inline size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
+    size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
 
 private:
 

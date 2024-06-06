@@ -44,7 +44,7 @@ void addDefaultRequiredExpressionsRecursively(
     bool convert_null_to_default = false;
 
     if (is_column_in_query)
-        convert_null_to_default = null_as_default && block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
+        convert_null_to_default = null_as_default && isNullableOrLowCardinalityNullable(block.findByName(required_column_name)->type) && !isNullableOrLowCardinalityNullable(required_column_type);
 
     if ((is_column_in_query && !convert_null_to_default) || added_columns.contains(required_column_name))
         return;
@@ -61,11 +61,17 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
+        auto required_type = std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName());
 
-        auto expr = makeASTFunction("_CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+        auto expr = makeASTFunction("_CAST", column_default_expr, required_type);
 
         if (is_column_in_query && convert_null_to_default)
+        {
             expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
+            /// ifNull does not respect LowCardinality.
+            /// It may be fixed later or re-implemented properly for identical types.
+            expr = makeASTFunction("_CAST", std::move(expr), required_type);
+        }
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
 
         added_columns.emplace(required_column_name);
@@ -97,10 +103,16 @@ void addDefaultRequiredExpressionsRecursively(
         /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
-        auto column = columns.get(required_column_name);
+        const auto & column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
-        auto default_ast = std::make_shared<ASTLiteral>(default_value);
-        default_expr_list_accum->children.emplace_back(setAlias(default_ast, required_column_name));
+        ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
+        if (is_column_in_query && convert_null_to_default)
+        {
+            /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
+            auto cast_expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(cast_expr));
+        }
+        default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
     }
 }
@@ -173,6 +185,16 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     }
 }
 
+bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+{
+    for (const auto & required_column : required_columns)
+    {
+        if (columns.has(required_column.name) && isNullableOrLowCardinalityNullable(header.findByName(required_column.name)->type) && !isNullableOrLowCardinalityNullable(required_column.type))
+            return true;
+    }
+    return false;
+}
+
 ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
@@ -181,7 +203,7 @@ ActionsDAGPtr evaluateMissingDefaults(
     bool save_unneeded_columns,
     bool null_as_default)
 {
-    if (!columns.hasDefaults())
+    if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return nullptr;
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
@@ -214,17 +236,36 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             {
                 auto & offsets_column = offsets_columns[stream_name];
                 if (!offsets_column)
+                {
                     offsets_column = current_offsets_column;
+                }
+                else
+                {
+                    /// If we are inside Variant element, it may happen that
+                    /// offsets are different, because when we read Variant
+                    /// element as a subcolumn, we expand this column according
+                    /// to the discriminators, so, offsets column can be changed.
+                    /// In this case we should select the original offsets column
+                    /// of this stream, which is the smallest one.
+                    bool inside_variant_element = false;
+                    for (const auto & elem : subpath)
+                        inside_variant_element |= elem.type == ISerialization::Substream::VariantElement;
 
-            #ifndef NDEBUG
-                const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-                const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
+                    if (offsets_column->size() != current_offsets_column->size() && inside_variant_element)
+                        offsets_column = offsets_column->size() < current_offsets_column->size() ? offsets_column : current_offsets_column;
+#ifndef NDEBUG
+                    else
+                    {
+                        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
+                        const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
 
-                if (offsets_data != current_offsets_data)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
-                        offsets_data.size(), current_offsets_data.size(), stream_name);
-            #endif
+                        if (offsets_data != current_offsets_data)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                            "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
+                                            offsets_data.size(), current_offsets_data.size(), stream_name);
+                    }
+#endif
+                }
             }
         }, available_column->type, res_columns[i]);
     }
@@ -284,7 +325,9 @@ void fillMissingColumns(
                     return;
 
                 size_t level = ISerialization::getArrayLevel(subpath);
-                assert(level < num_dimensions);
+                /// It can happen if element of Array is Map.
+                if (level >= num_dimensions)
+                    return;
 
                 auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
                 auto it = offsets_columns.find(stream_name);

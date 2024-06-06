@@ -1,12 +1,10 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
-#include <Columns/IColumn.h>
-#include <Common/PODArray.h>
-#include <Common/HashTable/HashMap.h>
-#include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/Serializations/SubcolumnsTree.h>
+#include <Common/PODArray.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -48,7 +46,7 @@ FieldInfo getFieldInfo(const Field & field);
  *  a trie-like structure. ColumnObject is not suitable for writing into tables
  *  and it should be converted to Tuple with fixed set of subcolumns before that.
  */
-class ColumnObject final : public COWHelper<IColumn, ColumnObject>
+class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnObject>
 {
 public:
     /** Class that represents one subcolumn.
@@ -198,10 +196,6 @@ public:
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
-    /// Finalizes all subcolumns.
-    void finalize();
-    bool isFinalized() const;
-
     /// Part of interface
 
     const char * getFamilyName() const override { return "Object"; }
@@ -210,33 +204,32 @@ public:
     size_t size() const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    void forEachSubcolumn(ColumnCallback callback) override;
-    void forEachSubcolumnRecursively(ColumnCallback callback) override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void insert(const Field & field) override;
+    bool tryInsert(const Field & field) override;
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
 
+    /// Finalizes all subcolumns.
+    void finalize() override;
+    bool isFinalized() const override;
+
     /// Order of rows in ColumnObject is undefined.
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
-
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
     void getExtremes(Field & min, Field & max) const override;
-
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-    void gather(ColumnGathererStream & gatherer) override;
 
     /// All other methods throw exception.
 
@@ -244,6 +237,7 @@ public:
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
     StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
+    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeConcrete(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
@@ -253,20 +247,19 @@ public:
     bool hasEqualValues() const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
+    UInt64 getNumberOfDefaultRows() const override { throwMustBeConcrete(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
 
 private:
     [[noreturn]] static void throwMustBeConcrete()
     {
-        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ColumnObject must be converted to ColumnTuple before use");
     }
 
     template <typename Func>
     MutableColumnPtr applyForSubcolumns(Func && func) const;
 
-    /// For given subcolumn return subcolumn from the same Nested type.
     /// It's used to get shared sized of Nested to insert correct default values.
     const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };
-
 }

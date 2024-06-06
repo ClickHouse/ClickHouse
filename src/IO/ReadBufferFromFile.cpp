@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <base/defines.h>
 #include <cerrno>
 
 
@@ -29,8 +30,10 @@ ReadBufferFromFile::ReadBufferFromFile(
     int flags,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_), file_name(file_name_)
+    std::optional<size_t> file_size_,
+    ThrottlerPtr throttler_)
+    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_, throttler_)
+    , file_name(file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -42,13 +45,13 @@ ReadBufferFromFile::ReadBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_RDONLY | O_CLOEXEC : flags | O_CLOEXEC);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 #ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
     }
 #endif
 }
@@ -60,8 +63,9 @@ ReadBufferFromFile::ReadBufferFromFile(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_)
-    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
+    std::optional<size_t> file_size_,
+    ThrottlerPtr throttler_)
+    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_, throttler_)
     , file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
     fd_ = -1;
@@ -73,7 +77,8 @@ ReadBufferFromFile::~ReadBufferFromFile()
     if (fd < 0)
         return;
 
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
 }
 
 
@@ -83,7 +88,7 @@ void ReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
     fd = -1;
     metric_increment.destroy();

@@ -112,6 +112,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
         return;
 
+    LOG_DEBUG(storage.log, "Updating strategy picker state");
+
     auto zookeeper = storage.getZooKeeper();
     auto all_replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
 
@@ -154,6 +156,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;
+
+    LOG_DEBUG(storage.log, "Strategy picker state updated, current replica: {}, active replicas: [{}]", current_replica_index, fmt::join(active_replicas, ", "));
 }
 
 

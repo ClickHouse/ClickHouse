@@ -1,14 +1,7 @@
-import socket
 import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_eq_with_retry
-from io import StringIO
 import csv
 import re
 
@@ -23,7 +16,7 @@ node3 = cluster.add_instance(
     "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
 
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 
 def wait_nodes():
@@ -148,10 +141,11 @@ def test_cmd_mntr(started_cluster):
         wait_nodes()
         clear_znodes()
 
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
         # reset stat first
-        reset_node_stats(node1)
+        reset_node_stats(leader)
 
-        zk = get_fake_zk(node1.name, timeout=30.0)
+        zk = get_fake_zk(leader.name, timeout=30.0)
         do_some_action(
             zk,
             create_cnt=10,
@@ -162,7 +156,7 @@ def test_cmd_mntr(started_cluster):
             delete_cnt=2,
         )
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+        data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="mntr")
 
         # print(data.decode())
         reader = csv.reader(data.split("\n"), delimiter="\t")
@@ -189,8 +183,8 @@ def test_cmd_mntr(started_cluster):
         # contains:
         #   10 nodes created by test
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
-        #   1 root node, 2 keeper system nodes
-        assert int(result["zk_znode_count"]) == 13
+        #   1 root node, 3 keeper system nodes
+        assert int(result["zk_znode_count"]) == 14
         assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
@@ -258,10 +252,12 @@ def test_cmd_conf(started_cluster):
 
         assert result["four_letter_word_allow_list"] == "*"
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
+        assert result["log_storage_disk"] == "LocalLogDisk"
         assert (
             result["snapshot_storage_path"]
             == "/var/lib/clickhouse/coordination/snapshots"
         )
+        assert result["snapshot_storage_disk"] == "LocalSnapshotDisk"
 
         assert result["session_timeout_ms"] == "30000"
         assert result["min_session_timeout_ms"] == "10000"
@@ -270,6 +266,7 @@ def test_cmd_conf(started_cluster):
         assert result["heart_beat_interval_ms"] == "500"
         assert result["election_timeout_lower_bound_ms"] == "1000"
         assert result["election_timeout_upper_bound_ms"] == "2000"
+        assert result["leadership_expiry_ms"] == "0"
         assert result["reserved_log_items"] == "100000"
 
         assert result["snapshot_distance"] == "75"
@@ -284,13 +281,18 @@ def test_cmd_conf(started_cluster):
         assert result["fresh_log_gap"] == "200"
 
         assert result["max_requests_batch_size"] == "100"
+        assert result["max_requests_batch_bytes_size"] == "102400"
+        assert result["max_flush_batch_size"] == "1000"
+        assert result["max_request_queue_size"] == "100000"
+        assert result["max_requests_quick_batch_size"] == "100"
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 
-        assert result["compress_logs"] == "true"
+        assert result["compress_logs"] == "false"
         assert result["compress_snapshots_with_zstd_format"] == "true"
         assert result["configuration_change_tries_count"] == "20"
 
+        assert result["async_replication"] == "true"
     finally:
         close_keeper_socket(client)
 
@@ -307,12 +309,13 @@ def test_cmd_srvr(started_cluster):
         wait_nodes()
         clear_znodes()
 
-        reset_node_stats(node1)
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        reset_node_stats(leader)
 
-        zk = get_fake_zk(node1.name, timeout=30.0)
+        zk = get_fake_zk(leader.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="srvr")
+        data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="srvr")
 
         print("srvr output -------------------------------------")
         print(data)
@@ -329,9 +332,9 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) > 14
+        assert int(result["Zxid"], 16) > 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "13"
+        assert result["Node count"] == "14"
 
     finally:
         destroy_zk_client(zk)
@@ -342,13 +345,15 @@ def test_cmd_stat(started_cluster):
     try:
         wait_nodes()
         clear_znodes()
-        reset_node_stats(node1)
-        reset_conn_stats(node1)
 
-        zk = get_fake_zk(node1.name, timeout=30.0)
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        reset_node_stats(leader)
+        reset_conn_stats(leader)
+
+        zk = get_fake_zk(leader.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="stat")
+        data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="stat")
 
         print("stat output -------------------------------------")
         print(data)
@@ -367,9 +372,9 @@ def test_cmd_stat(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) > 14
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "13"
+        assert result["Node count"] == "14"
 
         # filter connection statistics
         cons = [n for n in data.split("\n") if "=" in n]
@@ -456,12 +461,19 @@ def test_cmd_crst(started_cluster):
         print("cons output(after crst) -------------------------------------")
         print(data)
 
-        # 2 connections, 1 for 'cons' command, 1 for zk
+        # 2 or 3 connections, 1 for 'crst', 1 for 'cons' command, 1 for zk
+        # there can be a case when 'crst' connection is not cleaned before the cons call
+        print("cons output(after crst) -------------------------------------")
+        print(data)
         cons = [n for n in data.split("\n") if len(n) > 0]
-        assert len(cons) == 2
+        assert len(cons) == 2 or len(cons) == 3
 
         # connection for zk
-        zk_conn = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")][0]
+        zk_conns = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")]
+
+        # there can only be one
+        assert len(zk_conns) == 1
+        zk_conn = zk_conns[0]
 
         conn_stat = re.match(r"(.*?)[:].*[(](.*?)[)].*", zk_conn.strip(), re.S).group(2)
         assert conn_stat is not None
@@ -596,3 +608,148 @@ def test_cmd_wchp(started_cluster):
         assert "/test_4lw_normal_node_1" in list_data
     finally:
         destroy_zk_client(zk)
+
+
+def test_cmd_csnp(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
+
+        print("csnp output -------------------------------------")
+        print(data)
+
+        try:
+            int(data)
+            assert True
+        except ValueError:
+            assert False
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_lgif(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=100)
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgif")
+
+        print("lgif output -------------------------------------")
+        print(data)
+
+        reader = csv.reader(data.split("\n"), delimiter="\t")
+        result = {}
+
+        for row in reader:
+            if len(row) != 0:
+                result[row[0]] = row[1]
+
+        assert int(result["first_log_idx"]) == 1
+        assert int(result["first_log_term"]) == 1
+        assert int(result["last_log_idx"]) >= 1
+        assert int(result["last_log_term"]) == 1
+        assert int(result["last_committed_log_idx"]) >= 1
+        assert int(result["leader_committed_log_idx"]) >= 1
+        assert int(result["target_committed_log_idx"]) >= 1
+        assert int(result["last_snapshot_idx"]) >= 1
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_rqld(started_cluster):
+    wait_nodes()
+    # node2 can not be leader
+    for node in [node1, node3]:
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="rqld")
+        assert data == "Sent leadership request to leader."
+
+        print("rqld output -------------------------------------")
+        print(data)
+
+        if not keeper_utils.is_leader(cluster, node):
+            # pull wait to become leader
+            retry = 0
+            # TODO not a restrict way
+            while not keeper_utils.is_leader(cluster, node) and retry < 30:
+                time.sleep(1)
+                retry += 1
+            if retry == 30:
+                print(
+                    node.name
+                    + " does not become leader after 30s, maybe there is something wrong."
+                )
+        assert keeper_utils.is_leader(cluster, node)
+
+
+def test_cmd_clrs(started_cluster):
+    if node1.is_built_with_sanitizer():
+        return
+
+    def get_memory_purges():
+        return node1.query(
+            "SELECT value FROM system.events WHERE event = 'MemoryAllocatorPurge' SETTINGS system_events_show_zero_values = 1"
+        )
+
+    zk = None
+    try:
+        wait_nodes()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+
+        paths = [f"/clrs_{i}" for i in range(10000)]
+
+        # we only count the events because we cannot reliably test memory usage of Keeper
+        # but let's create and delete nodes so the first purge needs to release some memory
+        create_transaction = zk.transaction()
+        for path in paths:
+            create_transaction.create(path)
+        create_transaction.commit()
+
+        delete_transaction = zk.transaction()
+        for path in paths:
+            delete_transaction.delete(path)
+        delete_transaction.commit()
+
+        # repeat multiple times to make sure MemoryAllocatorPurge isn't increased because of other reasons
+        for _ in range(5):
+            prev_purges = int(get_memory_purges())
+            keeper_utils.send_4lw_cmd(cluster, node1, cmd="clrs")
+            current_purges = int(get_memory_purges())
+            assert current_purges > prev_purges
+            prev_purges = current_purges
+
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_ydld(started_cluster):
+    wait_nodes()
+    for node in [node1, node3]:
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="ydld")
+        assert data == "Sent yield leadership request to leader."
+
+        print("ydld output -------------------------------------")
+        print(data)
+
+        # Whenever there is a leader switch, there is a brief amount of time when any
+        # of the 4 letter commands will return empty result. Thus, we need to test for
+        # negative condition. So we can't use keeper_utils.is_leader() here and likewise
+        # in the while loop below.
+        if not keeper_utils.is_follower(cluster, node):
+            # wait for it to yield leadership
+            retry = 0
+            while not keeper_utils.is_follower(cluster, node) and retry < 30:
+                time.sleep(1)
+                retry += 1
+            if retry == 30:
+                print(
+                    node.name
+                    + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
+                )
+        assert keeper_utils.is_follower(cluster, node)

@@ -1,5 +1,5 @@
 #include <Common/DateLUTImpl.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -90,10 +90,12 @@ ReturnType parseDateTimeBestEffortImpl(
     const DateLUTImpl & utc_time_zone,
     DateTimeSubsecondPart * fractional)
 {
-    auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
+    auto on_error = [&]<typename... FmtArgs>(int error_code [[maybe_unused]],
+                                             FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
+                                             FmtArgs && ...fmt_args [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(message, code);
+            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
         else
             return false;
     };
@@ -145,6 +147,9 @@ ReturnType parseDateTimeBestEffortImpl(
             {
                 has_comma_between_date_and_time = true;
                 ++in.position();
+
+                if (in.eof())
+                    break;
             }
         }
 
@@ -213,7 +218,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     has_time = true;
                 }
                 else
-                    return on_error("Cannot read DateTime: ambiguous 6 digits, it can be YYYYMM or hhmmss", ErrorCodes::CANNOT_PARSE_DATETIME);
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: ambiguous 6 digits, it can be YYYYMM or hhmmss");
             }
             else if (num_digits == 4 && !year)
             {
@@ -251,7 +256,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     else if (delimiter_after_year == ' ')
                         continue;
                     else
-                        return on_error("Cannot read DateTime: unexpected number of decimal digits after year: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after year: {}", num_digits);
 
                     /// Only the same delimiter.
                     if (!day_of_month && checkChar(delimiter_after_year, in))
@@ -265,7 +270,7 @@ ReturnType parseDateTimeBestEffortImpl(
                         else if (delimiter_after_year == ' ')
                             continue;
                         else
-                            return on_error("Cannot read DateTime: unexpected number of decimal digits after year and month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after year and month: {}", num_digits);
                     }
                 }
             }
@@ -285,15 +290,15 @@ ReturnType parseDateTimeBestEffortImpl(
                 UInt8 hour_or_day_of_month_or_month = 0;
                 if (num_digits == 2)
                     readDecimalNumber<2>(hour_or_day_of_month_or_month, digits);
-                else if (num_digits == 1)   //-V547
+                else if (num_digits == 1)
                     readDecimalNumber<1>(hour_or_day_of_month_or_month, digits);
                 else
-                    return on_error("Cannot read DateTime: logical error, unexpected branch in code", ErrorCodes::LOGICAL_ERROR);
+                    return on_error(ErrorCodes::LOGICAL_ERROR, "Cannot read DateTime: logical error, unexpected branch in code");
 
                 if (checkChar(':', in))
                 {
                     if (has_time)
-                        return on_error("Cannot read DateTime: time component is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: time component is duplicated");
 
                     hour = hour_or_day_of_month_or_month;
                     has_time = true;
@@ -305,7 +310,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     else if (num_digits == 1)
                         readDecimalNumber<1>(minute, digits);
                     else
-                        return on_error("Cannot read DateTime: unexpected number of decimal digits after hour: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after hour: {}", num_digits);
 
                     if (checkChar(':', in))
                     {
@@ -316,16 +321,21 @@ ReturnType parseDateTimeBestEffortImpl(
                         else if (num_digits == 1)
                             readDecimalNumber<1>(second, digits);
                         else
-                            return on_error("Cannot read DateTime: unexpected number of decimal digits after hour and minute: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after hour and minute: {}", num_digits);
                     }
+                }
+                else if (checkChar(',', in))
+                {
+                    if (month && !day_of_month)
+                        day_of_month = hour_or_day_of_month_or_month;
                 }
                 else if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                 {
                     if (day_of_month)
-                        return on_error("Cannot read DateTime: day of month is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: day of month is duplicated");
 
                     if (month)
-                        return on_error("Cannot read DateTime: month is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: month is duplicated");
 
                     if constexpr (is_us_style)
                     {
@@ -336,7 +346,7 @@ ReturnType parseDateTimeBestEffortImpl(
                         else if (num_digits == 1)
                             readDecimalNumber<1>(day_of_month, digits);
                         else
-                            return on_error("Cannot read DateTime: unexpected number of decimal digits after month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after month: {}", num_digits);
                     }
                     else
                     {
@@ -356,13 +366,13 @@ ReturnType parseDateTimeBestEffortImpl(
                           size_t num_alpha = readAlpha(alpha, sizeof(alpha), in);
 
                           if (num_alpha < 3)
-                              return on_error("Cannot read DateTime: unexpected number of alphabetical characters after day of month: " + toString(num_alpha), ErrorCodes::CANNOT_PARSE_DATETIME);
+                              return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of alphabetical characters after day of month: {}", num_alpha);
 
                           if (!read_alpha_month(alpha))
-                              return on_error("Cannot read DateTime: alphabetical characters after day of month don't look like month: " + std::string(alpha, 3), ErrorCodes::CANNOT_PARSE_DATETIME);
+                              return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: alphabetical characters after day of month don't look like month: {}", std::string(alpha, 3));
                         }
                         else
-                          return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                          return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after day of month: {}", num_digits);
                     }
 
                     if (month > 12)
@@ -371,7 +381,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                     {
                         if (year)
-                            return on_error("Cannot read DateTime: year component is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year component is duplicated");
 
                         num_digits = readDigits(digits, sizeof(digits), in);
 
@@ -387,7 +397,7 @@ ReturnType parseDateTimeBestEffortImpl(
                                 year += 2000;
                         }
                         else
-                            return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month and month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after day of month and month: {}", num_digits);
                     }
                 }
                 else
@@ -399,7 +409,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
             }
             else if (num_digits != 0)
-                return on_error("Cannot read DateTime: unexpected number of decimal digits: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits: {}", num_digits);
         }
 
         if (num_digits == 0)
@@ -421,13 +431,13 @@ ReturnType parseDateTimeBestEffortImpl(
             else if (c == '.')  /// We don't support comma (ISO 8601:2004) for fractional part of second to not mess up with CSV separator.
             {
                 if (!has_time)
-                    return on_error("Cannot read DateTime: unexpected point symbol", ErrorCodes::CANNOT_PARSE_DATETIME);
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
 
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
                 {
-                    using FractionalType = typename std::decay<decltype(fractional->value)>::type;
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
                     // Reading more decimal digits than fits into FractionalType would case an
                     // overflow, so it is better to skip all digits from the right side that do not
                     // fit into result type. To provide less precise value rather than bogus one.
@@ -476,7 +486,7 @@ ReturnType parseDateTimeBestEffortImpl(
                         readDecimalNumber<1>(time_zone_offset_hour, digits);
                     }
                     else
-                        return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits for time zone offset: {}", num_digits);
 
                     if (num_digits < 3 && checkChar(':', in))
                     {
@@ -491,7 +501,7 @@ ReturnType parseDateTimeBestEffortImpl(
                             readDecimalNumber<1>(time_zone_offset_minute, digits);
                         }
                         else
-                            return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: {}", num_digits);
                     }
                 }
             }
@@ -507,7 +517,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 else if (num_alpha == 1)
                 {
-                    return on_error("Cannot read DateTime: unexpected alphabetical character", ErrorCodes::CANNOT_PARSE_DATETIME);
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected alphabetical character");
                 }
                 else if (num_alpha == 2)
                 {
@@ -522,10 +532,10 @@ ReturnType parseDateTimeBestEffortImpl(
                             is_pm = true;
                         }
                         else
-                            return on_error("Cannot read DateTime: unexpected word", ErrorCodes::CANNOT_PARSE_DATETIME);
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
                     }
                     else
-                        return on_error("Cannot read DateTime: unexpected word", ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
                 }
                 else if (num_alpha == 3)
                 {
@@ -548,7 +558,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     else if (0 == strncasecmp(alpha, "Sun", 3)) has_day_of_week = true;
 
                     else
-                        return on_error("Cannot read DateTime: unexpected word", ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
 
                     while (!in.eof() && isAlphaASCII(*in.position()))
                         ++in.position();
@@ -558,25 +568,36 @@ ReturnType parseDateTimeBestEffortImpl(
                         checkChar(',', in);
                 }
                 else
-                    return on_error("Cannot read DateTime: logical error, unexpected branch in code", ErrorCodes::LOGICAL_ERROR);
+                    return on_error(ErrorCodes::LOGICAL_ERROR, "Cannot read DateTime: logical error, unexpected branch in code");
             }
         }
     }
 
     //// Date like '2022/03/04, ' should parse fail?
     if (has_comma_between_date_and_time && (!has_time || !year || !month || !day_of_month))
-        return on_error("Cannot read DateTime: unexpected word after Date", ErrorCodes::CANNOT_PARSE_DATETIME);
+        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word after Date");
 
     /// If neither Date nor Time is parsed successfully, it should fail
     if (!year && !month && !day_of_month && !has_time)
-        return on_error("Cannot read DateTime: neither Date nor Time was parsed successfully", ErrorCodes::CANNOT_PARSE_DATETIME);
+        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
-    if (!year)
-        year = 2000;
-    if (!month)
-        month = 1;
     if (!day_of_month)
         day_of_month = 1;
+    if (!month)
+        month = 1;
+
+    if (!year)
+    {
+        /// If year is not specified, it will be the current year if the date is unknown or not greater than today,
+        /// otherwise it will be the previous year.
+        /// This convoluted logic is needed to parse the syslog format, which looks as follows: "Mar  3 01:33:48".
+        /// If you have questions, ask Victor Krasnov, https://www.linkedin.com/in/vickr/
+
+        time_t now = time(nullptr);
+        auto today = local_time_zone.toDayNum(now);
+        UInt16 curr_year = local_time_zone.toYear(today);
+        year = local_time_zone.makeDayNum(curr_year, month, day_of_month) <= today ? curr_year : curr_year - 1;
+    }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 
@@ -592,7 +613,8 @@ ReturnType parseDateTimeBestEffortImpl(
     };
 
     if (!check_date(is_leap_year, month, day_of_month))
-        return on_error("Cannot read DateTime: unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::CANNOT_PARSE_DATETIME);
+        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected date: {}-{}-{}",
+                        year, static_cast<UInt16>(month), static_cast<UInt16>(day_of_month));
 
     if (is_am && hour == 12)
         hour = 0;
@@ -659,6 +681,9 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
         fractional *= common::exp10_i64(scale - subsecond.digits);
     }
 
+    if constexpr (std::is_same_v<ReturnType, bool>)
+        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
+
     res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
     return ReturnType(true);
 }
@@ -687,12 +712,12 @@ bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTIm
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
+    parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 void parseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
+    parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

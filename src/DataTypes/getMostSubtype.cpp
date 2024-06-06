@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 
 namespace DB
@@ -49,7 +50,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     auto get_nothing_or_throw = [throw_if_result_is_nothing, & types](const std::string & reason)
     {
         if (throw_if_result_is_nothing)
-            throw Exception(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
+            throw Exception::createDeprecated(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
         return std::make_shared<DataTypeNothing>();
     };
 
@@ -58,14 +59,14 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     if (types.empty())
     {
         if (throw_if_result_is_nothing)
-            throw Exception("There is no common type for empty type list", ErrorCodes::NO_COMMON_TYPE);
+            throw Exception(ErrorCodes::NO_COMMON_TYPE, "There is no common type for empty type list");
         return std::make_shared<DataTypeNothing>();
     }
 
     if (types.size() == 1)
     {
         if (throw_if_result_is_nothing && typeid_cast<const DataTypeNothing *>(types[0].get()))
-            throw Exception("There is no common type for type Nothing", ErrorCodes::NO_COMMON_TYPE);
+            throw Exception(ErrorCodes::NO_COMMON_TYPE, "There is no common type for type Nothing");
         return types[0];
     }
 
@@ -280,6 +281,10 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 minimize(min_bits_of_unsigned_integer, 64);
+            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
+                minimize(min_bits_of_unsigned_integer, 128);
+            else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
+                minimize(min_bits_of_unsigned_integer, 256);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 8);
             else if (typeid_cast<const DataTypeInt16 *>(type.get()))
@@ -288,6 +293,10 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_signed_integer, 32);
             else if (typeid_cast<const DataTypeInt64 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 64);
+            else if (typeid_cast<const DataTypeInt128 *>(type.get()))
+                minimize(min_bits_of_signed_integer, 128);
+            else if (typeid_cast<const DataTypeInt256 *>(type.get()))
+                minimize(min_bits_of_signed_integer, 256);
             else if (typeid_cast<const DataTypeFloat32 *>(type.get()))
                 minimize(min_mantissa_bits_of_floating, 24);
             else if (typeid_cast<const DataTypeFloat64 *>(type.get()))
@@ -309,8 +318,9 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 else if (min_mantissa_bits_of_floating <= 53)
                     return std::make_shared<DataTypeFloat64>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
-                                    + " but as all data types are floats, we must have found maximum float type", ErrorCodes::NO_COMMON_TYPE);
+                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                                    "Logical error: {} but as all data types are floats, "
+                                    "we must have found maximum float type", getExceptionMessagePrefix(types));
             }
 
             /// If there are signed and unsigned types of same bit-width, the result must be unsigned number.
@@ -325,9 +335,15 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bits_of_unsigned_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
+                else if (min_bits_of_unsigned_integer <= 128)
+                    return std::make_shared<DataTypeUInt128>();
+                else if (min_bits_of_unsigned_integer <= 256)
+                    return std::make_shared<DataTypeUInt256>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
-                                    + " but as all data types are integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
+                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                                    "Logical error: {} but as all data types are integers, "
+                                    "we must have found maximum unsigned integer type",
+                                    getExceptionMessagePrefix(types));
             }
 
             /// All signed.
@@ -340,11 +356,39 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                     return std::make_shared<DataTypeInt32>();
                 else if (min_bits_of_signed_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
+                else if (min_bits_of_signed_integer <= 128)
+                    return std::make_shared<DataTypeInt128>();
+                else if (min_bits_of_signed_integer <= 256)
+                    return std::make_shared<DataTypeInt256>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
-                                    + " but as all data types are integers, we must have found maximum signed integer type", ErrorCodes::NO_COMMON_TYPE);
+                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                                    "Logical error: {} but as all data types are integers, "
+                                    "we must have found maximum signed integer type", getExceptionMessagePrefix(types));
             }
         }
+    }
+
+    /// Decimals
+    {
+        bool all_decimals = true;
+        UInt32 min_scale = std::numeric_limits<UInt32>::max();
+        UInt32 min_precision = std::numeric_limits<UInt32>::max();
+        for (const auto & type : types)
+        {
+            if (isDecimal(type))
+            {
+                min_scale = std::min(min_scale, getDecimalScale(*type));
+                min_precision = std::min(min_precision, getDecimalPrecision(*type));
+            }
+            else
+            {
+                all_decimals = false;
+                break;
+            }
+        }
+
+        if (all_decimals)
+            return createDecimal<DataTypeDecimal>(min_precision, min_scale);
     }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).

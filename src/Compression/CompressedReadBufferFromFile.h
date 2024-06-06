@@ -14,7 +14,7 @@ class MMappedFileCache;
 
 
 /// Unlike CompressedReadBuffer, it can do seek.
-class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
+class CompressedReadBufferFromFile final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
       /** At any time, one of two things is true:
@@ -43,7 +43,7 @@ private:
 
     bool nextImpl() override;
 
-    void prefetch() override;
+    void prefetch(Priority priority) override;
 
 public:
     explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
@@ -53,7 +53,7 @@ public:
     /// we store this offset inside nextimpl_working_buffer_offset.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
-    size_t readBig(char * to, size_t n) override;
+    [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {

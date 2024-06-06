@@ -49,7 +49,6 @@ def start_cluster():
 
 
 def test_restart_zookeeper(start_cluster):
-
     for table_id in range(NUM_TABLES):
         node1.query(
             f"INSERT INTO test_table_{table_id} VALUES (1), (2), (3), (4), (5);"
@@ -84,6 +83,8 @@ def test_restart_zookeeper(start_cluster):
     time.sleep(5)
 
     for table_id in range(NUM_TABLES):
-        node1.query(
-            f"INSERT INTO test_table_{table_id} VALUES (6), (7), (8), (9), (10);"
+        node1.query_with_retry(
+            sql=f"INSERT INTO test_table_{table_id} VALUES (6), (7), (8), (9), (10);",
+            retry_count=10,
+            sleep_time=1,
         )

@@ -34,7 +34,7 @@ git push
 ## 描述信息检查 {#description-check}
 检查pull请求的描述是否符合[PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md)模板.
 
-您必须为您的更改指定一个更改日志类别(例如，Bug修复), 并且为[CHANGELOG.md](../whats-new/changelog/)编写一条用户可读的消息用来描述更改.
+您必须为您的更改指定一个更改日志类别(例如，Bug修复), 并且为[CHANGELOG.md](../whats-new/changelog/index.md)编写一条用户可读的消息用来描述更改.
 
 ## 推送到DockerHub {#push-to-dockerhub}
 生成用于构建和测试的docker映像, 然后将它们推送到DockerHub.
@@ -85,7 +85,6 @@ git push
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Bundled**: `bundled` 构建使用来自 `contrib` 库, 而 `unbundled` 构建使用系统库.
-- **Splitted**: `splitted` is a [split build](https://clickhouse.com/docs/en/development/build/#split-build)
 - **Status**: `成功` 或 `失败`
 - **Build log**: 链接到构建和文件复制日志, 当构建失败时很有用.
 - **Build time**.
@@ -97,8 +96,7 @@ git push
     - `clickhouse`: Main built binary.
     - `clickhouse-odbc-bridge`
     - `unit_tests_dbms`: 带有 ClickHouse 单元测试的 GoogleTest 二进制文件.
-    - `shared_build.tgz`: 使用共享库构建.
-    - `performance.tgz`: 用于性能测试的特殊包.
+    - `performance.tar.zst`: 用于性能测试的特殊包.
 
 ## 特殊构建检查 {#special-buildcheck}
 使用clang-tidy执行静态分析和代码样式检查. 该报告类似于构建检查. 修复在构建日志中发现的错误.
@@ -112,23 +110,12 @@ git push
 ## 集成测试 {#integration-tests}
 运行[集成测试](./tests.md#integration-tests).
 
-## Testflows 检查{#testflows-check}
-使用Testflows测试系统去运行一些测试, 在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally)查看如何在本地运行它们.
-
 ## 压力测试 {#stress-test}
 从多个客户端并发运行无状态功能测试, 用以检测与并发相关的错误.如果失败:
 ```
 * Fix all other test failures first;
 * Look at the report to find the server logs and check them for possible causes
   of error.
-```
-
-## 冒烟测试 {#split-build-smoke-test}
-检查[拆分构建](./build.md#split-build)配置中的服务器构建是否可以启动并运行简单查询.如果失败:
-```
-* Fix other test errors first;
-* Build the server in [split build](./build.md#split-build) configuration
-  locally and check whether it can start and run `select 1`.
 ```
 
 ## 兼容性检查 {#compatibility-check}

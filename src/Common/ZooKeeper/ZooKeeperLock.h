@@ -3,7 +3,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <memory>
 #include <string>
-#include <Common/logger_useful.h>
+
+namespace Poco { class Logger; }
 
 namespace zkutil
 {
@@ -31,24 +32,28 @@ public:
         const ZooKeeperPtr & zookeeper_,
         const std::string & lock_prefix_,
         const std::string & lock_name_,
-        const std::string & lock_message_ = "");
+        const std::string & lock_message_ = "",
+        bool throw_if_lost_ = true);
 
     ~ZooKeeperLock();
 
     void unlock();
     bool tryLock();
+    bool isLocked() const;
+    const std::string & getLockPath() const;
 
 private:
     zkutil::ZooKeeperPtr zookeeper;
 
     std::string lock_path;
     std::string lock_message;
-    Poco::Logger * log;
+    bool throw_if_lost{true};
+    LoggerPtr log;
     bool locked = false;
 
 };
 
 std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
-    const ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message);
+    const ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message, bool throw_if_lost = true);
 
 }

@@ -61,7 +61,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     /// additional_column is constant property It should never be lost.
     if (additional_column.has_value() && !other.additional_column.has_value())
-        throw Exception("Wrong key assignment, losing additional_column", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_column");
     additional_column = other.additional_column;
     return *this;
 }
@@ -171,8 +171,8 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
         return result;
 
     ParserExpression parser;
-    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    FunctionNameNormalizer().visit(ast.get());
+    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    FunctionNameNormalizer::visit(ast.get());
 
     return getKeyFromAST(ast, columns, context);
 }

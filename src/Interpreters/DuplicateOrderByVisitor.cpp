@@ -31,7 +31,8 @@ public:
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
-        auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name);
+        auto aggregate_function_properties
+            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.nulls_action);
 
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {
@@ -78,7 +79,7 @@ void DuplicateOrderByFromSubqueriesData::visit(ASTSelectQuery & select_query, AS
         {
             auto * ast = child->as<ASTOrderByElement>();
             if (!ast || ast->children.empty())
-                throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
             if (ast->with_fill)
                 return;
@@ -99,7 +100,7 @@ void DuplicateOrderByData::visit(ASTSelectQuery & select_query, ASTPtr &)
                 bool is_stateful = false;
                 ASTFunctionStatefulVisitor::Data data{context, is_stateful};
                 ASTFunctionStatefulVisitor(data).visit(elem);
-                if (is_stateful) //-V547
+                if (is_stateful)
                     return;
             }
         }
@@ -119,4 +120,3 @@ void DuplicateOrderByData::visit(ASTSelectQuery & select_query, ASTPtr &)
 }
 
 }
-

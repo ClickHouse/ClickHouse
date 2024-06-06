@@ -74,7 +74,7 @@ Kafka 特性：
 
 消费的消息会被自动追踪，因此每个消息在不同的消费组里只会记录一次。如果希望获得两次数据，则使用另一个组名创建副本。
 
-消费组可以灵活配置并且在集群之间同步。例如，如果群集中有10个主题和5个表副本，则每个副本将获得2个主题。 如果副本数量发生变化，主题将自动在副本中重新分配。了解更多信息请访问 http://kafka.apache.org/intro。
+消费组可以灵活配置并且在集群之间同步。例如，如果群集中有10个主题和5个表副本，则每个副本将获得2个主题。 如果副本数量发生变化，主题将自动在副本中重新分配。了解更多信息请访问 [http://kafka.apache.org/intro](http://kafka.apache.org/intro)。
 
 `SELECT` 查询对于读取消息并不是很有用（调试除外），因为每条消息只能被读取一次。使用物化视图创建实时线程更实用。您可以这样做：
 
@@ -120,17 +120,43 @@ Kafka 特性：
 与 `GraphiteMergeTree` 类似，Kafka 引擎支持使用ClickHouse配置文件进行扩展配置。可以使用两个配置键：全局 (`kafka`) 和 主题级别 (`kafka_*`)。首先应用全局配置，然后应用主题级配置（如果存在）。
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
-  <kafka>
+<kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
-    <auto_offset_reset>smallest</auto_offset_reset>
-  </kafka>
+    <statistics_interval_ms>3000</statistics_interval_ms>
 
-  <!-- Configuration specific for topic "logs" -->
-  <kafka_logs>
-    <retry_backoff_ms>250</retry_backoff_ms>
-    <fetch_min_bytes>100000</fetch_min_bytes>
-  </kafka_logs>
+    <kafka_topic>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
+    </kafka_topic>
+
+    <!-- Settings for consumer -->
+    <consumer>
+        <auto_offset_reset>smallest</auto_offset_reset>
+        <kafka_topic>
+            <name>logs</name>
+            <fetch_min_bytes>100000</fetch_min_bytes>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <fetch_min_bytes>50000</fetch_min_bytes>
+        </kafka_topic>
+    </consumer>
+
+    <!-- Settings for producer -->
+    <producer>
+        <kafka_topic>
+            <name>logs</name>
+            <retry_backoff_ms>250</retry_backoff_ms>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <retry_backoff_ms>400</retry_backoff_ms>
+        </kafka_topic>
+    </producer>
+</kafka>
 ```
 
 有关详细配置选项列表，请参阅 [librdkafka配置参考](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。
@@ -163,6 +189,4 @@ clickhouse也支持自己使用keyfile的方式来维护kerbros的凭证。配�
 **另请参阅**
 
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [后台消息代理调度池大小](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/kafka/) <!--hide-->
+-   [后台消息代理调度池大小](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)

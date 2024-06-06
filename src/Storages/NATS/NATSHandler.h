@@ -6,7 +6,7 @@
 #include <thread>
 #include <nats.h>
 #include <base/types.h>
-#include <Poco/Logger.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ using LockPtr = std::unique_ptr<std::lock_guard<std::mutex>>;
 class NATSHandler
 {
 public:
-    NATSHandler(uv_loop_t * loop_, Poco::Logger * log_);
+    NATSHandler(uv_loop_t * loop_, LoggerPtr log_);
 
     ~NATSHandler();
 
@@ -47,7 +47,7 @@ public:
 private:
     uv_loop_t * loop;
     natsOptions * opts = nullptr;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic<bool> loop_running;
     std::atomic<UInt8> loop_state;

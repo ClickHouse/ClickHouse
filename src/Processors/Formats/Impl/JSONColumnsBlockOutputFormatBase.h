@@ -36,6 +36,9 @@ protected:
     const Serializations serializations;
 
     Chunk mono_chunk;
+
+    size_t written_rows = 0;
+    WriteBuffer * ostr;
 };
 
 }

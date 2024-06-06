@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <adapters/libuv.h>
 #include <Common/Exception.h>
@@ -12,7 +13,7 @@ namespace DB
 
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
-NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
+NATSHandler::NATSHandler(uv_loop_t * loop_, LoggerPtr log_) :
     loop(loop_),
     log(log_),
     loop_running(false),
@@ -26,7 +27,7 @@ NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
                                  natsLibuv_Read,
                                  natsLibuv_Write,
                                  natsLibuv_Detach);
-    natsOptions_SetIOBufSize(opts, INT_MAX);
+    natsOptions_SetIOBufSize(opts, DBMS_DEFAULT_BUFFER_SIZE);
     natsOptions_SetSendAsap(opts, true);
 }
 

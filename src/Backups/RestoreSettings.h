@@ -9,7 +9,7 @@ namespace DB
 class ASTBackupQuery;
 
 /// How the RESTORE command will handle table/database existence.
-enum class RestoreTableCreationMode
+enum class RestoreTableCreationMode : uint8_t
 {
     /// RESTORE TABLE always tries to create a table and it throws an exception if the table already exists.
     kCreate,
@@ -24,7 +24,7 @@ enum class RestoreTableCreationMode
 using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 
 /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
-enum class RestoreAccessCreationMode
+enum class RestoreAccessCreationMode : uint8_t
 {
     /// RESTORE will throw an exception if some user already exists.
     kCreate,
@@ -107,6 +107,16 @@ struct RestoreSettings
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_s3_native_copy = true;
+
+    /// Whether base backup from S3 should inherit credentials from the RESTORE query.
+    bool use_same_s3_credentials_for_base_backup = false;
+
+    /// If it's true RESTORE won't stop on broken parts while restoring, instead they will be restored as detached parts
+    /// to the `detached` folder with names starting with `broken-from-backup'.
+    bool restore_broken_parts_as_detached = false;
+
     /// Internal, should not be specified by user.
     bool internal = false;
 
@@ -114,13 +124,17 @@ struct RestoreSettings
     /// The current host's ID in the format 'escaped_host_name:port'.
     String host_id;
 
+    /// Alternative storage policy that may be specified in the SETTINGS clause of RESTORE queries
+    std::optional<String> storage_policy;
+
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
     std::vector<Strings> cluster_host_ids;
 
     /// Internal, should not be specified by user.
-    /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
-    String coordination_zk_path;
+    /// UUID of the restore. If it's not set it will be generated randomly.
+    /// This is used to generate coordination path and for concurrency check
+    std::optional<UUID> restore_uuid;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

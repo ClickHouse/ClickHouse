@@ -11,8 +11,9 @@ namespace ErrorCodes
 }
 
 ITTLAlgorithm::ITTLAlgorithm(
-    const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
-    : description(description_)
+    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
+    : ttl_expressions(ttl_expressions_)
+    , description(description_)
     , old_ttl_info(old_ttl_info_)
     , current_time(current_time_)
     , force(force_)
@@ -59,7 +60,7 @@ UInt32 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) 
             return column_const->getValue<UInt32>();
     }
 
-    throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
 }
 
 }

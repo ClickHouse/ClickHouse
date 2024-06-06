@@ -9,8 +9,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
 
@@ -27,7 +27,7 @@ namespace DB
 
 class Context;
 
-enum class MySQLDataTypesSupport;
+enum class MySQLDataTypesSupport : uint8_t;
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
@@ -44,7 +44,7 @@ public:
         const String & metadata_path,
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
-        std::unique_ptr<ConnectionMySQLSettings> settings_,
+        std::unique_ptr<MySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
         bool attach);
 
@@ -58,7 +58,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 
@@ -76,7 +76,7 @@ public:
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
@@ -93,7 +93,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
-    std::unique_ptr<ConnectionMySQLSettings> database_settings;
+    std::unique_ptr<MySQLSettings> mysql_settings;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;

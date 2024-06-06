@@ -152,7 +152,7 @@ void SerializationSparse::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_sparse = data.column ? &assert_cast<const ColumnSparse &>(*data.column) : nullptr;
+    const auto * column_sparse = data.column ? typeid_cast<const ColumnSparse *>(data.column.get()) : nullptr;
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
@@ -170,7 +170,7 @@ void SerializationSparse::enumerateStreams(
 
     auto next_data = SubstreamData(nested)
         .withType(data.type)
-        .withColumn(column_sparse ? column_sparse->getValuesPtr() : nullptr)
+        .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
         .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
@@ -178,11 +178,16 @@ void SerializationSparse::enumerateStreams(
 }
 
 void SerializationSparse::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    nested->serializeBinaryBulkStatePrefix(settings, state);
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+        nested->serializeBinaryBulkStatePrefix(column_sparse->getValuesColumn(), settings, state);
+    else
+        nested->serializeBinaryBulkStatePrefix(column, settings, state);
+
     settings.path.pop_back();
 }
 
@@ -237,12 +242,13 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
 
 void SerializationSparse::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     auto state_sparse = std::make_shared<DeserializeStateSparse>();
 
     settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested);
+    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
     state = std::move(state_sparse);
@@ -297,23 +303,23 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
 /// All methods below just wrap nested serialization.
 
-void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    nested->serializeBinary(field, ostr);
+    nested->serializeBinary(field, ostr, settings);
 }
 
-void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    nested->deserializeBinary(field, istr);
+    nested->deserializeBinary(field, istr, settings);
 }
 
-void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
-    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr);
+    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &) const
+void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeBinary' is not implemented for SerializationSparse");
 }

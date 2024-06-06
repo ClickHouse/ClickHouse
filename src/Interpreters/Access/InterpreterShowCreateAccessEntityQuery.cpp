@@ -1,4 +1,6 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -9,6 +11,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -21,7 +24,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -62,9 +65,13 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
+            query->auth_data = user.auth_data.toAST();
+
+        if (user.valid_until)
         {
-            query->auth_data = user.auth_data;
-            query->show_password = attach_mode; /// We don't show password unless it's an ATTACH statement.
+            WriteBufferFromOwnString out;
+            writeDateTimeText(user.valid_until, out);
+            query->valid_until = std::make_shared<ASTLiteral>(out.str());
         }
 
         if (!user.settings.empty())
@@ -199,7 +206,7 @@ namespace
             if (!filter.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 query->filters.emplace_back(type, std::move(expr));
             }
         }
@@ -230,7 +237,7 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", entity.formatTypeWithName());
     }
 }
 
@@ -256,19 +263,12 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString create_query_buf;
     for (const auto & create_query : create_queries)
-    {
-        formatAST(*create_query, create_query_buf, false, true);
-        column->insert(create_query_buf.str());
-        create_query_buf.restart();
-    }
+        column->insert(format({getContext(), *create_query}));
 
     /// Prepare description of the result column.
-    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    formatAST(show_query, desc_buf, false, true);
-    String desc = desc_buf.str();
+    String desc = serializeAST(show_query);
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
@@ -419,6 +419,16 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::MAX:
             break;
     }
-    throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
+
+void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowCreateAccessEntityQuery", create_fn);
+}
+
 }

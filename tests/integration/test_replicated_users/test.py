@@ -1,3 +1,4 @@
+import inspect
 import pytest
 import time
 
@@ -58,7 +59,7 @@ def test_create_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
     assert (
         f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
-        in node2.query_and_get_error(
+        in node2.query_and_get_error_with_retry(
             f"CREATE {entity.keyword} {entity.name} {entity.options}"
         )
     )
@@ -68,7 +69,7 @@ def test_create_replicated(started_cluster, entity):
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
 def test_create_and_delete_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
-    node2.query(f"DROP {entity.keyword} {entity.name} {entity.options}")
+    node2.query_with_retry(f"DROP {entity.keyword} {entity.name} {entity.options}")
 
 
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
@@ -83,6 +84,72 @@ def test_create_replicated_on_cluster(started_cluster, entity):
 
 
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
+def test_create_replicated_on_cluster_ignore(started_cluster, entity):
+    node1.replace_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        inspect.cleandoc(
+            f"""
+            <clickhouse>
+                <profiles>
+                    <default>
+                        <ignore_on_cluster_for_replicated_access_entities_queries>true</ignore_on_cluster_for_replicated_access_entities_queries>
+                    </default>
+                </profiles>
+            </clickhouse>
+            """
+        ),
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    node1.query(
+        f"CREATE {entity.keyword} {entity.name} ON CLUSTER default {entity.options}"
+    )
+    assert (
+        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
+        in node2.query_and_get_error_with_retry(
+            f"CREATE {entity.keyword} {entity.name} {entity.options}"
+        )
+    )
+
+    node1.query(f"DROP {entity.keyword} {entity.name} {entity.options}")
+
+
+@pytest.mark.parametrize(
+    "use_on_cluster",
+    [
+        pytest.param(False, id="Without_on_cluster"),
+        pytest.param(True, id="With_ignored_on_cluster"),
+    ],
+)
+def test_grant_revoke_replicated(started_cluster, use_on_cluster: bool):
+    node1.replace_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        inspect.cleandoc(
+            f"""
+            <clickhouse>
+                <profiles>
+                    <default>
+                        <ignore_on_cluster_for_replicated_access_entities_queries>{int(use_on_cluster)}</ignore_on_cluster_for_replicated_access_entities_queries>
+                    </default>
+                </profiles>
+            </clickhouse>
+            """
+        ),
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+    on_cluster = "ON CLUSTER default" if use_on_cluster else ""
+
+    node1.query(f"CREATE USER theuser {on_cluster}")
+
+    assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser") == ""
+
+    assert node2.query(f"SHOW GRANTS FOR theuser") == "GRANT SELECT ON *.* TO theuser\n"
+
+    assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser") == ""
+    node1.query(f"DROP USER theuser {on_cluster}")
+
+
+@pytest.mark.parametrize("entity", entities, ids=get_entity_id)
 def test_create_replicated_if_not_exists_on_cluster(started_cluster, entity):
     node1.query(
         f"CREATE {entity.keyword} IF NOT EXISTS {entity.name} ON CLUSTER default {entity.options}"
@@ -93,9 +160,10 @@ def test_create_replicated_if_not_exists_on_cluster(started_cluster, entity):
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
 def test_rename_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
-    node2.query(
+    node2.query_with_retry(
         f"ALTER {entity.keyword} {entity.name} {entity.options} RENAME TO {entity.name}2"
     )
+    node1.query("SYSTEM RELOAD USERS")
     node1.query(f"DROP {entity.keyword} {entity.name}2 {entity.options}")
 
 

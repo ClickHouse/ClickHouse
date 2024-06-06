@@ -30,7 +30,7 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 }
 
 
-String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
+String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
     switch (quota->key_type)
@@ -55,9 +55,15 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            throw Exception(
-                "Quota " + quota->getName() + " (for user " + params.user_name + ") requires a client supplied key.",
-                ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY);
+
+            if (throw_if_client_key_empty)
+                throw Exception(
+                    ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY,
+                    "Quota {} (for user {}) requires a client supplied key.",
+                    quota->getName(),
+                    params.user_name);
+            else
+                return ""; // Authentication quota has no client key at time of authentication.
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {
@@ -73,7 +79,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         }
         case QuotaKeyType::MAX: break;
     }
-    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(quota->key_type));
 }
 
 
@@ -166,7 +172,14 @@ QuotaCache::QuotaCache(const AccessControl & access_control_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & forwarded_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
+    const UUID & user_id,
+    const String & user_name,
+    const boost::container::flat_set<UUID> & enabled_roles,
+    const Poco::Net::IPAddress & client_address,
+    const String & forwarded_address,
+    const String & client_key,
+    bool throw_if_client_key_empty)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -189,10 +202,9 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & use
 
     auto res = std::shared_ptr<EnabledQuota>(new EnabledQuota(params));
     enabled_quotas.emplace(std::move(params), res);
-    chooseQuotaToConsumeFor(*res);
+    chooseQuotaToConsumeFor(*res, throw_if_client_key_empty);
     return res;
 }
-
 
 void QuotaCache::ensureAllQuotasRead()
 {
@@ -258,13 +270,13 @@ void QuotaCache::chooseQuotaToConsume()
             i = enabled_quotas.erase(i);
         else
         {
-            chooseQuotaToConsumeFor(*elem);
+            chooseQuotaToConsumeFor(*elem, true);
             ++i;
         }
     }
 }
 
-void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
+void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
 {
     /// `mutex` is already locked.
     boost::shared_ptr<const Intervals> intervals;
@@ -272,7 +284,7 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
     {
         if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
         {
-            String key = info.calculateKey(enabled);
+            String key = info.calculateKey(enabled, throw_if_client_key_empty);
             intervals = info.getOrBuildIntervals(key);
             break;
         }

@@ -3,8 +3,10 @@
 #include <Core/Block.h>
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
+#include <IO/PeekableWriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -13,13 +15,12 @@ namespace DB
 
 /** Stream for output data in JSON format.
   */
-class JSONRowOutputFormat : public RowOutputFormatWithUTF8ValidationAdaptor
+class JSONRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool yield_strings_);
 
@@ -57,6 +58,7 @@ protected:
     void writeAfterExtremes() override;
 
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 
@@ -66,10 +68,10 @@ protected:
     size_t row_count = 0;
     Names names;   /// The column names are pre-escaped to be put into JSON string literal.
 
-    Statistics statistics;
     FormatSettings settings;
 
     bool yield_strings;
+    WriteBuffer * ostr;
 };
 
 }

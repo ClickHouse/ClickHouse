@@ -8,7 +8,10 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -103,7 +106,7 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(
@@ -127,9 +130,8 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-
     if (relative_path_.empty())
-        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
     path = relative_path_;
 }
@@ -144,7 +146,7 @@ StorageSet::StorageSet(
     const String & comment,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), false, true))
+    , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
@@ -153,24 +155,83 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
-void StorageSet::finishInsert() { set->finishInsert(); }
+SetPtr StorageSet::getSet() const
+{
+    std::lock_guard lock(mutex);
+    return set;
+}
 
-size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
+
+void StorageSet::insertBlock(const Block & block, ContextPtr)
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    current_set->insertFromBlock(block.getColumnsWithTypeAndName());
+}
+
+void StorageSet::finishInsert()
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    current_set->finishInsert();
+}
+
+size_t StorageSet::getSize(ContextPtr) const
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    return current_set->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    return current_set->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    return current_set->getTotalByteCount();
+}
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    disk->removeRecursive(path);
+    if (disk->exists(path))
+        disk->removeRecursive(path);
+    else
+        LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
 
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false, true);
-    set->setHeader(header.getColumnsWithTypeAndName());
+
+    auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
+    new_set->setHeader(header.getColumnsWithTypeAndName());
+    {
+        std::lock_guard lock(mutex);
+        set = new_set;
+    }
 }
 
 
@@ -185,6 +246,8 @@ void StorageSetOrJoinBase::restore()
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
 
+    using FilePriority = std::pair<UInt64, String>;
+    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<>> backup_files;
     for (auto dir_it{disk->iterateDirectory(path)}; dir_it->isValid(); dir_it->next())
     {
         const auto & name = dir_it->name();
@@ -199,8 +262,17 @@ void StorageSetOrJoinBase::restore()
             if (file_num > increment)
                 increment = file_num;
 
-            restoreFromFile(dir_it->path());
+            backup_files.push({file_num, file_path});
         }
+    }
+
+    /// Restore in the same order as blocks were written
+    /// It may be important for storage Join, user expect to get the first row (unless `join_any_take_last_row` setting is set)
+    /// but after restart we may have different order of blocks in memory.
+    while (!backup_files.empty())
+    {
+        restoreFromFile(backup_files.top().second);
+        backup_files.pop();
     }
 }
 
@@ -222,7 +294,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     finishInsert();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
-    LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
+    LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
         file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
 }
 
@@ -242,9 +314,8 @@ void registerStorageSet(StorageFactory & factory)
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
         bool has_settings = args.storage_def->settings;
         SetSettings set_settings;

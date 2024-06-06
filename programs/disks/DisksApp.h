@@ -1,32 +1,27 @@
 #pragma once
 
-#include "CommandCopy.cpp"
-#include "CommandLink.cpp"
-#include "CommandList.cpp"
-#include "CommandListDisks.cpp"
-#include "CommandMkDir.cpp"
-#include "CommandMove.cpp"
-#include "CommandRead.cpp"
-#include "CommandRemove.cpp"
-#include "CommandWrite.cpp"
-
 #include <Loggers/Loggers.h>
 
-#include <Common/ProgressIndication.h>
-#include <Common/StatusFile.h>
-#include <Common/InterruptListener.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/Application.h>
+
+#include <boost/program_options.hpp>
 
 namespace DB
 {
 
+class ICommand;
 using CommandPtr = std::unique_ptr<ICommand>;
+
+namespace po = boost::program_options;
+using ProgramOptionsDescription = boost::program_options::options_description;
+using CommandLineOptions = boost::program_options::variables_map;
 
 class DisksApp : public Poco::Util::Application, public Loggers
 {
 public:
     DisksApp() = default;
+    ~DisksApp() override;
 
     void init(std::vector<String> & common_arguments);
 
@@ -58,9 +53,9 @@ protected:
     std::vector<String> command_arguments;
 
     std::unordered_set<String> supported_commands;
-
     std::unordered_map<String, CommandPtr> command_descriptions;
 
     po::variables_map options;
 };
+
 }

@@ -11,14 +11,13 @@
 namespace DB
 {
 
-class ICompressionCodec;
-
-using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CompressionCodecPtr>;
-
-class IDataType;
-
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_DECOMPRESS;
+    extern const int CORRUPTED_DATA;
+}
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
@@ -55,7 +54,7 @@ public:
     /// --- For the codec with HW decompressor, it means submit request to HW and return immediately.
     /// --- Must be used in pair with flushAsynchronousDecompressRequests.
     /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
-    enum class CodecMode
+    enum class CodecMode : uint8_t
     {
         Synchronous,
         Asynchronous,
@@ -66,7 +65,10 @@ public:
     CodecMode getDecompressMode() const{ return decompressMode; }
 
     /// if set mode to CodecMode::Asynchronous, must be followed with flushAsynchronousDecompressRequests
-    void setDecompressMode(CodecMode mode){ decompressMode = mode; }
+    void setDecompressMode(CodecMode mode) { decompressMode = mode; }
+
+    /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
+    void setExternalDataFlag() { decompression_error_code = ErrorCodes::CANNOT_DECOMPRESS; }
 
     /// Flush result for previous asynchronous decompression requests.
     /// This function must be called following several requests offload to HW.
@@ -89,10 +91,10 @@ public:
     static constexpr UInt8 getHeaderSize() { return COMPRESSED_BLOCK_HEADER_SIZE; }
 
     /// Read size of compressed block from compressed source
-    static UInt32 readCompressedBlockSize(const char * source);
+    UInt32 readCompressedBlockSize(const char * source) const;
 
     /// Read size of decompressed block from compressed source
-    static UInt32 readDecompressedBlockSize(const char * source);
+    UInt32 readDecompressedBlockSize(const char * source) const;
 
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
@@ -106,9 +108,21 @@ public:
     /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
     virtual bool isEncryption() const { return false; }
 
+    /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
+    virtual bool isFloatingPointTimeSeriesCodec() const { return false; }
+
+    /// If the codec's purpose is to calculate deltas between consecutive values.
+    virtual bool isDeltaCompression() const { return false; }
+
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
+
+    /// Is this the DEFLATE_QPL codec?
+    virtual bool isDeflateQpl() const { return false; }
+
+    /// Is this the ZSTD_QAT codec?
+    virtual bool isZstdQat() const { return false; }
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
@@ -120,7 +134,7 @@ protected:
     /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
-    /// Actually compress data, without header
+    /// Actually compress data without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
 
     /// Actually decompress data without header
@@ -129,9 +143,14 @@ protected:
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
     void setCodecDescription(const String & name, const ASTs & arguments = {});
 
+    int decompression_error_code = ErrorCodes::CORRUPTED_DATA;
+
 private:
     ASTPtr full_codec_desc;
     CodecMode decompressMode{CodecMode::Synchronous};
 };
+
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 }

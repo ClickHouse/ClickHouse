@@ -44,7 +44,7 @@ public:
     PathInData(const PathInData & other);
     PathInData & operator=(const PathInData & other);
 
-    static UInt128 getPartsHash(const Parts & parts_);
+    static UInt128 getPartsHash(const Parts::const_iterator & begin, const Parts::const_iterator & end);
 
     bool empty() const { return parts.empty(); }
 

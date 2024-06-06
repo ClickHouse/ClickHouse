@@ -6,8 +6,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -26,7 +24,7 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Cannot create timer_fd descriptor");
 
     if (-1 == fcntl(timer_fd, F_SETFL, O_NONBLOCK))
-        throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
+        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set O_NONBLOCK for timer_fd");
 }
 
 TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(other.timer_fd)
@@ -34,11 +32,20 @@ TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(o
     other.timer_fd = -1;
 }
 
+TimerDescriptor & TimerDescriptor::operator=(DB::TimerDescriptor && other) noexcept
+{
+    std::swap(timer_fd, other.timer_fd);
+    return *this;
+}
+
 TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.
     if (timer_fd != -1)
-        close(timer_fd);
+    {
+        int err = close(timer_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 void TimerDescriptor::reset() const
@@ -50,7 +57,7 @@ void TimerDescriptor::reset() const
     spec.it_value.tv_nsec = 0;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
-        throwFromErrno("Cannot reset timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Cannot reset timer_fd");
 
     /// Drain socket.
     /// It may be possible that alarm happened and socket is readable.
@@ -71,9 +78,7 @@ void TimerDescriptor::drain() const
                 break;
 
             if (errno != EINTR)
-                throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
-            else
-                LOG_TEST(&Poco::Logger::get("TimerDescriptor"), "EINTR");
+                throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd");
         }
     }
 }
@@ -89,7 +94,7 @@ void TimerDescriptor::setRelative(uint64_t usec) const
     spec.it_value.tv_nsec = (usec % TIMER_PRECISION) * 1'000;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
-        throwFromErrno("Cannot set time for timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Cannot set time for timer_fd");
 }
 
 void TimerDescriptor::setRelative(Poco::Timespan timespan) const

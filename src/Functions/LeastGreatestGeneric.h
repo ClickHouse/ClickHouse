@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-enum class LeastGreatest
+enum class LeastGreatest : uint8_t
 {
     Least,
     Greatest
@@ -42,7 +42,7 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.empty())
-            throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
         return getLeastSupertype(types);
     }
@@ -121,7 +121,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.empty())
-            throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
         if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
             return SpecializedFunction::create(context)->getReturnTypeImpl(types);
@@ -134,5 +134,3 @@ private:
 };
 
 }
-
-

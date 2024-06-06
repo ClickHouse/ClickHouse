@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2120
 
 # Don't check for ODR violation, since we may test shared build with ASAN
 export ASAN_OPTIONS=detect_odr_violation=0
+
+# If ClickHouse was built with coverage - dump the coverage information at exit
+# (in other cases this environment variable has no effect)
+export CLICKHOUSE_WRITE_COVERAGE="coverage"
 
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
@@ -23,7 +28,7 @@ export CLICKHOUSE_TEST_UNIQUE_NAME="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABAS
 [ -n "${CLICKHOUSE_DATABASE:-}" ] && CLICKHOUSE_BENCHMARK_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
 [ -n "${CLICKHOUSE_LOG_COMMENT:-}" ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
 
-export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
+export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 # client
 [ -x "$CLICKHOUSE_BINARY-client" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
@@ -38,10 +43,15 @@ export CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
 [ -x "${CLICKHOUSE_BINARY}-server" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY}-server"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY} server"}
 export CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY}-server"}
+# benchmark
+[ -x "${CLICKHOUSE_BINARY}-benchmark" ] && CLICKHOUSE_BENCHMARK_BINARY=${CLICKHOUSE_BENCHMARK_BINARY:="${CLICKHOUSE_BINARY}-benchmark"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_BENCHMARK_BINARY=${CLICKHOUSE_BENCHMARK_BINARY:="${CLICKHOUSE_BINARY} benchmark"}
+export CLICKHOUSE_BENCHMARK_BINARY="${CLICKHOUSE_BENCHMARK_BINARY:=${CLICKHOUSE_BINARY}-benchmark}"
+export CLICKHOUSE_BENCHMARK_OPT="${CLICKHOUSE_BENCHMARK_OPT0:-} ${CLICKHOUSE_BENCHMARK_OPT:-}"
+export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="$CLICKHOUSE_BENCHMARK_BINARY ${CLICKHOUSE_BENCHMARK_OPT:-}"}
 # others
 export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
-export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="${CLICKHOUSE_BINARY}-benchmark ${CLICKHOUSE_BENCHMARK_OPT0:-}"}
 export CLICKHOUSE_GIT_IMPORT=${CLICKHOUSE_GIT_IMPORT="${CLICKHOUSE_BINARY}-git-import"}
 
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
@@ -77,6 +87,11 @@ export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:=$(${CLICKHOUSE_E
 export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
+
+# keeper-client
+[ -x "${CLICKHOUSE_BINARY}-keeper-client" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
+export CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
 
 export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
@@ -136,12 +151,13 @@ function clickhouse_client_removed_host_parameter()
 
 function wait_for_queries_to_finish()
 {
+    local max_tries="${1:-20}"
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;
         num_tries=$((num_tries+1))
-        if [ $num_tries -eq 20 ]; then
+        if [ $num_tries -eq $max_tries ]; then
             $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
             break
         fi
@@ -152,4 +168,24 @@ function random_str()
 {
     local n=$1 && shift
     tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+}
+
+function query_with_retry
+{
+    local query="$1" && shift
+
+    local retry=0
+    until [ $retry -ge 5 ]
+    do
+        local result
+        result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
+        if [ "$?" == 0 ]; then
+            echo -n "$result"
+            return
+        else
+            retry=$((retry + 1))
+            sleep 3
+        fi
+    done
+    echo "Query '$query' failed with '$result'"
 }

@@ -16,15 +16,27 @@ namespace ErrorCodes
 }
 
 
-Elf::Elf(const std::string & path)
-    : in(path, 0)
+Elf::Elf(const std::string & path_)
 {
+    in.emplace(path_, 0);
+    init(in->buffer().begin(), in->buffer().size(), path_);
+}
+
+Elf::Elf(const char * data, size_t size, const std::string & path_)
+{
+    init(data, size, path_);
+}
+
+void Elf::init(const char * data, size_t size, const std::string & path_)
+{
+    path = path_;
+    mapped = data;
+    elf_size = size;
+
     /// Check if it's an elf.
-    elf_size = in.buffer().size();
     if (elf_size < sizeof(ElfEhdr))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The size of supposedly ELF file '{}' is too small", path);
 
-    mapped = in.buffer().begin();
     header = reinterpret_cast<const ElfEhdr *>(mapped);
 
     if (memcmp(header->e_ident, "\x7F""ELF", 4) != 0)
@@ -188,7 +200,7 @@ String Elf::getStoredBinaryHash() const
 const char * Elf::Section::name() const
 {
     if (!elf.section_names)
-        throw Exception("Section names are not initialized", ErrorCodes::CANNOT_PARSE_ELF);
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section names are not initialized");
 
     /// TODO buffer overflow is possible, we may need to check strlen.
     return elf.section_names + header.sh_name;

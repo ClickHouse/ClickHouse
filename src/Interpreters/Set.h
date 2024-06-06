@@ -1,14 +1,15 @@
 #pragma once
 
-#include <shared_mutex>
 #include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
+#include <Interpreters/SetKeys.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/logger_useful.h>
+#include <Common/SharedMutex.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -18,7 +19,7 @@ struct Range;
 
 class Context;
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class Chunk;
 
@@ -31,11 +32,11 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : log(&Poco::Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
-    {
-    }
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+        : log(getLogger("Set")),
+        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
+        cast_cache(std::make_unique<InternalCastFunctionCache>())
+    {}
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -46,8 +47,12 @@ public:
     void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Columns & columns);
+    bool insertFromColumns(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
+
+    void fillSetElements();
+    bool insertFromColumns(const Columns & columns, SetKeyColumns & holder);
+    void appendSetElements(SetKeyColumns & holder);
 
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
@@ -55,10 +60,14 @@ public:
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
 
+    void checkIsCreated() const;
+
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
+
+    bool hasNull() const;
 
     bool empty() const;
     size_t getTotalRowCount() const;
@@ -67,12 +76,15 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements; }
-    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
+    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
+    bool hasSetElements() const { return !set_elements.empty(); }
+    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
+
+    static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
 private:
     size_t keys_size = 0;
@@ -103,13 +115,14 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
-    bool fill_set_elements;
+    bool fill_set_elements = false;
+    size_t max_elements_to_fill;
 
     /// If true, insert NULL values to set.
     bool transform_null_in;
@@ -131,7 +144,11 @@ private:
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
+
+    /// A cache for cast functions (if any) to avoid rebuilding cast functions
+    /// for every call to `execute`
+    mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
     template <typename Method>
     void insertFromBlockImpl(
@@ -184,7 +201,7 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   */
 struct FieldValue
 {
-    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+    explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
     void update(const Field & x);
 
     bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
@@ -219,6 +236,8 @@ public:
     bool hasMonotonicFunctionsChain() const;
 
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+
+    const Columns & getOrderedSet() const { return ordered_set; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

@@ -9,6 +9,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
     set_source_files_properties(
         FlatDictionary.cpp
         HashedDictionary.cpp
+        SparseHashedDictionary.cpp
         HashedArrayDictionary.cpp
         CacheDictionary.cpp
         RangeHashedDictionary.cpp
@@ -16,26 +17,42 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         PROPERTIES COMPILE_FLAGS -g0)
 endif()
 
-list(REMOVE_ITEM clickhouse_dictionaries_sources DictionaryFactory.cpp DictionarySourceFactory.cpp DictionaryStructure.cpp getDictionaryConfigurationFromAST.cpp)
-list(REMOVE_ITEM clickhouse_dictionaries_headers DictionaryFactory.h DictionarySourceFactory.h DictionaryStructure.h getDictionaryConfigurationFromAST.h)
+extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources
+    DictionaryFactory.cpp
+    DictionarySourceFactory.cpp
+    DictionaryStructure.cpp
+    getDictionaryConfigurationFromAST.cpp
+)
+extract_into_parent_list(clickhouse_dictionaries_headers dbms_headers
+    DictionaryFactory.h
+    DictionarySourceFactory.h
+    DictionaryStructure.h
+    getDictionaryConfigurationFromAST.h
+)
 
-add_library(clickhouse_dictionaries ${clickhouse_dictionaries_sources})
+add_library(clickhouse_dictionaries ${clickhouse_dictionaries_headers} ${clickhouse_dictionaries_sources})
 
 target_link_libraries(clickhouse_dictionaries
     PRIVATE
         clickhouse_common_io
         dbms
         Poco::Data
-        Poco::Data::ODBC
         Poco::MongoDB
         Poco::Redis
-        string_utils
 )
 
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
 
 if (TARGET ch_contrib::cassandra)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::cassandra)
+endif()
+
+if (TARGET ch_contrib::yaml_cpp)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::yaml_cpp)
+endif()
+
+if (TARGET ch_contrib::vectorscan)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::vectorscan)
 endif()
 
 add_subdirectory(Embedded)

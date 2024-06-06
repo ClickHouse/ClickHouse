@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -8,6 +8,7 @@ namespace DB
 {
 using Strings = std::vector<String>;
 using DatabaseAndTableName = std::pair<String, String>;
+class ASTFunction;
 
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
@@ -39,7 +40,7 @@ using DatabaseAndTableName = std::pair<String, String>;
   * For the BACKUP command this clause allows to set the name which an object will have inside the backup.
   * And for the RESTORE command this clause allows to set the name which an object will have after RESTORE has finished.
   */
-class ASTBackupQuery : public IAST, public ASTQueryWithOnCluster
+class ASTBackupQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
     enum Kind
@@ -77,20 +78,28 @@ public:
 
     Elements elements;
 
-    ASTPtr backup_name;
+    ASTFunction * backup_name = nullptr;
 
     ASTPtr settings;
 
     /// Base backup. Only differences made after the base backup will be included in a newly created backup,
     /// so this setting allows to make an incremental backup.
-    ASTPtr base_backup_name;
+    ASTFunction * base_backup_name = nullptr;
 
     /// List of cluster's hosts' IDs if this is a BACKUP/RESTORE ON CLUSTER command.
     ASTPtr cluster_host_ids;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(const FormatSettings & fs, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
+    QueryKind getQueryKind() const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&backup_name));
+        f(reinterpret_cast<void **>(&base_backup_name));
+    }
 };
+
 }

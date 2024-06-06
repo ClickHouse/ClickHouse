@@ -8,11 +8,12 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <Processors/Transforms/PostgreSQLSource.h>
+#include <Processors/Sources/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Common/logger_useful.h>
 #endif
 
 
@@ -56,7 +57,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , sample_block(sample_block_)
-    , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
+    , log(getLogger("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
@@ -69,7 +70,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
     , configuration(other.configuration)
     , pool(other.pool)
     , sample_block(other.sample_block)
-    , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
+    , log(getLogger("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
     , update_time(other.update_time)
@@ -117,7 +118,7 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response) //-V1051
+        if (response == invalidate_query_response)
             return false;
         invalidate_query_response = response;
     }

@@ -42,14 +42,23 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-struct statvfs getStatVFS(const String & path)
+struct statvfs getStatVFS(String path)
 {
     struct statvfs fs;
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
             continue;
-        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+
+        /// Sometimes we create directories lazily, so we can request free space in a directory that yet to be created.
+        auto fs_path = std::filesystem::path(path);
+        if (errno == ENOENT && fs_path.has_parent_path())
+        {
+            path = fs_path.parent_path();
+            continue;
+        }
+
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
     }
     return fs;
 }
@@ -64,11 +73,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
+std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-    fs::create_directories(path);
-    return std::make_unique<TemporaryFile>(path);
+    fs::create_directories(folder_path);
+    return std::make_unique<PocoTemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -79,12 +88,12 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #if defined(OS_LINUX)
     struct stat sb;
     if (lstat(path.c_str(), &sb))
-        throwFromErrnoWithPath("Cannot lstat " + path, path, ErrorCodes::CANNOT_STAT);
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot lstat {}", path);
     WriteBufferFromOwnString ss;
     ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
     return ss.str();
 #else
-    throw DB::Exception("The function getDeviceId is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getDeviceId is supported on Linux only");
 #endif
 }
 
@@ -125,7 +134,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         return BlockDeviceType::UNKNOWN;
     }
 #else
-    throw DB::Exception("The function getDeviceType is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getDeviceType is supported on Linux only");
 #endif
 }
 
@@ -148,7 +157,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
         return static_cast<UInt64>(-1);
     }
 #else
-    throw DB::Exception("The function getDeviceType is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getDeviceType is supported on Linux only");
 #endif
 }
 
@@ -156,7 +165,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 {
     if (absolute_path.is_relative())
-        throw Exception("Path is relative. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is relative. It's a bug.");
 
     absolute_path = std::filesystem::canonical(absolute_path);
 
@@ -164,7 +173,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     {
         struct stat st;
         if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
-            throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
+            DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, p.string(), "Cannot stat {}", p.string());
         return st.st_dev;
     };
 
@@ -192,7 +201,7 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 #if defined(OS_LINUX)
     FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
-        throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
+        throw DB::Exception(ErrorCodes::SYSTEM_ERROR, "Cannot open /etc/mtab to get name of filesystem");
     mntent fs_info;
     constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
     std::vector<char> buf(buf_size);
@@ -200,10 +209,10 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
         ;
     endmntent(mounted_filesystems);
     if (fs_info.mnt_dir != mount_point)
-        throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
+        throw DB::Exception(ErrorCodes::SYSTEM_ERROR, "Cannot find name of filesystem by mount point {}", mount_point);
     return fs_info.mnt_fsname;
 #else
-    throw DB::Exception("The function getFilesystemName is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getFilesystemName is supported on Linux only");
 #endif
 }
 
@@ -250,10 +259,8 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     int res = fstat(fd, &buf);
     if (-1 == res)
     {
-        throwFromErrnoWithPath(
-            "Cannot execute fstat" + (file_name.empty() ? "" : " file: " + file_name),
-            file_name,
-            ErrorCodes::CANNOT_FSTAT);
+        DB::ErrnoException::throwFromPath(
+            DB::ErrorCodes::CANNOT_FSTAT, file_name, "Cannot execute fstat{}", file_name.empty() ? "" : " file: " + file_name);
     }
     return buf.st_size;
 }
@@ -263,10 +270,7 @@ Int64 getINodeNumberFromPath(const String & path)
     struct stat file_stat;
     if (stat(path.data(), &file_stat))
     {
-        throwFromErrnoWithPath(
-            "Cannot execute stat for file " + path,
-            path,
-            ErrorCodes::CANNOT_STAT);
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot execute stat for file {}", path);
     }
     return file_stat.st_ino;
 }
@@ -302,7 +306,7 @@ bool createFile(const std::string & path)
         close(n);
         return true;
     }
-    DB::throwFromErrnoWithPath("Cannot create file: " + path, path, DB::ErrorCodes::CANNOT_CREATE_FILE);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_CREATE_FILE, path, "Cannot create file: {}", path);
 }
 
 bool exists(const std::string & path)
@@ -312,39 +316,32 @@ bool exists(const std::string & path)
 
 bool canRead(const std::string & path)
 {
-    struct stat st;
-    if (stat(path.c_str(), &st) == 0)
-    {
-        if (st.st_uid == geteuid())
-            return (st.st_mode & S_IRUSR) != 0;
-        else if (st.st_gid == getegid())
-            return (st.st_mode & S_IRGRP) != 0;
-        else
-            return (st.st_mode & S_IROTH) != 0 || geteuid() == 0;
-    }
-    DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    int err = faccessat(AT_FDCWD, path.c_str(), R_OK, AT_EACCESS);
+    if (err == 0)
+        return true;
+    if (errno == EACCES)
+        return false;
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check read access to file: {}", path);
 }
 
 bool canWrite(const std::string & path)
 {
-    struct stat st;
-    if (stat(path.c_str(), &st) == 0)
-    {
-        if (st.st_uid == geteuid())
-            return (st.st_mode & S_IWUSR) != 0;
-        else if (st.st_gid == getegid())
-            return (st.st_mode & S_IWGRP) != 0;
-        else
-            return (st.st_mode & S_IWOTH) != 0 || geteuid() == 0;
-    }
-    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    int err = faccessat(AT_FDCWD, path.c_str(), W_OK, AT_EACCESS);
+    if (err == 0)
+        return true;
+    if (errno == EACCES)
+        return false;
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check write access to file: {}", path);
 }
 
 bool canExecute(const std::string & path)
 {
-    if (exists(path))
-        return faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS) == 0;
-    DB::throwFromErrnoWithPath("Cannot check execute access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    int err = faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS);
+    if (err == 0)
+        return true;
+    if (errno == EACCES)
+        return false;
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check execute access to file: {}", path);
 }
 
 time_t getModificationTime(const std::string & path)
@@ -352,7 +349,8 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+    std::error_code m_ec(errno, std::generic_category());
+    throw fs::filesystem_error("Cannot check modification time for file", path, m_ec);
 }
 
 time_t getChangeTime(const std::string & path)
@@ -360,7 +358,8 @@ time_t getChangeTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
-    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+    std::error_code m_ec(errno, std::generic_category());
+    throw fs::filesystem_error("Cannot check change time for file", path, m_ec);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)
@@ -374,7 +373,7 @@ void setModificationTime(const std::string & path, time_t time)
     tb.actime  = time;
     tb.modtime = time;
     if (utime(path.c_str(), &tb) != 0)
-        DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot set modification time to file: {}", path);
 }
 
 bool isSymlink(const fs::path & path)
@@ -386,6 +385,14 @@ bool isSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::is_symlink(path.parent_path());      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::is_symlink(path);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
+bool isSymlinkNoThrow(const fs::path & path)
+{
+    std::error_code dummy;
+    if (path.filename().empty())
+        return fs::is_symlink(path.parent_path(), dummy);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+    return fs::is_symlink(path, dummy);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
 }
 
 fs::path readSymlink(const fs::path & path)

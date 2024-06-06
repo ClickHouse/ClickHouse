@@ -1,11 +1,13 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
 SET prefer_localhost_replica = 1;
 
 DROP DATABASE IF EXISTS test_01155_ordinary;
 DROP DATABASE IF EXISTS test_01155_atomic;
 
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 CREATE DATABASE test_01155_ordinary ENGINE=Ordinary;
 CREATE DATABASE test_01155_atomic ENGINE=Atomic;
 
@@ -39,7 +41,7 @@ RENAME TABLE test_01155_ordinary.mv1 TO test_01155_atomic.mv1;
 RENAME TABLE test_01155_ordinary.mv2 TO test_01155_atomic.mv2;
 RENAME TABLE test_01155_ordinary.dst TO test_01155_atomic.dst;
 RENAME TABLE test_01155_ordinary.src TO test_01155_atomic.src;
-SET check_table_dependencies=0;
+SET check_table_dependencies=0; -- Otherwise we'll get error "test_01155_ordinary.dict depends on test_01155_ordinary.dist" in the next line.
 RENAME TABLE test_01155_ordinary.dist TO test_01155_atomic.dist;
 SET check_table_dependencies=1;
 RENAME DICTIONARY test_01155_ordinary.dict TO test_01155_atomic.dict;
@@ -51,8 +53,8 @@ DROP DATABASE test_01155_ordinary;
 USE default;
 
 INSERT INTO test_01155_atomic.src(s) VALUES ('after moving tables');
-SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
-SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
+SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError UNKNOWN_DATABASE }
+SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError BAD_ARGUMENTS }
 
 RENAME DATABASE test_01155_atomic TO test_01155_ordinary;
 USE test_01155_ordinary;
@@ -65,10 +67,15 @@ SELECT dictGet('test_01155_ordinary.dict', 'x', 'after renaming database');
 SELECT database, substr(name, 1, 10) FROM system.tables WHERE database like 'test_01155_%';
 
 -- Move tables back
+SET check_table_dependencies=0; -- Otherwise we'll get error "test_01155_ordinary.dict depends on test_01155_ordinary.dist" in the next line.
 RENAME DATABASE test_01155_ordinary TO test_01155_atomic;
+SET check_table_dependencies=1;
 
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
+SET send_logs_level='fatal';
 CREATE DATABASE test_01155_ordinary ENGINE=Ordinary;
+SET send_logs_level='warning';
 SHOW CREATE DATABASE test_01155_atomic;
 
 RENAME TABLE test_01155_atomic.mv1 TO test_01155_ordinary.mv1;

@@ -12,7 +12,7 @@ NUM_REPLICAS=6
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
-        DROP TABLE IF EXISTS r$i;
+        DROP TABLE IF EXISTS r$i SYNC;
         CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parallel_quorum_many', 'r$i') ORDER BY x;
     "
 done

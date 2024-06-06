@@ -20,9 +20,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 
 
 struct CompactStringRef
@@ -120,7 +118,7 @@ struct FastHash64
         pos2 = reinterpret_cast<const unsigned char*>(pos);
         v = 0;
 
-        switch (len & 7)
+        switch (len & 7) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: v ^= static_cast<UInt64>(pos2[6]) << 48; [[fallthrough]];
             case 6: v ^= static_cast<UInt64>(pos2[5]) << 40; [[fallthrough]];

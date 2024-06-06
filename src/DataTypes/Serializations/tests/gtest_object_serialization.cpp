@@ -31,7 +31,7 @@ TEST(SerializationObject, FromString)
         settings.getter = [&out](const auto &) { return &out; };
 
         writeIntBinary(static_cast<UInt8>(1), out);
-        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkStatePrefix(*column_string, settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column_string, 0, column_string->size(), settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
@@ -49,7 +49,7 @@ TEST(SerializationObject, FromString)
         settings.position_independent_encoding = false;
         settings.getter = [&in](const auto &) { return &in; };
 
-        serialization->deserializeBinaryBulkStatePrefix(settings, state);
+        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serialization->deserializeBinaryBulkWithMultipleStreams(result_column, column_string->size(), settings, state, nullptr);
     }
 

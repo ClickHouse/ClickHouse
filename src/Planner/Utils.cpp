@@ -3,29 +3,51 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
 
 #include <IO/WriteBufferFromString.h>
 
+#include <Functions/FunctionFactory.h>
+
+#include <Storages/StorageDummy.h>
+
 #include <Interpreters/Context.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectSets.h>
+
+#include <stack>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+    extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
 String dumpQueryPlan(QueryPlan & query_plan)
@@ -45,7 +67,7 @@ String dumpQueryPipeline(QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const Blocks & queries_headers)
+Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = queries_headers.front();
@@ -53,9 +75,19 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers)
 
     for (size_t query_number = 1; query_number < num_selects; ++query_number)
     {
+        int error_code = 0;
+
+        if (union_mode == SelectUnionMode::UNION_DEFAULT ||
+            union_mode == SelectUnionMode::UNION_ALL ||
+            union_mode == SelectUnionMode::UNION_DISTINCT)
+            error_code = ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+        else
+            error_code = ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
+
         if (queries_headers.at(query_number).columns() != columns_size)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                            "Different number of columns in UNION elements: {} and {}",
+            throw Exception(error_code,
+                            "Different number of columns in {} elements: {} and {}",
+                            toString(union_mode),
                             common_header.dumpNames(),
                             queries_headers[query_number].dumpNames());
     }
@@ -77,7 +109,10 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers)
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-    auto result_ast = query_node_typed.toAST();
+
+    // In case of cross-replication we don't know what database is used for the table.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    auto result_ast = query_node_typed.toAST({ .qualify_indentifiers_with_database = false });
 
     while (true)
     {
@@ -97,27 +132,32 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     return result_ast;
 }
 
-/** There are no limits on the maximum size of the result for the subquery.
-  * Since the result of the query is not the result of the entire query.
-  */
-ContextPtr buildSubqueryContext(const ContextPtr & context)
+static void removeCTEs(ASTPtr & ast)
 {
-    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
-      * Because the result of this query is not the result of the entire query.
-      * Constraints work instead
-      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-      *  which are checked separately (in the Set, Join objects).
-      */
-    auto subquery_context = Context::createCopy(context);
-    Settings subquery_settings = context->getSettings();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
-    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = false;
-    subquery_context->setSettings(subquery_settings);
+    std::stack<IAST *> stack;
+    stack.push(ast.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
 
-    return subquery_context;
+        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
+            subquery->cte_name = {};
+
+        for (const auto & child : node->children)
+            stack.push(child.get());
+    }
+}
+
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
+{
+    auto ast = queryNodeToSelectQuery(query_node);
+    /// Remove CTEs information from distributed queries.
+    /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
+    /// But CTE is defined only for top-level query part, so may not be sent.
+    /// Removing cte_name forces subquery to be always printed.
+    removeCTEs(ast);
+    return ast;
 }
 
 namespace
@@ -149,6 +189,7 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -172,7 +213,9 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node, const ColumnsWithTypeAndName & input_columns, const PlannerContextPtr & planner_context)
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context)
 {
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
@@ -237,8 +280,9 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                    join_tree_node_to_process->getNodeTypeName());
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                join_tree_node_to_process->getNodeTypeName());
             }
         }
     }
@@ -302,13 +346,133 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                    join_tree_node_to_process->getNodeTypeName());
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                join_tree_node_to_process->getNodeTypeName());
             }
         }
     }
 
     return false;
+}
+
+QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
+{
+    auto function_node = std::make_shared<FunctionNode>("and");
+    auto and_function = FunctionFactory::instance().get("and", context);
+    function_node->getArguments().getNodes() = condition_nodes;
+    function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
+
+    return function_node;
+}
+
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
+    const QueryTreeNodePtr & query_node,
+    const QueryTreeNodes & table_nodes,
+    const ContextPtr & context,
+    ResultReplacementMap * result_replacement_map)
+{
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+
+    for (const auto & table_expression : table_nodes)
+    {
+        auto * table_node = table_expression->as<TableNode>();
+        auto * table_function_node = table_expression->as<TableFunctionNode>();
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+
+            StoragePtr storage_dummy = std::make_shared<StorageDummy>(
+                storage_snapshot->storage.getStorageID(),
+                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                storage_snapshot);
+
+            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+
+            if (result_replacement_map)
+                result_replacement_map->emplace(table_expression, dummy_table_node);
+
+            dummy_table_node->setAlias(table_expression->getAlias());
+            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+        }
+    }
+
+    return query_node->cloneAndReplace(replacement_map);
+}
+
+SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    SelectQueryInfo select_query_info;
+    select_query_info.query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query_tree = query_tree;
+    select_query_info.planner_context = planner_context;
+    return select_query_info;
+}
+
+FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
+
+    QueryAnalysisPass query_analysis_pass(table_expression);
+    query_analysis_pass.run(filter_query_tree, query_context);
+
+    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
+}
+
+FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
+    if (table_expression_required_names_without_filter.empty())
+    {
+        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+        const auto & table_expression_names = table_expression_data.getColumnNames();
+        table_expression_required_names_without_filter.insert(table_expression_names.begin(), table_expression_names.end());
+    }
+
+    collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
+    collectSets(filter_query_tree, *planner_context);
+
+    auto filter_actions_dag = std::make_shared<ActionsDAG>();
+
+    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
+    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    if (expression_nodes.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Filter actions must return single output node. Actual {}",
+            expression_nodes.size());
+
+    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
+    filter_actions_outputs = std::move(expression_nodes);
+
+    std::string filter_node_name = filter_actions_outputs[0]->result_name;
+    bool remove_filter_column = true;
+
+    for (const auto & filter_input_node : filter_actions_dag->getInputs())
+        if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
+            filter_actions_outputs.push_back(filter_input_node);
+
+    return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
+}
+
+ASTPtr parseAdditionalResultFilter(const Settings & settings)
+{
+    const String & additional_result_filter = settings.additional_result_filter;
+    if (additional_result_filter.empty())
+        return {};
+
+    ParserExpression parser;
+    auto additional_result_filter_ast = parseQuery(
+                parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
+                "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+    return additional_result_filter_ast;
 }
 
 }

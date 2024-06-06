@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
 
@@ -110,7 +111,7 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_);
+        LoadingStrictnessLevel mode);
 
     String getName() const override { return "WindowView"; }
 
@@ -118,7 +119,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 
@@ -133,6 +134,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
@@ -140,7 +142,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     void read(
         QueryPlan & query_plan,
@@ -175,7 +177,7 @@ public:
     const Block & getOutputHeader() const;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Stored query, e.g. SELECT * FROM * GROUP BY tumble(now(), *)
     ASTPtr select_query;
@@ -213,7 +215,7 @@ private:
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
-    std::shared_mutex fire_signal_mutex;
+    SharedMutex fire_signal_mutex;
     mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block
 
     IntervalKind::Kind window_kind;
@@ -269,5 +271,9 @@ private:
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
+
+    bool disabled_due_to_analyzer = false;
+
+    void throwIfWindowViewIsDisabled(ContextPtr local_context = nullptr) const;
 };
 }

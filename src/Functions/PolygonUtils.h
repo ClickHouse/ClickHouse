@@ -11,12 +11,10 @@
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
 #include <boost/geometry.hpp>
-
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -172,7 +170,7 @@ public:
     inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
 
 private:
-    enum class CellType
+    enum class CellType : uint8_t
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
@@ -300,7 +298,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         && isFinite(x_shift)
         && isFinite(y_shift)
         && isFinite(grid_size)))
-        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 }
 
 template <typename CoordinateType>
@@ -383,8 +381,6 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
     }
-
-    UNREACHABLE();
 }
 
 
@@ -600,13 +596,13 @@ struct CallPointInPolygon<>
     template <typename T, typename PointInPolygonImpl>
     static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(y).name()));
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(x).name()));
     }
 };
 
@@ -637,9 +633,7 @@ UInt128 sipHash128(Polygon && polygon)
     for (auto & inner : inners)
         hash_ring(inner);
 
-    UInt128 res;
-    hash.get128(res);
-    return res;
+    return hash.get128();
 }
 
 }

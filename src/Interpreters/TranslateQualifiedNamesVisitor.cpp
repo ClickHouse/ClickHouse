@@ -1,12 +1,10 @@
-#include <cstring>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Core/Names.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -20,6 +18,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Storages/StorageView.h>
+#include <Common/re2.h>
 
 
 namespace DB
@@ -30,7 +30,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
+
+
 bool TranslateQualifiedNamesMatcher::Data::matchColumnName(std::string_view name, const String & column_name, DataTypePtr column_type)
 {
     if (name.size() < column_name.size())
@@ -124,8 +127,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);
-                throw Exception("There's no column '" + identifier.name() + "' in table '" + table_name + "'",
-                                ErrorCodes::UNKNOWN_IDENTIFIER);
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "There's no column '{}' in table '{}'", identifier.name(), table_name);
             }
 
             IdentifierSemantic::setMembership(identifier, table_pos);
@@ -155,21 +157,19 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
         func_arguments->children.clear();
 }
 
-void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const ASTPtr & ast, Data & data)
+void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
 {
-    if (ast->children.empty())
-        throw Exception("Logical error: qualified asterisk must have children", ErrorCodes::LOGICAL_ERROR);
-
-    auto & ident = ast->children[0];
+    if (!node.qualifier)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must have a qualifier");
 
     /// @note it could contain table alias as table name.
-    DatabaseAndTableWithAlias db_and_table(ident);
+    DatabaseAndTableWithAlias db_and_table(node.qualifier);
 
     for (const auto & known_table : data.tables)
         if (db_and_table.satisfies(known_table.table, true))
             return;
 
-    throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
+    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown qualified identifier: {}", node.qualifier->getAliasOrColumnName());
 }
 
 void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
@@ -219,7 +219,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (child->as<ASTAsterisk>() || child->as<ASTColumnsListMatcher>() || child->as<ASTColumnsRegexpMatcher>())
             {
                 if (tables_with_columns.empty())
-                    throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "An asterisk cannot be replaced with empty columns.");
                 has_asterisk = true;
             }
             else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
@@ -249,31 +249,47 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     for (const auto & column : *cols)
                     {
                         if (first_table || !data.join_using_columns.contains(column.name))
-                            addIdentifier(columns, table.table, column.name);
+                        {
+                            std::string column_name = column.name;
+                            addIdentifier(columns, table.table, column_name);
+                        }
                     }
                 }
                 first_table = false;
             }
 
-            for (const auto & transformer : asterisk->children)
-                IASTColumnsTransformer::transform(transformer, columns);
+            if (asterisk->transformers)
+            {
+                for (const auto & transformer : asterisk->transformers->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
+            }
         }
         else if (auto * asterisk_column_list = child->as<ASTColumnsListMatcher>())
         {
             for (const auto & ident : asterisk_column_list->column_list->children)
                 columns.emplace_back(ident->clone());
 
-            for (const auto & transformer : asterisk_column_list->children)
-                IASTColumnsTransformer::transform(transformer, columns);
+            if (asterisk_column_list->transformers)
+            {
+                for (const auto & transformer : asterisk_column_list->transformers->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
+            }
         }
         else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
         {
+            String pattern = asterisk_regexp_pattern->getPattern();
+            re2::RE2 regexp(pattern, re2::RE2::Quiet);
+            if (!regexp.ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
                 for (const auto & column : table.columns)
                 {
-                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.contains(column.name)))
+                    if (re2::RE2::PartialMatch(column.name, regexp)
+                        && (first_table || !data.join_using_columns.contains(column.name)))
                     {
                         addIdentifier(columns, table.table, column.name);
                     }
@@ -281,12 +297,15 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 first_table = false;
             }
 
-            for (const auto & transformer : asterisk_regexp_pattern->children)
-                IASTColumnsTransformer::transform(transformer, columns);
+            if (asterisk_regexp_pattern->transformers)
+            {
+                for (const auto & transformer : asterisk_regexp_pattern->transformers->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
+            }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
-            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->qualifier);
 
             for (const auto & table : tables_with_columns)
             {
@@ -298,10 +317,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 }
             }
 
-            // QualifiedAsterisk's transformers start to appear at child 1
-            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+            if (qualified_asterisk->transformers)
             {
-                IASTColumnsTransformer::transform(*it, columns);
+                for (const auto & transformer : qualified_asterisk->transformers->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else
@@ -331,8 +350,8 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(ASTPtr ast, Data & 
             {
                 String alias = key->tryGetAlias();
                 if (alias.empty())
-                    throw Exception("Wrong key in USING. Expected identifier or alias, got: " + key->getID(),
-                                    ErrorCodes::UNSUPPORTED_JOIN_KEYS);
+                    throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Wrong key in USING. Expected identifier or alias, got: {}",
+                                    key->getID());
                 data.join_using_columns.insert(alias);
             }
     }

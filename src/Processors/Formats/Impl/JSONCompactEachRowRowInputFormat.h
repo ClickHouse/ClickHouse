@@ -4,6 +4,7 @@
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 namespace DB
@@ -36,6 +37,7 @@ public:
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    bool supportsCountRows() const override { return true; }
 };
 
 class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
@@ -62,10 +64,18 @@ public:
     void skipRowStartDelimiter() override;
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
+    void skipRowBetweenDelimiter() override;
+
+    void skipRow() override;
+
+    bool checkForSuffix() override;
 
     std::vector<String> readHeaderRow();
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
+
+    bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     bool yieldStrings() const { return yield_strings; }
 private:
@@ -78,12 +88,17 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
+
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     JSONCompactEachRowFormatReader reader;
     bool first_row = true;
+    JSONInferenceInfo inference_info;
 };
 
 }

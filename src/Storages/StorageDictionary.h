@@ -4,6 +4,7 @@
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ friend class TableFunctionDictionary;
 
 public:
     /// Specifies where the table is located relative to the dictionary.
-    enum class Location
+    enum class Location : uint8_t
     {
         /// Table was created automatically as an element of a database with the Dictionary engine.
         DictionaryDatabase,
@@ -61,7 +62,7 @@ public:
 
     ~StorageDictionary() override;
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
     void checkTableCanBeDetached() const override;
 
     Pipe read(
@@ -73,13 +74,16 @@ public:
         size_t max_block_size,
         size_t threads) override;
 
+    /// FIXME: processing after reading from dictionaries are not parallelized due to some bug:
+    /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
+
     std::shared_ptr<const IDictionary> getDictionary() const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
-    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     bool isDictionary() const override { return true; }
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void startup() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
@@ -88,7 +92,6 @@ public:
 
     void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
 
-    Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
     String getDictionaryName() const { return dictionary_name; }
@@ -98,8 +101,7 @@ private:
     const Location location;
 
     mutable std::mutex dictionary_config_mutex;
-    Poco::Timestamp update_time;
-    LoadablesConfigurationPtr configuration;
+    LoadablesConfigurationPtr configuration TSA_GUARDED_BY(dictionary_config_mutex);
 
     scope_guard remove_repository_callback;
 

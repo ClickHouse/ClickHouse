@@ -16,15 +16,15 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ASTExplainQuery::ExplainKind kind;
 
-    ParserKeyword s_ast("AST");
-    ParserKeyword s_explain("EXPLAIN");
-    ParserKeyword s_syntax("SYNTAX");
-    ParserKeyword s_query_tree("QUERY TREE");
-    ParserKeyword s_pipeline("PIPELINE");
-    ParserKeyword s_plan("PLAN");
-    ParserKeyword s_estimates("ESTIMATE");
-    ParserKeyword s_table_override("TABLE OVERRIDE");
-    ParserKeyword s_current_transaction("CURRENT TRANSACTION");
+    ParserKeyword s_ast(Keyword::AST);
+    ParserKeyword s_explain(Keyword::EXPLAIN);
+    ParserKeyword s_syntax(Keyword::SYNTAX);
+    ParserKeyword s_query_tree(Keyword::QUERY_TREE);
+    ParserKeyword s_pipeline(Keyword::PIPELINE);
+    ParserKeyword s_plan(Keyword::PLAN);
+    ParserKeyword s_estimates(Keyword::ESTIMATE);
+    ParserKeyword s_table_override(Keyword::TABLE_OVERRIDE);
+    ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);
 
     if (s_explain.ignore(pos, expected))
     {
@@ -39,9 +39,9 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_pipeline.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
+            kind = ASTExplainQuery::ExplainKind::QueryPlan;
         else if (s_estimates.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
+            kind = ASTExplainQuery::ExplainKind::QueryEstimates;
         else if (s_table_override.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::TableOverride;
         else if (s_current_transaction.ignore(pos, expected))

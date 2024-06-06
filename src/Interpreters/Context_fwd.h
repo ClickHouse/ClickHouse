@@ -36,10 +36,10 @@ struct WithContextImpl
     WithContextImpl() = default;
     explicit WithContextImpl(Weak context_) : context(context_) {}
 
-    inline Shared getContext() const
+    Shared getContext() const
     {
         auto ptr = context.lock();
-        if (!ptr) throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
+        if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
         return ptr;
     }
 

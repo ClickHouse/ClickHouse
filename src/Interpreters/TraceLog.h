@@ -3,10 +3,12 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/TraceCollector.h>
 #include <Common/QueryProfiler.h>
+#include <Common/ProfileEvents.h>
+#include <Common/TraceSender.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -26,13 +28,19 @@ struct TraceLogElement
     UInt64 thread_id{};
     String query_id{};
     Array trace{};
-    Int64 size{}; /// Allocation size in bytes for TraceType::Memory
+    /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
+    Int64 size{};
+    /// Allocation ptr for TraceType::MemorySample.
+    UInt64 ptr{};
+    /// ProfileEvent for TraceType::ProfileEvent.
+    ProfileEvents::Event event{ProfileEvents::end()};
+    /// Increment of profile event for TraceType::ProfileEvent.
+    ProfileEvents::Count increment{};
 
     static std::string name() { return "TraceLog"; }
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static ColumnsDescription getColumnsDescription();
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class TraceLog : public SystemLog<TraceLogElement>

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-debug, no-tsan, no-msan, no-ubsan, no-asan
+# ^ because inserting a 50 MB file can be slow.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +13,7 @@ cd $CLICKHOUSE_TMP || exit
 # Protection for network errors
 for _ in {1..10}; do
     rm -rf ./clickhouse-odbc
-    git clone --quiet https://github.com/ClickHouse/clickhouse-odbc.git && pushd clickhouse-odbc > /dev/null && git checkout --quiet 5d84ec591c53cbb272593f024230a052690fdf69 && break
+    git clone --quiet https://github.com/ClickHouse/clickhouse-odbc.git && pushd clickhouse-odbc 2> /dev/null > /dev/null && git checkout --quiet 5d84ec591c53cbb272593f024230a052690fdf69 && break
     sleep 1
 done
 
@@ -118,11 +120,10 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO line_changes FORMAT TSV" < line_change
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM commits"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM file_changes"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM line_changes"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), round(avg(indent), 1) FROM line_changes"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
 DROP TABLE commits;
 DROP TABLE file_changes;
 DROP TABLE line_changes;
 "
-

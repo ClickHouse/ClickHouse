@@ -8,9 +8,14 @@ import logging
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
 CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS
+    "instance",
+    main_configs=CONFIG_FILES,
+    user_configs=USER_CONFIGS,
+    with_mysql8=True,
+    dictionaries=DICTS,
 )
 
 create_table_mysql_template = """
@@ -42,7 +47,7 @@ def started_cluster():
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
         instance.query(
-            "CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql57:3306', 'test', 'root', 'clickhouse')"
+            "CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql80:3306', 'test', 'root', 'clickhouse')"
         )
 
         yield cluster
@@ -71,7 +76,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
 
     query = instance.query
     query(
-        """
+        f"""
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -81,7 +86,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
     PRIMARY KEY id
     LAYOUT(FLAT())
     SOURCE(MYSQL(
-        HOST 'mysql57'
+        HOST 'mysql80'
         PORT 3306
         USER 'root'
         PASSWORD 'clickhouse'
@@ -90,11 +95,45 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
     """
     )
 
-    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
+    result = query(
+        "SELECT dictGetString('test_dictionary_custom_query', 'value_1', toUInt64(1))"
+    )
+    assert result == "Value_1\n"
 
+    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
     assert result == "1\tValue_1\tValue_2\n"
 
     query("DROP DICTIONARY test_dictionary_custom_query;")
+
+    query(
+        f"""
+    CREATE DICTIONARY test_cache_dictionary_custom_query
+    (
+        id1 UInt64,
+        id2 UInt64,
+        value_concat String
+    )
+    PRIMARY KEY id1, id2
+    LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+    SOURCE(MYSQL(
+        HOST 'mysql80'
+        PORT 3306
+        USER 'root'
+        PASSWORD 'clickhouse'
+        QUERY 'SELECT id AS id1, id + 1 AS id2, CONCAT_WS(" ", "The", value_1) AS value_concat FROM test.test_table_1'))
+    LIFETIME(0)
+    """
+    )
+
+    result = query(
+        "SELECT dictGetString('test_cache_dictionary_custom_query', 'value_concat', (1, 2))"
+    )
+    assert result == "The Value_1\n"
+
+    result = query("SELECT id1, value_concat FROM test_cache_dictionary_custom_query")
+    assert result == "1\tThe Value_1\n"
+
+    query("DROP DICTIONARY test_cache_dictionary_custom_query;")
 
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_1;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
@@ -130,7 +169,7 @@ def test_mysql_dictionaries_custom_query_partial_load_simple_key(started_cluster
     PRIMARY KEY id
     LAYOUT(DIRECT())
     SOURCE(MYSQL(
-        HOST 'mysql57'
+        HOST 'mysql80'
         PORT 3306
         USER 'root'
         PASSWORD 'clickhouse'
@@ -181,7 +220,7 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
     PRIMARY KEY id, id_key
     LAYOUT(COMPLEX_KEY_DIRECT())
     SOURCE(MYSQL(
-        HOST 'mysql57'
+        HOST 'mysql80'
         PORT 3306
         USER 'root'
         PASSWORD 'clickhouse'
@@ -309,6 +348,19 @@ def test_predefined_connection_configuration(started_cluster):
     result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
     assert int(result) == 200
 
+    instance.query(
+        """
+    DROP DICTIONARY IF EXISTS dict;
+    CREATE DICTIONARY dict (id UInt32, value UInt32)
+    PRIMARY KEY id
+    SOURCE(MYSQL(NAME mysql4 connection_pool_size 1 close_connection 1 share_connection 1))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    """
+    )
+    result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
+    assert int(result) == 200
+
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
@@ -354,13 +406,13 @@ def get_mysql_conn(started_cluster):
                 conn = pymysql.connect(
                     user="root",
                     password="clickhouse",
-                    host=started_cluster.mysql_ip,
-                    port=started_cluster.mysql_port,
+                    host=started_cluster.mysql8_ip,
+                    port=started_cluster.mysql8_port,
                 )
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {started_cluster.mysql_ip}:{started_cluster.mysql_port}"
+                f"MySQL Connection establised: {started_cluster.mysql8_ip}:{started_cluster.mysql8_port}"
             )
             return conn
         except Exception as e:

@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
 
+#include <cassert>
 #include <vector>
 
 
@@ -14,16 +15,20 @@ namespace DB
   */
 
 /** Used as an input for parsers.
-  * All whitespace and comment tokens are transparently skipped.
+  * All whitespace and comment tokens are transparently skipped if `skip_insignificant`.
   */
 class Tokens
 {
 private:
     std::vector<Token> data;
     Lexer lexer;
+    bool skip_insignificant;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0) : lexer(begin, end, max_query_size) {}
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
+        : lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
+    {
+    }
 
     const Token & operator[] (size_t index)
     {
@@ -37,7 +42,7 @@ public:
 
             Token token = lexer.nextToken();
 
-            if (token.isSignificant())
+            if (!skip_insignificant || token.isSignificant())
                 data.emplace_back(token);
         }
     }

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 namespace DB
 {
@@ -21,17 +21,17 @@ struct BitShiftRightImpl
     static const constexpr bool allow_string_integer = true;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else
             return static_cast<Result>(a) >> static_cast<Result>(b);
     }
 
-    static inline NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(const UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
+    static NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(const UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
     {
         while (op_pointer > begin)
         {
@@ -50,7 +50,7 @@ struct BitShiftRightImpl
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets)
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else
         {
             UInt8 word_size = 8;
@@ -87,7 +87,7 @@ struct BitShiftRightImpl
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnFixedString::Chars & out_vec)
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else
         {
             UInt8 word_size = 8;
@@ -123,10 +123,10 @@ struct BitShiftRightImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception("BitShiftRightImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftRightImpl expected an integral type");
         return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
     }
 #endif

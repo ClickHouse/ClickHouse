@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Glob.h>
@@ -24,7 +24,7 @@ ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
 {
 }
 
-Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
+std::optional<Poco::Timestamp> ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
     return FS::getModificationTimestamp(definition_entity_name);
 }
@@ -34,7 +34,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
     std::unordered_set<std::string> patterns_copy;
 
     {
-        std::lock_guard<std::mutex> lock(patterns_mutex);
+        std::lock_guard lock(patterns_mutex);
         patterns_copy = patterns;
     }
 
@@ -71,7 +71,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
 void ExternalLoaderXMLConfigRepository::updatePatterns(const std::unordered_set<std::string> & patterns_)
 {
-    std::lock_guard<std::mutex> lock(patterns_mutex);
+    std::lock_guard lock(patterns_mutex);
 
     if (patterns == patterns_)
         return;

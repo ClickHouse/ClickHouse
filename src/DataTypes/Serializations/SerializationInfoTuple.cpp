@@ -28,6 +28,19 @@ bool SerializationInfoTuple::hasCustomSerialization() const
     return std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasCustomSerialization(); });
 }
 
+bool SerializationInfoTuple::structureEquals(const SerializationInfo & rhs) const
+{
+    const auto * rhs_tuple = typeid_cast<const SerializationInfoTuple *>(&rhs);
+    if (!rhs_tuple || elems.size() != rhs_tuple->elems.size())
+        return false;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+        if (!elems[i]->structureEquals(*rhs_tuple->elems[i]))
+            return false;
+
+    return true;
+}
+
 void SerializationInfoTuple::add(const IColumn & column)
 {
     SerializationInfo::add(column);
@@ -57,13 +70,15 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
 
 void SerializationInfoTuple::addDefaults(size_t length)
 {
+    SerializationInfo::addDefaults(length);
+
     for (const auto & elem : elems)
         elem->addDefaults(length);
 }
 
 void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
-    SerializationInfo::add(other);
+    SerializationInfo::replaceData(other);
 
     const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
     for (const auto & [name, elem] : name_to_elem)
@@ -81,7 +96,31 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     for (const auto & elem : elems)
         elems_cloned.push_back(elem->clone());
 
-    return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
+    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
+    ret->data = data;
+    return ret;
+}
+
+MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
+    const IDataType & old_type,
+    const IDataType & new_type,
+    const Settings & new_settings) const
+{
+    const auto & old_tuple = assert_cast<const DataTypeTuple &>(old_type);
+    const auto & new_tuple = assert_cast<const DataTypeTuple &>(new_type);
+
+    const auto & old_elements = old_tuple.getElements();
+    const auto & new_elements = new_tuple.getElements();
+
+    assert(elems.size() == old_elements.size());
+    assert(elems.size() == new_elements.size());
+
+    MutableSerializationInfos infos;
+    infos.reserve(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+        infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, new_settings);
 }
 
 void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const

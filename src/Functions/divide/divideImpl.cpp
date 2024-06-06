@@ -1,6 +1,7 @@
 /// This translation unit should be compiled multiple times
 /// with different values of NAMESPACE and machine flags (sse2, avx2).
 
+/// See also <libdivide-config.h>
 #if defined(__AVX2__)
     #define REG_SIZE 32
     #define LIBDIVIDE_AVX2
@@ -11,6 +12,10 @@
 
 #include <libdivide.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wbit-int-extension"
+using Int8 = signed _BitInt(8);
+#pragma clang diagnostic pop
 
 namespace NAMESPACE
 {
@@ -61,11 +66,11 @@ template void divideImpl<uint32_t, char8_t, uint32_t>(const uint32_t * __restric
 template void divideImpl<int64_t, int64_t, int64_t>(const int64_t * __restrict, int64_t, int64_t * __restrict, size_t);
 template void divideImpl<int64_t, int32_t, int64_t>(const int64_t * __restrict, int32_t, int64_t * __restrict, size_t);
 template void divideImpl<int64_t, int16_t, int64_t>(const int64_t * __restrict, int16_t, int64_t * __restrict, size_t);
-template void divideImpl<int64_t, int8_t, int64_t>(const int64_t * __restrict, int8_t, int64_t * __restrict, size_t);
+template void divideImpl<int64_t, Int8, int64_t>(const int64_t * __restrict, Int8, int64_t * __restrict, size_t);
 
 template void divideImpl<int32_t, int64_t, int32_t>(const int32_t * __restrict, int64_t, int32_t * __restrict, size_t);
 template void divideImpl<int32_t, int32_t, int32_t>(const int32_t * __restrict, int32_t, int32_t * __restrict, size_t);
 template void divideImpl<int32_t, int16_t, int32_t>(const int32_t * __restrict, int16_t, int32_t * __restrict, size_t);
-template void divideImpl<int32_t, int8_t, int32_t>(const int32_t * __restrict, int8_t, int32_t * __restrict, size_t);
+template void divideImpl<int32_t, Int8, int32_t>(const int32_t * __restrict, Int8, int32_t * __restrict, size_t);
 
 }

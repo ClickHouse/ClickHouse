@@ -16,6 +16,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/UUIDGenerator.h>
 #include <base/insertAtEnd.h>
+
+#include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
 namespace fs = std::filesystem;
@@ -72,12 +74,11 @@ namespace
             return std::make_shared<BackupEntryFromMemory>(buf.str());
         }
 
-        static AccessEntitiesInBackup fromBackupEntry(const IBackupEntry & backup_entry, const String & file_path)
+        static AccessEntitiesInBackup fromBackupEntry(std::unique_ptr<ReadBuffer> buf, const String & file_path)
         {
             try
             {
                 AccessEntitiesInBackup res;
-                std::unique_ptr<ReadBuffer> buf = backup_entry.getReadBuffer();
 
                 bool dependencies_found = false;
 
@@ -92,8 +93,6 @@ namespace
                         break;
                     }
 
-                    size_t id_endpos = line.find('\t');
-                    String id_as_string = line.substr(0, id_endpos);
                     UUID id = parse<UUID>(line);
                     line.clear();
 
@@ -289,7 +288,7 @@ namespace
                 }
 
                 default:
-                    throw Exception("Unknown type: " + toString(entity_type), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));
             }
         }
         return res;
@@ -298,7 +297,7 @@ namespace
 
 
 std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
-    const std::vector<std::pair<UUID, AccessEntityPtr>> access_entities,
+    const std::vector<std::pair<UUID, AccessEntityPtr>> & access_entities,
     const String & data_path_in_backup,
     size_t counter,
     const AccessControl & access_control)
@@ -327,7 +326,7 @@ void AccessRestorerFromBackup::addDataPath(const String & data_path)
         return;
 
     fs::path data_path_in_backup_fs = data_path;
-    Strings filenames = backup->listFiles(data_path);
+    Strings filenames = backup->listFiles(data_path, /*recursive*/ false);
     if (filenames.empty())
         return;
 
@@ -343,8 +342,8 @@ void AccessRestorerFromBackup::addDataPath(const String & data_path)
     for (const String & filename : filenames)
     {
         String filepath_in_backup = data_path_in_backup_fs / filename;
-        auto backup_entry = backup->readFile(filepath_in_backup);
-        auto ab = AccessEntitiesInBackup::fromBackupEntry(*backup_entry, filepath_in_backup);
+        auto read_buffer_from_backup = backup->readFile(filepath_in_backup);
+        auto ab = AccessEntitiesInBackup::fromBackupEntry(std::move(read_buffer_from_backup), filepath_in_backup);
 
         boost::range::copy(ab.entities, std::back_inserter(entities));
         boost::range::copy(ab.dependencies, std::inserter(dependencies, dependencies.end()));

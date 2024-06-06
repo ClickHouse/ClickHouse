@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
+#include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/HTTPServerParams.h>
@@ -11,17 +12,17 @@
 namespace DB
 {
 
-class Context;
-
 class HTTPServer : public TCPServer
 {
 public:
     explicit HTTPServer(
-        ContextPtr context,
+        HTTPContextPtr context,
         HTTPRequestHandlerFactoryPtr factory,
         Poco::ThreadPool & thread_pool,
         Poco::Net::ServerSocket & socket,
-        Poco::Net::HTTPServerParams::Ptr params);
+        Poco::Net::HTTPServerParams::Ptr params,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     ~HTTPServer() override;
 

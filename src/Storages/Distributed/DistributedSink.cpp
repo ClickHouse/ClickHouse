@@ -1,5 +1,5 @@
 #include <Storages/Distributed/DistributedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -13,7 +13,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Formats/NativeWriter.h>
 #include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -31,8 +31,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
-#include <base/range.h>
-#include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <filesystem>
 
@@ -40,6 +39,9 @@
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
+    extern const Metric DistributedInsertThreads;
+    extern const Metric DistributedInsertThreadsActive;
+    extern const Metric DistributedInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -57,9 +59,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int ABORTED;
 }
 
-static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
+static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
 {
     if (blocksHaveEqualStructure(header, block))
         return block;
@@ -81,7 +84,7 @@ static Block adoptBlock(const Block & header, const Block & block, Poco::Logger 
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
@@ -109,26 +112,24 @@ DistributedSink::DistributedSink(
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
-    StorageID main_table_,
     const Names & columns_to_send_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , query_ast(createInsertToRemoteTableQuery(main_table_.database_name, main_table_.table_name, columns_to_send_))
+    , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
     , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
-    , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(&Poco::Logger::get("DistributedSink"))
+    , log(getLogger("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
-        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
-    context->getClientInfo().distributed_depth += 1;
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+    context->increaseDistributedDepth();
     random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
 }
 
@@ -172,7 +173,10 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
+        {
+            writeSplitAsync(block);
+            return;
+        }
 
         writeAsyncImpl(block);
         ++inserted_blocks;
@@ -207,6 +211,10 @@ std::string DistributedSink::getCurrentStateDescription()
 
     return buffer.str();
 }
+
+
+DistributedSink::JobReplica::JobReplica(size_t shard_index_, size_t replica_index_, bool is_local_job_, const Block & sample_block)
+    : shard_index(shard_index_), replica_index(replica_index_), is_local_job(is_local_job_), current_shard_block(sample_block.cloneEmpty()) {}
 
 
 void DistributedSink::initWritingJobs(const Block & first_block, size_t start, size_t end)
@@ -264,7 +272,7 @@ void DistributedSink::waitForJobs()
         if (static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout)
         {
             ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
-            throw Exception("Synchronous distributed insert timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Synchronous distributed insert timeout exceeded.");
         }
     }
 
@@ -290,10 +298,18 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
     {
+        /// Avoid Logical error: 'Pipeline for PushingPipelineExecutor was finished before all data was inserted' (whatever it means)
+        if (isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
+
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+        );
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         if (thread_group)
-            CurrentThread::attachToIfDetached(thread_group);
+            CurrentThread::attachToGroupIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;
@@ -335,9 +351,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         size_t rows = shard_block.rows();
 
         span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-        span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
-        span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
-        span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+        span.addAttribute("clickhouse.cluster", storage.cluster_name);
+        span.addAttribute("clickhouse.distributed", storage.getStorageID().getFullNameNotQuoted());
+        span.addAttribute("clickhouse.remote", [this]() { return storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(); });
         span.addAttribute("clickhouse.rows", rows);
         span.addAttribute("clickhouse.bytes", [&shard_block]() { return toString(shard_block.bytes()); });
 
@@ -354,13 +370,12 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 {
                     /// Skip replica_index in case of internal replication
                     if (shard_job.replicas_jobs.size() != 1)
-                        throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
-                    if (results.empty() || results.front().entry.isNull())
-                        throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
-
+                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
+                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
+                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
                     job.connection_entry = std::move(results.front().entry);
                 }
                 else
@@ -369,11 +384,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
                     const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
                     if (!connection_pool)
-                        throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
 
-                    job.connection_entry = connection_pool->get(timeouts, &settings);
+                    job.connection_entry = connection_pool->get(timeouts, settings);
                     if (job.connection_entry.isNull())
-                        throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
                 }
 
                 if (throttler)
@@ -424,6 +439,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
@@ -446,9 +465,11 @@ void DistributedSink::writeSync(const Block & block)
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
         size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
-        pool.emplace(/* max_threads_= */ max_threads,
-                     /* max_free_threads_= */ max_threads,
-                     /* queue_size_= */ jobs_count);
+        pool.emplace(
+            CurrentMetrics::DistributedInsertThreads,
+            CurrentMetrics::DistributedInsertThreadsActive,
+            CurrentMetrics::DistributedInsertThreadsScheduled,
+            max_threads, max_threads, jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {
@@ -471,7 +492,7 @@ void DistributedSink::writeSync(const Block & block)
 
     span.addAttribute("clickhouse.start_shard", start);
     span.addAttribute("clickhouse.end_shard", end);
-    span.addAttribute("db.statement", this->query_string);
+    span.addAttribute("db.statement", query_string);
 
     if (num_shards > 1)
     {
@@ -523,6 +544,10 @@ void DistributedSink::onFinish()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
     if (insert_sync && pool && !pool->finished())
@@ -536,8 +561,15 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job]()
+                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
+                            if (thread_group)
+                                CurrentThread::attachToGroupIfDetached(thread_group);
+
                             job.executor->finish();
                         });
                     }
@@ -564,6 +596,27 @@ void DistributedSink::onFinish()
     }
 }
 
+void DistributedSink::onCancel()
+{
+    std::lock_guard lock(execution_mutex);
+    if (pool && !pool->finished())
+    {
+        try
+        {
+            pool->wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(storage.log);
+        }
+    }
+
+    for (auto & shard_jobs : per_shard_jobs)
+        for (JobReplica & job : shard_jobs.replicas_jobs)
+            if (job.executor)
+                job.executor->cancel();
+}
+
 
 IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
@@ -572,7 +625,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return storage.createSelector(cluster, key_column);
+    return StorageDistributed::createSelector(cluster, key_column);
 }
 
 
@@ -630,7 +683,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.prefer_localhost_replica,
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
-                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory name for async inserts is empty");
             writeToShard(shard_info, block_to_send, {path});
         }
     }
@@ -654,9 +707,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-    span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
-    span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
-    span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+    span.addAttribute("clickhouse.cluster", storage.cluster_name);
+    span.addAttribute("clickhouse.distributed", storage.getStorageID().getFullNameNotQuoted());
+    span.addAttribute("clickhouse.remote", [this]() { return storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(); });
     span.addAttribute("clickhouse.rows", [&block]() { return toString(block.rows()); });
     span.addAttribute("clickhouse.bytes", [&block]() { return toString(block.bytes()); });
 
@@ -696,11 +749,11 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec, settings.enable_zstd_qat_codec);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
-    /// and keep monitor thread out from reading incomplete data
+    /// and keep directory queue thread out from reading incomplete data
     std::string first_file_tmp_path;
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
@@ -718,6 +771,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         }
         return guard;
     };
+
+    auto sleep_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms.totalMilliseconds();
+    size_t file_size;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -742,7 +798,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
-            /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
+            /// See also DistributedAsyncInsertHeader::read() in DistributedInsertQueue (for reading side)
             ///
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
@@ -774,9 +830,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             }
 
             writeVarUInt(shard_info.shard_num, header_buf);
-            writeStringBinary(this->storage.cluster_name, header_buf);
-            writeStringBinary(this->storage.getStorageID().getFullNameNotQuoted(), header_buf);
-            writeStringBinary(this->storage.remote_database + "." + this->storage.remote_table, header_buf);
+            writeStringBinary(storage.cluster_name, header_buf);
+            writeStringBinary(storage.getStorageID().getFullNameNotQuoted(), header_buf);
+            writeStringBinary(storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
@@ -796,10 +852,16 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
                 out.sync();
         }
 
+        file_size = fs::file_size(first_file_tmp_path);
+
         // Create hardlink here to reuse increment number
-        const std::string block_file_path(fs::path(path) / file_name);
-        createHardLink(first_file_tmp_path, block_file_path);
-        auto dir_sync_guard = make_directory_sync_guard(*it);
+        auto bin_file = (fs::path(path) / file_name).string();
+        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        {
+            createHardLink(first_file_tmp_path, bin_file);
+            auto dir_sync_guard = make_directory_sync_guard(*it);
+        }
+        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
     ++it;
 
@@ -809,23 +871,18 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const std::string path(fs::path(disk_path) / (data_path + *it));
         fs::create_directory(path);
 
-        const std::string block_file_path(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
-        createHardLink(first_file_tmp_path, block_file_path);
-        auto dir_sync_guard = make_directory_sync_guard(*it);
+        auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
+        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        {
+            createHardLink(first_file_tmp_path, bin_file);
+            auto dir_sync_guard = make_directory_sync_guard(*it);
+        }
+        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
-    auto file_size = fs::file_size(first_file_tmp_path);
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
     fs::remove(first_file_tmp_path);
-
-    /// Notify
-    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-    for (const auto & dir_name : dir_names)
-    {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name, /* startup= */ false);
-        directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
-    }
 }
 
 }

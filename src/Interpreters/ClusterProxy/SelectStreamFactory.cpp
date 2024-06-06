@@ -1,24 +1,31 @@
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <IO/ConnectionTimeoutsContext.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <DataTypes/ObjectUtils.h>
-
-#include <Client/IConnections.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Planner/Utils.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Client/IConnections.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 
 namespace ProfileEvents
 {
@@ -34,8 +41,63 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_ARE_STALE;
 }
 
+namespace FailPoints
+{
+    extern const char use_delayed_remote_source[];
+}
+
 namespace ClusterProxy
 {
+
+/// select query has database, table and table function names as AST pointers
+/// Creates a copy of query, changes database, table and table function names.
+ASTPtr rewriteSelectQuery(
+    ContextPtr context,
+    const ASTPtr & query,
+    const std::string & remote_database,
+    const std::string & remote_table,
+    ASTPtr table_function_ptr)
+{
+    auto modified_query_ast = query->clone();
+
+    ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+
+    if (!context->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (table_function_ptr)
+            select_query.addTableFunction(table_function_ptr);
+        else
+            select_query.replaceDatabaseAndTable(remote_database, remote_table);
+
+        /// Restore long column names (cause our short names are ambiguous).
+        /// TODO: aliased table functions & CREATE TABLE AS table function cases
+        if (!table_function_ptr)
+        {
+            RestoreQualifiedNamesVisitor::Data data;
+            data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+            data.remote_table.database = remote_database;
+            data.remote_table.table = remote_table;
+            RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+        }
+    }
+
+    /// To make local JOIN works, default database should be added to table names.
+    /// But only for JOIN section, since the following should work using default_database:
+    /// - SELECT * FROM d WHERE value IN (SELECT l.value FROM l) ORDER BY value
+    ///   (see 01487_distributed_in_not_default_db)
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+        /* only_replace_current_database_function_= */false,
+        /* only_replace_in_join_= */true);
+    visitor.visit(modified_query_ast);
+
+    return modified_query_ast;
+}
+
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
@@ -57,32 +119,81 @@ void SelectStreamFactory::createForShard(
     ContextPtr context,
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
-    UInt32 shard_count)
+    UInt32 shard_count,
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
     auto it = objects_by_shard.find(shard_info.shard_num);
     if (it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
+    createForShardImpl(
+        shard_info,
+        query_ast,
+        {},
+        main_table,
+        table_func_ptr,
+        std::move(context),
+        local_plans,
+        remote_shards,
+        shard_count,
+        parallel_replicas_enabled,
+        std::move(shard_filter_generator));
+}
+
+void SelectStreamFactory::createForShardImpl(
+    const Cluster::ShardInfo & shard_info,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
+    UInt32 shard_count,
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator,
+    bool has_missing_objects)
+{
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
+        Block shard_header;
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+        else
+            shard_header = header;
+
         remote_shards.emplace_back(Shard{
             .query = query_ast,
-            .header = header,
+            .query_tree = query_tree,
+            .main_table = main_table,
+            .header = shard_header,
+            .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
+            .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
 
     const auto & settings = context->getSettingsRef();
 
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
+    fiu_do_on(FailPoints::use_delayed_remote_source,
+    {
+        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
+        return;
+    });
+
+    // prefer_localhost_replica is not effective in case of parallel replicas
+    // (1) prefer_localhost_replica is about choosing one replica on a shard
+    // (2) parallel replica coordinator has own logic to choose replicas to read from
+    if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
     {
         StoragePtr main_table_storage;
 
@@ -103,7 +214,7 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
+                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
                     main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
@@ -123,7 +234,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
         {
@@ -141,7 +252,7 @@ void SelectStreamFactory::createForShard(
 
         /// If we reached this point, local replica is stale.
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
+        LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
@@ -152,10 +263,8 @@ void SelectStreamFactory::createForShard(
                 return;
             }
             else
-                throw Exception(
-                    "Local replica of shard " + toString(shard_info.shard_num)
-                    + " is stale (delay: " + toString(local_delay) + "s.), but no other replica configured",
-                    ErrorCodes::ALL_REPLICAS_ARE_STALE);
+                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
+                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
         }
 
         if (!shard_info.hasRemoteConnections())
@@ -173,99 +282,44 @@ void SelectStreamFactory::createForShard(
         emplace_remote_stream();
 }
 
-
-SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelReplicas(
+void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const StorageID & main_table,
-    const ASTPtr & table_function_ptr,
-    const ThrottlerPtr & throttler,
+    const ASTPtr & table_func_ptr,
     ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
     UInt32 shard_count,
-    const std::shared_ptr<const StorageLimitsList> & storage_limits)
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
-    SelectStreamFactory::ShardPlans result;
 
-    if (auto it = objects_by_shard.find(shard_info.shard_num); it != objects_by_shard.end())
-        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
+    auto it = objects_by_shard.find(shard_info.shard_num);
+    QueryTreeNodePtr modified_query = query_tree;
 
-    const auto & settings = context->getSettingsRef();
+    bool has_missing_objects = false;
+    if (it != objects_by_shard.end())
+        has_missing_objects = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
 
-    auto is_local_replica_obsolete = [&]()
-    {
-        auto resolved_id = context->resolveStorageID(main_table);
-        auto main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-        const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
+    auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
 
-        if (!replicated_storage)
-            return false;
+    createForShardImpl(
+        shard_info,
+        query_ast,
+        modified_query,
+        main_table,
+        table_func_ptr,
+        std::move(context),
+        local_plans,
+        remote_shards,
+        shard_count,
+        parallel_replicas_enabled,
+        std::move(shard_filter_generator),
+        has_missing_objects);
 
-        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
-
-        if (!max_allowed_delay)
-            return false;
-
-        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
-        return local_delay >= max_allowed_delay;
-    };
-
-    size_t next_replica_number = 0;
-    size_t all_replicas_count = shard_info.getRemoteNodeCount();
-
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
-    auto remote_plan = std::make_unique<QueryPlan>();
-
-
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
-    {
-        /// We don't need more than one local replica in parallel reading
-        if (!is_local_replica_obsolete())
-        {
-            ++all_replicas_count;
-
-            result.local_plan = createLocalPlan(
-                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, next_replica_number, all_replicas_count, coordinator);
-
-            ++next_replica_number;
-        }
-    }
-
-    Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-    scalars.emplace(
-        "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-    auto external_tables = context->getExternalTables();
-
-    auto shard = Shard{
-        .query = query_ast,
-        .header = header,
-        .shard_info = shard_info,
-        .lazy = false,
-        .local_delay = 0,
-    };
-
-    if (shard_info.hasRemoteConnections())
-    {
-        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            coordinator,
-            shard,
-            header,
-            processed_stage,
-            main_table,
-            table_function_ptr,
-            context,
-            throttler,
-            std::move(scalars),
-            std::move(external_tables),
-            &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-            storage_limits);
-
-        remote_plan->addStep(std::move(read_from_remote));
-        remote_plan->addInterpreterContext(context);
-        result.remote_plan = std::move(remote_plan);
-    }
-
-    return result;
 }
+
 
 }
 }

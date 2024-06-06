@@ -11,12 +11,12 @@ namespace DB
 JSONRowOutputFormat::JSONRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
-    const RowOutputFormatParams & params_,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header, out_, params_), settings(settings_), yield_strings(yield_strings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header, out_, settings_.json.valid_output_on_exception, true), settings(settings_), yield_strings(yield_strings_)
 {
     names = JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, true);
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
 
@@ -112,22 +112,32 @@ void JSONRowOutputFormat::writeAfterExtremes()
 
 void JSONRowOutputFormat::finalizeImpl()
 {
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
-
     JSONUtils::writeAdditionalInfo(
         row_count,
         statistics.rows_before_limit,
         statistics.applied_limit,
         statistics.watch,
         statistics.progress,
-        settings.write_statistics,
+        settings.write_statistics && exception_message.empty(),
         *ostr);
+
+    if (!exception_message.empty())
+    {
+        writeCString(",\n\n", *ostr);
+        JSONUtils::writeException(exception_message, *ostr, settings, 1);
+    }
 
     JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
     ostr->next();
+}
+
+void JSONRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+    row_count = 0;
+    statistics = Statistics();
 }
 
 
@@ -142,10 +152,9 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.registerOutputFormat("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, format_settings, false);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
@@ -154,10 +163,9 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, true);
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, format_settings, true);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");

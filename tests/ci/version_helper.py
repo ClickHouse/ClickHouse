@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import logging
 import os.path as p
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, ArgumentTypeError
-from typing import Dict, List, Optional, Tuple, Union
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, ArgumentTypeError
+from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union
 
 from git_helper import TWEAK, Git, get_tags, git_runner, removeprefix
 
@@ -38,6 +38,8 @@ SET(VERSION_STRING {string})
 class ClickHouseVersion:
     """Immutable version class. On update returns a new instance"""
 
+    PART_TYPE = Literal["major", "minor", "patch"]
+
     def __init__(
         self,
         major: Union[int, str],
@@ -45,7 +47,7 @@ class ClickHouseVersion:
         patch: Union[int, str],
         revision: Union[int, str],
         git: Optional[Git],
-        tweak: str = None,
+        tweak: Optional[str] = None,
     ):
         self._major = int(major)
         self._minor = int(minor)
@@ -58,11 +60,17 @@ class ClickHouseVersion:
         elif self._git is not None:
             self._tweak = self._git.tweak
         self._describe = ""
+        self._description = ""
 
-    def update(self, part: str) -> "ClickHouseVersion":
+    def update(self, part: PART_TYPE) -> "ClickHouseVersion":
         """If part is valid, returns a new version"""
-        method = getattr(self, f"{part}_update")
-        return method()
+        if part == "major":
+            return self.major_update()
+        if part == "minor":
+            return self.minor_update()
+        if part == "patch":
+            return self.patch_update()
+        raise KeyError(f"wrong part {part} is used")
 
     def major_update(self) -> "ClickHouseVersion":
         if self._git is not None:
@@ -81,6 +89,13 @@ class ClickHouseVersion:
             self._git.update()
         return ClickHouseVersion(
             self.major, self.minor, self.patch + 1, self.revision, self._git
+        )
+
+    def reset_tweak(self) -> "ClickHouseVersion":
+        if self._git is not None:
+            self._git.update()
+        return ClickHouseVersion(
+            self.major, self.minor, self.patch, self.revision, self._git, "1"
         )
 
     @property
@@ -105,6 +120,7 @@ class ClickHouseVersion:
 
     @property
     def githash(self) -> str:
+        "returns the CURRENT git SHA1"
         if self._git is not None:
             return self._git.sha
         return "0000000000000000000000000000000000000000"
@@ -114,10 +130,19 @@ class ClickHouseVersion:
         return self._describe
 
     @property
+    def description(self) -> str:
+        return self._description
+
+    @property
     def string(self):
         return ".".join(
             (str(self.major), str(self.minor), str(self.patch), str(self.tweak))
         )
+
+    @property
+    def is_lts(self) -> bool:
+        """our X.3 and X.8 are LTS"""
+        return self.minor % 5 == 3
 
     def as_dict(self) -> VERSIONS:
         return {
@@ -137,12 +162,28 @@ class ClickHouseVersion:
     def with_description(self, version_type):
         if version_type not in VersionType.VALID:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
+        self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
 
-    def __eq__(self, other) -> bool:
+    def copy(self) -> "ClickHouseVersion":
+        copy = ClickHouseVersion(
+            self.major,
+            self.minor,
+            self.patch,
+            self.revision,
+            self._git,
+            str(self.tweak),
+        )
+        try:
+            copy.with_description(self.description)
+        except ValueError:
+            pass
+        return copy
+
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(self, type(other)):
             return NotImplemented
-        return (
+        return bool(
             self.major == other.major
             and self.minor == other.minor
             and self.patch == other.patch
@@ -161,6 +202,21 @@ class ClickHouseVersion:
     def __le__(self, other: "ClickHouseVersion") -> bool:
         return self == other or self < other
 
+    def __hash__(self):
+        return hash(self.__repr__)
+
+    def __str__(self):
+        return f"{self.string}"
+
+    def __repr__(self):
+        return (
+            f"<ClickHouseVersion({self.major},{self.minor},{self.patch},{self.tweak},"
+            f"'{self.description}')>"
+        )
+
+
+ClickHouseVersions = List[ClickHouseVersion]
+
 
 class VersionType:
     LTS = "lts"
@@ -170,7 +226,7 @@ class VersionType:
     VALID = (TESTING, PRESTABLE, STABLE, LTS)
 
 
-def validate_version(version: str):
+def validate_version(version: str) -> None:
     parts = version.split(".")
     if len(parts) != 4:
         raise ValueError(f"{version} does not contain 4 parts")
@@ -227,8 +283,10 @@ def get_version_from_string(
 
 def get_version_from_tag(tag: str) -> ClickHouseVersion:
     Git.check_tag(tag)
-    tag = tag[1:].split("-")[0]
-    return get_version_from_string(tag)
+    tag, description = tag[1:].split("-", 1)
+    version = get_version_from_string(tag)
+    version.with_description(description)
+    return version
 
 
 def version_arg(version: str) -> ClickHouseVersion:
@@ -245,7 +303,7 @@ def version_arg(version: str) -> ClickHouseVersion:
     raise ArgumentTypeError(f"version {version} does not match tag of plain version")
 
 
-def get_tagged_versions() -> List[ClickHouseVersion]:
+def get_tagged_versions() -> ClickHouseVersions:
     versions = []
     for tag in get_tags():
         try:
@@ -256,10 +314,44 @@ def get_tagged_versions() -> List[ClickHouseVersion]:
     return sorted(versions)
 
 
+def get_supported_versions(
+    versions: Optional[Iterable[ClickHouseVersion]] = None,
+) -> Set[ClickHouseVersion]:
+    supported_stable = set()  # type: Set[ClickHouseVersion]
+    supported_lts = set()  # type: Set[ClickHouseVersion]
+    if versions:
+        versions = list(versions)
+    else:
+        # checks that repo is not shallow in background
+        versions = get_tagged_versions()
+    versions.sort()
+    versions.reverse()
+    for version in versions:
+        if len(supported_stable) < 3:
+            if not {
+                sv
+                for sv in supported_stable
+                if version.major == sv.major and version.minor == sv.minor
+            }:
+                supported_stable.add(version)
+        if (version.description == VersionType.LTS or version.is_lts) and len(
+            supported_lts
+        ) < 2:
+            if not {
+                sv
+                for sv in supported_lts
+                if version.major == sv.major and version.minor == sv.minor
+            }:
+                supported_lts.add(version)
+        if len(supported_stable) == 3 and len(supported_lts) == 2:
+            break
+    return supported_lts.union(supported_stable)
+
+
 def update_cmake_version(
     version: ClickHouseVersion,
     versions_path: str = FILE_WITH_VERSION_PATH,
-):
+) -> None:
     path_to_file = get_abs_path(versions_path)
     with open(path_to_file, "w", encoding="utf-8") as f:
         f.write(VERSIONS_TEMPLATE.format_map(version.as_dict()))
@@ -269,7 +361,7 @@ def update_contributors(
     relative_contributors_path: str = GENERATED_CONTRIBUTORS,
     force: bool = False,
     raise_error: bool = False,
-):
+) -> None:
     # Check if we have shallow checkout by comparing number of lines
     # '--is-shallow-repository' is in git since 2.15, 2017-10-30
     if git_runner.run("git rev-parse --is-shallow-repository") == "true" and not force:
@@ -280,8 +372,9 @@ def update_contributors(
 
     # format: "  1016  Alexey Arno"
     shortlog = git_runner.run("git shortlog HEAD --summary")
+    escaping = str.maketrans({"\\": "\\\\", '"': '\\"'})
     contributors = sorted(
-        [c.split(maxsplit=1)[-1].replace('"', r"\"") for c in shortlog.split("\n")],
+        [c.split(maxsplit=1)[-1].translate(escaping) for c in shortlog.split("\n")],
     )
     contributors = [f'    "{c}",' for c in contributors]
 
@@ -317,6 +410,7 @@ def main():
         "--version-type",
         "-t",
         choices=VersionType.VALID,
+        default=VersionType.TESTING,
         help="optional parameter to generate DESCRIBE",
     )
     parser.add_argument(
@@ -326,10 +420,16 @@ def main():
         help="if the ENV variables should be exported",
     )
     parser.add_argument(
-        "--update",
-        "-u",
+        "--update-part",
         choices=("major", "minor", "patch"),
-        help="the version part to update, tweak is always calculated from commits",
+        help="the version part to update, tweak is always calculated from commits, "
+        "implies `--update-cmake`",
+    )
+    parser.add_argument(
+        "--update-cmake",
+        "-u",
+        action="store_true",
+        help=f"is update for {FILE_WITH_VERSION_PATH} is needed or not",
     )
     parser.add_argument(
         "--update-contributors",
@@ -346,13 +446,12 @@ def main():
 
     version = get_version_from_repo(args.version_path, Git(True))
 
-    if args.update:
-        version = version.update(args.update)
+    if args.update_part:
+        version = version.update(args.update_part)
 
-    if args.version_type:
-        version.with_description(args.version_type)
+    version.with_description(args.version_type)
 
-    if args.update:
+    if args.update_part or args.update_cmake:
         update_cmake_version(version)
 
     for k, v in version.as_dict().items():

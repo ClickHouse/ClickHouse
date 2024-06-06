@@ -24,11 +24,11 @@ namespace
 
 std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node)
 {
-    const auto & constant_value = node->getConstantValue();
+    const auto & constant_node = node->as<ConstantNode &>();
 
     std::pair<Field, DataTypePtr> result;
-    result.first = constant_value.getValue();
-    result.second = constant_value.getType();
+    result.first = constant_node.getValue();
+    result.second = constant_node.getResultType();
 
     if (!isColumnedAsNumber(result.second))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL expression must be constant with numeric type");
@@ -38,16 +38,16 @@ std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node
 
 std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const QueryTreeNodePtr & node)
 {
-    const auto & constant_value = node->getConstantValue();
+    const auto & constant_node = node->as<ConstantNode &>();
 
-    const auto & constant_node_result_type = constant_value.getType();
+    const auto & constant_node_result_type = constant_node.getResultType();
     if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(constant_node_result_type.get()))
-        return std::make_pair(constant_value.getValue(), type_interval->getKind());
+        return std::make_pair(constant_node.getValue(), type_interval->getKind());
 
     if (!isColumnedAsNumber(constant_node_result_type))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL expression must be constant with numeric type");
 
-    return {constant_value.getValue(), {}};
+    return {constant_node.getValue(), {}};
 }
 
 FillColumnDescription extractWithFillDescription(const SortNode & sort_node)

@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/safe_cast.h>
+#include <Common/MemorySanitizer.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -25,13 +26,14 @@
 
 #include <string.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-}
+
 
 namespace OpenSSLDetails
 {
@@ -40,13 +42,13 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, Strin
 
 const EVP_CIPHER * getCipherByName(StringRef name);
 
-enum class CompatibilityMode
+enum class CompatibilityMode : uint8_t
 {
     MySQL,
     OpenSSL
 };
 
-enum class CipherMode
+enum class CipherMode : uint8_t
 {
     MySQLCompatibility,   // with key folding
     OpenSSLCompatibility, // just as regular openssl's enc application does (AEAD modes, like GCM and CCM are not supported)
@@ -57,11 +59,10 @@ enum class CipherMode
 template <CipherMode mode>
 struct KeyHolder
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key) const
+    StringRef setKey(size_t cipher_key_size, StringRef key) const
     {
         if (key.size != cipher_key_size)
-            throw DB::Exception(fmt::format("Invalid key size: {} expected {}", key.size, cipher_key_size),
-                    DB::ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
 
         return key;
     }
@@ -70,11 +71,10 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key)
+    StringRef setKey(size_t cipher_key_size, StringRef key)
     {
         if (key.size < cipher_key_size)
-            throw DB::Exception(fmt::format("Invalid key size: {} expected {}", key.size, cipher_key_size),
-                    DB::ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
 
         // MySQL does something fancy with the keys that are too long,
         // ruining compatibility with OpenSSL and not improving security.
@@ -97,7 +97,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
 {
     if constexpr (compatibility_mode == CompatibilityMode::MySQL)
     {
-        switch (EVP_CIPHER_mode(evp_cipher))
+        switch (EVP_CIPHER_mode(evp_cipher)) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case EVP_CIPH_ECB_MODE: [[fallthrough]];
             case EVP_CIPH_CBC_MODE: [[fallthrough]];
@@ -108,7 +108,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
     }
     else if constexpr (compatibility_mode == CompatibilityMode::OpenSSL)
     {
-        switch (EVP_CIPHER_mode(evp_cipher))
+        switch (EVP_CIPHER_mode(evp_cipher)) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case EVP_CIPH_ECB_MODE: [[fallthrough]];
             case EVP_CIPH_CBC_MODE: [[fallthrough]];
@@ -120,7 +120,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
         }
     }
 
-    throw DB::Exception("Unsupported cipher mode", DB::ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported cipher mode");
 }
 
 template <CipherMode mode>
@@ -129,14 +129,11 @@ inline void validateIV(StringRef iv_value, const size_t cipher_iv_size)
     // In MySQL mode we don't care if IV is longer than expected, only if shorter.
     if ((mode == CipherMode::MySQLCompatibility && iv_value.size != 0 && iv_value.size < cipher_iv_size)
             || (mode == CipherMode::OpenSSLCompatibility && iv_value.size != 0 && iv_value.size != cipher_iv_size))
-        throw DB::Exception(fmt::format("Invalid IV size: {} expected {}", iv_value.size, cipher_iv_size),
-                DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid IV size: {} expected {}", iv_value.size, cipher_iv_size);
 }
 
 }
 
-namespace DB
-{
 template <typename Impl>
 class FunctionEncrypt : public IFunction
 {
@@ -158,21 +155,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
+            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "encryption mode string"},
-                {"input", &isStringOrFixedString<IDataType>, {}, "plaintext"},
-                {"key", &isStringOrFixedString<IDataType>, {}, "encryption key binary string"},
+                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
+                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
+                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
             },
             optional_args
         );
@@ -187,11 +184,11 @@ private:
         const auto mode = arguments[0].column->getDataAt(0);
 
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
@@ -207,7 +204,7 @@ private:
         {
             const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
-                throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} does not support IV", mode.toString());
 
             if (arguments.size() <= 4)
             {
@@ -216,7 +213,7 @@ private:
             else
             {
                 if (cipher_mode != EVP_CIPH_GCM_MODE)
-                    throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
                 result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
@@ -316,14 +313,12 @@ private:
                 // in GCM mode IV can be of arbitrary size (>0), IV is optional for other modes.
                 if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
-                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size, iv_size);
                 }
 
                 if (mode != CipherMode::RFC5116_AEAD_AES_GCM && key_value.size != key_size)
                 {
-                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", key_value.size, key_size);
                 }
             }
 
@@ -372,12 +367,14 @@ private:
                         reinterpret_cast<unsigned char*>(encrypted), &output_len,
                         reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
                     onError("Failed to encrypt");
+                __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 3: retrieve encrypted data (ciphertext)
                 if (EVP_EncryptFinal_ex(evp_ctx,
                         reinterpret_cast<unsigned char*>(encrypted), &output_len) != 1)
                     onError("Failed to fetch ciphertext");
+                __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 4: optionally retrieve a tag and append it to the ciphertext (RFC5116):
@@ -431,21 +428,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
+            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "decryption mode string"},
-                {"input", &isStringOrFixedString<IDataType>, {}, "ciphertext"},
-                {"key", &isStringOrFixedString<IDataType>, {}, "decryption key binary string"},
+                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
+                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
+                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "decryption key binary string"},
             },
             optional_args
         );
@@ -462,11 +459,11 @@ private:
 
         const auto mode = arguments[0].column->getDataAt(0);
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -482,7 +479,7 @@ private:
         {
             const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
-                throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} does not support IV", mode.toString());
 
             if (arguments.size() <= 4)
             {
@@ -491,7 +488,7 @@ private:
             else
             {
                 if (EVP_CIPHER_mode(evp_cipher) != EVP_CIPH_GCM_MODE)
-                    throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
                 result_column = doDecrypt<use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
@@ -565,8 +562,7 @@ private:
                     if (string_size > 0)
                     {
                         if (string_size < tag_size)
-                            throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                                ErrorCodes::BAD_ARGUMENTS);
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
 
                         resulting_size -= tag_size;
                     }
@@ -601,9 +597,9 @@ private:
                 {
                     // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                     if (input_value.size < tag_size)
-                        throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
-                                input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
+                                input_value.size, tag_size);
 
                     input_value.size -= tag_size;
                 }
@@ -614,14 +610,12 @@ private:
                 // in GCM mode IV can be of arbitrary size (>0), for other modes IV is optional.
                 if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
-                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size, iv_size);
                 }
 
                 if (key_value.size != key_size)
                 {
-                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", key_value.size, key_size);
                 }
             }
 
@@ -679,6 +673,7 @@ private:
                 }
                 else
                 {
+                    __msan_unpoison(decrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                     decrypted += output_len;
                     // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
                     if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -697,7 +692,10 @@ private:
                         decrypt_fail = true;
                     }
                     else
+                    {
+                        __msan_unpoison(decrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                         decrypted += output_len;
+                    }
                 }
             }
 

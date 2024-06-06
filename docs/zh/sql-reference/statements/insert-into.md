@@ -8,7 +8,7 @@ INSERT INTO 语句主要用于向系统中添加数据.
 查询的基本格式:
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
 您可以在查询中指定要插入的列的列表，如：`[(c1, c2, c3)]`。您还可以使用列[匹配器](../../sql-reference/statements/select/index.md#asterisk)的表达式，例如`*`和/或[修饰符](../../sql-reference/statements/select/index.md#select-modifiers)，例如 [APPLY](../../sql-reference/statements/select/index.md#apply-modifier)， [EXCEPT](../../sql-reference/statements/select/index.md#apply-modifier)， [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier)。
@@ -68,10 +68,10 @@ SELECT * FROM insert_select_testtable;
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
-例如，下面的查询所使用的输入格式就与上面INSERT … VALUES的中使用的输入格式相同：
+例如，下面的查询所使用的输入格式就与上面INSERT ... VALUES的中使用的输入格式相同：
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
 ClickHouse会清除数据前所有的空白字符与一个换行符（如果有换行符的话）。所以在进行查询时，我们建议您将数据放入到输入输出格式名称后的新的一行中去（如果数据是以空白字符开始的，这将非常重要）。
@@ -90,10 +90,10 @@ INSERT INTO t FORMAT TabSeparated
 
 如果表中有一些[限制](../../sql-reference/statements/create/table.mdx#constraints),，数据插入时会逐行进行数据校验，如果这里面包含了不符合限制条件的数据，服务将会抛出包含限制信息的异常，这个语句也会被停止执行。
 
-### 使用`SELECT`的结果写入 {#insert_query_insert-select}
+### 使用`SELECT`的结果写入 {#inserting-the-results-of-select}
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
 写入与SELECT的列的对应关系是使用位置来进行对应的，尽管它们在SELECT表达式与INSERT中的名称可能是不同的。如果需要，会对它们执行对应的类型转换。
@@ -176,5 +176,3 @@ SELECT * FROM simple_table;
 -   写入的数据已经按照时间排序。
 
 也可以异步的、小规模的插入数据，这些数据会被合并成多个批次，然后安全地写入到表中，通过设置[async_insert](../../operations/settings/settings.md#async-insert)，可以使用异步插入的方式，请注意，异步插入的方式只支持HTTP协议，并且不支持数据去重。
-
-[来源文章](https://clickhouse.com/docs/en/query_language/insert_into/) <!--hide-->

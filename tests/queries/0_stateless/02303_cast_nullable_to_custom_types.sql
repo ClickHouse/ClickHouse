@@ -12,6 +12,7 @@ select CAST(number % 2 ? 'true' : NULL, 'Nullable(Bool)') from numbers(2);
 select CAST(number % 2 ? '0.0.0.0' : NULL, 'Nullable(IPv4)') from numbers(2);
 select CAST(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL, 'Nullable(IPv6)') from numbers(2);
 
+set cast_keep_nullable = 1;
 select toBool(number % 2 ? 'true' : NULL) from numbers(2);
 select toIPv4(number % 2 ? '0.0.0.0' : NULL) from numbers(2);
 select toIPv4OrDefault(number % 2 ? '' : NULL) from numbers(2);
@@ -21,3 +22,9 @@ select toIPv6(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL) fro
 select toIPv6OrDefault(number % 2 ? '' : NULL) from numbers(2);
 select toIPv6OrNull(number % 2 ? '' : NULL) from numbers(2);
 select IPv6StringToNum(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL) from numbers(2);
+
+select 'fuzzer issue';
+SELECT CAST(if(number % 2, 'truetrue', NULL), 'Nullable(Bool)') FROM numbers(2); -- {serverError CANNOT_PARSE_BOOL}
+SELECT CAST(if(number % 2, 'falsefalse', NULL), 'Nullable(Bool)') FROM numbers(2); -- {serverError CANNOT_PARSE_BOOL}
+SELECT accurateCastOrNull(if(number % 2, NULL, 'truex'), 'Bool') FROM numbers(4);
+SELECT accurateCastOrNull(if(number % 2, 'truex', NULL), 'Bool') FROM numbers(4);

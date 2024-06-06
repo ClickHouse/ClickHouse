@@ -1,59 +1,49 @@
 ---
-sidebar_label: Settings
-sidebar_position: 51
+title: "Settings Overview"
+sidebar_position: 1
 slug: /en/operations/settings/
 pagination_next: en/operations/settings/settings
 ---
 
 # Settings Overview
 
-There are multiple ways to make all the settings described in this section of documentation.
+:::note
+XML-based Settings Profiles and [configuration files](https://clickhouse.com/docs/en/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](https://clickhouse.com/docs/en/operations/access-rights#settings-profiles-management).
+:::
 
-Settings are configured in layers, so each subsequent layer redefines the previous settings.
+There are two main groups of ClickHouse settings:
 
-Ways to configure settings, in order of priority:
+- Global server settings
+- Query-level settings
 
--   Settings in the `users.xml` server configuration file.
+The main distinction between global server settings and query-level settings is that global server settings must be set in configuration files, while query-level settings can be set in configuration files or with SQL queries.
 
-    Set in the element `<profiles>`.
+Read about [global server settings](/docs/en/operations/server-configuration-parameters/settings.md) to learn more about configuring your ClickHouse server at the global server level.
 
--   Session settings.
+Read about [query-level settings](/docs/en/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the query level.
 
-    Send `SET setting=value` from the ClickHouse console client in interactive mode.
-    Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` HTTP parameter.
+## See non-default settings
 
--   Query settings.
-
-    -   When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
-    -   When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
-    -   Make settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) clause of the SELECT query. The setting value is applied only to that query and is reset to default or previous value after the query is executed.
-
-Settings that can only be made in the server config file are not covered in this section.
-
-## Custom Settings {#custom_settings}
-
-In addition to the common [settings](../../operations/settings/settings.md), users can define custom settings.
-
-A custom setting name must begin with one of predefined prefixes. The list of these prefixes must be declared in the [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) parameter in the server configuration file.
-
-```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
-```
-
-To define a custom setting use `SET` command:
+To view which settings have been changed from their default value:
 
 ```sql
-SET custom_a = 123;
+SELECT name, value FROM system.settings WHERE changed
 ```
 
-To get the current value of a custom setting use `getSetting()` function:
+If you haven't changed any settings from their default value, then ClickHouse will return nothing.
+
+To check the value of a particular setting, specify the `name` of the setting in your query:
 
 ```sql
-SELECT getSetting('custom_a');
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
 ```
 
-**See Also**
+This command should return something like:
 
--   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->
+1 row in set. Elapsed: 0.002 sec.
+```

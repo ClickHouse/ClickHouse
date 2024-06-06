@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 :::
 
@@ -137,4 +137,3 @@ ClickHouse может слить куски данных таким образо
 При запросе данных используйте функцию [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) для агрегации `Map`.
 
 Для вложенной структуры данных не нужно указывать её столбцы в кортеже столбцов для суммирования.
-

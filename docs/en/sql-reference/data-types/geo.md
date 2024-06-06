@@ -1,8 +1,8 @@
 ---
 slug: /en/sql-reference/data-types/geo
-sidebar_position: 62
+sidebar_position: 54
 sidebar_label: Geo
-title: "Geo Data Types"
+title: "Geometric"
 ---
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
@@ -26,9 +26,9 @@ SELECT p, toTypeName(p) FROM geo_point;
 Result:
 
 ``` text
-┌─p─────┬─toTypeName(p)─┐
+┌─p───────┬─toTypeName(p)─┐
 │ (10,10) │ Point         │
-└───────┴───────────────┘
+└─────────┴───────────────┘
 ```
 
 ## Ring
@@ -95,3 +95,6 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
+## Related Content
+
+- [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

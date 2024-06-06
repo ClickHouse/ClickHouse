@@ -75,7 +75,7 @@ CREATE DICTIONARY db_01268.dict2
 )
 PRIMARY KEY region_id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict2' PASSWORD '' DB 'database_for_dict_01268'))
-LAYOUT(DIRECT());
+LAYOUT(DIRECT()) SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 
 CREATE DICTIONARY db_01268.dict3
 (
@@ -116,7 +116,7 @@ SELECT dictGetStringOrDefault('db_01268.dict2', 'region_name', toUInt64(8), 'NON
 SELECT dictGetStringOrDefault('db_01268.dict2', 'region_name', toUInt64(9), 'NONE');
 SELECT dictGetStringOrDefault('db_01268.dict2', 'region_name', toUInt64(10), 'NONE');
 
-SELECT dictGetUInt64('db_01268.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
+SELECT dictGetUInt64('db_01268.dict1', 'second_column', toUInt64(100500)); -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SELECT 'END';
 

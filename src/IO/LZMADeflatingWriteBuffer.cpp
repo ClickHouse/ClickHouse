@@ -7,9 +7,7 @@ namespace ErrorCodes
     extern const int LZMA_STREAM_ENCODER_FAILED;
 }
 
-LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+void LZMADeflatingWriteBuffer::initialize(int compression_level)
 {
 
     lstr = LZMA_STREAM_INIT;
@@ -46,7 +44,8 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    finalize();
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter())
+    lzma_end(&lstr);
 }
 
 void LZMADeflatingWriteBuffer::nextImpl()
@@ -92,6 +91,10 @@ void LZMADeflatingWriteBuffer::nextImpl()
 void LZMADeflatingWriteBuffer::finalizeBefore()
 {
     next();
+
+    /// Don't write out if no data was ever compressed
+    if (!compress_empty && lstr.total_out == 0)
+        return;
 
     do
     {

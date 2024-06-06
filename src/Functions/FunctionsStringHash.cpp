@@ -14,6 +14,14 @@
 
 #include <city.h>
 
+#if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include "vec_crc32.h"
+#endif
+
+#if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
+#include <crc32-s390x.h>
+#endif
+
 namespace DB
 {
 
@@ -36,8 +44,12 @@ struct Hash
         return _mm_crc32_u64(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cd(static_cast<UInt32>(crc), val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
+#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -47,8 +59,12 @@ struct Hash
         return _mm_crc32_u32(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cw(crc, val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
+#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -58,8 +74,12 @@ struct Hash
         return _mm_crc32_u16(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32ch(crc, val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
+#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -69,8 +89,12 @@ struct Hash
         return _mm_crc32_u8(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cb(crc, val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
+#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
+        return crc32c_le(static_cast<UInt32>(crc), reinterpret_cast<unsigned char *>(&val), sizeof(val));
 #else
-        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
 #endif
     }
 
@@ -272,8 +296,8 @@ struct SimHashImpl
                 continue;
 
             // we need to store the new word hash value to the oldest location.
-            // for example, N = 5, array |a0|a1|a2|a3|a4|, now , a0 is the oldest location,
-            // so we need to store new word hash into location of a0, then ,this array become
+            // for example, N = 5, array |a0|a1|a2|a3|a4|, now, a0 is the oldest location,
+            // so we need to store new word hash into location of a0, then this array become
             // |a5|a1|a2|a3|a4|, next time, a1 become the oldest location, we need to store new
             // word hash value into location of a1, then array become |a5|a6|a2|a3|a4|
             words[offset] = BytesRef{word_start, length};
@@ -773,4 +797,3 @@ REGISTER_FUNCTION(StringHash)
     factory.registerFunction<FunctionWordShingleMinHashArgCaseInsensitiveUTF8>();
 }
 }
-

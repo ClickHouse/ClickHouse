@@ -4,6 +4,7 @@
 #include <Interpreters/TableJoin.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 
 namespace DB
@@ -20,18 +21,36 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
+                                  int null_direction_ = 1)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
+        , null_direction(null_direction_)
     {
-        LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
+        LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
+
+    std::string getName() const override { return "FullSortingMergeJoin"; }
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override
+    bool isCloneSupported() const override
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addJoinedBlock should not be called");
+        return true;
+    }
+
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block &,
+        const Block & right_sample_block_) const override
+    {
+        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction);
+    }
+
+    int getNullDirection() const { return null_direction; }
+
+    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addBlockToJoin should not be called");
     }
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join)
@@ -43,6 +62,10 @@ public:
 
         const auto & on_expr = table_join->getOnlyClause();
         bool support_conditions = !on_expr.on_filter_condition_left && !on_expr.on_filter_condition_right;
+
+        if (!on_expr.analyzer_left_filter_condition_column_name.empty() ||
+            !on_expr.analyzer_right_filter_condition_column_name.empty())
+            support_conditions = false;
 
         /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
         bool support_using_and_nulls = !table_join->hasUsing() || !table_join->joinUseNulls();
@@ -100,7 +123,7 @@ public:
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
-    std::shared_ptr<NotJoinedBlocks>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getNonJoinedBlocks should not be called");
@@ -113,6 +136,7 @@ private:
     std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
     Block totals;
+    int null_direction;
 };
 
 }

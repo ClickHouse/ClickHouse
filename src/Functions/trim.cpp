@@ -46,8 +46,8 @@ public:
         ColumnString::Offsets & res_offsets)
     {
         size_t size = offsets.size();
-        res_offsets.resize(size);
-        res_data.reserve(data.size());
+        res_offsets.resize_exact(size);
+        res_data.reserve_exact(data.size());
 
         size_t prev_offset = 0;
         size_t res_offset = 0;
@@ -71,7 +71,7 @@ public:
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Functions trimLeft, trimRight and trimBoth cannot work with FixedString argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Functions trimLeft, trimRight and trimBoth cannot work with FixedString argument");
     }
 
 private:
@@ -112,5 +112,8 @@ REGISTER_FUNCTION(Trim)
     factory.registerFunction<FunctionTrimLeft>();
     factory.registerFunction<FunctionTrimRight>();
     factory.registerFunction<FunctionTrimBoth>();
+    factory.registerAlias("ltrim", FunctionTrimLeft::name);
+    factory.registerAlias("rtrim", FunctionTrimRight::name);
+    factory.registerAlias("trim", FunctionTrimBoth::name);
 }
 }

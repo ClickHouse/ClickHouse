@@ -1,5 +1,6 @@
 #include <Analyzer/IdentifierNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -37,21 +38,13 @@ void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
     }
 }
 
-bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const IdentifierNode &>(rhs);
-
-    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
-        return false;
-    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
-        return false;
-    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
-        return false;
-
-    return identifier == rhs_typed.identifier;
+    return identifier == rhs_typed.identifier && table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
 
-void IdentifierNode::updateTreeHashImpl(HashState & state) const
+void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     const auto & identifier_name = identifier.getFullName();
     state.update(identifier_name.size());
@@ -63,10 +56,12 @@ void IdentifierNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr IdentifierNode::cloneImpl() const
 {
-    return std::make_shared<IdentifierNode>(identifier);
+    auto clone_identifier_node = std::make_shared<IdentifierNode>(identifier);
+    clone_identifier_node->table_expression_modifiers = table_expression_modifiers;
+    return clone_identifier_node;
 }
 
-ASTPtr IdentifierNode::toASTImpl() const
+ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
     return std::make_shared<ASTIdentifier>(std::move(identifier_parts));

@@ -53,7 +53,54 @@ static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
                         child_num, child->getInputStreams().size(), node->children.size());
 }
 
-static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
+static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const NameSet & identifiers_in_predicate)
+{
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        for (const auto & identifier : identifiers_in_predicate)
+        {
+            if (std::find(grouping_set.used_keys.begin(), grouping_set.used_keys.end(), identifier) == grouping_set.used_keys.end())
+                return false;
+        }
+    }
+    return true;
+}
+
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+{
+    NameSet res;
+
+    /// We treat all INPUT as identifier
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        res.emplace(node->result_name);
+        return res;
+    }
+
+    std::queue<const ActionsDAG::Node *> queue;
+    queue.push(node);
+
+    while (!queue.empty())
+    {
+        const auto * top = queue.front();
+        for (const auto * child : top->children)
+        {
+            if (child->type == ActionsDAG::ActionType::INPUT)
+            {
+                res.emplace(child->result_name);
+            }
+            else
+            {
+                /// Only push non INPUT child into the queue
+                queue.push(child);
+            }
+        }
+        queue.pop();
+    }
+    return res;
+}
+
+static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -67,14 +114,12 @@ static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & al
     bool removes_filter = filter->removesFilterColumn();
 
     const auto & all_inputs = child->getInputStreams()[child_idx].header.getColumnsWithTypeAndName();
-
-    auto split_filter = expression->cloneActionsForFilterPushDown(filter_column_name, removes_filter, allowed_inputs, all_inputs);
-    return split_filter;
+    return expression->splitActionsForFilterPushDown(filter_column_name, removes_filter, available_inputs, all_inputs);
 }
 
 static size_t
-tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const ActionsDAGPtr & split_filter,
-                    bool can_remove_filter = true, size_t child_idx = 0)
+addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const ActionsDAGPtr & split_filter,
+                    bool can_remove_filter = true, size_t child_idx = 0, bool update_parent_filter = true)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -87,21 +132,18 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     const auto & filter_column_name = filter->getFilterColumnName();
 
     const auto * filter_node = expression->tryFindInOutputs(filter_column_name);
-    if (!filter_node && !filter->removesFilterColumn())
+    if (update_parent_filter && !filter_node && !filter->removesFilterColumn())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
                         filter_column_name, expression->dumpDAG());
 
-    /// Filter column was replaced to constant.
-    const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
-
-    /// Add new Filter step before Aggregating.
-    /// Expression/Filter -> Aggregating -> Something
+    /// Add new Filter step before Child.
+    /// Expression/Filter -> Child -> Something
     auto & node = nodes.emplace_back();
     node.children.emplace_back(&node);
 
     std::swap(node.children[0], child_node->children[child_idx]);
-    /// Expression/Filter -> Aggregating -> Filter -> Something
+    /// Expression/Filter -> Child -> Filter -> Something
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter->getOutputs().front()->result_name;
@@ -124,12 +166,22 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
                 ErrorCodes::LOGICAL_ERROR, "We are trying to push down a filter through a step for which we cannot update input stream");
     }
 
-    if (!filter_node || filter_is_constant)
-        /// This means that all predicates of filter were pushed down.
-        /// Replace current actions to expression, as we don't need to filter anything.
-        parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
-    else
-        filter->updateInputStream(child->getOutputStream());
+    if (update_parent_filter)
+    {
+        /// Filter column was replaced to constant.
+        const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
+
+        if (!filter_node || filter_is_constant)
+        {
+            /// This means that all predicates of filter were pushed down.
+            /// Replace current actions to expression, as we don't need to filter anything.
+            parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
+        }
+        else
+        {
+            filter->updateInputStream(child->getOutputStream());
+        }
+    }
 
     return 3;
 }
@@ -139,7 +191,7 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
                     bool can_remove_filter = true, size_t child_idx = 0)
 {
     if (auto split_filter = splitFilter(parent_node, allowed_inputs, child_idx))
-        return tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
+        return addNewFilterStepOrThrow(parent_node, nodes, split_filter, can_remove_filter, child_idx);
     return 0;
 }
 
@@ -155,6 +207,198 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
             return updated_steps;
     }
     return 0;
+}
+
+static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
+{
+    auto & parent = parent_node->step;
+    auto * filter = assert_cast<FilterStep *>(parent.get());
+
+    auto * join = typeid_cast<JoinStep *>(child.get());
+    auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
+
+    if (!join && !filled_join)
+        return 0;
+
+    /** For equivalent JOIN with condition `ON lhs.x_1 = rhs.y_1 AND lhs.x_2 = rhs.y_2 ...`, we can build equivalent sets of columns and this
+      * will allow to push conditions that only use columns from equivalent sets to both sides of JOIN, without considering JOIN type.
+      *
+      * For example: `FROM lhs INNER JOIN rhs ON lhs.id = rhs.id AND lhs.value = rhs.value`
+      * In this example columns `id` and `value` from both tables are equivalent.
+      *
+      * During filter push down for different JOIN types filter push down logic is different:
+      *
+      * 1. For INNER JOIN we can push all valid conditions to both sides of JOIN. We also can push all valid conditions that use columns from
+      * equivalent sets to both sides of JOIN.
+      * 2. For LEFT/RIGHT JOIN we can push conditions that use columns from LEFT/RIGHT stream to LEFT/RIGHT JOIN side. We can also push conditions
+      * that use columns from LEFT/RIGHT equivalent sets to RIGHT/LEFT JOIN side.
+      *
+      * Additional filter push down optimizations:
+      * 1. TODO: Support building equivalent sets for more than 2 JOINS. It is possible, but will require more complex analysis step.
+      * 2. TODO: Support building equivalent sets for JOINs with more than 1 clause.
+      * 3. TODO: It is possible to pull up filter conditions from LEFT/RIGHT stream and push conditions that use columns from LEFT/RIGHT equivalent sets
+      * to RIGHT/LEFT JOIN side.
+      */
+
+    const auto & join_header = child->getOutputStream().header;
+    const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
+    const auto & left_stream_input_header = child->getInputStreams().front().header;
+    const auto & right_stream_input_header = child->getInputStreams().back().header;
+
+    if (table_join.kind() == JoinKind::Full)
+        return 0;
+
+    std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
+    std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
+
+    bool has_single_clause = table_join.getClauses().size() == 1;
+
+    if (has_single_clause && !filled_join)
+    {
+        const auto & join_clause = table_join.getClauses()[0];
+        size_t key_names_size = join_clause.key_names_left.size();
+
+        for (size_t i = 0; i < key_names_size; ++i)
+        {
+            const auto & left_table_key_name = join_clause.key_names_left[i];
+            const auto & right_table_key_name = join_clause.key_names_right[i];
+            const auto & left_table_column = left_stream_input_header.getByName(left_table_key_name);
+            const auto & right_table_column = right_stream_input_header.getByName(right_table_key_name);
+
+            if (!left_table_column.type->equals(*right_table_column.type))
+                continue;
+
+            equivalent_left_stream_column_to_right_stream_column[left_table_key_name] = right_table_column;
+            equivalent_right_stream_column_to_left_stream_column[right_table_key_name] = left_table_column;
+        }
+    }
+
+    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
+    {
+        Names available_input_columns_for_filter;
+
+        if (!filter_push_down_input_columns_available)
+            return available_input_columns_for_filter;
+
+        const auto & input_header = push_to_left_stream ? left_stream_input_header : right_stream_input_header;
+        const auto & input_columns_names = input_header.getNames();
+
+        for (const auto & name : input_columns_names)
+        {
+            if (!join_header.has(name))
+                continue;
+
+            /// Skip if type is changed. Push down expression expect equal types.
+            if (!input_header.getByName(name).type->equals(*join_header.getByName(name).type))
+                continue;
+
+            available_input_columns_for_filter.push_back(name);
+        }
+
+        return available_input_columns_for_filter;
+    };
+
+    bool left_stream_filter_push_down_input_columns_available = true;
+    bool right_stream_filter_push_down_input_columns_available = true;
+
+    if (table_join.kind() == JoinKind::Left)
+        right_stream_filter_push_down_input_columns_available = false;
+    else if (table_join.kind() == JoinKind::Right)
+        left_stream_filter_push_down_input_columns_available = false;
+
+    /** We disable push down to right table in cases:
+      * 1. Right side is already filled. Example: JOIN with Dictionary.
+      * 2. ASOF Right join is not supported.
+      */
+    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join.strictness() != JoinStrictness::Asof;
+    if (!allow_push_down_to_right)
+        right_stream_filter_push_down_input_columns_available = false;
+
+    Names equivalent_columns_to_push_down;
+
+    if (left_stream_filter_push_down_input_columns_available)
+    {
+        for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
+            equivalent_columns_to_push_down.push_back(name);
+    }
+
+    if (right_stream_filter_push_down_input_columns_available)
+    {
+        for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
+            equivalent_columns_to_push_down.push_back(name);
+    }
+
+    Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
+    Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
+
+    auto join_filter_push_down_actions = filter->getExpression()->splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
+        filter->removesFilterColumn(),
+        left_stream_available_columns_to_push_down,
+        left_stream_input_header,
+        right_stream_available_columns_to_push_down,
+        right_stream_input_header,
+        equivalent_columns_to_push_down,
+        equivalent_left_stream_column_to_right_stream_column,
+        equivalent_right_stream_column_to_left_stream_column);
+
+    size_t updated_steps = 0;
+
+    if (join_filter_push_down_actions.left_stream_filter_to_push_down)
+    {
+        updated_steps += addNewFilterStepOrThrow(parent_node,
+            nodes,
+            join_filter_push_down_actions.left_stream_filter_to_push_down,
+            join_filter_push_down_actions.left_stream_filter_removes_filter,
+            0 /*child_idx*/,
+            false /*update_parent_filter*/);
+        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+            "Pushed down filter {} to the {} side of join",
+            join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name,
+            JoinKind::Left);
+    }
+
+    if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
+    {
+        updated_steps += addNewFilterStepOrThrow(parent_node,
+            nodes,
+            join_filter_push_down_actions.right_stream_filter_to_push_down,
+            join_filter_push_down_actions.right_stream_filter_removes_filter,
+            1 /*child_idx*/,
+            false /*update_parent_filter*/);
+        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+            "Pushed down filter {} to the {} side of join",
+            join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name,
+            JoinKind::Right);
+    }
+
+    if (updated_steps > 0)
+    {
+        const auto & filter_column_name = filter->getFilterColumnName();
+        const auto & filter_expression = filter->getExpression();
+
+        const auto * filter_node = filter_expression->tryFindInOutputs(filter_column_name);
+        if (!filter_node && !filter->removesFilterColumn())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
+                        filter_column_name, filter_expression->dumpDAG());
+
+
+        /// Filter column was replaced to constant.
+        const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
+
+        if (!filter_node || filter_is_constant)
+        {
+            /// This means that all predicates of filter were pushed down.
+            /// Replace current actions to expression, as we don't need to filter anything.
+            parent = std::make_unique<ExpressionStep>(child->getOutputStream(), filter_expression);
+        }
+        else
+        {
+            filter->updateInputStream(child->getOutputStream());
+        }
+    }
+
+    return updated_steps;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
@@ -176,6 +420,23 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
+        /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
+        /// of the grouping sets, we could not push the filter down.
+        if (aggregating->isGroupingSets())
+        {
+            /// Cannot push down filter if type has been changed.
+            if (aggregating->isGroupByUseNulls())
+                return 0;
+
+            const auto & actions = filter->getExpression();
+            const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
+
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+
+            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
+                return 0;
+        }
+
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;
 
@@ -207,11 +468,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 2;
     }
 
+    if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(child.get()))
+    {
+        /// CreatingSets does not change header.
+        /// We can push down filter and update header.
+        /// Filter - DelayedCreatingSets - Something
+        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputStream(), delayed->detachSets(), delayed->getContext());
+        std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
+        /// DelayedCreatingSets - Filter - Something
+        return 2;
+    }
+
     if (auto * totals_having = typeid_cast<TotalsHavingStep *>(child.get()))
     {
         /// If totals step has HAVING expression, skip it for now.
         /// TODO:
-        /// We can merge HAVING expression with current filer.
+        /// We can merge HAVING expression with current filter.
         /// Also, we can push down part of HAVING which depend only on aggregation keys.
         if (totals_having->getActions())
             return 0;
@@ -243,9 +517,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (!keys.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
-        // for (const auto & name : allowed_inputs)
-        //     std::cerr << name << std::endl;
-
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
             return updated_steps;
     }
@@ -253,70 +524,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
         return updated_steps;
 
-    if (auto * join = typeid_cast<JoinStep *>(child.get()))
-    {
-        auto join_push_down = [&](JoinKind kind) -> size_t
-        {
-            const auto & table_join = join->getJoin()->getTableJoin();
-
-            /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
-            /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-            if (table_join.kind() != JoinKind::Inner && table_join.kind() != kind)
-                return 0;
-
-            bool is_left = kind == JoinKind::Left;
-            const auto & input_header = is_left ? join->getInputStreams().front().header : join->getInputStreams().back().header;
-            const auto & res_header = join->getOutputStream().header;
-            Names allowed_keys;
-            const auto & source_columns = input_header.getNames();
-            for (const auto & name : source_columns)
-            {
-                /// Skip key if it is renamed.
-                /// I don't know if it is possible. Just in case.
-                if (!input_header.has(name) || !res_header.has(name))
-                    continue;
-
-                /// Skip if type is changed. Push down expression expect equal types.
-                if (!input_header.getByName(name).type->equals(*res_header.getByName(name).type))
-                    continue;
-
-                allowed_keys.push_back(name);
-            }
-
-            /// For left JOIN, push down to the first child; for right - to the second one.
-            const auto child_idx = is_left ? 0 : 1;
-            ActionsDAGPtr split_filter = splitFilter(parent_node, allowed_keys, child_idx);
-            if (!split_filter)
-                return 0;
-            /*
-             * We should check the presence of a split filter column name in `source_columns` to avoid removing the required column.
-             *
-             * Example:
-             * A filter expression is `a AND b = c`, but `b` and `c` belong to another side of the join and not in `allowed_keys`, so the final split filter is just `a`.
-             * In this case `a` can be in `source_columns` but not `and(a, equals(b, c))`.
-             *
-             * New filter column is the first one.
-             */
-            const String & split_filter_column_name = split_filter->getOutputs().front()->result_name;
-            bool can_remove_filter = source_columns.end() == std::find(source_columns.begin(), source_columns.end(), split_filter_column_name);
-            const size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
-            if (updated_steps > 0)
-            {
-                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join", split_filter_column_name, kind);
-            }
-            return updated_steps;
-        };
-
-        if (size_t updated_steps = join_push_down(JoinKind::Left))
-            return updated_steps;
-
-        /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
-        if (join->allowPushDownToRight())
-        {
-            if (size_t updated_steps = join_push_down(JoinKind::Right))
-                return updated_steps;
-        }
-    }
+    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))
+        return updated_steps;
 
     /// TODO.
     /// We can filter earlier if expression does not depend on WITH FILL columns.
@@ -333,11 +542,29 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * sorting = typeid_cast<SortingStep *>(child.get()))
+    {
+        const auto & sort_description = sorting->getSortDescription();
+        auto sort_description_it = std::find_if(sort_description.begin(), sort_description.end(), [&](auto & sort_column_description)
+        {
+            return sort_column_description.column_name == filter->getFilterColumnName();
+        });
+        bool can_remove_filter = sort_description_it == sort_description.end();
 
-    if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
-        return updated_steps;
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
+
+    if (const auto * join_filter_set_step = typeid_cast<CreateSetAndFilterOnTheFlyStep *>(child.get()))
+    {
+        const auto & filter_column_name = assert_cast<const FilterStep *>(parent_node->step.get())->getFilterColumnName();
+        bool can_remove_filter = !join_filter_set_step->isColumnPartOfSetKey(filter_column_name);
+
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {

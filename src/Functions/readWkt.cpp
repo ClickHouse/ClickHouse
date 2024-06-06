@@ -16,6 +16,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKT : public IFunction
@@ -41,8 +43,7 @@ public:
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
         {
-            throw Exception("First argument should be String",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
         }
 
         return DataTypeFactory::instance().get(DataTypeName().getName());
@@ -50,14 +51,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto * column_string = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         Serializer serializer;
         Geometry geometry;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string->getDataAt(i).toString();
+            const auto & str = column_string.getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);
             serializer.add(geometry);
         }
@@ -95,6 +96,8 @@ struct ReadWKTMultiPolygonNameHolder
 {
     static constexpr const char * name = "readWKTMultiPolygon";
 };
+
+}
 
 REGISTER_FUNCTION(ReadWKT)
 {

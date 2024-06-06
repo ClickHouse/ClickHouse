@@ -1,18 +1,28 @@
 #!/usr/bin/env python
 """Helper for GitHub API requests"""
 import logging
+import re
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from os import path as p
+from pathlib import Path
 from time import sleep
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import github
-from github.GithubException import RateLimitExceededException
-from github.Issue import Issue
-from github.NamedUser import NamedUser
-from github.PullRequest import PullRequest
-from github.Repository import Repository
+import requests
+
+# explicit reimport
+# pylint: disable=useless-import-alias
+from github.AuthenticatedUser import AuthenticatedUser
+from github.GithubException import (
+    RateLimitExceededException as RateLimitExceededException,
+)
+from github.Issue import Issue as Issue
+from github.NamedUser import NamedUser as NamedUser
+from github.PullRequest import PullRequest as PullRequest
+from github.Repository import Repository as Repository
+
+# pylint: enable=useless-import-alias
 
 CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
@@ -23,9 +33,13 @@ Issues = List[Issue]
 
 
 class GitHub(github.Github):
-    def __init__(self, *args, **kwargs):
-        # Define meta attribute
+    def __init__(self, *args, create_cache_dir=True, **kwargs):
+        # Define meta attribute and apply setter logic
         self._cache_path = Path(CACHE_PATH)
+        if create_cache_dir:
+            self.cache_path = self.cache_path
+        if not kwargs.get("per_page"):
+            kwargs["per_page"] = 100
         # And set Path
         super().__init__(*args, **kwargs)
         self._retries = 0
@@ -90,7 +104,7 @@ class GitHub(github.Github):
         raise exception
 
     # pylint: enable=signature-differs
-    def get_pulls_from_search(self, *args, **kwargs) -> PullRequests:
+    def get_pulls_from_search(self, *args, **kwargs) -> PullRequests:  # type: ignore
         """The search api returns actually issues, so we need to fetch PullRequests"""
         issues = self.search_issues(*args, **kwargs)
         repos = {}
@@ -99,7 +113,7 @@ class GitHub(github.Github):
             # See https://github.com/PyGithub/PyGithub/issues/2202,
             # obj._rawData doesn't spend additional API requests
             # pylint: disable=protected-access
-            repo_url = issue._rawData["repository_url"]  # type: ignore
+            repo_url = issue._rawData["repository_url"]
             if repo_url not in repos:
                 repos[repo_url] = issue.repository
             prs.append(
@@ -107,7 +121,15 @@ class GitHub(github.Github):
             )
         return prs
 
-    def sleep_on_rate_limit(self):
+    def get_release_pulls(self, repo_name: str) -> PullRequests:
+        return self.get_pulls_from_search(
+            query=f"type:pr repo:{repo_name} is:open",
+            sort="created",
+            order="asc",
+            label="release",
+        )
+
+    def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():
             if data["remaining"] == 0:
                 sleep_time = data["reset"] - int(datetime.now().timestamp()) + 1
@@ -123,7 +145,9 @@ class GitHub(github.Github):
     def get_pull_cached(
         self, repo: Repository, number: int, obj_updated_at: Optional[datetime] = None
     ) -> PullRequest:
-        cache_file = self.cache_path / f"pr-{number}.pickle"
+        # clean any special symbol from the repo name, especially '/'
+        repo_name = re.sub(r"\W", "_", repo.full_name)
+        cache_file = self.cache_path / f"pr-{repo_name}-{number}.pickle"
 
         if cache_file.is_file():
             is_updated, cached_pr = self._is_cache_updated(cache_file, obj_updated_at)
@@ -146,7 +170,7 @@ class GitHub(github.Github):
 
     def get_user_cached(
         self, login: str, obj_updated_at: Optional[datetime] = None
-    ) -> NamedUser:
+    ) -> Union[AuthenticatedUser, NamedUser]:
         cache_file = self.cache_path / f"user-{login}.pickle"
 
         if cache_file.is_file():
@@ -168,9 +192,35 @@ class GitHub(github.Github):
             self.dump(user, prfd)  # type: ignore
         return user
 
-    def _get_cached(self, path: Path):
+    def _get_cached(self, path: Path):  # type: ignore
         with open(path, "rb") as ob_fd:
             return self.load(ob_fd)  # type: ignore
+
+    # pylint: disable=protected-access
+    @staticmethod
+    def toggle_pr_draft(pr: PullRequest) -> None:
+        """GH rest API does not provide a way to toggle the draft status for PR"""
+        node_id = pr._rawData["node_id"]
+        if pr.draft:
+            action = (
+                "mutation PullRequestReadyForReview($input:MarkPullRequestReadyForReviewInput!)"
+                "{markPullRequestReadyForReview(input: $input){pullRequest{id}}}"
+            )
+        else:
+            action = (
+                "mutation ConvertPullRequestToDraft($input:ConvertPullRequestToDraftInput!)"
+                "{convertPullRequestToDraft(input: $input){pullRequest{id}}}"
+            )
+        query = {
+            "query": action,
+            "variables": {"input": {"pullRequestId": node_id}},
+        }
+        url = f"{pr._requester.base_url}/graphql"
+        _, data = pr._requester.requestJsonAndCheck("POST", url, input=query)
+        if data.get("data"):
+            pr._draft = pr._makeBoolAttribute(not pr.draft)
+
+    # pylint: enable=protected-access
 
     def _is_cache_updated(
         self, cache_file: Path, obj_updated_at: Optional[datetime]
@@ -179,22 +229,22 @@ class GitHub(github.Github):
         # We don't want the cache_updated being always old,
         # for example in cases when the user is not updated for ages
         cache_updated = max(
-            datetime.fromtimestamp(cache_file.stat().st_mtime), cached_obj.updated_at
+            cache_file.stat().st_mtime, cached_obj.updated_at.timestamp()
         )
         if obj_updated_at is None:
             # When we don't know about the object is updated or not,
             # we update it once per hour
             obj_updated_at = datetime.now() - timedelta(hours=1)
-        if obj_updated_at <= cache_updated:
+        if obj_updated_at.timestamp() <= cache_updated:
             return True, cached_obj
         return False, cached_obj
 
     @property
-    def cache_path(self):
+    def cache_path(self) -> Path:
         return self._cache_path
 
     @cache_path.setter
-    def cache_path(self, value: str):
+    def cache_path(self, value: str) -> None:
         self._cache_path = Path(value)
         if self._cache_path.exists():
             assert self._cache_path.is_dir()
@@ -208,5 +258,20 @@ class GitHub(github.Github):
         return self._retries
 
     @retries.setter
-    def retries(self, value: int):
+    def retries(self, value: int) -> None:
+        assert isinstance(value, int)
         self._retries = value
+
+    # static methods not using pygithub
+    @staticmethod
+    def cancel_wf(repo, run_id, token, strict=False):
+        headers = {"Authorization": f"token {token}"}
+        url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel"
+        try:
+            response = requests.post(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            print(f"NOTE: Workflow [{run_id}] has been cancelled")
+        except Exception as ex:
+            print("ERROR: Got exception executing wf cancel request", ex)
+            if strict:
+                raise ex

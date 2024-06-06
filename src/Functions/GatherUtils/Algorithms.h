@@ -79,8 +79,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
         sink.current_offset += slice.size;
     }
     else
-        throw Exception("Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.");
 }
 
 template <typename T>
@@ -159,8 +158,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArr
         ++sink.current_offset;
     }
     else
-        throw Exception("Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.");
 }
 
 template <typename T>
@@ -208,9 +206,9 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     auto check_and_get_size_to_reserve = [] (auto source, IArraySource * array_source)
     {
         if (source == nullptr)
-            throw Exception("Concat function expected " + demangle(typeid(Source).name()) + " or "
-                            + demangle(typeid(ConstSource<Source>).name()) + " but got "
-                            + demangle(typeid(*array_source).name()), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Concat function expected {} or {} but got {}",
+                            demangle(typeid(Source).name()), demangle(typeid(ConstSource<Source>).name()),
+                            demangle(typeid(*array_source).name()));
         return source->getSizeForReserve();
     };
 
@@ -442,9 +440,6 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
     const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
-    bool a_is_short = src_a.getColumnSize() < condition.size();
-    bool b_is_short = src_b.getColumnSize() < condition.size();
-
     while (cond_pos < cond_end)
     {
         if (*cond_pos)
@@ -452,10 +447,8 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
         else
             writeSlice(src_b.getWhole(), sink);
 
-        if (!a_is_short || *cond_pos)
-            src_a.next();
-        if (!b_is_short || !*cond_pos)
-            src_b.next();
+        src_a.next();
+        src_b.next();
 
         ++cond_pos;
         sink.next();
@@ -614,7 +607,7 @@ bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
     if (!first.elements->structureEquals(*second.elements))
-        throw Exception("Function sliceHas expects same column types for slices.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function sliceHas expects same column types for slices.");
 
     auto impl = sliceHasImpl<search_type, GenericArraySlice, GenericArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, nullptr);

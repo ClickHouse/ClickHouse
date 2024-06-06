@@ -23,7 +23,6 @@ public:
     JSONObjectEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_);
 
     String getName() const override { return "JSONObjectEachRowRowOutputFormat"; }
@@ -41,6 +40,7 @@ private:
 
     std::optional<size_t> field_index_for_object_name;
     String object_name;
+    size_t rows = 0;
 };
 
 }

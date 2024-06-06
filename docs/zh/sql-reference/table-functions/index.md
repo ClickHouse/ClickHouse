@@ -32,5 +32,3 @@ sidebar_position: 34
 | [jdbc](../../sql-reference/table-functions/jdbc.md)             | 创建一个JDBC引擎表。 |
 | [odbc](../../sql-reference/table-functions/odbc.md)             | 创建一个ODBC引擎表。 |
 | [hdfs](../../sql-reference/table-functions/hdfs.md)             | 创建一个HDFS引擎表。 |
-
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/) <!--hide-->

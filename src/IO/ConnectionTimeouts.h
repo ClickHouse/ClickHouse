@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Timespan.h>
 
 namespace DB
@@ -10,112 +12,118 @@ namespace DB
 
 struct Settings;
 
+#define APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(M) \
+    M(connection_timeout, withUnsecureConnectionTimeout) \
+    M(secure_connection_timeout, withSecureConnectionTimeout) \
+    M(send_timeout, withSendTimeout) \
+    M(receive_timeout, withReceiveTimeout) \
+    M(tcp_keep_alive_timeout, withTCPKeepAliveTimeout) \
+    M(http_keep_alive_timeout, withHTTPKeepAliveTimeout) \
+    M(hedged_connection_timeout, withHedgedConnectionTimeout) \
+    M(receive_data_timeout, withReceiveDataTimeout) \
+    M(handshake_timeout, withHandshakeTimeout) \
+    M(sync_request_timeout, withSyncRequestTimeout) \
+
+
 struct ConnectionTimeouts
 {
-    Poco::Timespan connection_timeout;
-    Poco::Timespan send_timeout;
-    Poco::Timespan receive_timeout;
-    Poco::Timespan tcp_keep_alive_timeout;
-    Poco::Timespan http_keep_alive_timeout;
-    Poco::Timespan secure_connection_timeout;
+    Poco::Timespan connection_timeout = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0);
+    Poco::Timespan secure_connection_timeout = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0);
+
+    Poco::Timespan send_timeout = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
+    Poco::Timespan receive_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
+
+    Poco::Timespan tcp_keep_alive_timeout = Poco::Timespan(DEFAULT_TCP_KEEP_ALIVE_TIMEOUT, 0);
+    Poco::Timespan http_keep_alive_timeout = Poco::Timespan(DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, 0);
+    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
 
     /// Timeouts for HedgedConnections
-    Poco::Timespan hedged_connection_timeout;
-    Poco::Timespan receive_data_timeout;
-
+    Poco::Timespan hedged_connection_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
+    Poco::Timespan receive_data_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
+    /// Timeout for receiving HELLO packet
+    Poco::Timespan handshake_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
     /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus)
     Poco::Timespan sync_request_timeout = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0);
 
     ConnectionTimeouts() = default;
 
-    ConnectionTimeouts(Poco::Timespan connection_timeout_,
-                       Poco::Timespan send_timeout_,
-                       Poco::Timespan receive_timeout_)
-    : connection_timeout(connection_timeout_),
-      send_timeout(send_timeout_),
-      receive_timeout(receive_timeout_),
-      tcp_keep_alive_timeout(0),
-      http_keep_alive_timeout(0),
-      secure_connection_timeout(connection_timeout),
-      hedged_connection_timeout(receive_timeout_),
-      receive_data_timeout(receive_timeout_)
-    {
-    }
-
-    ConnectionTimeouts(Poco::Timespan connection_timeout_,
-                       Poco::Timespan send_timeout_,
-                       Poco::Timespan receive_timeout_,
-                       Poco::Timespan tcp_keep_alive_timeout_)
-    : connection_timeout(connection_timeout_),
-      send_timeout(send_timeout_),
-      receive_timeout(receive_timeout_),
-      tcp_keep_alive_timeout(tcp_keep_alive_timeout_),
-      http_keep_alive_timeout(0),
-      secure_connection_timeout(connection_timeout),
-      hedged_connection_timeout(receive_timeout_),
-      receive_data_timeout(receive_timeout_)
-    {
-    }
-    ConnectionTimeouts(Poco::Timespan connection_timeout_,
-                       Poco::Timespan send_timeout_,
-                       Poco::Timespan receive_timeout_,
-                       Poco::Timespan tcp_keep_alive_timeout_,
-                       Poco::Timespan http_keep_alive_timeout_)
-        : connection_timeout(connection_timeout_),
-          send_timeout(send_timeout_),
-          receive_timeout(receive_timeout_),
-          tcp_keep_alive_timeout(tcp_keep_alive_timeout_),
-          http_keep_alive_timeout(http_keep_alive_timeout_),
-          secure_connection_timeout(connection_timeout),
-          hedged_connection_timeout(receive_timeout_),
-          receive_data_timeout(receive_timeout_)
-    {
-    }
-
-    ConnectionTimeouts(Poco::Timespan connection_timeout_,
-                       Poco::Timespan send_timeout_,
-                       Poco::Timespan receive_timeout_,
-                       Poco::Timespan tcp_keep_alive_timeout_,
-                       Poco::Timespan http_keep_alive_timeout_,
-                       Poco::Timespan secure_connection_timeout_,
-                       Poco::Timespan receive_hello_timeout_,
-                       Poco::Timespan receive_data_timeout_)
-        : connection_timeout(connection_timeout_),
-          send_timeout(send_timeout_),
-          receive_timeout(receive_timeout_),
-          tcp_keep_alive_timeout(tcp_keep_alive_timeout_),
-          http_keep_alive_timeout(http_keep_alive_timeout_),
-          secure_connection_timeout(secure_connection_timeout_),
-          hedged_connection_timeout(receive_hello_timeout_),
-          receive_data_timeout(receive_data_timeout_)
-    {
-    }
-
-    static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit)
-    {
-        if (limit.totalMicroseconds() == 0)
-            return timespan;
-        else
-            return (timespan > limit) ? limit : timespan;
-    }
-
-    ConnectionTimeouts getSaturated(Poco::Timespan limit) const
-    {
-        return ConnectionTimeouts(saturate(connection_timeout, limit),
-                                  saturate(send_timeout, limit),
-                                  saturate(receive_timeout, limit),
-                                  saturate(tcp_keep_alive_timeout, limit),
-                                  saturate(http_keep_alive_timeout, limit),
-                                  saturate(secure_connection_timeout, limit),
-                                  saturate(hedged_connection_timeout, limit),
-                                  saturate(receive_data_timeout, limit));
-    }
+    static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit);
+    ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
 
     /// Timeouts for the case when we have just single attempt to connect.
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
+
     /// Timeouts for the case when we will try many addresses in a loop.
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
-    static ConnectionTimeouts getHTTPTimeouts(ContextPtr context);
+    static ConnectionTimeouts getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout);
+
+    static ConnectionTimeouts getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings);
+
+    ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+
+#define DECLARE_BUILDER_FOR_MEMBER(member, setter_func) \
+    ConnectionTimeouts & setter_func(size_t seconds); \
+    ConnectionTimeouts & setter_func(Poco::Timespan span); \
+
+APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
+#undef DECLARE_BUILDER_FOR_MEMBER
+
+    ConnectionTimeouts & withConnectionTimeout(size_t seconds);
+    ConnectionTimeouts & withConnectionTimeout(Poco::Timespan span);
+    ConnectionTimeouts & withHTTPKeepAliveMaxRequests(size_t requests);
 };
+
+/// NOLINTBEGIN(bugprone-macro-parentheses)
+#define DEFINE_BUILDER_FOR_MEMBER(member, setter_func) \
+    inline ConnectionTimeouts & ConnectionTimeouts::setter_func(size_t seconds) \
+    { \
+        return setter_func(Poco::Timespan(seconds, 0)); \
+    } \
+    inline ConnectionTimeouts & ConnectionTimeouts::setter_func(Poco::Timespan span) \
+    { \
+        member = span; \
+        return *this; \
+    } \
+
+    APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DEFINE_BUILDER_FOR_MEMBER)
+/// NOLINTEND(bugprone-macro-parentheses)
+
+#undef DEFINE_BUILDER_FOR_MEMBER
+
+
+inline ConnectionTimeouts ConnectionTimeouts::getSaturated(Poco::Timespan limit) const
+{
+#define SATURATE_MEMBER(member, setter_func) \
+    .setter_func(saturate(member, limit))
+
+    return ConnectionTimeouts(*this)
+APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(SATURATE_MEMBER);
+
+#undef SATURETE_MEMBER
+}
+
+#undef APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS
+
+inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(size_t seconds)
+{
+    return withConnectionTimeout(Poco::Timespan(seconds, 0));
+}
+
+inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Timespan span)
+{
+    connection_timeout = span;
+    secure_connection_timeout = span;
+    return *this;
+}
+
+inline ConnectionTimeouts & ConnectionTimeouts::withHTTPKeepAliveMaxRequests(size_t requests)
+{
+    http_keep_alive_max_requests = requests;
+    return *this;
+}
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
+ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session);
 
 }

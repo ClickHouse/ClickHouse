@@ -44,7 +44,7 @@ struct TimeSlotsImpl
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         if (time_slot_size == 0)
-            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time slot size cannot be zero");
 
         size_t size = starts.size();
 
@@ -69,7 +69,7 @@ struct TimeSlotsImpl
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         if (time_slot_size == 0)
-            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time slot size cannot be zero");
 
         size_t size = starts.size();
 
@@ -94,7 +94,7 @@ struct TimeSlotsImpl
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         if (time_slot_size == 0)
-            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time slot size cannot be zero");
 
         size_t size = durations.size();
 
@@ -137,7 +137,7 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         time_slot_size = time_slot_size.value * ts_multiplier;
         if (time_slot_size == 0)
-            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time slot size cannot be zero");
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -170,7 +170,7 @@ struct TimeSlotsImpl
         duration = duration * dur_multiplier;
         time_slot_size = time_slot_size.value * ts_multiplier;
         if (time_slot_size == 0)
-            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time slot size cannot be zero");
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -203,7 +203,7 @@ struct TimeSlotsImpl
         start = dt_multiplier * start;
         time_slot_size = time_slot_size.value * ts_multiplier;
         if (time_slot_size == 0)
-            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time slot size cannot be zero");
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -238,50 +238,46 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(arguments.size()) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                            getName(), arguments.size());
 
         if (WhichDataType(arguments[0].type).isDateTime())
         {
             if (!WhichDataType(arguments[1].type).isUInt32())
-                throw Exception(
-                    "Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be UInt32 when first argument is DateTime.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                    "Must be UInt32 when first argument is DateTime.", arguments[1].type->getName(), getName());
 
             if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isNativeUInt())
-                throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() + ". Must be UInt32 when first argument is DateTime.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                    "Must be UInt32 when first argument is DateTime.", arguments[2].type->getName(), getName());
         }
         else if (WhichDataType(arguments[0].type).isDateTime64())
         {
             if (!WhichDataType(arguments[1].type).isDecimal64())
-                throw Exception(
-                    "Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be Decimal64 when first argument is DateTime64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                    "Must be Decimal64 when first argument is DateTime64.", arguments[1].type->getName(), getName());
 
             if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isDecimal64())
-                throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() + ". Must be Decimal64 when first argument is DateTime64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
+                    "Must be Decimal64 when first argument is DateTime64.", arguments[2].type->getName(), getName());
         }
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
-                                + ". Must be DateTime or DateTime64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                                "Must be DateTime or DateTime64.", arguments[0].type->getName(), getName());
 
         /// If time zone is specified for source data type, attach it to the resulting type.
         /// Note that there is no explicit time zone argument for this function (we specify 2 as an argument number with explicit time zone).
         if (WhichDataType(arguments[0].type).isDateTime())
         {
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
         }
         else
         {
             auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
             auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
             return std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
+                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
         }
 
     }
@@ -295,10 +291,10 @@ public:
             {
                 const auto * time_slot_column = checkAndGetColumn<ColumnConst>(arguments[2].column.get());
                 if (!time_slot_column)
-                    throw Exception("Third argument for function " + getName() + " must be constant UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument for function {} must be constant UInt32", getName());
 
                 if (time_slot_size = time_slot_column->getValue<UInt32>(); time_slot_size <= 0)
-                    throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be greater than zero", getName());
             }
 
             const auto * dt_starts = checkAndGetColumn<ColumnDateTime>(arguments[0].column.get());
@@ -335,10 +331,10 @@ public:
             {
                 const auto * time_slot_column = checkAndGetColumn<ColumnConst>(arguments[2].column.get());
                 if (!time_slot_column)
-                    throw Exception("Third argument for function " + getName() + " must be constant Decimal64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument for function {} must be constant Decimal64", getName());
 
                 if (time_slot_size = time_slot_column->getValue<Decimal64>(); time_slot_size <= 0)
-                    throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be greater than zero", getName());
                 time_slot_scale = assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale();
             }
 
@@ -378,17 +374,13 @@ public:
 
         if (arguments.size() == 3)
         {
-            throw Exception(
-                "Illegal columns " + arguments[0].column->getName() + ", " + arguments[1].column->getName() + ", "
-                    + arguments[2].column->getName() + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {}, {} of arguments of function {}",
+                arguments[0].column->getName(), arguments[1].column->getName(), arguments[2].column->getName(), getName());
         }
         else
         {
-            throw Exception(
-                "Illegal columns " + arguments[0].column->getName() + ", " + arguments[1].column->getName()
-                    + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
+                arguments[0].column->getName(), arguments[1].column->getName(), getName());
         }
     }
 };

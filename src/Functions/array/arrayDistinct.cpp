@@ -48,9 +48,8 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception("Argument for function " + getName() + " must be array but it "
-                " has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
+                getName(), arguments[0]->getName());
 
         auto nested_type = removeNullable(array_type->getNestedType());
 
@@ -90,20 +89,20 @@ private:
 ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
 {
     ColumnPtr array_ptr = arguments[0].column;
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+    const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
 
     const auto & return_type = result_type;
 
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
-    const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const IColumn & src_data = array.getData();
+    const ColumnArray::Offsets & offsets = array.getOffsets();
 
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
-    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
+    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
 
     const IColumn * inner_col;
 
@@ -269,10 +268,9 @@ void FunctionArrayDistinct::executeHashed(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            UInt128 hash;
             SipHash hash_function;
             src_data.updateHashWithValue(j, hash_function);
-            hash_function.get128(hash);
+            const auto hash = hash_function.get128();
 
             if (!set.find(hash))
             {

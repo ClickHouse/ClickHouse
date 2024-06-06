@@ -22,7 +22,7 @@ function run_until_out_contains()
     PATTERN=$1
     shift
 
-    for ((i=MIN_TIMEOUT; i<10; i++))
+    for ((i=MIN_TIMEOUT; i<33; i=i*2))
     do
         "$@" --distributed_ddl_task_timeout="$i" > "$TMP_OUT" 2>&1
         if grep -q "$PATTERN" "$TMP_OUT"
@@ -33,11 +33,11 @@ function run_until_out_contains()
     done
 }
 
-RAND_COMMENT="01175_DDL_$RANDOM"
+RAND_COMMENT="01175_DDL_$CLICKHOUSE_DATABASE"
 LOG_COMMENT="${CLICKHOUSE_LOG_COMMENT}_$RAND_COMMENT"
 
 CLICKHOUSE_CLIENT_WITH_SETTINGS=${CLICKHOUSE_CLIENT/--log_comment ${CLICKHOUSE_LOG_COMMENT}/--log_comment ${LOG_COMMENT}}
-CLICKHOUSE_CLIENT_WITH_SETTINGS+=" --output_format_parallel_formatting=0 "
+CLICKHOUSE_CLIENT_WITH_SETTINGS+=" --output_format_parallel_formatting=0 --database_atomic_wait_for_drop_and_detach_synchronously=0 "
 
 CLIENT=${CLICKHOUSE_CLIENT_WITH_SETTINGS}
 CLIENT+=" --distributed_ddl_task_timeout=$TIMEOUT "
@@ -54,14 +54,14 @@ $CLIENT --distributed_ddl_output_mode=none -q "create table none on cluster test
 $CLIENT --distributed_ddl_output_mode=none -q "create table none on cluster test_shard_localhost (n int) engine=Memory;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 # Timeout
 
-run_until_out_contains 'There are 1 unfinished hosts' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=none -q "drop table if exists none on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Watching task .* is executing longer/Watching task <task> is executing longer/"
+run_until_out_contains 'not finished on 1 ' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=none -q "drop table if exists none on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Distributed DDL task .* is not finished/Distributed DDL task <task> is not finished/" | sed "s/for .* seconds/for <sec> seconds/"
 
 
 $CLIENT --distributed_ddl_output_mode=throw -q "select value from system.settings where name='distributed_ddl_output_mode';"
 $CLIENT --distributed_ddl_output_mode=throw -q "create table throw on cluster test_shard_localhost (n int) engine=Memory;"
 $CLIENT --distributed_ddl_output_mode=throw -q "create table throw on cluster test_shard_localhost (n int) engine=Memory format Null;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
-run_until_out_contains 'There are 1 unfinished hosts' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=throw -q "drop table if exists throw on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Watching task .* is executing longer/Watching task <task> is executing longer/"
+run_until_out_contains 'not finished on 1 ' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=throw -q "drop table if exists throw on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Distributed DDL task .* is not finished/Distributed DDL task <task> is not finished/" | sed "s/for .* seconds/for <sec> seconds/"
 
 
 $CLIENT --distributed_ddl_output_mode=null_status_on_timeout -q "select value from system.settings where name='distributed_ddl_output_mode';"

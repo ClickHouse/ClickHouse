@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/postgresql
-sidebar_position: 42
+sidebar_position: 160
 sidebar_label: postgresql
 ---
 
@@ -11,23 +11,26 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 **Syntax**
 
 ``` sql
-postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
 
-**Arguments**
+**Parameters**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `table` — Remote table name.
--   `user` — PostgreSQL user.
--   `password` — User password.
--   `schema` — Non-default table schema. Optional.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — Non-default table schema. Optional.
+- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional.
+
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 **Returned Value**
 
 A table object with the same columns as the original PostgreSQL table.
 
-:::note    
+:::note
 In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
@@ -43,7 +46,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL Array types converts into ClickHouse arrays.
 
-:::note    
+:::note
 Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
 :::
 
@@ -86,10 +89,22 @@ postgresql> SELECT * FROM test;
 (1 row)
 ```
 
-Selecting data from ClickHouse:
+Selecting data from ClickHouse using plain arguments:
 
 ```sql
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+```
+
+Or using [named collections](/docs/en/operations/named-collections.md):
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+        host = 'localhost',
+        port = 5432,
+        database = 'test',
+        user = 'postgresql_user',
+        password = 'password';
+SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
 ```
 
 ``` text
@@ -129,7 +144,10 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
--   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
--   [Using PostgreSQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+- [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
+- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->
+## Related content
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

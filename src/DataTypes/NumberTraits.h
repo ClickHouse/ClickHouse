@@ -116,6 +116,15 @@ template <typename A, typename B> struct ResultOfModulo
     using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };
 
+template <typename A, typename B> struct ResultOfPositiveModulo
+{
+    /// function positive_modulo always return non-negative number.
+    static constexpr size_t size_of_result = sizeof(B);
+    using Type0 = typename Construct<false, false, size_of_result>::Type;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
+};
+
+
 template <typename A, typename B> struct ResultOfModuloLegacy
 {
     using Type0 = typename Construct<is_signed_v<A> || is_signed_v<B>, false, sizeof(B)>::Type;
@@ -165,7 +174,7 @@ template <typename A> struct ResultOfBitNot
   * Float<x>, [U]Int<y> -> Float<max(x, y*2)>
   * Decimal<x>, Decimal<y> -> Decimal<max(x,y)>
   * UUID, UUID          -> UUID
-  * UInt64 ,  Int<x>    -> Error
+  * UInt64,   Int<x>    -> Error
   * Float<x>, [U]Int64  -> Error
   */
 template <typename A, typename B>
@@ -208,11 +217,13 @@ template <typename A> struct ToInteger
 
 // CLICKHOUSE-29. The same depth, different signs
 // NOTE: This case is applied for 64-bit integers only (for backward compatibility), but could be used for any-bit integers
+/// NOLINTBEGIN(misc-redundant-expression)
 template <typename A, typename B>
 constexpr bool LeastGreatestSpecialCase =
     std::is_integral_v<A> && std::is_integral_v<B>
     && (8 == sizeof(A) && sizeof(A) == sizeof(B))
     && (is_signed_v<A> ^ is_signed_v<B>);
+/// NOLINTEND(misc-redundant-expression)
 
 template <typename A, typename B>
 using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>,

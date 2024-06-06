@@ -11,8 +11,8 @@ namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -21,17 +21,13 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
-    String serialized_value;
-
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
         name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
-
-        if (name_widths[i] > max_name_width)
-            max_name_width = name_widths[i];
+        max_name_width = std::max(name_widths[i], max_name_width);
     }
 
     names_and_paddings.resize(columns);
@@ -71,6 +67,7 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeRowStartDelimiter()
 {
+    field_number = 0;
     ++row_number;
 
     if (row_number > format_settings.pretty.max_rows)
@@ -92,8 +89,7 @@ void VerticalRowOutputFormat::writeRowBetweenDelimiter()
     if (row_number > format_settings.pretty.max_rows)
         return;
 
-    writeCString("\n", out);
-    field_number = 0;
+    writeChar('\n', out);
 }
 
 
@@ -160,10 +156,9 @@ void registerOutputFormatVertical(FormatFactory & factory)
     factory.registerOutputFormat("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, sample, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");

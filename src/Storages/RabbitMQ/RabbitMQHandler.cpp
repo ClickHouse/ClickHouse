@@ -8,7 +8,7 @@ namespace DB
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
  */
-RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
+RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_) :
     AMQP::LibUvHandler(loop_),
     loop(loop_),
     log(log_),
@@ -46,19 +46,20 @@ void RabbitMQHandler::startLoop()
     loop_running.store(false);
 }
 
-void RabbitMQHandler::iterateLoop()
+int RabbitMQHandler::iterateLoop()
 {
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
-        uv_run(loop, UV_RUN_NOWAIT);
+        return uv_run(loop, UV_RUN_NOWAIT);
+    return 1; /// We cannot know how actual value.
 }
 
 /// Do not need synchronization as in iterateLoop(), because this method is used only for
 /// initial RabbitMQ setup - at this point there is no background loop thread.
-void RabbitMQHandler::startBlockingLoop()
+int RabbitMQHandler::startBlockingLoop()
 {
     LOG_DEBUG(log, "Started blocking loop.");
-    uv_run(loop, UV_RUN_DEFAULT);
+    return uv_run(loop, UV_RUN_DEFAULT);
 }
 
 void RabbitMQHandler::stopLoop()

@@ -1,0 +1,52 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/s3</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <proxy>
+                    <uri>http://proxy1</uri>
+                    <uri>http://proxy2</uri>
+                </proxy>
+            </s3>
+            <s3_with_resolver>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/s3_with_resolver</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+                <proxy>
+                    <!--
+                        At each interaction with S3 resolver sends empty GET request to specified endpoint URL to obtain proxy host.
+                        Proxy host is returned as string in response body.
+                        Then S3 client uses proxy URL formed as proxy_scheme://proxy_host:proxy_port to make request.
+                    -->
+                    <resolver>
+                        <endpoint>http://resolver:8080/hostname</endpoint>
+                        <proxy_scheme>http</proxy_scheme>
+                        <proxy_port>80</proxy_port>
+                        <proxy_cache_time>10</proxy_cache_time>
+                    </resolver>
+                </proxy>
+            </s3_with_resolver>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+            <s3_with_resolver>
+                <volumes>
+                    <main>
+                        <disk>s3_with_resolver</disk>
+                    </main>
+                </volumes>
+            </s3_with_resolver>
+        </policies>
+    </storage_configuration>
+</clickhouse>

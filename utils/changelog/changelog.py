@@ -3,18 +3,20 @@
 
 import argparse
 import logging
-import os.path as p
 import os
+import os.path as p
 import re
 from datetime import date, timedelta
-from subprocess import CalledProcessError, DEVNULL
+from subprocess import DEVNULL, CalledProcessError
 from typing import Dict, List, Optional, TextIO
 
-from fuzzywuzzy.fuzz import ratio  # type: ignore
-from github_helper import GitHub, PullRequest, PullRequests, Repository
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
-from git_helper import is_shallow, git_runner as runner
+from thefuzz.fuzz import ratio  # type: ignore
+
+from git_helper import git_runner as runner
+from git_helper import is_shallow
+from github_helper import GitHub, PullRequest, PullRequests, Repository
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
@@ -25,6 +27,7 @@ categories_preferred_order = (
     "New Feature",
     "Performance Improvement",
     "Improvement",
+    "Critical Bug Fix",
     "Bug Fix",
     "Build/Testing/Packaging Improvement",
     "Other",
@@ -33,7 +36,7 @@ categories_preferred_order = (
 FROM_REF = ""
 TO_REF = ""
 SHA_IN_CHANGELOG = []  # type: List[str]
-gh = GitHub()
+gh = GitHub(create_cache_dir=False)
 CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
 
@@ -57,9 +60,10 @@ class Description:
             self.entry,
         )
         # 2) issue URL w/o markdown link
+        # including #issuecomment-1 or #event-12
         entry = re.sub(
-            r"([^(])https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})",
-            r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
+            r"([^(])(https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})[-#a-z0-9]*)",
+            r"\1[#\3](\2)",
             entry,
         )
         # It's possible that we face a secondary rate limit.
@@ -96,23 +100,20 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # obj._rawData doesn't spend additional API requests
         # We'll save some requests
         # pylint: disable=protected-access
-        repo_name = pr._rawData["base"]["repo"]["full_name"]  # type: ignore
+        repo_name = pr._rawData["base"]["repo"]["full_name"]
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
         in_changelog = False
         merge_commit = pr.merge_commit_sha
-        try:
-            runner.run(f"git rev-parse '{merge_commit}'")
-        except CalledProcessError:
-            # It's possible that commit not in the repo, just continue
-            logging.info("PR %s does not belong to the repo", pr.number)
+        if merge_commit is None:
+            logging.warning("PR %s does not have merge-commit, skipping", pr.number)
             continue
 
         in_changelog = merge_commit in SHA_IN_CHANGELOG
         if in_changelog:
             desc = generate_description(pr, repos[repo_name])
-            if desc is not None:
+            if desc:
                 if desc.category not in descriptions:
                     descriptions[desc.category] = []
                 descriptions[desc.category].append(desc)
@@ -126,8 +127,8 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Generate a changelog in MD format between given tags. "
-        "It fetches all tags and unshallow the git repositore automatically",
+        description="Generate a changelog in Markdown format between given tags. "
+        "It fetches all tags and unshallow the git repository automatically",
     )
     parser.add_argument(
         "-v",
@@ -187,7 +188,7 @@ def parse_args() -> argparse.Namespace:
 
 
 # This function mirrors the PR description checks in ClickhousePullRequestTrigger.
-# Returns False if the PR should not be mentioned changelog.
+# Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
     if item.head.ref.startswith("backport/"):
@@ -243,6 +244,14 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             else:
                 i += 1
 
+    # Remove excessive bullets from the entry.
+    if re.match(r"^[\-\*] ", entry):
+        entry = entry[2:]
+
+    # Better style.
+    if re.match(r"^[a-z]", entry):
+        entry = entry.capitalize()
+
     if not category:
         # Shouldn't happen, because description check in CI should catch such PRs.
         # Fall through, so that it shows up in output and the user can fix it.
@@ -255,6 +264,13 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     ):
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
         return Description(item.number, item.user, item.html_url, item.title, category)
+
+    # Normalize bug fixes
+    if re.match(
+        r"(?i)bug\Wfix",
+        category,
+    ):
+        category = "Bug Fix (user-visible misbehavior in an official stable release)"
 
     # Filter out documentations changelog
     if re.match(
@@ -283,8 +299,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     return Description(item.number, item.user, item.html_url, entry, category)
 
 
-def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
-    year = date.today().year
+def write_changelog(
+    fd: TextIO, descriptions: Dict[str, List[Description]], year: int
+) -> None:
     to_commit = runner(f"git rev-parse {TO_REF}^{{}}")[:11]
     from_commit = runner(f"git rev-parse {FROM_REF}^{{}}")[:11]
     fd.write(
@@ -342,6 +359,12 @@ def set_sha_in_changelog():
     ).split("\n")
 
 
+def get_year(prs: PullRequests) -> int:
+    if not prs:
+        return date.today().year
+    return max(pr.created_at.year for pr in prs)
+
+
 def main():
     log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
@@ -384,15 +407,20 @@ def main():
     # Get all PRs for the given time frame
     global gh
     gh = GitHub(
-        args.gh_user_or_token, args.gh_password, per_page=100, pool_size=args.jobs
+        args.gh_user_or_token,
+        args.gh_password,
+        create_cache_dir=False,
+        per_page=100,
+        pool_size=args.jobs,
     )
     gh.cache_path = CACHE_PATH
     query = f"type:pr repo:{args.repo} is:merged"
     prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
 
     descriptions = get_descriptions(prs)
+    changelog_year = get_year(prs)
 
-    write_changelog(args.output, descriptions)
+    write_changelog(args.output, descriptions, changelog_year)
 
 
 if __name__ == "__main__":

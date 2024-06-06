@@ -28,6 +28,12 @@ public:
         return has_final;
     }
 
+    /// Set has final value
+    void setHasFinal(bool value)
+    {
+        has_final = value;
+    }
+
     /// Returns true if sample size ratio is specified, false otherwise
     bool hasSampleSizeRatio() const
     {
@@ -57,6 +63,9 @@ public:
 
     /// Update tree hash
     void updateTreeHash(SipHash & hash_state) const;
+
+    /// Format for error message
+    String formatForErrorMessage() const;
 
 private:
     bool has_final = false;

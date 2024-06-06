@@ -1,7 +1,6 @@
 #pragma once
 
-#include <shared_mutex>
-
+#include <Common/SharedMutex.h>
 #include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
@@ -16,15 +15,16 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
-enum class JoinTableSide;
+enum class JoinTableSide : uint8_t;
 
 class MergeJoin : public IJoin
 {
 public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
+    std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 
@@ -35,7 +35,7 @@ public:
     /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
@@ -72,7 +72,7 @@ private:
 
     using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
     std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
@@ -117,7 +117,7 @@ private:
 
     Names lowcard_right_keys;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

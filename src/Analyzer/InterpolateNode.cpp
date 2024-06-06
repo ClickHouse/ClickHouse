@@ -28,13 +28,13 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
     getInterpolateExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool InterpolateNode::isEqualImpl(const IQueryTreeNode &) const
+bool InterpolateNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
 {
     /// No state in interpolate node
     return true;
 }
 
-void InterpolateNode::updateTreeHashImpl(HashState &) const
+void InterpolateNode::updateTreeHashImpl(HashState &, CompareOptions) const
 {
     /// No state in interpolate node
 }
@@ -44,11 +44,11 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
     return std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
 }
 
-ASTPtr InterpolateNode::toASTImpl() const
+ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto result = std::make_shared<ASTInterpolateElement>();
-    result->column = getExpression()->toAST()->getColumnName();
-    result->children.push_back(getInterpolateExpression()->toAST());
+    result->column = getExpression()->toAST(options)->getColumnName();
+    result->children.push_back(getInterpolateExpression()->toAST(options));
     result->expr = result->children.back();
 
     return result;

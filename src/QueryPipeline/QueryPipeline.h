@@ -1,9 +1,9 @@
 #pragma once
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Interpreters/Cache/QueryCache.h> /// nested classes such as QC::Writer can't be fwd declared
 #include <functional>
-
 
 namespace DB
 {
@@ -100,10 +100,20 @@ public:
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
 
+    bool getConcurrencyControl() const { return concurrency_control; }
+    void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
+
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
+
+    void writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer);
+    void finalizeWriteInQueryCache();
+    void readFromQueryCache(
+        std::unique_ptr<SourceFromChunks> source,
+        std::unique_ptr<SourceFromChunks> source_totals,
+        std::unique_ptr<SourceFromChunks> source_extremes);
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
@@ -150,12 +160,14 @@ private:
     IOutputFormat * output_format = nullptr;
 
     size_t num_threads = 0;
+    bool concurrency_control = false;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

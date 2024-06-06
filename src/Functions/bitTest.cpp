@@ -21,10 +21,10 @@ struct BitTestImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    NO_SANITIZE_UNDEFINED static inline Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    NO_SANITIZE_UNDEFINED static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-            throw Exception("bitTest is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "bitTest is not implemented for big integers as second argument");
         else
             return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
     }

@@ -6,7 +6,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -32,28 +31,60 @@ public:
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
 
+struct LastElementCacheStats
+{
+    UInt64 hits = 0;
+    UInt64 misses = 0;
+
+    void update(size_t num_tries, size_t num_misses)
+    {
+        hits += num_tries - num_misses;
+        misses += num_misses;
+    }
+};
 
 namespace columns_hashing_impl
 {
 
-template <typename Value, bool consecutive_keys_optimization_>
-struct LastElementCache
+struct LastElementCacheBase
 {
-    static constexpr bool consecutive_keys_optimization = consecutive_keys_optimization_;
-    Value value;
     bool empty = true;
     bool found = false;
+    UInt64 misses = 0;
 
-    bool check(const Value & value_) { return !empty && value == value_; }
+    void onNewValue(bool is_found)
+    {
+        empty = false;
+        found = is_found;
+        ++misses;
+    }
 
-    template <typename Key>
-    bool check(const Key & key) { return !empty && value.first == key; }
+    bool hasOnlyOneValue() const { return found && misses == 1; }
 };
 
-template <typename Data>
-struct LastElementCache<Data, false>
+template <typename Value, bool nullable> struct LastElementCache;
+
+template <typename Value>
+struct LastElementCache<Value, true> : public LastElementCacheBase
 {
-    static constexpr bool consecutive_keys_optimization = false;
+    Value value{};
+    bool is_null = false;
+
+    template <typename Key>
+    bool check(const Key & key) const { return !is_null && value.first == key; }
+
+    bool check(const Value & rhs) const { return !is_null && value == rhs; }
+};
+
+template <typename Value>
+struct LastElementCache<Value, false> : public LastElementCacheBase
+{
+    Value value{};
+
+    template <typename Key>
+    bool check(const Key & key) const { return value.first == key; }
+
+    bool check(const Value & rhs) const { return value == rhs; }
 };
 
 template <typename Mapped>
@@ -140,20 +171,43 @@ public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
-template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
 class HashMethodBase
 {
 public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
-    using Cache = LastElementCache<Value, consecutive_keys_optimization>;
+    using Cache = LastElementCache<Value, nullable>;
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
 
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(true);
+                        cache.is_null = true;
+                    }
+                }
+
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return emplaceImpl(key_holder, data);
     }
@@ -161,6 +215,28 @@ public:
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                bool has_null_key = data.hasNullKeyData();
+
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(has_null_key);
+                        cache.is_null = true;
+                    }
+                }
+
+                if constexpr (has_mapped)
+                    return FindResult(&data.getNullKeyData(), has_null_key, 0);
+                else
+                    return FindResult(has_null_key, 0);
+            }
+        }
+
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
@@ -172,10 +248,49 @@ public:
         return data.hash(keyHolderGetKey(key_holder));
     }
 
+    ALWAYS_INLINE void resetCache()
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.empty = true;
+            cache.found = false;
+            cache.misses = 0;
+        }
+    }
+
+    ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const
+    {
+        if constexpr (consecutive_keys_optimization)
+            return cache.hasOnlyOneValue();
+        return false;
+    }
+
+    ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const
+    {
+        if constexpr (consecutive_keys_optimization)
+            return cache.misses;
+        return 0;
+    }
+
+    ALWAYS_INLINE bool isNullAt(size_t row) const
+    {
+        if constexpr (nullable)
+        {
+            return null_map->getBool(row);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
 protected:
     Cache cache;
+    const IColumn * null_map = nullptr;
+    bool has_null_data = false;
 
-    HashMethodBase()
+    /// column argument only for nullable column
+    explicit HashMethodBase(const IColumn * column = nullptr)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -188,12 +303,15 @@ protected:
             else
                 cache.value = Value();
         }
+
+        if constexpr (nullable)
+            null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
     template <typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
     {
-        if constexpr (Cache::consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
@@ -222,8 +340,10 @@ protected:
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.found = true;
-            cache.empty = false;
+            cache.onNewValue(true);
+
+            if constexpr (nullable)
+                cache.is_null = false;
 
             if constexpr (has_mapped)
             {
@@ -246,12 +366,12 @@ protected:
     template <typename Data, typename Key>
     ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
     {
-        if constexpr (Cache::consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
             /// It's possible to support such combination, but code will became more complex.
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
-            if (cache.check(key))
+            if (likely(!cache.empty) && cache.check(key))
             {
                 if constexpr (has_mapped)
                     return FindResult(&cache.value.second, cache.found, 0);
@@ -264,16 +384,16 @@ protected:
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.found = it != nullptr;
-            cache.empty = false;
+            cache.onNewValue(it != nullptr);
+
+            if constexpr (nullable)
+                cache.is_null = false;
 
             if constexpr (has_mapped)
             {
                 cache.value.first = key;
                 if (it)
-                {
                     cache.value.second = it->getMapped();
-                }
             }
             else
             {
@@ -283,16 +403,14 @@ protected:
 
         size_t offset = 0;
         if constexpr (FindResult::has_offset)
-        {
             offset = it ? data.offsetInternal(it) : 0;
-        }
+
         if constexpr (has_mapped)
             return FindResult(it ? &it->getMapped() : nullptr, it != nullptr, offset);
         else
             return FindResult(it != nullptr, offset);
     }
 };
-
 
 template <typename T>
 struct MappedCache : public PaddedPODArray<T> {};
@@ -335,7 +453,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    inline const ColumnRawPtrs & getActualColumns() const
+    const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
@@ -379,8 +497,7 @@ protected:
 
     KeysNullMap<Key> createBitmap(size_t) const
     {
-        throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
-                        " is forbidden", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
     }
 
 private:

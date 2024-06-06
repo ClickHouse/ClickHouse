@@ -11,7 +11,6 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Analyzer/Identifier.h>
-#include <Analyzer/ConstantValue.h>
 
 class SipHash;
 
@@ -21,13 +20,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 class WriteBuffer;
 
 /// Query tree node type
-enum class QueryTreeNodeType
+enum class QueryTreeNodeType : uint8_t
 {
     IDENTIFIER,
     MATCHER,
@@ -91,38 +89,25 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
-    /// Returns true if node has constant value
-    bool hasConstantValue() const
+    virtual void convertToNullable()
     {
-        return getConstantValueOrNull() != nullptr;
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
     }
 
-    /** Returns constant value with type if node has constant value, and can be replaced with it.
-      * Examples: scalar subquery, function with constant arguments.
-      */
-    virtual const ConstantValue & getConstantValue() const
+    struct CompareOptions
     {
-        auto constant_value = getConstantValueOrNull();
-        if (!constant_value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node does not have constant value");
-
-        return *constant_value;
-    }
-
-    /// Returns constant value with type if node has constant value or null otherwise
-    virtual ConstantValuePtr getConstantValueOrNull() const
-    {
-        return {};
-    }
+        bool compare_aliases = true;
+        bool compare_types = true;
+    };
 
     /** Is tree equal to other tree with node root.
       *
-      * Aliases of query tree nodes are compared during isEqual call.
+      * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
 
-    using Hash = std::pair<UInt64, UInt64>;
+    using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
 
     /** Get tree hash identifying current tree
@@ -130,10 +115,22 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash() const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
+
+    /** Get a deep copy of the query tree.
+      * If node to clone is key in replacement map, then instead of clone it
+      * use value node from replacement map.
+      */
+    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+
+    /** Get a deep copy of the query tree.
+      * If node to clone is node to replace, then instead of clone it use replacement node.
+      */
+    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
@@ -147,9 +144,17 @@ public:
         return alias;
     }
 
+    const String & getOriginalAlias() const
+    {
+        return original_alias.empty() ? alias : original_alias;
+    }
+
     /// Set node alias
     void setAlias(String alias_value)
     {
+        if (original_alias.empty())
+            original_alias = std::move(alias);
+
         alias = std::move(alias_value);
     }
 
@@ -184,8 +189,20 @@ public:
       */
     String formatOriginalASTForErrorMessage() const;
 
+    struct ConvertToASTOptions
+    {
+        /// Add _CAST if constant literal type is different from column type
+        bool add_cast_for_constants = true;
+
+        /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
+        bool fully_qualified_identifiers = true;
+
+        /// Identifiers are qualified but database name is not added (`table.column`) if set to false.
+        bool qualify_indentifiers_with_database = true;
+    };
+
     /// Convert query tree to AST
-    ASTPtr toAST() const;
+    ASTPtr toAST(const ConvertToASTOptions & options = { .add_cast_for_constants = true, .fully_qualified_identifiers = true, .qualify_indentifiers_with_database = true }) const;
 
     /// Convert query tree to AST and then format it for error message.
     String formatConvertedASTForErrorMessage() const;
@@ -248,12 +265,12 @@ protected:
     /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
       * query tree nodes.
       */
-    virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
+    virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
 
     /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
       * query tree nodes.
       */
-    virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
+    virtual void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const = 0;
 
     /** Subclass must clone its internal state and do not clone children or weak pointers to other
       * query tree nodes.
@@ -261,13 +278,16 @@ protected:
     virtual QueryTreeNodePtr cloneImpl() const = 0;
 
     /// Subclass must convert its internal state and its children to AST
-    virtual ASTPtr toASTImpl() const = 0;
+    virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;
 
 private:
     String alias;
+    /// An alias from query. Alias can be replaced by query passes,
+    /// but we need to keep the original one to support additional_table_filters.
+    String original_alias;
     ASTPtr original_ast;
 };
 

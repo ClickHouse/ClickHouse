@@ -1,8 +1,11 @@
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/FunctionNode.h>
 #include <Functions/FunctionFactory.h>
+
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -10,10 +13,13 @@ namespace DB
 namespace
 {
 
-class IfConstantConditionVisitor : public InDepthQueryTreeVisitor<IfConstantConditionVisitor>
+class IfConstantConditionVisitor : public InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>
 {
 public:
-    static void visitImpl(QueryTreeNodePtr & node)
+    using Base = InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
@@ -23,11 +29,11 @@ public:
             return;
 
         auto & first_argument = function_node->getArguments().getNodes()[0];
-        auto first_argument_constant_value = first_argument->getConstantValueOrNull();
-        if (!first_argument_constant_value)
+        const auto * first_argument_constant_node = first_argument->as<ConstantNode>();
+        if (!first_argument_constant_node)
             return;
 
-        const auto & condition_value = first_argument_constant_value->getValue();
+        const auto & condition_value = first_argument_constant_node->getValue();
 
         bool condition_boolean_value = false;
 
@@ -38,18 +44,22 @@ public:
         else
             return;
 
+        QueryTreeNodePtr argument_node;
         if (condition_boolean_value)
-            node = function_node->getArguments().getNodes()[1];
+            argument_node = function_node->getArguments().getNodes()[1];
         else
-            node = function_node->getArguments().getNodes()[2];
+            argument_node = function_node->getArguments().getNodes()[2];
+
+        if (node->getResultType()->equals(*argument_node->getResultType()))
+            node = argument_node;
     }
 };
 
 }
 
-void IfConstantConditionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void IfConstantConditionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    IfConstantConditionVisitor visitor;
+    IfConstantConditionVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 

@@ -20,6 +20,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -30,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -78,7 +80,7 @@ StorageExecutable::StorageExecutable(
     : IStorage(table_id_)
     , settings(settings_)
     , input_queries(input_queries_)
-    , log(settings.is_executable_pool ? &Poco::Logger::get("StorageExecutablePool") : &Poco::Logger::get("StorageExecutable"))
+    , log(settings.is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
@@ -91,6 +93,8 @@ StorageExecutable::StorageExecutable(
         .command_termination_timeout_seconds = settings.command_termination_timeout,
         .command_read_timeout_milliseconds = settings.command_read_timeout,
         .command_write_timeout_milliseconds = settings.command_write_timeout,
+        .stderr_reaction = settings.stderr_reaction,
+        .check_exit_code = settings.check_exit_code,
 
         .pool_size = settings.pool_size,
         .max_command_execution_time_seconds = settings.max_command_execution_time,
@@ -142,8 +146,11 @@ void StorageExecutable::read(
 
     for (auto & input_query : input_queries)
     {
-        InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        auto builder = interpreter.buildQueryPipeline();
+        QueryPipelineBuilder builder;
+        if (context->getSettings().allow_experimental_analyzer)
+            builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        else
+            builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
@@ -192,10 +199,15 @@ void registerStorageExecutable(StorageFactory & factory)
         std::vector<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
+            if (args.engine_args[i]->children.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "StorageExecutable argument \"{}\" is invalid query",
+                    args.engine_args[i]->formatForErrorMessage());
+
             ASTPtr query = args.engine_args[i]->children.at(0);
             if (!query->as<ASTSelectWithUnionQuery>())
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument is invalid input query {}",
+                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument \"{}\" is invalid input query",
                     query->formatForErrorMessage());
 
             input_queries.emplace_back(std::move(query));

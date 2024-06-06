@@ -28,6 +28,7 @@ public:
     bool if_exists = false;
     bool if_not_exists = false;
     bool or_replace = false;
+    String storage_name;
 
     Strings names;
     String new_name;
@@ -41,5 +42,6 @@ public:
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateSettingsProfileQuery>(clone()); }
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

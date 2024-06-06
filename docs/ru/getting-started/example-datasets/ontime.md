@@ -155,9 +155,8 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
-:::info "Info"
-    Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
-нужно добавить имя базы, `datasets.ontime`.
+:::info Примечание
+Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы нужно добавить имя базы, `datasets.ontime`.
 :::
 
 ## Запросы: {#zaprosy}
@@ -403,4 +402,3 @@ LIMIT 10;
 -   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
-

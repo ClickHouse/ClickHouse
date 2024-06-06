@@ -16,6 +16,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <optional>
+#include <vector>
+#include <memory>
+#include <string>
 
 namespace DB
 {
@@ -33,8 +37,12 @@ struct Packet
     Progress progress;
     ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
-    PartitionReadRequest request;
-    PartitionReadResponse response;
+
+    /// The part of parallel replicas protocol
+    std::optional<InitialAllRangesAnnouncement> announcement;
+    std::optional<ParallelReadRequest> request;
+
+    std::string server_timezone;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -60,7 +68,7 @@ class IServerConnection : boost::noncopyable
 public:
     virtual ~IServerConnection() = default;
 
-    enum class Type
+    enum class Type : uint8_t
     {
         SERVER,
         LOCAL
@@ -80,7 +88,9 @@ public:
     virtual const String & getServerTimezone(const ConnectionTimeouts & timeouts) = 0;
     virtual const String & getServerDisplayName(const ConnectionTimeouts & timeouts) = 0;
 
-    virtual const String & getDescription() const = 0;
+    virtual const String & getDescription(bool with_extra = false) const = 0;  /// NOLINT
+
+    virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
@@ -102,7 +112,7 @@ public:
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
-    virtual void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) = 0;
+    virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;

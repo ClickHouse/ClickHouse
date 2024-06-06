@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_DLOPEN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -60,7 +61,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("The only argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be constant String", getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -164,7 +165,7 @@ public:
                         std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
                     void * map = mmap(hint, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
                     if (MAP_FAILED == map)
-                        throwFromErrno("Allocator: Cannot mmap", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot mmap");
                     maps.push_back(map);
                 }
             }
@@ -174,11 +175,15 @@ public:
                 if (!handle)
                     throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror()); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
             }
+            else if (mode == "logical error")
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trap");
+            }
             else
-                throw Exception("Unknown trap mode", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown trap mode");
         }
         else
-            throw Exception("The only argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The only argument for function {} must be constant String", getName());
 
         return result_type->createColumnConst(input_rows_count, 0ULL);
     }

@@ -19,6 +19,41 @@ slug: /zh/sql-reference/functions/rounding-functions
 
 返回大于或等于’x’的最小舍入数。在其他方面，它与’floor’功能相同（见上文）。
 
+## trunc(x\[, N\]), truncate(x\[, N\])
+
+返回绝对值小于或等于 `x` 的绝对值最大的整数。在其他方面，它与 "floor "函数相同（见上文）。
+
+**语法**
+
+```SQL
+trunc(input, precision)
+```
+
+别名：`truncate`。
+
+**参数***
+
+- `输入` 数值类型（[Float](/docs/en/sql-reference/data-types/float.md)、[Decimal](/docs/en/sql-reference/data-types/decimal.md)或[Integer](/docs/en/sql-reference/data-types/int-uint.md)）。
+- `精度` 一个 [Integer](/docs/en/sql-reference/data-types/int-uint.md) 类型。
+
+**返回值**
+
+- 输入 "的数据类型。
+
+**示例
+
+查询：
+
+``` SQL
+SELECT trunc(123.499, 1) as res；
+```
+
+```responce
+┌──res─┐
+│ 123.4 │
+└───────┘
+```
+
 ## 圆形(x\[,N\]) {#rounding_functions-round}
 
 将值取整到指定的小数位数。
@@ -85,5 +120,3 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 ## roundDown(num,arr) {#rounddownnum-arr}
 
 接受一个数字，将其向下舍入到指定数组中的元素。如果该值小于数组中的最低边界，则返回最低边界。
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/rounding_functions/) <!--hide-->

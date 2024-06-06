@@ -18,29 +18,23 @@ CREATE MATERIALIZED VIEW test_1602.vv (`EventDate` DateTime, `CounterID` UInt32,
 
 CREATE VIEW test_1602.VIEW AS SELECT * FROM test_1602.tbl; 
 
-SET allow_experimental_live_view=1;
-
-CREATE LIVE VIEW test_1602.vvv AS SELECT * FROM test_1602.tbl;
-
 SHOW CREATE VIEW test_1602.v;
 
 SHOW CREATE VIEW test_1602.vv;
 
-SHOW CREATE VIEW test_1602.vvv;
+SHOW CREATE VIEW test_1602.not_exist_view; -- { serverError CANNOT_GET_CREATE_TABLE_QUERY }
 
-SHOW CREATE VIEW test_1602.not_exist_view; -- { serverError 390 }
+SHOW CREATE VIEW test_1602.tbl; -- { serverError BAD_ARGUMENTS }
 
-SHOW CREATE VIEW test_1602.tbl; -- { serverError 36 }
+SHOW CREATE TEMPORARY VIEW; -- { serverError UNKNOWN_TABLE }
 
-SHOW CREATE TEMPORARY VIEW; -- { serverError 60 }
+SHOW CREATE VIEW; -- { clientError SYNTAX_ERROR }
 
-SHOW CREATE VIEW; -- { clientError 62 }
+SHOW CREATE DATABASE; -- { clientError SYNTAX_ERROR }
 
-SHOW CREATE DATABASE; -- { clientError 62 }
+SHOW CREATE DICTIONARY; -- { clientError SYNTAX_ERROR }
 
-SHOW CREATE DICTIONARY; -- { clientError 62 }
-
-SHOW CREATE TABLE; -- { clientError 62 }
+SHOW CREATE TABLE; -- { clientError SYNTAX_ERROR }
 
 SHOW CREATE test_1602.VIEW;
 

@@ -10,6 +10,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerQueryProcessingInfo.h>
 
 namespace DB
 {
@@ -47,6 +48,7 @@ struct WindowAnalysisResult
 struct SortAnalysisResult
 {
     ActionsDAGPtr before_order_by_actions;
+    bool has_with_fill = false;
 };
 
 struct LimitByAnalysisResult
@@ -127,6 +129,21 @@ public:
         window_analysis_result = std::move(window_analysis_result_);
     }
 
+    bool hasQualify() const
+    {
+        return qualify_analysis_result.filter_actions != nullptr;
+    }
+
+    const FilterAnalysisResult & getQualify() const
+    {
+        return qualify_analysis_result;
+    }
+
+    void addQualify(FilterAnalysisResult qualify_analysis_result_)
+    {
+        qualify_analysis_result = std::move(qualify_analysis_result_);
+    }
+
     bool hasSort() const
     {
         return sort_analysis_result.before_order_by_actions != nullptr;
@@ -163,13 +180,15 @@ private:
     AggregationAnalysisResult aggregation_analysis_result;
     FilterAnalysisResult having_analysis_result;
     WindowAnalysisResult window_analysis_result;
+    FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
 };
 
 /// Build expression analysis result for query tree, join tree input columns and planner context
-PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr query_tree,
+PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
-    const PlannerContextPtr & planner_context);
+    const PlannerContextPtr & planner_context,
+    const PlannerQueryProcessingInfo & planner_query_processing_info);
 
 }

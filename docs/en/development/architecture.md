@@ -67,22 +67,30 @@ Implementations of `ReadBuffer`/`WriteBuffer` are used for working with files an
 
 Read/WriteBuffers only deal with bytes. There are functions from `ReadHelpers` and `WriteHelpers` header files to help with formatting input/output. For example, there are helpers to write a number in decimal format.
 
-Let’s look at what happens when you want to write a result set in `JSON` format to stdout. You have a result set ready to be fetched from `IBlockInputStream`. You create `WriteBufferFromFileDescriptor(STDOUT_FILENO)` to write bytes to stdout. You create `JSONRowOutputStream`, initialized with that `WriteBuffer`, to write rows in `JSON` to stdout. You create `BlockOutputStreamFromRowOutputStream` on top of it, to represent it as `IBlockOutputStream`. Then you call `copyData` to transfer data from `IBlockInputStream` to `IBlockOutputStream`, and everything works. Internally, `JSONRowOutputStream` will write various JSON delimiters and call the `IDataType::serializeTextJSON` method with a reference to `IColumn` and the row number as arguments. Consequently, `IDataType::serializeTextJSON` will call a method from `WriteHelpers.h`: for example, `writeText` for numeric types and `writeJSONString` for `DataTypeString`.
+Let's examine what happens when you want to write a result set in `JSON` format to stdout.
+You have a result set ready to be fetched from a pulling `QueryPipeline`.
+First, you create a `WriteBufferFromFileDescriptor(STDOUT_FILENO)` to write bytes to stdout.
+Next, you connect the result from the query pipeline to `JSONRowOutputFormat`, which is initialized with that `WriteBuffer`, to write rows in `JSON` format to stdout.
+This can be done via the `complete` method, which turns a pulling `QueryPipeline` into a completed `QueryPipeline`.
+Internally, `JSONRowOutputFormat` will write various JSON delimiters and call the `IDataType::serializeTextJSON` method with a reference to `IColumn` and the row number as arguments. Consequently, `IDataType::serializeTextJSON` will call a method from `WriteHelpers.h`: for example, `writeText` for numeric types and `writeJSONString` for `DataTypeString`.
 
 ## Tables {#tables}
 
 The `IStorage` interface represents tables. Different implementations of that interface are different table engines. Examples are `StorageMergeTree`, `StorageMemory`, and so on. Instances of these classes are just tables.
 
-The key `IStorage` methods are `read` and `write`. There are also `alter`, `rename`, `drop`, and so on. The `read` method accepts the following arguments: the set of columns to read from a table, the `AST` query to consider, and the desired number of streams to return. It returns one or multiple `IBlockInputStream` objects and information about the stage of data processing that was completed inside a table engine during query execution.
+The key methods in `IStorage` are `read` and `write`, along with others such as `alter`, `rename`, and `drop`. The `read` method accepts the following arguments: a set of columns to read from a table, the `AST` query to consider, and the desired number of streams. It returns a `Pipe`.
 
-In most cases, the read method is only responsible for reading the specified columns from a table, not for any further data processing. All further data processing is done by the query interpreter and is outside the responsibility of `IStorage`.
+In most cases, the read method is responsible only for reading the specified columns from a table, not for any further data processing.
+All subsequent data processing is handled by another part of the pipeline, which falls outside the responsibility of `IStorage`.
 
 But there are notable exceptions:
 
--   The AST query is passed to the `read` method, and the table engine can use it to derive index usage and to read fewer data from a table.
--   Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
+- The AST query is passed to the `read` method, and the table engine can use it to derive index usage and to read fewer data from a table.
+- Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
 
-The table’s `read` method can return multiple `IBlockInputStream` objects to allow parallel data processing. These multiple block input streams can read from a table in parallel. Then you can wrap these streams with various transformations (such as expression evaluation or filtering) that can be calculated independently and create a `UnionBlockInputStream` on top of them, to read from multiple streams in parallel.
+The table’s `read` method can return a `Pipe` consisting of multiple `Processors`. These `Processors` can read from a table in parallel.
+Then, you can connect these processors with various other transformations (such as expression evaluation or filtering), which can be calculated independently.
+And then, create a `QueryPipeline` on top of them, and execute it via `PipelineExecutor`.
 
 There are also `TableFunction`s. These are functions that return a temporary `IStorage` object to use in the `FROM` clause of a query.
 
@@ -98,9 +106,19 @@ A hand-written recursive descent parser parses a query. For example, `ParserSele
 
 ## Interpreters {#interpreters}
 
-Interpreters are responsible for creating the query execution pipeline from an `AST`. There are simple interpreters, such as `InterpreterExistsQuery` and `InterpreterDropQuery`, or the more sophisticated `InterpreterSelectQuery`. The query execution pipeline is a combination of block input or output streams. For example, the result of interpreting the `SELECT` query is the `IBlockInputStream` to read the result set from; the result of the INSERT query is the `IBlockOutputStream` to write data for insertion to, and the result of interpreting the `INSERT SELECT` query is the `IBlockInputStream` that returns an empty result set on the first read, but that copies data from `SELECT` to `INSERT` at the same time.
+Interpreters are responsible for creating the query execution pipeline from an AST. There are simple interpreters, such as `InterpreterExistsQuery` and `InterpreterDropQuery`, as well as the more sophisticated `InterpreterSelectQuery`.
 
-`InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are done. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted to separate classes to allow modular transformations of query.
+The query execution pipeline is a combination of processors that can consume and produce chunks (sets of columns with specific types).
+A processor communicates via ports and can have multiple input ports and multiple output ports.
+A more detailed description can be found in [src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h).
+
+For example, the result of interpreting the `SELECT` query is a "pulling" `QueryPipeline` which has a special output port to read the result set from.
+The result of the `INSERT` query is a "pushing" `QueryPipeline` with an input port to write data for insertion.
+And the result of interpreting the `INSERT SELECT` query is a "completed" `QueryPipeline` that has no inputs or outputs but copies data from `SELECT` to `INSERT` simultaneously.
+
+`InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are performed. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted into separate classes to allow for modular transformations of the query.
+
+To address current problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` is being developed. It is a new version of `InterpreterSelectQuery` that does not use `ExpressionAnalyzer` and introduces an additional abstraction level between `AST` and `QueryPipeline` called `QueryTree`. It is not production-ready yet, but it can be tested with the `allow_experimental_analyzer` flag.
 
 ## Functions {#functions}
 
@@ -132,9 +150,9 @@ Aggregation states can be serialized and deserialized to pass over the network d
 
 The server implements several different interfaces:
 
--   An HTTP interface for any foreign clients.
--   A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
--   An interface for transferring data for replication.
+- An HTTP interface for any foreign clients.
+- A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
+- An interface for transferring data for replication.
 
 Internally, it is just a primitive multithread server without coroutines or fibers. Since the server is not designed to process a high rate of simple queries but to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.
 
@@ -148,11 +166,11 @@ For most external applications, we recommend using the HTTP interface because it
 
 ## Configuration {#configuration}
 
-ClickHouse Server is based on POCO C++ Libraries and uses `Poco::Util::AbstractConfiguration` to represent it's configuration. Configuration is held by `Poco::Util::ServerApplication` class inherited by `DaemonBase` class, which in turn is inherited by `DB::Server` class, implementing clickhouse-server itself. So config can be accessed by `ServerApplication::config()` method.
+ClickHouse Server is based on POCO C++ Libraries and uses `Poco::Util::AbstractConfiguration` to represent its configuration. Configuration is held by `Poco::Util::ServerApplication` class inherited by `DaemonBase` class, which in turn is inherited by `DB::Server` class, implementing clickhouse-server itself. So config can be accessed by `ServerApplication::config()` method.
 
 Config is read from multiple files (in XML or YAML format) and merged into single `AbstractConfiguration` by `ConfigProcessor` class. Configuration is loaded at server startup and can be reloaded later if one of config files is updated, removed or added. `ConfigReloader` class is responsible for periodic monitoring of these changes and reload procedure as well. `SYSTEM RELOAD CONFIG` query also triggers config to be reloaded.
 
-For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading it's config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
+For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading its config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
 
 ## Threads and jobs {#threads-and-jobs}
 
@@ -172,7 +190,7 @@ Global thread pool is `GlobalThreadPool` singleton class. To allocate thread fro
 
 Global pool is universal and all pools described below are implemented on top of it. This can be thought of as a hierarchy of pools. Any specialized pool takes its threads from the global pool using `ThreadPool` class. So the main purpose of any specialized pool is to apply limit on the number of simultaneous jobs and do job scheduling. If there are more jobs scheduled than threads in a pool, `ThreadPool` accumulates jobs in a queue with priorities. Each job has an integer priority. Default priority is zero. All jobs with higher priority values are started before any job with lower priority value. But there is no difference between already executing jobs, thus priority matters only when the pool in overloaded.
 
-IO thread pool is implemented as a plain `ThreadPool` accessible via `IOThreadPool::get()` method. It is configured in the same way as global pool with `max_io_thread_pool_size`, `max_io_thread_pool_free_size` and `io_thread_pool_queue_size` settings. The main purpose of IO thread pool is to avoid exhaustion of the global pool with IO jobs, which could prevent queries from fully utilizing CPU.
+IO thread pool is implemented as a plain `ThreadPool` accessible via `IOThreadPool::get()` method. It is configured in the same way as global pool with `max_io_thread_pool_size`, `max_io_thread_pool_free_size` and `io_thread_pool_queue_size` settings. The main purpose of IO thread pool is to avoid exhaustion of the global pool with IO jobs, which could prevent queries from fully utilizing CPU. Backup to S3 does significant amount of IO operations and to avoid impact on interactive queries there is a separate `BackupsIOThreadPool` configured with `max_backups_io_thread_pool_size`, `max_backups_io_thread_pool_free_size` and `backups_io_thread_pool_queue_size` settings.
 
 For periodic task execution there is `BackgroundSchedulePool` class. You can register tasks using `BackgroundSchedulePool::TaskHolder` objects and the pool ensures that no task runs two jobs at the same time. It also allows you to postpone task execution to a specific instant in the future or temporarily deactivate task. Global `Context` provides a few instances of this class for different purposes. For general purpose tasks `Context::getSchedulePool()` is used.
 
@@ -181,6 +199,43 @@ There are also specialized thread pools for preemptable tasks. Such `IExecutable
 No matter what pool is used for a job, at start `ThreadStatus` instance is created for this job. It encapsulates all per-thread information: thread id, query id, performance counters, resource consumption and many other useful data. Job can access it via thread local pointer by `CurrentThread::get()` call, so we do not need to pass it to every function.
 
 If thread is related to query execution, then the most important thing attached to `ThreadStatus` is query context `ContextPtr`. Every query has its master thread in the server pool. Master thread does the attachment by holding an `ThreadStatus::QueryScope query_scope(query_context)` object. Master thread also creates a thread group represented with `ThreadGroupStatus` object. Every additional thread that is allocated during this query execution is attached to its thread group by `CurrentThread::attachTo(thread_group)` call. Thread groups are used to aggregate profile event counters and track memory consumption by all threads dedicated to a single task (see `MemoryTracker` and `ProfileEvents::Counters` classes for more information).
+
+## Concurrency control {#concurrency-control}
+Query that can be parallelized uses `max_threads` setting to limit itself. Default value for this setting is selected in a way that allows single query to utilize all CPU cores in the best way. But what if there are multiple concurrent queries and each of them uses default `max_threads` setting value? Then queries will share CPU resources. OS will ensure fairness by constantly switching threads, which introduce some performance penalty. `ConcurrencyControl` helps to deal with this penalty and avoid allocating a lot of threads. Configuration setting `concurrent_threads_soft_limit_num` is used to limit how many concurrent thread can be allocated before applying some kind of CPU pressure.
+
+:::note
+`concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` are disabled (equal 0) by default. So this feature must be enabled before use.
+:::
+
+Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thread query has to acquire a slot in advance and release it when thread stops. The number of slots is globally limited in a server. Multiple concurrent queries are competing for CPU slots if the total demand exceeds the total number of slots. `ConcurrencyControl` is responsible to resolve this competition by doing CPU slot scheduling in a fair manner.
+
+Each slot can be seen as an independent state machine with the following states:
+ * `free`: slot is available to be allocated by any query.
+ * `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
+ * `acquired`: slot is `allocated` by specific query and acquired by a thread.
+
+Note that `allocated` slot can be in two different states: `granted` and `acquired`. The former is a transitional state, that actually should be short (from the instant when a slot is allocated to a query till the moment when the up-scaling procedure is run by any thread of that query).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> free
+    free --> allocated: allocate
+    state allocated {
+        direction LR
+        [*] --> granted
+        granted --> acquired: acquire
+        acquired --> [*]
+    }
+    allocated --> free: release
+```
+
+API of `ConcurrencyControl` consists of the following functions:
+1. Create a resource allocation for a query: `auto slots = ConcurrencyControl::instance().allocate(1, max_threads);`. It will allocate at least 1 and at most `max_threads` slots. Note that the first slot is granted immediately, but the remaining slots may be granted later. Thus limit is soft, because every query will obtain at least one thread.
+2. For every thread a slot has to be acquired from an allocation: `while (auto slot = slots->tryAcquire()) spawnThread([slot = std::move(slot)] { ... });`.
+3. Update the total amount of slots: `ConcurrencyControl::setMaxConcurrency(concurrent_threads_soft_limit_num)`. Can be done in runtime, w/o server restart.
+
+This API allows queries to start with at least one thread (in presence of CPU pressure) and later scale up to `max_threads`.
 
 ## Distributed Query Execution {#distributed-query-execution}
 
@@ -200,7 +255,7 @@ When we are going to read something from a part in `MergeTree`, we look at `prim
 
 When you `INSERT` a bunch of data into `MergeTree`, that bunch is sorted by primary key order and forms a new part. There are background threads that periodically select some parts and merge them into a single sorted part to keep the number of parts relatively low. That’s why it is called `MergeTree`. Of course, merging leads to “write amplification”. All parts are immutable: they are only created and deleted, but not modified. When SELECT is executed, it holds a snapshot of the table (a set of parts). After merging, we also keep old parts for some time to make a recovery after failure easier, so if we see that some merged part is probably broken, we can replace it with its source parts.
 
-`MergeTree` is not an LSM tree because it does not contain MEMTABLE and LOG: inserted data is written directly to the filesystem. This behavior makes MergeTree much more suitable to insert data in batches. Therefore frequently inserting small amounts of rows is not ideal for MergeTree. For example, a couple of rows per second is OK, but doing it a thousand times a second is not optimal for MergeTree. However, there is an async insert mode for small inserts to overcome this limitation. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications
+`MergeTree` is not an LSM tree because it does not contain MEMTABLE and LOG: inserted data is written directly to the filesystem. This behavior makes MergeTree much more suitable to insert data in batches. Therefore, frequently inserting small amounts of rows is not ideal for MergeTree. For example, a couple of rows per second is OK, but doing it a thousand times a second is not optimal for MergeTree. However, there is an async insert mode for small inserts to overcome this limitation. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications
 
 There are MergeTree engines that are doing additional work during background merges. Examples are `CollapsingMergeTree` and `AggregatingMergeTree`. This could be treated as special support for updates. Keep in mind that these are not real updates because users usually have no control over the time when background merges are executed, and data in a `MergeTree` table is almost always stored in more than one part, not in completely merged form.
 
@@ -221,5 +276,3 @@ Besides, each replica stores its state in ZooKeeper as the set of parts and its 
 :::note
 The ClickHouse cluster consists of independent shards, and each shard consists of replicas. The cluster is **not elastic**, so after adding a new shard, data is not rebalanced between shards automatically. Instead, the cluster load is supposed to be adjusted to be uneven. This implementation gives you more control, and it is ok for relatively small clusters, such as tens of nodes. But for clusters with hundreds of nodes that we are using in production, this approach becomes a significant drawback. We should implement a table engine that spans across the cluster with dynamically replicated regions that could be split and balanced between clusters automatically.
 :::
-
-[Original article](https://clickhouse.com/docs/en/development/architecture/)

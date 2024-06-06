@@ -213,8 +213,9 @@ ClickHouse接收来自ODBC-driver的引用符号，并将查询中的所有设�
 
 ### ODBC字典功能的已知漏洞 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-    :::info "注意"
-    通过ODBC驱动程序连接参数连接到数据库时 `Servername` 可以取代。 在这种情况下，值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 被发送到远程服务器，并且可能会受到损害。
+:::info "注意"
+通过ODBC驱动程序连接参数连接到数据库时 `Servername` 可以取代。 在这种情况下，值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 被发送到远程服务器，并且可能会受到损害。
+:::
 
 **不安全使用示例**
 
@@ -627,5 +628,3 @@ SOURCE(REDIS(
 -   `port` – The port on the Redis server.
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` 适用于简单源和散列单键源, `hash_map` 用于具有两个键的散列源。 不支持具有复杂键的范围源和缓存源。 可以省略，默认值为 `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

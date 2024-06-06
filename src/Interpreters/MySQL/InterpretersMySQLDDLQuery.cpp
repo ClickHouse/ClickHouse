@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
@@ -77,7 +78,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
         const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
 
         if (!declare_column || !declare_column->data_type)
-            throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Missing type in definition of column.");
 
         bool is_nullable = true;
         bool is_unsigned = false;
@@ -146,7 +147,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
 static ColumnsDescription createColumnsDescription(const NamesAndTypesList & columns_name_and_type, const ASTExpressionList * columns_definition)
 {
     if (columns_name_and_type.size() != columns_definition->children.size())
-            throw Exception("Columns of different size provided.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns of different size provided.");
 
     ColumnsDescription columns_description;
 
@@ -154,7 +155,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
     /// (see git blame for details).
     auto column_name_and_type = columns_name_and_type.begin();
-    auto declare_column_ast = columns_definition->children.begin();
+    const auto * declare_column_ast = columns_definition->children.begin();
     for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
@@ -336,7 +337,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         WhichDataType which(type);
 
         if (which.isNullable())
-            throw Exception("LOGICAL ERROR: MySQL primary key must be not null, it is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL's primary key must be not null, it is a bug.");
 
         if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {
@@ -439,7 +440,7 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
                 missing_columns_definition = false;
         }
         if (missing_columns_definition)
-            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
     }
 }
 
@@ -472,8 +473,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     ColumnsDescription columns_description = createColumnsDescription(columns_name_and_type, create_defines->columns);
 
     if (primary_keys.empty())
-        throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
-            + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The {}.{} cannot be materialized, because there is no primary keys.",
+            backQuoteIfNeed(mysql_database), backQuoteIfNeed(create_query.table));
 
     auto columns = std::make_shared<ASTColumns>();
 
@@ -497,14 +498,12 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     /// Add minmax skipping index for _version column.
-    auto version_index = std::make_shared<ASTIndexDeclaration>();
-    version_index->name = version_column_name;
     auto index_expr = std::make_shared<ASTIdentifier>(version_column_name);
     auto index_type = makeASTFunction("minmax");
     index_type->no_empty_args = true;
-    version_index->set(version_index->expr, index_expr);
-    version_index->set(version_index->type, index_type);
+    auto version_index = std::make_shared<ASTIndexDeclaration>(index_expr, index_type, version_column_name);
     version_index->granularity = 1;
+
     ASTPtr indices = std::make_shared<ASTExpressionList>();
     indices->children.push_back(version_index);
     columns->set(columns->indices, indices);
@@ -543,50 +542,63 @@ void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/
 ASTs InterpreterDropImpl::getRewrittenQueries(
     const InterpreterDropImpl::TQuery & drop_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
-    const auto & database_name = resolveDatabase(drop_query.getDatabase(), mysql_database, mapped_to_database, context);
-
-    /// Skip drop database|view|dictionary
-    if (database_name != mapped_to_database || !drop_query.table || drop_query.is_view || drop_query.is_dictionary)
+    /// Skip drop database|view|dictionary|others
+    if (drop_query.kind != TQuery::Kind::Table)
         return {};
-
-    ASTPtr rewritten_query = drop_query.clone();
-    rewritten_query->as<ASTDropQuery>()->setDatabase(mapped_to_database);
-    return ASTs{rewritten_query};
+    TQuery::QualifiedNames tables = drop_query.names;
+    ASTs rewritten_querys;
+    for (const auto & table: tables)
+    {
+        const auto & database_name = resolveDatabase(table.schema, mysql_database, mapped_to_database, context);
+        if (database_name != mapped_to_database)
+            continue;
+        auto rewritten_query = std::make_shared<ASTDropQuery>();
+        rewritten_query->setTable(table.shortName);
+        rewritten_query->setDatabase(mapped_to_database);
+        if (drop_query.is_truncate)
+            rewritten_query->kind = ASTDropQuery::Kind::Truncate;
+        else
+            rewritten_query->kind = ASTDropQuery::Kind::Drop;
+        rewritten_query->is_view = false;
+        //To avoid failure, we always set exists
+        rewritten_query->if_exists = true;
+        rewritten_querys.push_back(rewritten_query);
+    }
+    return rewritten_querys;
 }
 
 void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, ContextPtr /*context*/)
 {
     if (rename_query.exchange)
-        throw Exception("Cannot execute exchange for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot execute exchange for external ddl query.");
 }
 
 ASTs InterpreterRenameImpl::getRewrittenQueries(
     const InterpreterRenameImpl::TQuery & rename_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
     ASTRenameQuery::Elements elements;
-    for (const auto & rename_element : rename_query.elements)
+    for (const auto & rename_element : rename_query.getElements())
     {
-        const auto & to_database = resolveDatabase(rename_element.to.database, mysql_database, mapped_to_database, context);
-        const auto & from_database = resolveDatabase(rename_element.from.database, mysql_database, mapped_to_database, context);
+        const auto & to_database = resolveDatabase(rename_element.to.getDatabase(), mysql_database, mapped_to_database, context);
+        const auto & from_database = resolveDatabase(rename_element.from.getDatabase(), mysql_database, mapped_to_database, context);
 
         if ((from_database == mapped_to_database || to_database == mapped_to_database) && to_database != from_database)
-            throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
 
         if (from_database == mapped_to_database)
         {
             elements.push_back(ASTRenameQuery::Element());
-            elements.back().from.database = mapped_to_database;
-            elements.back().from.table = rename_element.from.table;
-            elements.back().to.database = mapped_to_database;
-            elements.back().to.table = rename_element.to.table;
+            elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            elements.back().from.table = rename_element.from.table->clone();
+            elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            elements.back().to.table = rename_element.to.table->clone();
         }
     }
 
     if (elements.empty())
         return ASTs{};
 
-    auto rewritten_query = std::make_shared<ASTRenameQuery>();
-    rewritten_query->elements = elements;
+    auto rewritten_query = std::make_shared<ASTRenameQuery>(std::move(elements));
     return ASTs{rewritten_query};
 }
 
@@ -601,7 +613,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
         return {};
 
     auto rewritten_alter_query = std::make_shared<ASTAlterQuery>();
-    auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
+    ASTRenameQuery::Elements rename_elements;
+
     rewritten_alter_query->setDatabase(mapped_to_database);
     rewritten_alter_query->setTable(alter_query.table);
     rewritten_alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
@@ -623,7 +636,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::ADD_COLUMN;
                 rewritten_command->first = alter_command->first;
-                rewritten_command->col_decl = additional_columns->children[index]->clone();
+                rewritten_command->col_decl = rewritten_command->children.emplace_back(additional_columns->children[index]->clone()).get();
 
                 const auto & column_declare = alter_command->additional_columns->children[index]->as<MySQLParser::ASTDeclareColumn>();
                 if (column_declare && column_declare->column_options)
@@ -652,8 +665,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
 
                 if (!alter_command->column_name.empty())
                 {
-                    rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                    rewritten_command->children.push_back(rewritten_command->column);
+                    rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
 
                     /// For example(when add_column_1 is last column):
                     /// ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT AFTER add_column_1, ADD COLUMN add_column_4 INT
@@ -664,12 +676,10 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 }
                 else
                 {
-                    rewritten_command->column = std::make_shared<ASTIdentifier>(default_after_column);
-                    rewritten_command->children.push_back(rewritten_command->column);
+                    rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(default_after_column)).get();
                     default_after_column = rewritten_command->col_decl->as<ASTColumnDeclaration>()->name;
                 }
 
-                rewritten_command->children.push_back(rewritten_command->col_decl);
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
@@ -677,7 +687,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
         {
             auto rewritten_command = std::make_shared<ASTAlterCommand>();
             rewritten_command->type = ASTAlterCommand::DROP_COLUMN;
-            rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+            rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
             rewritten_alter_query->command_list->children.push_back(rewritten_command);
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_COLUMN)
@@ -687,8 +697,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 /// 'RENAME column_name TO column_name' is not allowed in Clickhouse
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
-                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
-                rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->old_name)).get();
+                rewritten_command->rename_to = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
@@ -703,7 +713,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 auto modify_columns = getColumnsList(alter_command->additional_columns);
 
                 if (modify_columns.size() != 1)
-                    throw Exception("It is a bug", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "It is a bug");
 
                 new_column_name = modify_columns.front().name;
 
@@ -711,13 +721,10 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                     modify_columns.front().name = alter_command->old_name;
 
                 const auto & modify_columns_description = createColumnsDescription(modify_columns, alter_command->additional_columns);
-                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0];
+                rewritten_command->col_decl = rewritten_command->children.emplace_back(InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0]).get();
 
                 if (!alter_command->column_name.empty())
-                {
-                    rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                    rewritten_command->children.push_back(rewritten_command->column);
-                }
+                    rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
 
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
@@ -726,8 +733,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             {
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
-                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
-                rewritten_command->rename_to = std::make_shared<ASTIdentifier>(new_column_name);
+                rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->old_name)).get();
+                rewritten_command->rename_to = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(new_column_name)).get();
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
@@ -736,17 +743,17 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             const auto & to_database = resolveDatabase(alter_command->new_database_name, mysql_database, mapped_to_database, context);
 
             if (to_database != mapped_to_database)
-                throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
 
             /// For ALTER TABLE table_name RENAME TO new_table_name_1, RENAME TO new_table_name_2;
             /// We just need to generate RENAME TABLE table_name TO new_table_name_2;
-            if (rewritten_rename_query->elements.empty())
-                rewritten_rename_query->elements.push_back(ASTRenameQuery::Element());
+            if (rename_elements.empty())
+                rename_elements.push_back(ASTRenameQuery::Element());
 
-            rewritten_rename_query->elements.back().from.database = mapped_to_database;
-            rewritten_rename_query->elements.back().from.table = alter_query.table;
-            rewritten_rename_query->elements.back().to.database = mapped_to_database;
-            rewritten_rename_query->elements.back().to.table = alter_command->new_table_name;
+            rename_elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rename_elements.back().from.table = std::make_shared<ASTIdentifier>(alter_query.table);
+            rename_elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rename_elements.back().to.table = std::make_shared<ASTIdentifier>(alter_command->new_table_name);
         }
     }
 
@@ -756,8 +763,11 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
     if (!rewritten_alter_query->command_list->children.empty())
         rewritten_queries.push_back(rewritten_alter_query);
 
-    if (!rewritten_rename_query->elements.empty())
+    if (!rename_elements.empty())
+    {
+        auto rewritten_rename_query = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         rewritten_queries.push_back(rewritten_rename_query);
+    }
 
     return rewritten_queries;
 }

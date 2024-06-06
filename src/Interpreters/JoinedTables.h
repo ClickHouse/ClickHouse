@@ -22,7 +22,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class JoinedTables
 {
 public:
-    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query, bool include_all_columns_ = false);
+    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query_, bool include_all_columns_ = false, bool is_create_parameterized_view_ = false);
 
     void reset(const ASTSelectQuery & select_query);
 
@@ -52,6 +52,8 @@ private:
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;
     std::optional<DatabaseAndTableWithAlias> left_db_and_table;
+    const ASTSelectQuery & select_query;
+    const bool is_create_parameterized_view;
 };
 
 }

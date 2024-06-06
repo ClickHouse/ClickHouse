@@ -1,10 +1,11 @@
 #include "CachedOnDiskWriteBufferFromFile.h"
 
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Context.h>
+#include <IO/SwapHelper.h>
 
 
 namespace ProfileEvents
@@ -21,104 +22,99 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-    class SwapHelper
-    {
-    public:
-        SwapHelper(WriteBuffer & b1_, WriteBuffer & b2_) : b1(b1_), b2(b2_) { b1.swap(b2); }
-        ~SwapHelper() { b1.swap(b2); }
-
-    private:
-        WriteBuffer & b1;
-        WriteBuffer & b2;
-    };
-}
-
-
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     FileCache * cache_,
     const FileSegment::Key & key_,
+    const FileCacheUserInfo & user_,
+    size_t reserve_space_lock_wait_timeout_milliseconds_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     const String & query_id_,
     const String & source_path_)
     : cache(cache_)
     , key(key_)
+    , user(user_)
+    , reserve_space_lock_wait_timeout_milliseconds(reserve_space_lock_wait_timeout_milliseconds_)
+    , log(getLogger("FileSegmentRangeWriter"))
     , cache_log(cache_log_)
     , query_id(query_id_)
     , source_path(source_path_)
-    , current_file_segment_it(file_segments_holder.file_segments.end())
 {
 }
 
-bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, bool is_persistent)
+bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
     if (finalized)
         return false;
 
-    auto & file_segments = file_segments_holder.file_segments;
-
-    if (current_file_segment_it == file_segments.end())
+    if (expected_write_offset != offset)
     {
-        current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot write file segment at offset {}, because expected write offset is: {}",
+            offset, expected_write_offset);
+    }
+
+    FileSegment * file_segment;
+
+    if (!file_segments || file_segments->empty() || file_segments->front().isDownloaded())
+    {
+        file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
     }
     else
     {
-        auto file_segment = *current_file_segment_it;
-        assert(file_segment->getCurrentWriteOffset() == current_file_segment_write_offset);
-
-        if (current_file_segment_write_offset != offset)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot write file segment at offset {}, because current write offset is: {}",
-                offset, current_file_segment_write_offset);
-        }
-
-        if (file_segment->range().size() == file_segment->getDownloadedSize())
-        {
-            completeFileSegment(*file_segment);
-            current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
-        }
+        file_segment = &file_segments->front();
     }
-
-    auto & file_segment = *current_file_segment_it;
-
-    auto downloader = file_segment->getOrSetDownloader();
-    if (downloader != FileSegment::getCallerId())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set a downloader. ({})", file_segment->getInfoForLog());
 
     SCOPE_EXIT({
-        if (file_segment->isDownloader())
-            file_segment->completePartAndResetDownloader();
+        if (!file_segments || file_segments->empty())
+            return;
+        if (file_segments->front().isDownloader())
+            file_segments->front().completePartAndResetDownloader();
     });
 
-    bool reserved = file_segment->reserve(size);
-    if (!reserved)
+    while (size > 0)
     {
-        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-        appendFilesystemCacheLog(*file_segment);
+        size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
+        if (available_size == 0)
+        {
+            completeFileSegment();
+            file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
+            continue;
+        }
 
-        LOG_DEBUG(
-            &Poco::Logger::get("FileSegmentRangeWriter"),
-            "Unsuccessful space reservation attempt (size: {}, file segment info: {}",
-            size, file_segment->getInfoForLog());
+        if (!file_segment->isDownloader()
+            && file_segment->getOrSetDownloader() != FileSegment::getCallerId())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Failed to set a downloader. ({})", file_segment->getInfoForLog());
+        }
 
-        return false;
-    }
+        size_t size_to_write = std::min(available_size, size);
 
-    try
-    {
-        file_segment->write(data, size, offset);
-    }
-    catch (...)
-    {
+        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds);
+        if (!reserved)
+        {
+            appendFilesystemCacheLog(*file_segment);
+
+            LOG_DEBUG(
+                log, "Failed to reserve space in cache (size: {}, file segment info: {}",
+                size, file_segment->getInfoForLog());
+
+            return false;
+        }
+
+        file_segment->write(data, size_to_write, offset);
         file_segment->completePartAndResetDownloader();
-        throw;
+
+        size -= size_to_write;
+        expected_write_offset += size_to_write;
+        offset += size_to_write;
+        data += size_to_write;
     }
 
-    file_segment->completePartAndResetDownloader();
-    current_file_segment_write_offset += size;
+    size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
+    if (available_size == 0)
+        completeFileSegment();
 
     return true;
 }
@@ -128,11 +124,7 @@ void FileSegmentRangeWriter::finalize()
     if (finalized)
         return;
 
-    auto & file_segments = file_segments_holder.file_segments;
-    if (file_segments.empty() || current_file_segment_it == file_segments.end())
-        return;
-
-    completeFileSegment(**current_file_segment_it);
+    completeFileSegment();
     finalized = true;
 }
 
@@ -149,80 +141,81 @@ FileSegmentRangeWriter::~FileSegmentRangeWriter()
     }
 }
 
-FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset, bool is_persistent)
+FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
     /**
     * Allocate a new file segment starting `offset`.
     * File segment capacity will equal `max_file_segment_size`, but actual size is 0.
     */
 
-    std::lock_guard cache_lock(cache->mutex);
-
-    CreateFileSegmentSettings create_settings
-    {
-        .is_persistent = is_persistent,
-    };
+    CreateFileSegmentSettings create_settings(segment_kind, false);
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    auto file_segment = cache->createFileSegmentForDownload(
-        key, offset, cache->max_file_segment_size, create_settings, cache_lock);
-
-    return file_segments_holder.add(std::move(file_segment));
+    file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
+    chassert(file_segments->size() == 1);
+    return file_segments->front();
 }
 
 void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_segment)
 {
-    if (cache_log)
-    {
-        auto file_segment_range = file_segment.range();
-        size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize() - 1;
-
-        FilesystemCacheLogElement elem
-        {
-            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-            .query_id = query_id,
-            .source_file_path = source_path,
-            .file_segment_range = { file_segment_range.left, file_segment_right_bound },
-            .requested_range = {},
-            .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
-            .file_segment_size = file_segment_range.size(),
-            .read_from_cache_attempted = false,
-            .read_buffer_id = {},
-            .profile_counters = nullptr,
-        };
-
-        cache_log->add(elem);
-    }
-}
-
-void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
-{
-    /// File segment can be detached if space reservation failed.
-    if (file_segment.isDetached())
+    if (!cache_log)
         return;
 
-    file_segment.completeWithoutState();
-    appendFilesystemCacheLog(file_segment);
+    auto file_segment_range = file_segment.range();
+    size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize() - 1;
+
+    FilesystemCacheLogElement elem
+    {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .source_file_path = source_path,
+        .file_segment_range = { file_segment_range.left, file_segment_right_bound },
+        .requested_range = {},
+        .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
+        .file_segment_key = {},
+        .file_segment_size = file_segment_range.size(),
+        .read_from_cache_attempted = false,
+        .read_buffer_id = {},
+        .profile_counters = nullptr,
+    };
+
+    cache_log->add(std::move(elem));
 }
 
+void FileSegmentRangeWriter::completeFileSegment()
+{
+    if (!file_segments || file_segments->empty())
+        return;
+
+    auto & file_segment = file_segments->front();
+    /// File segment can be detached if space reservation failed.
+    if (file_segment.isDetached() || file_segment.isCompleted())
+        return;
+
+    file_segment.complete();
+    appendFilesystemCacheLog(file_segment);
+}
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     std::unique_ptr<WriteBuffer> impl_,
     FileCachePtr cache_,
     const String & source_path_,
     const FileCache::Key & key_,
-    bool is_persistent_cache_file_,
     const String & query_id_,
-    const WriteSettings & settings_)
+    const WriteSettings & settings_,
+    const FileCacheUserInfo & user_,
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
     : WriteBufferFromFileDecorator(std::move(impl_))
-    , log(&Poco::Logger::get("CachedOnDiskWriteBufferFromFile"))
+    , log(getLogger("CachedOnDiskWriteBufferFromFile"))
     , cache(cache_)
     , source_path(source_path_)
     , key(key_)
-    , is_persistent_cache_file(is_persistent_cache_file_)
     , query_id(query_id_)
-    , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
+    , user(user_)
+    , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
+    , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
+    , cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
 }
 
@@ -230,38 +223,39 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 {
     size_t size = offset();
 
+    /// Write data to cache.
+    cacheData(working_buffer.begin(), size, throw_on_error_from_cache);
+    current_download_offset += size;
+
     try
     {
         SwapHelper swap(*this, *impl);
         /// Write data to the underlying buffer.
+        /// Actually here WriteBufferFromFileDecorator::nextImpl has to be called, but it is pivate method.
+        /// In particular WriteBufferFromFileDecorator introduces logic with swaps in order to achieve delegation.
         impl->next();
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         /// If something was already written to cache, remove it.
         cache_writer.reset();
-        cache->removeIfExists(key);
+        cache->removeKeyIfExists(key, user.user_id);
 
         throw;
     }
-
-    /// Write data to cache.
-    cacheData(working_buffer.begin(), size);
-    current_download_offset += size;
 }
 
-void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
+void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool throw_on_error)
 {
     if (cache_in_error_state_or_disabled)
         return;
 
     if (!cache_writer)
     {
-        std::shared_ptr<FilesystemCacheLog> cache_log;
-        if (enable_cache_log)
-            cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog();
-
-        cache_writer = std::make_unique<FileSegmentRangeWriter>(cache.get(), key, cache_log, query_id, source_path);
+        cache_writer = std::make_unique<FileSegmentRangeWriter>(
+            cache.get(), key, user, reserve_space_lock_wait_timeout_milliseconds, cache_log, query_id, source_path);
     }
 
     Stopwatch watch(CLOCK_MONOTONIC);
@@ -270,7 +264,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
 
     try
     {
-        if (!cache_writer->write(data, size, current_download_offset, is_persistent_cache_file))
+        if (!cache_writer->write(data, size, current_download_offset, FileSegmentKind::Regular))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
             return;
@@ -285,11 +279,17 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
             return;
         }
 
+        if (throw_on_error)
+            throw;
+
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return;
     }
     catch (...)
     {
+        if (throw_on_error)
+            throw;
+
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return;
     }
@@ -304,8 +304,7 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 {
     try
     {
-        SwapHelper swap(*this, *impl);
-        impl->finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
     }
     catch (...)
     {

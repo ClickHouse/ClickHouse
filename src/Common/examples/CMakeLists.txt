@@ -40,9 +40,6 @@ target_link_libraries (array_cache PRIVATE clickhouse_common_io)
 clickhouse_add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
-clickhouse_add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
-target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
-
 clickhouse_add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
 target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
 
@@ -85,3 +82,11 @@ endif()
 
 clickhouse_add_executable (interval_tree interval_tree.cpp)
 target_link_libraries (interval_tree PRIVATE dbms)
+
+if (ENABLE_SSL)
+    clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)
+    target_link_libraries (encrypt_decrypt PRIVATE dbms)
+endif()
+
+clickhouse_add_executable (check_pointer_valid check_pointer_valid.cpp)
+target_link_libraries (check_pointer_valid PRIVATE clickhouse_common_io)

@@ -1,5 +1,5 @@
 #include <Common/TLDListsHolder.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -55,7 +55,7 @@ void TLDListsHolder::parseConfig(const std::string & top_level_domains_path, con
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys("top_level_domains_lists", config_keys);
 
-    Poco::Logger * log = &Poco::Logger::get("TLDListsHolder");
+    LoggerPtr log = getLogger("TLDListsHolder");
 
     for (const auto & key : config_keys)
     {
@@ -100,7 +100,7 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
             tld_list_tmp.emplace(line, TLDType::TLD_REGULAR);
     }
     if (!in.eof())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not all list had been read", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not all list had been read: {}", name);
 
     TLDList tld_list(tld_list_tmp.size());
     for (const auto & [host, type] : tld_list_tmp)
@@ -109,14 +109,14 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
     }
 
     size_t tld_list_size = tld_list.size();
-    std::lock_guard<std::mutex> lock(tld_lists_map_mutex);
+    std::lock_guard lock(tld_lists_map_mutex);
     tld_lists_map.insert(std::make_pair(name, std::move(tld_list)));
     return tld_list_size;
 }
 
 const TLDList & TLDListsHolder::getTldList(const std::string & name)
 {
-    std::lock_guard<std::mutex> lock(tld_lists_map_mutex);
+    std::lock_guard lock(tld_lists_map_mutex);
     auto it = tld_lists_map.find(name);
     if (it == tld_lists_map.end())
         throw Exception(ErrorCodes::TLD_LIST_NOT_FOUND, "TLD list {} does not exist", name);

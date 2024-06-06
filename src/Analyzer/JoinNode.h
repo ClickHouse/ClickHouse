@@ -106,6 +106,12 @@ public:
         return locality;
     }
 
+    /// Set join locality
+    void setLocality(JoinLocality locality_value)
+    {
+        locality = locality_value;
+    }
+
     /// Get join strictness
     JoinStrictness getStrictness() const
     {
@@ -126,16 +132,23 @@ public:
         return QueryTreeNodeType::JOIN;
     }
 
+    /*
+     * Convert CROSS to INNER JOIN - changes JOIN kind and sets a new join expression
+     * (that was moved from WHERE clause).
+     * Expects the current kind to be CROSS (and join expression to be null because of that).
+     */
+    void crossToInner(const QueryTreeNodePtr & join_expression_);
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & state) const override;
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     JoinLocality locality = JoinLocality::Unspecified;

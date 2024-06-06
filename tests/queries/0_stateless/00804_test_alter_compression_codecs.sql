@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS alter_compression_codec;
@@ -52,9 +50,9 @@ CREATE TABLE alter_bad_codec (
     id UInt64 CODEC(NONE)
 ) ENGINE = MergeTree() ORDER BY tuple();
 
-ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(gbdgkjsdh); -- { serverError 432 }
+ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(gbdgkjsdh); -- { serverError UNKNOWN_CODEC }
 
-ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(ZSTD(100)); -- { serverError 433 }
+ALTER TABLE alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(ZSTD(100)); -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 DROP TABLE IF EXISTS alter_bad_codec;
 
@@ -65,7 +63,7 @@ CREATE TABLE large_alter_table_00804 (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
     data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
-) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 
 INSERT INTO large_alter_table_00804 SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
 

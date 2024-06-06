@@ -4,15 +4,15 @@
 #include <AggregateFunctions/Moments.h>
 
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+}
 
 namespace
 {
@@ -60,6 +60,9 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 se = getStandardError();
         Float64 t_stat = (mean_x - mean_y) / se;
 
+        if (unlikely(!std::isfinite(t_stat)))
+            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+
         auto students_t_distribution = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
         Float64 pvalue = 0;
         if (t_stat > 0)
@@ -77,10 +80,10 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
     assertBinary(name, argument_types);
 
     if (parameters.size() > 1)
-        throw Exception("Aggregate function " + name + " requires zero or one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires zero or one parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
     return std::make_shared<AggregateFunctionTTest<WelchTTestData>>(argument_types, parameters);
 }

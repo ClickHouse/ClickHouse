@@ -3,8 +3,8 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSelectQuery.h>
 
-#include <iostream>
 
 namespace DB
 {
@@ -63,18 +63,12 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
+            if (it != list_of_selects->children.begin())
+                settings.ostr << settings.nl_or_ws;
 
-            if (node->list_of_selects->children.size() == 1)
-            {
-                (node->list_of_selects->children.at(0))->formatImpl(settings, state, frame);
-            }
-            else
-            {
-                auto sub_query = std::make_shared<ASTSubquery>();
-                sub_query->children.push_back(*it);
-                sub_query->formatImpl(settings, state, frame);
-            }
+            settings.ostr << indent_str;
+            auto sub_query = std::make_shared<ASTSubquery>(*it);
+            sub_query->formatImpl(settings, state, frame);
         }
         else
         {
@@ -90,6 +84,27 @@ bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
     return set_of_modes.contains(SelectUnionMode::UNION_DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT_DISTINCT)
         || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
+}
+
+bool ASTSelectWithUnionQuery::hasQueryParameters() const
+{
+    if (!has_query_parameters.has_value())
+    {
+        for (const auto & child : list_of_selects->children)
+        {
+            if (auto * select_node = child->as<ASTSelectQuery>())
+            {
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
+            }
+        }
+        has_query_parameters = false;
+    }
+
+    return  has_query_parameters.value();
 }
 
 }

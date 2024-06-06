@@ -20,15 +20,15 @@ public:
     VersionedCollapsingAlgorithm(
         const Block & header, size_t num_inputs,
         SortDescription description_, const String & sign_column_,
-        size_t max_block_size,
+        size_t max_block_size_rows,
+        size_t max_block_size_bytes,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
 
+    const char * getName() const override { return "VersionedCollapsingAlgorithm"; }
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     size_t sign_column_number = 0;
 
     const size_t max_rows_in_queue;
