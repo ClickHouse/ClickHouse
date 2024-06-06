@@ -168,6 +168,9 @@ set (SRCS
 add_library (_poco_foundation ${SRCS})
 add_library (Poco::Foundation ALIAS _poco_foundation)
 
+target_link_libraries (_poco_foundation PRIVATE clickhouse_common_io)
+target_compile_definitions(_poco_foundation PUBLIC USE_CLICKHOUSE_THREADS=1)
+
 # TODO: remove these warning exclusions
 target_compile_options (_poco_foundation
     PRIVATE
