@@ -91,8 +91,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// Int64 as input type was supported originally. 'generateSnowflakeID' returns UInt64, so support it too.
         FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInt64), nullptr, "Int64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64OrInt64), nullptr, "(U)Int64"}
         };
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
@@ -139,7 +140,8 @@ public:
         auto col_res = ColumnDateTime::create(input_rows_count);
         auto & res_data = col_res->getData();
 
-        if (executeNonConst<ColumnInt64>(col_src, res_data, input_rows_count))
+        if (executeNonConst<ColumnInt64>(col_src, res_data, input_rows_count)
+            || executeNonConst<ColumnUInt64>(col_src, res_data, input_rows_count))
             return col_res;
         else if (executeConst(col_src, res_data, input_rows_count))
             return col_res;
@@ -215,8 +217,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// Int64 as input type was supported originally. 'generateSnowflakeID' returns UInt64, so support it too.
         FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInt64), nullptr, "Int64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64OrInt64), nullptr, "(U)Int64"}
         };
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
@@ -263,7 +266,8 @@ public:
         auto col_res = ColumnDateTime64::create(input_rows_count, 3);
         auto & res_data = col_res->getData();
 
-        if (executeNonConst<ColumnInt64>(col_src, res_data, input_rows_count))
+        if (executeNonConst<ColumnInt64>(col_src, res_data, input_rows_count)
+            || executeNonConst<ColumnUInt64>(col_src, res_data, input_rows_count))
             return col_res;
         else if (executeConst(col_src, res_data, input_rows_count))
             return col_res;

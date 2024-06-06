@@ -328,6 +328,7 @@ bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
 bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
 bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
 \
+bool isUInt64OrInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64OrInt64(); } \
 bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } \
 bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
 \

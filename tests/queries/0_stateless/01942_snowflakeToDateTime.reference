@@ -1,26 +1,42 @@
 -- non-const path
 Row 1:
 ──────
-tz:               UTC
-i64:              1426860704886947840
-dt:               2021-08-15 10:57:56
-toTypeName(dt):   DateTime('UTC')
-dt64:             2021-08-15 10:57:56.492
-toTypeName(dt64): DateTime64(3, 'UTC')
+tz:                 UTC
+i64:                1426860704886947840
+u64:                1426860704886947840
+i_dt:               2021-08-15 10:57:56
+u_dt:               2021-08-15 10:57:56
+toTypeName(i_dt):   DateTime('UTC')
+toTypeName(u_dt):   DateTime('UTC')
+i_dt64:             2021-08-15 10:57:56.492
+u_dt64:             2021-08-15 10:57:56.492
+toTypeName(i_dt64): DateTime64(3, 'UTC')
+toTypeName(u_dt64): DateTime64(3, 'UTC')
 Row 1:
 ──────
-tz:               Asia/Shanghai
-i64:              1426860704886947840
-dt:               2021-08-15 18:57:56
-toTypeName(dt):   DateTime('Asia/Shanghai')
-dt64:             2021-08-15 18:57:56.492
-toTypeName(dt64): DateTime64(3, 'Asia/Shanghai')
+tz:                 Asia/Shanghai
+i64:                1426860704886947840
+i_dt:               2021-08-15 18:57:56
+u_dt:               2021-08-15 18:57:56
+toTypeName(i_dt):   DateTime('Asia/Shanghai')
+toTypeName(u_dt):   DateTime('Asia/Shanghai')
+i_dt64:             2021-08-15 18:57:56.492
+u_dt64:             2021-08-15 18:57:56.492
+toTypeName(i_dt64): DateTime64(3, 'Asia/Shanghai')
+toTypeName(u_dt64): DateTime64(3, 'Asia/Shanghai')
 -- non-const path
 Row 1:
 ──────
-tz:               UTC
-i64:              1426860704886947840
-dt:               2021-08-15 10:57:56
-toTypeName(dt):   DateTime
-dt64:             2021-08-15 10:57:56.492
-toTypeName(dt64): DateTime64(3)
+tz:                 UTC
+i64:                1426860704886947840
+u64:                1426860704886947840
+i_dt:               2021-08-15 10:57:56
+u_dt:               2021-08-15 10:57:56
+toTypeName(i_dt):   DateTime
+toTypeName(u_dt):   DateTime
+i_dt64:             2021-08-15 10:57:56.492
+u_dt64:             2021-08-15 10:57:56.492
+toTypeName(i_dt64): DateTime64(3)
+toTypeName(u_dt64): DateTime64(3)
+-- Can be combined with generateSnowflakeID
+1	1

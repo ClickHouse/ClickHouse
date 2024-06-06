@@ -392,6 +392,7 @@ struct WhichDataType
     constexpr bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
     constexpr bool isInt() const { return isNativeInt() || isInt128() || isInt256(); }
 
+    constexpr bool isUInt64OrInt64() const { return isUInt64() || isInt64(); }
     constexpr bool isNativeInteger() const { return isNativeInt() || isNativeUInt(); }
     constexpr bool isInteger() const { return isInt() || isUInt(); }
 
@@ -469,6 +470,7 @@ bool isInt64(TYPE data_type); \
 bool isNativeInt(TYPE data_type); \
 bool isInt(TYPE data_type); \
 \
+bool isUInt64OrInt64(TYPE data_type); \
 bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
