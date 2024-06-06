@@ -164,7 +164,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -211,7 +211,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -260,7 +260,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -312,7 +312,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -360,7 +360,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -403,7 +403,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -451,7 +451,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -504,7 +504,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
@@ -559,7 +559,7 @@ jobs:
           name: build_report_package_${{ inputs.arch }}
       - name: Rename reports
         run: |
-          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
+          mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}.json
       - name: Setup
         run: .github/setup.sh
       - name: Get deb url
