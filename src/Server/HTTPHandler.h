@@ -13,6 +13,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/re2.h>
 
+#include "HTTPResponseHeaderWriter.h"
+
 namespace CurrentMetrics
 {
 extern const Metric HTTPConnection;
@@ -37,10 +39,7 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(
-        IServer & server_,
-        const std::string & name,
-        const std::optional<std::unordered_map<String, String>> & http_response_headers_override_);
+    HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -86,10 +85,7 @@ private:
         bool exception_is_written = false;
         std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        bool hasDelayed() const
-        {
-            return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
-        }
+        bool hasDelayed() const { return out_maybe_delayed_and_compressed != out_maybe_compressed.get(); }
 
         void finalize()
         {
@@ -103,10 +99,7 @@ private:
                 out->finalize();
         }
 
-        bool isFinalized() const
-        {
-            return finalized;
-        }
+        bool isFinalized() const { return finalized; }
     };
 
     IServer & server;
@@ -123,7 +116,7 @@ private:
     const Settings & default_settings;
 
     /// Overrides for response headers.
-    std::optional<std::unordered_map<String, String>> http_response_headers_override;
+    HTTPResponseHeaderSetup http_response_headers_override;
 
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
@@ -165,7 +158,7 @@ public:
     explicit DynamicQueryHandler(
         IServer & server_,
         const std::string & param_name_ = "query",
-        const std::optional<std::unordered_map<String, String>> & http_response_headers_override_ = std::nullopt);
+        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
@@ -187,7 +180,7 @@ public:
         const std::string & predefined_query_,
         const CompiledRegexPtr & url_regex_,
         const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-        const std::optional<std::unordered_map<String, String>> & http_response_headers_override_ = std::nullopt);
+        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 

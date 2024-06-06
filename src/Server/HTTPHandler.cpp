@@ -27,6 +27,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include "Common/logger_useful.h"
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
@@ -286,9 +287,6 @@ static std::chrono::steady_clock::duration parseSessionTimeout(const Poco::Util:
     return std::chrono::seconds(session_timeout);
 }
 
-std::optional<std::unordered_map<String, String>>
-parseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
     std::vector<WriteBufferPtr> write_buffers;
@@ -325,8 +323,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(
-    IServer & server_, const std::string & name, const std::optional<std::unordered_map<String, String>> & http_response_headers_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
     : server(server_)
     , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
@@ -711,7 +708,8 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsed<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        in_post_maybe_compressed
+            = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
     }
     else
@@ -900,18 +898,14 @@ void HTTPHandler::processQuery(
     customizeContext(request, context, *in_post_maybe_compressed);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
-    if (http_response_headers_override)
-        for (auto [header_name, header_value] : *http_response_headers_override)
-            response.set(header_name, header_value);
+    applyHTTPResponseHeaders(response, http_response_headers_override);
 
     auto set_query_result = [this, &response](const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
 
-        if (!(
-                http_response_headers_override.has_value()
-                && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE)
-             ) && details.content_type)
+        if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
+            && details.content_type)
             response.setContentType(*details.content_type);
 
         if (details.format)
@@ -1125,10 +1119,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
-            client_trace_context,
-            context->getSettingsRef(),
-            context->getOpenTelemetrySpanLog());
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+            "HTTPHandler", client_trace_context, context->getSettingsRef(), context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
@@ -1204,9 +1196,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 }
 
 DynamicQueryHandler::DynamicQueryHandler(
-    IServer & server_,
-    const std::string & param_name_,
-    const std::optional<std::unordered_map<String, String>> & http_response_headers_override_)
+    IServer & server_, const std::string & param_name_, const HTTPResponseHeaderSetup & http_response_headers_override_)
     : HTTPHandler(server_, "DynamicQueryHandler", http_response_headers_override_), param_name(param_name_)
 {
 }
@@ -1262,7 +1252,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-    const std::optional<std::unordered_map<String, String>> & http_response_headers_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_)
     : HTTPHandler(server_, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
@@ -1349,34 +1339,12 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     return predefined_query;
 }
 
-std::optional<std::unordered_map<String, String>>
-parseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-{
-    std::unordered_map<String, String> http_response_headers_override;
-    String http_response_headers_key = config_prefix + ".handler.http_response_headers";
-    String http_response_headers_key_prefix = http_response_headers_key + ".";
-    if (config.has(http_response_headers_key))
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(http_response_headers_key, keys);
-        for (const auto & key : keys)
-            http_response_headers_override[key] = config.getString(http_response_headers_key_prefix + key);
-    }
-    if (config.has(config_prefix + ".handler.content_type"))
-        http_response_headers_override[Poco::Net::HTTPMessage::CONTENT_TYPE] = config.getString(config_prefix + ".handler.content_type");
-
-    if (http_response_headers_override.empty())
-        return {};
-
-    return std::move(http_response_headers_override);
-}
-
 HTTPRequestHandlerFactoryPtr
 createDynamicHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
-    std::optional<std::unordered_map<String, String>> http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
     auto creator = [&server, query_param_name, http_response_headers_override]() -> std::unique_ptr<DynamicQueryHandler>
     { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override); };
@@ -1440,7 +1408,7 @@ createPredefinedHandlerFactory(IServer & server, const Poco::Util::AbstractConfi
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
-    std::optional<std::unordered_map<String, String>> http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
