@@ -1,7 +1,5 @@
 #pragma once
 
-#include <string>
-
 #include <base/types.h>
 #include <Common/Exception.h>
 
@@ -29,9 +27,6 @@ struct Keeper4LWInfo
 
     uint64_t follower_count;
     uint64_t synced_follower_count;
-
-    uint64_t total_nodes_count;
-    int64_t last_zxid;
 
     String getRole() const
     {

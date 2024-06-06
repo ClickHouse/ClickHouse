@@ -2514,6 +2514,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         results.push_back(ResponseForSession{session_id, response});
     }
 
+    updateStats();
     return results;
 }
 
@@ -2658,6 +2659,23 @@ void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) co
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
         write_str_set(ephemeral_paths);
     }
+}
+
+void KeeperStorage::updateStats()
+{
+    stats.nodes_count.store(getNodesCount(), std::memory_order_relaxed);
+    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
+    stats.total_watches_count.store(getTotalWatchesCount(), std::memory_order_relaxed);
+    stats.watched_paths_count.store(getWatchedPathsCount(), std::memory_order_relaxed);
+    stats.sessions_with_watches_count.store(getSessionsWithWatchesCount(), std::memory_order_relaxed);
+    stats.session_with_ephemeral_nodes_count.store(getSessionWithEphemeralNodesCount(), std::memory_order_relaxed);
+    stats.total_emphemeral_nodes_count.store(getTotalEphemeralNodesCount(), std::memory_order_relaxed);
+    stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
+}
+
+const KeeperStorage::Stats & KeeperStorage::getStorageStats() const
+{
+    return stats;
 }
 
 uint64_t KeeperStorage::getTotalWatchesCount() const

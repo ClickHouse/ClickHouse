@@ -802,10 +802,9 @@ uint64_t KeeperStateMachine::getLastProcessedZxid() const
     return storage->getZXID();
 }
 
-uint64_t KeeperStateMachine::getNodesCount() const
+const KeeperStorage::Stats & KeeperStateMachine::getStorageStats() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getNodesCount();
+    return storage->getStorageStats();
 }
 
 uint64_t KeeperStateMachine::getTotalWatchesCount() const

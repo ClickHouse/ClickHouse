@@ -38,15 +38,16 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_follower = static_cast<size_t>(keeper_info.is_follower);
         is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
 
-        zxid = keeper_info.last_zxid;
         const auto & state_machine = keeper_dispatcher.getStateMachine();
-        znode_count = state_machine.getNodesCount();
-        watch_count = state_machine.getTotalWatchesCount();
-        ephemerals_count = state_machine.getTotalEphemeralNodesCount();
-        approximate_data_size = state_machine.getApproximateDataSize();
-        key_arena_size = state_machine.getKeyArenaSize();
-        session_with_watches = state_machine.getSessionsWithWatchesCount();
-        paths_watched = state_machine.getWatchedPathsCount();
+        const auto & storage_stats = state_machine.getStorageStats();
+        zxid = storage_stats.last_zxid.load(std::memory_order_relaxed);
+        znode_count = storage_stats.nodes_count.load(std::memory_order_relaxed);
+        watch_count = storage_stats.total_watches_count.load(std::memory_order_relaxed);
+        ephemerals_count = storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed);
+        approximate_data_size = storage_stats.approximate_data_size.load(std::memory_order_relaxed);
+        key_arena_size = 0;
+        session_with_watches = storage_stats.sessions_with_watches_count.load(std::memory_order_relaxed);
+        paths_watched = storage_stats.watched_paths_count.load(std::memory_order_relaxed);
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();

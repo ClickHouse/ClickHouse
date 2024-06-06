@@ -111,6 +111,7 @@ public:
     /// Introspection functions for 4lw commands
     uint64_t getLastProcessedZxid() const;
 
+    const KeeperStorage::Stats & getStorageStats() const;
     uint64_t getNodesCount() const;
     uint64_t getTotalWatchesCount() const;
     uint64_t getWatchedPathsCount() const;

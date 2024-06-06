@@ -539,6 +539,23 @@ public:
     /// Get all dead sessions
     std::vector<int64_t> getDeadSessions() const { return session_expiry_queue.getExpiredSessions(); }
 
+    struct Stats
+    {
+        std::atomic<uint64_t> nodes_count = 0;
+        std::atomic<uint64_t> approximate_data_size = 0;
+        std::atomic<uint64_t> total_watches_count = 0;
+        std::atomic<uint64_t> watched_paths_count = 0;
+        std::atomic<uint64_t> sessions_with_watches_count = 0;
+        std::atomic<uint64_t> session_with_ephemeral_nodes_count = 0;
+        std::atomic<uint64_t> total_emphemeral_nodes_count = 0;
+        std::atomic<int64_t> last_zxid = 0;
+    };
+
+    Stats stats;
+
+    void updateStats();
+    const Stats & getStorageStats() const;
+
     /// Introspection functions mostly used in 4-letter commands
     uint64_t getNodesCount() const { return container.size(); }
 
