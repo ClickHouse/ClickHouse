@@ -1,7 +1,23 @@
+-- negative tests
 -- non-const path
 Row 1:
 ──────
 tz:                 UTC
+epoch:              0
+i64:                7204436857747984384
+u64:                7204436857747984384
+i_dt:               2024-06-06 10:59:58
+u_dt:               2024-06-06 10:59:58
+toTypeName(i_dt):   DateTime('UTC')
+toTypeName(u_dt):   DateTime('UTC')
+i_dt64:             2024-06-06 10:59:58.851
+u_dt64:             2024-06-06 10:59:58.851
+toTypeName(i_dt64): DateTime64(3, 'UTC')
+toTypeName(u_dt64): DateTime64(3, 'UTC')
+Row 1:
+──────
+tz:                 UTC
+epoch:              1288834974657
 i64:                1426860704886947840
 u64:                1426860704886947840
 i_dt:               2021-08-15 10:57:56
@@ -15,28 +31,28 @@ toTypeName(u_dt64): DateTime64(3, 'UTC')
 Row 1:
 ──────
 tz:                 Asia/Shanghai
-i64:                1426860704886947840
-i_dt:               2021-08-15 18:57:56
-u_dt:               2021-08-15 18:57:56
+i64:                7204436857747984384
+i_dt:               2024-06-06 18:59:58
+u_dt:               2024-06-06 18:59:58
 toTypeName(i_dt):   DateTime('Asia/Shanghai')
 toTypeName(u_dt):   DateTime('Asia/Shanghai')
-i_dt64:             2021-08-15 18:57:56.492
-u_dt64:             2021-08-15 18:57:56.492
+i_dt64:             2024-06-06 18:59:58.851
+u_dt64:             2024-06-06 18:59:58.851
 toTypeName(i_dt64): DateTime64(3, 'Asia/Shanghai')
 toTypeName(u_dt64): DateTime64(3, 'Asia/Shanghai')
 -- non-const path
 Row 1:
 ──────
 tz:                 UTC
-i64:                1426860704886947840
-u64:                1426860704886947840
-i_dt:               2021-08-15 10:57:56
-u_dt:               2021-08-15 10:57:56
+epoch:              0
+i64:                7204436857747984384
+u64:                7204436857747984384
+i_dt:               2024-06-06 10:59:58
+u_dt:               2024-06-06 10:59:58
 toTypeName(i_dt):   DateTime
 toTypeName(u_dt):   DateTime
-i_dt64:             2021-08-15 10:57:56.492
-u_dt64:             2021-08-15 10:57:56.492
+i_dt64:             2024-06-06 10:59:58.851
+u_dt64:             2024-06-06 10:59:58.851
 toTypeName(i_dt64): DateTime64(3)
 toTypeName(u_dt64): DateTime64(3)
 -- Can be combined with generateSnowflakeID
-1	1

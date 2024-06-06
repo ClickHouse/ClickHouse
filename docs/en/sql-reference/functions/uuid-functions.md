@@ -543,11 +543,16 @@ serverUUID()
 
 Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
-The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond.
 For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
 In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
 
 Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+:::note
+The generated snowflake IDs are based on the UNIX epoch 1970-01-01.
+While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
+:::
 
 ```
  0                   1                   2                   3
@@ -607,6 +612,11 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](../data-types/datetime.md) format.
 
+:::note
+The generated snowflake IDs are based on the UNIX epoch 1970-01-01.
+While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
+:::
+
 **Syntax**
 
 ``` sql
@@ -616,6 +626,7 @@ snowflakeToDateTime(value[, time_zone])
 **Arguments**
 
 - `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+- `epoch` - Epoch of the snowflake ID. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01) provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
 - `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
@@ -626,17 +637,16 @@ snowflakeToDateTime(value[, time_zone])
 
 Query:
 
-``` sql
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+```sql
+SELECT snowflakeToDateTime(7204436857747984384) AS res
 ```
 
 Result:
 
-```response
-
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
+```
+┌─────────────────res─┐
+│ 2024-06-06 10:59:58 │
+└─────────────────────┘
 ```
 
 ## snowflakeToDateTime64
@@ -652,6 +662,7 @@ snowflakeToDateTime64(value[, time_zone])
 **Arguments**
 
 - `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+- `epoch` - Epoch of the snowflake ID. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01) provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
 - `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
@@ -663,16 +674,15 @@ snowflakeToDateTime64(value[, time_zone])
 Query:
 
 ``` sql
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+SELECT snowflakeToDateTime64(7204436857747984384)
 ```
 
 Result:
 
-```response
-
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
+```
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
 ```
 
 ## dateTimeToSnowflake
@@ -688,6 +698,7 @@ dateTimeToSnowflake(value)
 **Arguments**
 
 - `value` — Date with time. [DateTime](../data-types/datetime.md).
+- `epoch` - Epoch of the snowflake ID. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01) provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -698,14 +709,17 @@ dateTimeToSnowflake(value)
 Query:
 
 ``` sql
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
+WITH
+    toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt
+SELECT
+    dateTimeToSnowflake(dt);
 ```
 
 Result:
 
-```response
+```
 ┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
+│     6832626392367104000 │
 └─────────────────────────┘
 ```
 
@@ -722,6 +736,7 @@ dateTime64ToSnowflake(value)
 **Arguments**
 
 - `value` — Date with time. [DateTime64](../data-types/datetime64.md).
+- `epoch` - Epoch of the snowflake ID. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01) provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -732,14 +747,17 @@ dateTime64ToSnowflake(value)
 Query:
 
 ``` sql
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
+WITH
+    toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64
+SELECT
+    dateTime64ToSnowflake(dt64);
 ```
 
 Result:
 
-```response
+```
 ┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
+│         6832626394430701568 │
 └─────────────────────────────┘
 ```
 

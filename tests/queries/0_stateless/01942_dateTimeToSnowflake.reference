@@ -1,26 +1,34 @@
+-- Negative tests
 -- Basic test
 Row 1:
 ──────
 dt:                          2021-08-15 18:57:56
 dt64:                        2021-08-15 18:57:56.492
-dateTimeToSnowflake(dt):     1426860702823350272
-dateTime64ToSnowflake(dt64): 1426860704886947840
+dateTimeToSnowflake(dt):     6832626392367104000
+dateTime64ToSnowflake(dt64): 6832626394430701568
+-- Twitter epoch
+Row 1:
+──────
+dt:                                 2021-08-15 18:57:56
+dt64:                               2021-08-15 18:57:56.492
+dateTimeToSnowflake(dt, epoch):     1426860702823350272
+dateTime64ToSnowflake(dt64, epoch): 1426860704886947840
 -- Different DateTime64 scales
 Row 1:
 ──────
-dateTime64ToSnowflake(dt64_0): 1426981498778550272
-dateTime64ToSnowflake(dt64_1): 1426981500456271872
-dateTime64ToSnowflake(dt64_2): 1426981500833759232
-dateTime64ToSnowflake(dt64_3): 1426981500842147840
-dateTime64ToSnowflake(dt64_4): 1426981500842147840
+dateTime64ToSnowflake(dt64_0): 6832747188322304000
+dateTime64ToSnowflake(dt64_1): 6832747190000025600
+dateTime64ToSnowflake(dt64_2): 6832747190377512960
+dateTime64ToSnowflake(dt64_3): 6832747190385901568
+dateTime64ToSnowflake(dt64_4): 6832747190385901568
 -- Idempotency
 Row 1:
 ──────
-equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_0), 'UTC'), dt64_0): 1
-equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_1), 'UTC'), dt64_1): 1
-equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_2), 'UTC'), dt64_2): 1
-equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_3), 'UTC'), dt64_3): 1
+equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_0), 0, 'UTC'), dt64_0): 1
+equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_1), 0, 'UTC'), dt64_1): 1
+equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_2), 0, 'UTC'), dt64_2): 1
+equals(snowflakeToDateTime64(dateTime64ToSnowflake(dt64_3), 0, 'UTC'), dt64_3): 1
 Row 1:
 ──────
-dt64_4:                                                      2023-11-11 11:11:11.1231
-snowflakeToDateTime64(dateTime64ToSnowflake(dt64_4), 'UTC'): 2023-11-11 11:11:11.123
+dt64_4:                                                         2023-11-11 11:11:11.1231
+snowflakeToDateTime64(dateTime64ToSnowflake(dt64_4), 0, 'UTC'): 2023-11-11 11:11:11.123
