@@ -23,7 +23,7 @@ from lambda_shared_package.lambda_shared.pr import (
     check_pr_description,
 )
 from pr_info import PRInfo
-from report import FAILURE, PENDING, SUCCESS
+from report import FAILURE, PENDING, SUCCESS, StatusType
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -93,6 +93,7 @@ def main():
     description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
+    status = SUCCESS  # type: StatusType
 
     description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
     pr_labels_to_add = []
@@ -132,6 +133,7 @@ def main():
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
+    # 1. Next three IFs are in a correct order. First - fatal error
     if description_error:
         print(
             "::error ::Cannot run, PR description does not match the template: "
@@ -146,9 +148,10 @@ def main():
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
             "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
         )
+        status = FAILURE
         post_commit_status(
             commit,
-            FAILURE,
+            status,
             url,
             format_description(description_error),
             PR_CHECK,
@@ -156,6 +159,7 @@ def main():
         )
         sys.exit(1)
 
+    # 2. Then we check if the documentation is not created to fail the Mergeable check
     if (
         Labels.PR_FEATURE in pr_info.labels
         and not pr_info.has_changes_in_documentation()
@@ -164,20 +168,15 @@ def main():
             f"The '{Labels.PR_FEATURE}' in the labels, "
             "but there's no changed documentation"
         )
-        post_commit_status(
-            commit,
-            FAILURE,
-            "",
-            f"expect adding docs for {Labels.PR_FEATURE}",
-            PR_CHECK,
-            pr_info,
-        )
-        # allow the workflow to continue
+        status = FAILURE
+        description = f"expect adding docs for {Labels.PR_FEATURE}"
+    # 3. But we allow the workflow to continue
 
+    # 4. And post only a single commit status on a failure
     if not can_run:
         post_commit_status(
             commit,
-            FAILURE,
+            status,
             "",
             description,
             PR_CHECK,
@@ -186,11 +185,12 @@ def main():
         print("::notice ::Cannot run")
         sys.exit(1)
 
+    # The status for continue can be posted only one time, not more.
     post_commit_status(
         commit,
-        SUCCESS,
+        status,
         "",
-        "ok",
+        description,
         PR_CHECK,
         pr_info,
     )
