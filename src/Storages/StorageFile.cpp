@@ -1438,8 +1438,15 @@ Chunk StorageFileSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             /// Enrich with virtual columns.
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                chunk, requested_virtual_columns, current_path, current_file_size, filename_override.has_value() ? &filename_override.value() : nullptr, current_file_last_modified);
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, requested_virtual_columns,
+                {
+                    .path = current_path,
+                    .size = current_file_size,
+                    .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
+                    .last_modified = current_file_last_modified
+                });
+
             return chunk;
         }
 

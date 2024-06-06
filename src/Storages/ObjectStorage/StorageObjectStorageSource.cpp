@@ -195,12 +195,14 @@ Chunk StorageObjectStorageSource::generate()
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info.getFileName();
             chassert(object_info.metadata);
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                chunk,
-                read_from_format_info.requested_virtual_columns,
-                getUniqueStoragePathIdentifier(*configuration, reader.getObjectInfo(), false),
-                object_info.metadata->size_bytes, &filename, object_info.metadata->last_modified);
-
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, read_from_format_info.requested_virtual_columns,
+                {
+                    .path = getUniqueStoragePathIdentifier(*configuration, reader.getObjectInfo(), false),
+                    .size = object_info.metadata->size_bytes,
+                    .filename = &filename,
+                    .last_modified = object_info.metadata->last_modified
+                });
             return chunk;
         }
 

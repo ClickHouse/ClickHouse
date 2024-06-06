@@ -189,39 +189,40 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename, std::optional<Poco::Timestamp> last_modified)
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.path)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_file")
         {
-            if (filename)
+            if (virtual_values.filename)
             {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.filename))->convertToFullColumnIfConst());
             }
             else
             {
-                size_t last_slash_pos = path.find_last_of('/');
-                auto filename_from_path = path.substr(last_slash_pos + 1);
+                size_t last_slash_pos = virtual_values.path.find_last_of('/');
+                auto filename_from_path = virtual_values.path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
         else if (virtual_column.name == "_size")
         {
-            if (size)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
+            if (virtual_values.size)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.size)->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_time")
         {
-            if (last_modified)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), last_modified->epochTime())->convertToFullColumnIfConst());
+            if (virtual_values.last_modified)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
