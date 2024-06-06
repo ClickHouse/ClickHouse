@@ -17,7 +17,7 @@ class TraceLog;
 class TraceCollector
 {
 public:
-    explicit TraceCollector();
+    TraceCollector();
     ~TraceCollector();
 
     void initialize(std::shared_ptr<TraceLog> trace_log_);
