@@ -2501,7 +2501,7 @@ Result:
 
 ## toUnixTimestamp64Nano
 
-Converts a `DateTime64` to a `Int64` value with fixed nano precision. The input value is scaled up or down appropriately depending on its precision.
+Converts a `DateTime64` to a `Int64` value with fixed nanosecond precision. The input value is scaled up or down appropriately depending on its precision.
 
 :::note
 The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
