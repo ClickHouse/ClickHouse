@@ -58,7 +58,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # Returns can_run, description
 def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     # Consider the labels and whether the user is trusted.
-    print("Got labels", pr_info.labels)
+    logging.info("Got labels: %s", pr_info.labels)
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
@@ -66,9 +66,10 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     if Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        print(
-            f"PRs by untrusted users need the '{Labels.CAN_BE_TESTED}' label - "
-            "please contact a member of the core team"
+        logging.info(
+            "PRs by untrusted users need the '%s' label - "
+            "please contact a member of the core team",
+            Labels.CAN_BE_TESTED,
         )
         return False, "Needs 'can be tested' label"
 
@@ -126,7 +127,9 @@ def main():
             f"::notice :: Add backport labels [{backport_labels}] for a given PR category"
         )
 
-    print(f"Change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
+    logging.info(
+        "Change labels: add %s, remove %s", pr_labels_to_add, pr_labels_to_remove
+    )
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 
@@ -165,7 +168,7 @@ def main():
         and not pr_info.has_changes_in_documentation()
     ):
         print(
-            f"The '{Labels.PR_FEATURE}' in the labels, "
+            f"::error ::The '{Labels.PR_FEATURE}' in the labels, "
             "but there's no changed documentation"
         )
         status = FAILURE
@@ -182,7 +185,7 @@ def main():
             PR_CHECK,
             pr_info,
         )
-        print("::notice ::Cannot run")
+        print("::error ::Cannot run")
         sys.exit(1)
 
     # The status for continue can be posted only one time, not more.
