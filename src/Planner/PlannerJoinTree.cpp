@@ -1589,6 +1589,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.left_join_expressions_actions));
     if (join_clauses_and_actions.right_join_expressions_actions)
         left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.right_join_expressions_actions));
+    if (join_clauses_and_actions.mixed_join_expressions_actions)
+        left_join_tree_query_plan.actions_dags.push_back(join_clauses_and_actions.mixed_join_expressions_actions);
 
     auto mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
     auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;

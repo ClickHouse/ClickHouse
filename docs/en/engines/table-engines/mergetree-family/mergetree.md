@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTICS(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -1043,12 +1043,12 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column Statistics (Experimental) {#column-statistics}
 
-The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
+The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
 ``` sql
 CREATE TABLE tab
 (
-    a Int64 STATISTIC(tdigest),
+    a Int64 STATISTICS(TDigest, Uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1058,18 +1058,22 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
-ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab DROP STATISTICS a;
 ```
 
-These lightweight statistics aggregate information about distribution of values in columns.
-They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
+These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
+They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
 #### Available Types of Column Statistics {#available-types-of-column-statistics}
 
--   `tdigest`
+- `TDigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+- `Uniq`
+    
+    Estimate the number of distinct values of a column by HyperLogLog.
 
 ## Column-level Settings {#column-level-settings}
 

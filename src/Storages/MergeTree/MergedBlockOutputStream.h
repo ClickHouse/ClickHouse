@@ -20,7 +20,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        const Statistics & statistics,
+        const ColumnsStatistics & statistics,
         CompressionCodecPtr default_codec_,
         TransactionID tid,
         bool reset_columns_ = false,
