@@ -32,8 +32,16 @@ bool DataSourceDescription::operator==(const DataSourceDescription & other) cons
 
 bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
 {
-    return std::tie(type, object_storage_type, description)
-        == std::tie(other.type, other.object_storage_type, other.description);
+    std::string_view our_description = description;
+    if (our_description.ends_with('/') && our_description.length() > 1)
+        our_description = our_description.substr(0, our_description.length() - 1);
+
+    std::string_view other_description = other.description;
+    if (other_description.ends_with('/') && other_description.length() > 1)
+        other_description = other_description.substr(0, other_description.length() - 1);
+
+    return std::tie(type, object_storage_type, our_description)
+        == std::tie(other.type, other.object_storage_type, other_description);
 }
 
 std::string DataSourceDescription::toString() const

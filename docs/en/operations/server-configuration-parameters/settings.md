@@ -561,6 +561,25 @@ Default value: 5000
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
+## max\_view\_num\_to\_warn {#max-view-num-to-warn}
+If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 10000
+
+**Example**
+
+``` xml
+<max_view_num_to_warn>400</max_view_num_to_warn>
+```
+
+## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
+If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 1000
+
+**Example**
+
+``` xml
+<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
+```
 
 ## max\_part\_num\_to\_warn {#max-part-num-to-warn}
 If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
@@ -1187,6 +1206,16 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
+## mlock_executable {#mlock_executable}
+
+Perform mlockall after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
+Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
+**Example**
+
+``` xml
+<mlock_executable>false</mlock_executable>
+```
+
 ## include_from {#include_from}
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
@@ -1332,6 +1361,26 @@ Examples:
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_try {#listen_try}
+
+The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+
+Examples:
+
+``` xml
+<listen_try>0</listen_try>
+```
+
+## listen_reuse_port {#listen_reuse_port}
+
+Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
+
+Examples:
+
+``` xml
+<listen_reuse_port>0</listen_reuse_port>
 ```
 
 ## listen_backlog {#listen_backlog}

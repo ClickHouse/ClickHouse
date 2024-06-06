@@ -137,9 +137,16 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("usearch", usearchIndexValidator);
 #endif
 
+    registerCreator("inverted", fullTextIndexCreator);
+    registerValidator("inverted", fullTextIndexValidator);
+
+    /// ------
+    /// TODO: remove this block at the end of 2024.
+    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// To support loading tables with old indexes during a transition period, register full-text indexes under their old name.
     registerCreator("full_text", fullTextIndexCreator);
     registerValidator("full_text", fullTextIndexValidator);
-
+    /// ------
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

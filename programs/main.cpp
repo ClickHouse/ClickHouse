@@ -15,7 +15,7 @@
 
 #include "config_tools.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
@@ -155,8 +155,8 @@ auto instructionFailToString(InstructionFail fail)
             ret("AVX2");
         case InstructionFail::AVX512:
             ret("AVX512");
+#undef ret
     }
-    UNREACHABLE();
 }
 
 

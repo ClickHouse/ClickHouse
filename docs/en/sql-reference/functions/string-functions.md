@@ -30,9 +30,7 @@ empty(x)
 
 **Returned value**
 
-- Returns `1` for an empty string or `0` for a non-empty string.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty string or `0` for a non-empty string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -68,9 +66,7 @@ notEmpty(x)
 
 **Returned value**
 
-- Returns `1` for a non-empty string or `0` for an empty string string.
-
-Type: [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty string or `0` for an empty string string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -187,7 +183,7 @@ left(s, offset)
 
 **Parameters**
 
-- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `s`: The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
@@ -234,7 +230,7 @@ leftUTF8(s, offset)
 
 **Parameters**
 
-- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
@@ -289,9 +285,7 @@ Alias: `LPAD`
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -325,9 +319,7 @@ leftPadUTF8(string, length[, pad_string])
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -355,7 +347,7 @@ right(s, offset)
 
 **Parameters**
 
-- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `s`: The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
@@ -402,7 +394,7 @@ rightUTF8(s, offset)
 
 **Parameters**
 
-- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
@@ -457,9 +449,7 @@ Alias: `RPAD`
 
 **Returned value**
 
-- A left-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -493,9 +483,7 @@ rightPadUTF8(string, length[, pad_string])
 
 **Returned value**
 
-- A right-padded string of the given length.
-
-Type: [String](../data-types/string.md).
+- A right-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -525,11 +513,11 @@ Alias: `lcase`
 
 **Parameters**
 
-- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `input`: A string type [String](../data-types/string.md).
 
 **Returned value**
 
-- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -559,11 +547,11 @@ Alias: `ucase`
 
 **Parameters**
 
-- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `input`: A string type [String](../data-types/string.md).
 
 **Returned value**
 
-- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Examples**
 
@@ -603,11 +591,11 @@ upperUTF8(input)
 
 **Parameters**
 
-- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `input`: A string type [String](../data-types/string.md).
 
 **Returned value**
 
-- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -639,7 +627,7 @@ toValidUTF8(input_string)
 
 **Arguments**
 
-- `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
 
 **Returned value**
 
@@ -671,14 +659,12 @@ Alias: `REPEAT`
 
 **Arguments**
 
-- `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
-- `n` — The number of times to repeat the string. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+- `s` — The string to repeat. [String](../data-types/string.md).
+- `n` — The number of times to repeat the string. [UInt* or Int*](../data-types/int-uint.md).
 
 **Returned value**
 
-A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.
-
-Type: `String`.
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -708,13 +694,11 @@ Alias: `SPACE`.
 
 **Arguments**
 
-- `n` — The number of times to repeat the space. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+- `n` — The number of times to repeat the space. [UInt* or Int*](../data-types/int-uint.md).
 
 **Returned value**
 
-The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.
-
-Type: `String`.
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -754,7 +738,7 @@ concat(s1, s2, ...)
 
 At least one value of arbitrary type.
 
-Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
+Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -861,8 +845,8 @@ Alias: `concat_ws`
 
 **Arguments**
 
-- sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- exprN — expression to be concatenated. Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
+- sep — separator. Const [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- exprN — expression to be concatenated. Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -907,15 +891,13 @@ Alias:
 
 **Arguments**
 
-- `s` — The string to calculate a substring from. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md) or [Enum](../../sql-reference/data-types/enum.md)
-- `offset` — The starting position of the substring in `s` . [(U)Int*](../../sql-reference/data-types/int-uint.md).
-- `length` — The maximum length of the substring. [(U)Int*](../../sql-reference/data-types/int-uint.md). Optional.
+- `s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
-A substring of `s` with `length` many bytes, starting at index `offset`.
-
-Type: `String`.
+A substring of `s` with `length` many bytes, starting at index `offset`. [String](../data-types/string.md).
 
 **Example**
 
@@ -945,9 +927,9 @@ substringUTF8(s, offset[, length])
 
 **Arguments**
 
-- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md) or [Enum](../../sql-reference/data-types/enum.md)
-- `offset`: The starting position of the substring in `s` . [(U)Int*](../../sql-reference/data-types/int-uint.md).
-- `length`: The maximum length of the substring. [(U)Int*](../../sql-reference/data-types/int-uint.md). Optional.
+- `s`: The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset`: The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length`: The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -983,8 +965,8 @@ Alias: `SUBSTRING_INDEX`
 
 **Arguments**
 
-- s: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
-- delim: The character to split. [String](../../sql-reference/data-types/string.md).
+- s: The string to extract substring from. [String](../data-types/string.md).
+- delim: The character to split. [String](../data-types/string.md).
 - count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Example**
@@ -1014,13 +996,13 @@ substringIndexUTF8(s, delim, count)
 
 **Arguments**
 
-- `s`: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
-- `delim`: The character to split. [String](../../sql-reference/data-types/string.md).
+- `s`: The string to extract substring from. [String](../data-types/string.md).
+- `delim`: The character to split. [String](../data-types/string.md).
 - `count`: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Returned value**
 
-A substring [String](../../sql-reference/data-types/string.md) of `s` before `count` occurrences of `delim`.
+A substring [String](../data-types/string.md) of `s` before `count` occurrences of `delim`.
 
 **Implementation details**
 
@@ -1068,13 +1050,11 @@ base58Encode(plaintext)
 
 **Arguments**
 
-- `plaintext` — [String](../../sql-reference/data-types/string.md) column or constant.
+- `plaintext` — [String](../data-types/string.md) column or constant.
 
 **Returned value**
 
-- A string containing the encoded value of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string containing the encoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -1102,13 +1082,11 @@ base58Decode(encoded)
 
 **Arguments**
 
-- `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, an exception is thrown.
 
 **Returned value**
 
-- A string containing the decoded value of the argument.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -1136,7 +1114,7 @@ tryBase58Decode(encoded)
 
 **Parameters**
 
-- `encoded`: [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
 
 **Returned value**
 
@@ -1180,7 +1158,7 @@ tryBase64Decode(encoded)
 
 **Parameters**
 
-- `encoded`: [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
 
 **Examples**
 
@@ -1279,14 +1257,12 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — Specified characters for trim. [String](../../sql-reference/data-types/string.md).
-- `input_string` — String for trim. [String](../../sql-reference/data-types/string.md).
+- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
+- `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without leading and/or trailing specified characters.
-
-Type: `String`.
+A string without leading and/or trailing specified characters. [String](../data-types/string.md).
 
 **Example**
 
@@ -1316,13 +1292,11 @@ Alias: `ltrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without leading common whitespaces.
-
-Type: `String`.
+A string without leading common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -1352,13 +1326,11 @@ Alias: `rtrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without trailing common whitespaces.
-
-Type: `String`.
+A string without trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -1388,13 +1360,11 @@ Alias: `trim(input_string)`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
-A string without leading and trailing common whitespaces.
-
-Type: `String`.
+A string without leading and trailing common whitespaces. [String](../data-types/string.md).
 
 **Example**
 
@@ -1440,13 +1410,11 @@ normalizeQuery(x)
 
 **Arguments**
 
-- `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
-- Sequence of characters with placeholders.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Sequence of characters with placeholders. [String](../data-types/string.md).
 
 **Example**
 
@@ -1474,13 +1442,11 @@ normalizedQueryHash(x)
 
 **Arguments**
 
-- `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
-- Hash value.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
 
 **Example**
 
@@ -1508,13 +1474,11 @@ normalizeUTF8NFC(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFC normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1542,13 +1506,11 @@ normalizeUTF8NFD(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFD normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1576,13 +1538,11 @@ normalizeUTF8NFKC(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFKC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFKC normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1610,13 +1570,11 @@ normalizeUTF8NFKD(words)
 
 **Arguments**
 
-- `words` — UTF8-encoded input string. [String](../../sql-reference/data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- String transformed to NFKD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- String transformed to NFKD normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1647,13 +1605,11 @@ encodeXMLComponent(x)
 
 **Arguments**
 
-- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- The escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1687,13 +1643,11 @@ decodeXMLComponent(x)
 
 **Arguments**
 
-- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- The un-escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The un-escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1723,13 +1677,11 @@ decodeHTMLComponent(x)
 
 **Arguments**
 
-- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
-- The un-escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- The un-escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1778,13 +1730,11 @@ extractTextFromHTML(x)
 
 **Arguments**
 
-- `x` — input text. [String](../../sql-reference/data-types/string.md).
+- `x` — input text. [String](../data-types/string.md).
 
 **Returned value**
 
-- Extracted text.
-
-Type: [String](../../sql-reference/data-types/string.md).
+- Extracted text. [String](../data-types/string.md).
 
 **Example**
 
