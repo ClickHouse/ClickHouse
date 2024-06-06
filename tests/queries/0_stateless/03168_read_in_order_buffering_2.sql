@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings
+-- Tags: long, no-random-settings, no-tsan, no-asan, no-msan
 
 DROP TABLE IF EXISTS t_read_in_order_2;
 
