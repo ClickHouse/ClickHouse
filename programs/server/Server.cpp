@@ -613,6 +613,49 @@ static void sanityChecks(Server & server)
     }
 }
 
+void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
+{
+    try
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys("startup_scripts", keys);
+
+        SetResultDetailsFunc callback;
+        for (const auto & key : keys)
+        {
+            std::string full_prefix = "startup_scripts." + key;
+
+            if (config.has(full_prefix + ".condition"))
+            {
+                auto condition = config.getString(full_prefix + ".condition");
+                auto condition_read_buffer = ReadBufferFromString(condition);
+                auto condition_write_buffer = WriteBufferFromOwnString();
+
+                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                executeQuery(condition_read_buffer, condition_write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+
+                auto result = condition_write_buffer.str();
+
+                if (result != "1\n" && result != "true\n")
+                    continue;
+
+                LOG_DEBUG(log, "Condition is true, will execute the query next");
+            }
+
+            auto query = config.getString(full_prefix + ".query");
+            auto read_buffer = ReadBufferFromString(query);
+            auto write_buffer = WriteBufferFromOwnString();
+
+            LOG_DEBUG(log, "Executing query `{}`", query);
+            executeQuery(read_buffer, write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+        }
+    }
+    catch (const std::exception & e)
+    {
+        LOG_ERROR(log, "Failed to parse startup scripts file {}", e.what());
+    }
+}
+
 static void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
     [[ maybe_unused ]] int server_logs_level)
@@ -2106,6 +2149,9 @@ try
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
         load_metadata_tasks.clear();
         load_metadata_tasks.shrink_to_fit();
+
+        if (config().has("startup_scripts"))
+            loadStartupScripts(config(), global_context, log);
 
         {
             std::lock_guard lock(servers_lock);
