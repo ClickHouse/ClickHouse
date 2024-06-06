@@ -211,12 +211,15 @@ class CiSettings:
             ):
                 res[job] = job_config
 
+        add_parents = []
         for job in list(res):
             parent_jobs = CI_CONFIG.get_job_parents(job)
             for parent_job in parent_jobs:
                 if parent_job not in res:
+                    add_parents.append(parent_job)
                     print(f"Job [{job}] requires [{parent_job}] - add")
-                    res[parent_job] = job_configs[parent_job]
+        for job in add_parents:
+            res[job] = job_configs[job]
 
         for job, job_config in res.items():
             batches = []
