@@ -161,7 +161,6 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
         if (limit >= size)
             limit = 0;
 
-        // EqualRanges ranges;
         if (ranges.empty())
             ranges.emplace_back(0, permutation.size());
 
