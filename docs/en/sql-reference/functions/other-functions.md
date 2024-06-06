@@ -212,13 +212,45 @@ toTypeName(x)
 
 ## blockSize {#blockSize}
 
-In ClickHouse, queries are processed in blocks (chunks).
+In ClickHouse, queries are processed in [blocks](../../development/architecture.md/#block-block) (chunks).
 This function returns the size (row count) of the block the function is called on.
 
 **Syntax**
 
 ```sql
 blockSize()
+```
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (n UInt8) ENGINE = Memory;
+-- Insert 3 blocks:
+INSERT INTO test VALUES (1);
+INSERT INTO test VALUES (1),(2);
+INSERT INTO test VALUES (1),(2),(3);
+
+SELECT blockSize(), n FROM (SELECT * FROM test);
+```
+
+Result:
+
+```response
+   ┌─blockSize()─┬─n─┐
+1. │           1 │ 1 │
+   └─────────────┴───┘
+   ┌─blockSize()─┬─n─┐
+2. │           3 │ 1 │
+3. │           3 │ 2 │
+4. │           3 │ 3 │
+   └─────────────┴───┘
+   ┌─blockSize()─┬─n─┐
+5. │           2 │ 1 │
+6. │           2 │ 2 │
+   └─────────────┴───┘
 ```
 
 ## byteSize
@@ -3687,4 +3719,119 @@ Result:
 
 ```response
 {'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
+```
+
+## lowCardinalityIndices
+
+For each row in the current [block](../../development/architecture.md/#block-block), returns the index of the value in the dictionary of unique values for columns of [LowCardinality](../data-types/lowcardinality.md) type. 
+
+:::note
+The first unique value encountered in the block is enumerated from 1.
+:::
+
+**Syntax**
+
+```sql
+lowCardinalityIndices(col)
+```
+
+**Arguments**
+
+- `col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
+
+**Returned value**
+
+- returns the index of the value in the dictionary of unique values, for each row in the current block. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
+
+-- insert two blocks of data:
+
+INSERT INTO test VALUES ('one'),('two'),('one'),('one'),('two');
+INSERT INTO test VALUES ('three'),('two'),('one'),('two'),('two'),('three');
+
+SELECT s, lowCardinalityIndices(s) FROM test;
+```
+
+Result:
+
+```response
+   ┌─s───┬─lowCardinalityIndices(s)─┐
+1. │ one │                        1 │
+2. │ two │                        2 │
+3. │ one │                        1 │
+4. │ one │                        1 │
+5. │ two │                        2 │
+   └─────┴──────────────────────────┘
+    ┌─s─────┬─lowCardinalityIndices(s)─┐
+ 6. │ three │                        1 │
+ 7. │ two   │                        2 │
+ 8. │ one   │                        3 │
+ 9. │ two   │                        2 │
+10. │ two   │                        2 │
+11. │ three │                        1 │
+    └───────┴──────────────────────────┘
+```
+## lowCardinalityKeys
+
+For each row in the current [block](../../development/architecture.md/#block-block), returns the keys (unique values) in the dictionary of unique values for columns of [LowCardinality](../data-types/lowcardinality.md) type.
+
+:::note
+If the column size is less than the dictionary size, then values will be cut. If it is greater, then defaults will be added.
+:::
+
+**Syntax**
+
+```sql
+lowCardinalityIndices(col)
+```
+
+**Arguments**
+
+- `col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
+
+**Returned value**
+
+- returns the keys of the dictionary, for each row in the current block. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
+
+-- insert two blocks of data:
+
+INSERT INTO test VALUES ('one'),('two'),('one'),('one'),('two');
+INSERT INTO test VALUES ('three'),('two'),('one'),('two'),('two'),('three');
+
+SELECT s, lowCardinalityKeys(s) FROM test;
+```
+
+Result:
+
+```response
+   ┌─s───┬─lowCardinalityKeys(s)─┐
+1. │ one │                       │
+2. │ two │ one                   │
+3. │ one │ two                   │
+4. │ one │                       │
+5. │ two │                       │
+   └─────┴───────────────────────┘
+    ┌─s─────┬─lowCardinalityKeys(s)─┐
+ 6. │ three │                       │
+ 7. │ two   │ three                 │
+ 8. │ one   │ two                   │
+ 9. │ two   │ one                   │
+10. │ two   │                       │
+11. │ three │                       │
+    └───────┴───────────────────────┘
 ```
