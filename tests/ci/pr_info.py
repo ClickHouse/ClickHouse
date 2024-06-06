@@ -266,12 +266,12 @@ class PRInfo:
                     self.diff_urls.append(
                         self.compare_url(
                             pull_request["base"]["repo"]["default_branch"],
-                            pull_request["head"]["label"],
+                            pull_request["head"]["sha"],
                         )
                     )
                     self.diff_urls.append(
                         self.compare_url(
-                            pull_request["head"]["label"],
+                            pull_request["head"]["sha"],
                             pull_request["base"]["repo"]["default_branch"],
                         )
                     )
@@ -286,7 +286,7 @@ class PRInfo:
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
                         self.compare_url(
-                            pull_request["head"]["label"],
+                            pull_request["head"]["sha"],
                             pull_request["base"]["repo"]["default_branch"],
                         )
                     )
@@ -339,7 +339,7 @@ class PRInfo:
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:
-        return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
+        return self.compare_url(pr_object["base"]["sha"], pr_object["head"]["sha"])
 
     @staticmethod
     def compare_url(first: str, second: str) -> str:
