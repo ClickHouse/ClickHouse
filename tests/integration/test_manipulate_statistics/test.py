@@ -13,6 +13,7 @@ node2 = cluster.add_instance(
     "node2", user_configs=["config/config.xml"], with_zookeeper=True
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -126,6 +127,7 @@ def test_single_node_normal(started_cluster):
     )
     run_test_single_node(started_cluster)
 
+
 def test_replicated_table_ddl(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_stat")
     node2.query("DROP TABLE IF EXISTS test_stat")
@@ -143,7 +145,13 @@ def test_replicated_table_ddl(started_cluster):
     """
     )
 
-    node1.query("ALTER TABLE test_stat MODIFY STATISTICS c TYPE tdigest, uniq", settings={"alter_sync":"2"});
-    node1.query("ALTER TABLE test_stat DROP STATISTICS b", settings={"alter_sync":"2"});
+    node1.query(
+        "ALTER TABLE test_stat MODIFY STATISTICS c TYPE tdigest, uniq",
+        settings={"alter_sync": "2"},
+    )
+    node1.query("ALTER TABLE test_stat DROP STATISTICS b", settings={"alter_sync": "2"})
 
-    assert node2.query("SHOW CREATE TABLE test_stat") == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS index_granularity = 8192\n"
+    assert (
+        node2.query("SHOW CREATE TABLE test_stat")
+        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS index_granularity = 8192\n"
+    )
