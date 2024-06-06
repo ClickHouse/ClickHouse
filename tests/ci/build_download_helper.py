@@ -110,7 +110,7 @@ def get_gh_api(
             logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
-    raise APIException("Unable to request data from GH API") from exc
+    raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
 def get_build_name_for_check(check_name: str) -> str:
