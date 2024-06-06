@@ -29,9 +29,6 @@ namespace DB
 void KeeperDashboardWebUIRequestHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    /// Raw config reference is used here to avoid dependency on Context and ServerSettings.
-    /// This is painful, because this class is also used in a build with CLICKHOUSE_KEEPER_STANDALONE_BUILD=1
-    /// And there ordinary Context is replaced with a tiny clone.
     const auto & config = server.config();
     const auto keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
@@ -103,7 +100,7 @@ catch (...)
     }
     catch (...)
     {
-        LOG_ERROR((getLogger("KeeperDashboardContentRequestHandler")), "Cannot send exception to client");
+        LOG_ERROR(getLogger("KeeperDashboardContentRequestHandler"), "Cannot send exception to client");
     }
 }
 

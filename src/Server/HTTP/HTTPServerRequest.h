@@ -48,6 +48,8 @@ public:
     Poco::Net::X509Certificate peerCertificate() const;
 #endif
 
+    std::string toStringForLogging() const;
+
 private:
     /// Limits for basic sanity checks when reading a header
     enum Limits

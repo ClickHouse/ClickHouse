@@ -11,6 +11,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <IO/HTTPCommon.h>
+#include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <memory>
@@ -27,9 +28,9 @@ extern const int TIMEOUT_EXCEEDED;
 Poco::JSON::Object toJSON(const Coordination::Stat & stat)
 {
     Poco::JSON::Object result;
-    result.set("cZxid", stat.czxid);
-    result.set("mZxid", stat.mzxid);
-    result.set("pZxid", stat.pzxid);
+    result.set("czxid", stat.czxid);
+    result.set("mzxid", stat.mzxid);
+    result.set("pzxid", stat.pzxid);
     result.set("ctime", stat.ctime);
     result.set("mtime", stat.mtime);
     result.set("version", stat.version);
@@ -53,7 +54,7 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
 
     try
     {
-        return std::stoi(version_param->second);
+        return parse<int32_t>(version_param->second);
     }
     catch (...)
     {
@@ -136,27 +137,26 @@ Coordination::ResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse(std::sha
         = [response_promise](const Coordination::ResponsePtr & zk_response) mutable { response_promise->set_value(zk_response); };
 
     const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
+
     keeper_dispatcher->registerSession(session_id, response_callback);
+    SCOPE_EXIT({ keeper_dispatcher->finishSession(session_id); });
 
-    try
+    if (request->isReadRequest())
     {
-        if (!keeper_dispatcher->putRequest(std::move(request), session_id))
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
-
-        if (response_future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Operation timeout ({} ms) exceeded.", operation_timeout.totalMilliseconds());
-
-        auto result = response_future.get();
-
-        keeper_dispatcher->finishSession(session_id);
-        return result;
+        keeper_dispatcher->putLocalReadRequest(std::move(request), session_id);
     }
-    catch (...)
+    else if (!keeper_dispatcher->putRequest(std::move(request), session_id))
     {
-        // it is obligatory to finish the session, as it affects num_alive_connections metric
-        keeper_dispatcher->finishSession(session_id);
-        throw;
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     }
+
+    if (response_future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Operation timeout ({} ms) exceeded.", operation_timeout.totalMilliseconds());
+
+    auto result = response_future.get();
+
+    keeper_dispatcher->finishSession(session_id);
+    return result;
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response)

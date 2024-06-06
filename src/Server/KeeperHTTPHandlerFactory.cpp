@@ -37,17 +37,7 @@ KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::stri
 
 std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createRequestHandler(const HTTPServerRequest & request)
 {
-    LOG_TRACE(
-        log,
-        "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
-        name,
-        request.getMethod(),
-        request.clientAddress().toString(),
-        request.get("User-Agent", "(none)"),
-        (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
-        request.getContentType(),
-        request.getTransferEncoding(),
-        request.get("X-Forwarded-For", "(none)"));
+    LOG_TRACE(log, "HTTP Request for {}. {}", name, request.toStringForLogging());
 
     for (auto & handler_factory : child_factories)
     {
@@ -87,6 +77,20 @@ void addDashboardHandlersToFactory(
     factory.addHandler(dashboard_content_handler);
 }
 
+void addReadinessHandlerToFactory(
+    KeeperHTTPRequestHandlerFactory & factory,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
+    const Poco::Util::AbstractConfiguration & config)
+{
+    auto creator = [keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPReadinessHandler>
+    { return std::make_unique<KeeperHTTPReadinessHandler>(keeper_dispatcher); };
+    auto readiness_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPReadinessHandler>>(std::move(creator));
+    readiness_handler->attachStrictPath(config.getString("keeper_server.http_control.readiness.endpoint", "/ready"));
+    readiness_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/ready");
+    factory.addHandler(readiness_handler);
+}
+
 void addCommandsHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory, const IServer & server, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
@@ -121,14 +125,7 @@ void addDefaultHandlersToFactory(
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     const Poco::Util::AbstractConfiguration & config)
 {
-    auto readiness_creator = [keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPReadinessHandler>
-    { return std::make_unique<KeeperHTTPReadinessHandler>(keeper_dispatcher); };
-    auto readiness_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPReadinessHandler>>(std::move(readiness_creator));
-    readiness_handler->attachStrictPath(config.getString("keeper_server.http_control.readiness.endpoint", "/ready"));
-    readiness_handler->allowGetAndHeadRequest();
-    factory.addPathToHints("/ready");
-    factory.addHandler(readiness_handler);
-
+    addReadinessHandlerToFactory(factory, keeper_dispatcher, config);
     addDashboardHandlersToFactory(factory, server, keeper_dispatcher);
     addCommandsHandlersToFactory(factory, server, keeper_dispatcher);
     addStorageHandlersToFactory(factory, server, keeper_dispatcher);
@@ -163,7 +160,8 @@ static inline auto createHandlersFactoryFromConfig(
                     "{}.{}.handler.type",
                     prefix,
                     key);
-
+            if (handler_type == "ready")
+                addReadinessHandlerToFactory(*main_handler_factory, keeper_dispatcher, config);
             if (handler_type == "dashboard")
                 addDashboardHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
             if (handler_type == "commands")

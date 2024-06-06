@@ -546,7 +546,7 @@ try
         });
 
         /// HTTPS control endpoints
-        port_name = "keeper_server.http_control.https_port";
+        port_name = "keeper_server.http_control.secure_port";
         createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
         {
             auto my_http_context = httpContext();
@@ -558,7 +558,7 @@ try
             servers->emplace_back(
                 listen_host,
                 port_name,
-                "HTTP Control: http://" + address.toString(),
+                "HTTPS Control: https://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     std::move(my_http_context),
                     createKeeperHTTPHandlerFactory(*this, config, global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),

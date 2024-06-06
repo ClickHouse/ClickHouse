@@ -689,13 +689,13 @@
             document.getElementById('displayStoragePath').innerText = this.selected_node?.path ?? '--';
             // stat
             document.getElementById('displayStorageAVersion').innerText = this.selected_node?.stat?.aversion ?? '--';
-            document.getElementById('displayStorageCZxid').innerText = this.selected_node?.stat?.cZxid ?? '--';
+            document.getElementById('displayStorageCZxid').innerText = this.selected_node?.stat?.czxid ?? '--';
             document.getElementById('displayStorageCVersion').innerText = this.selected_node?.stat?.cversion ?? '--';
             document.getElementById('displayStorageDataLength').innerText = this.selected_node?.stat?.dataLength ?? '--';
             document.getElementById('displayStorageEphemeralOwner').innerText = this.selected_node?.stat?.ephemeralOwner ?? '--';
-            document.getElementById('displayStorageMZxid').innerText = this.selected_node?.stat?.mZxid ?? '--';
+            document.getElementById('displayStorageMZxid').innerText = this.selected_node?.stat?.mzxid ?? '--';
             document.getElementById('displayStorageNumChildren').innerText = this.selected_node?.stat?.numChildren ?? '--';
-            document.getElementById('displayStoragePZxid').innerText = this.selected_node?.stat?.pZxid ?? '--';
+            document.getElementById('displayStoragePZxid').innerText = this.selected_node?.stat?.pzxid ?? '--';
             document.getElementById('displayStorageVersion').innerText = this.selected_node?.stat?.version ?? '--';
             if (this.selected_node?.stat?.mtime != undefined) {
                 document.getElementById('displayStorageMtime').innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString('en-US', { hour12: false });
