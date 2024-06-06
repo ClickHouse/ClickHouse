@@ -2120,7 +2120,9 @@ def test_read_subcolumns(started_cluster):
         f"select x.b.d, _path, x.b, _file, dateDiff('minute', _time, now()), x.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
     )
 
-    assert res == "42\troot/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t0\t42\n"
+    assert (
+        res == "42\troot/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t0\t42\n"
+    )
 
     res = instance.query(
         f"select a.b.d, _path, a.b, _file, a.e from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
@@ -2149,6 +2151,7 @@ def test_read_subcolumns(started_cluster):
     )
 
     logging.info("Some custom logging")
+
 
 def test_filtering_by_file_or_path(started_cluster):
     bucket = started_cluster.minio_bucket
