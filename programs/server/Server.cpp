@@ -777,31 +777,7 @@ try
     /// Disable it if we collect test coverage information, because it will work extremely slow.
 #if !WITH_COVERAGE
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
-    if (hasPHDRCache() && config().has("trace_log"))
-    {
-        has_trace_collector = true;
-
-        /// Set up server-wide memory profiler (for total memory tracker).
-        if (server_settings.total_memory_profiler_step)
-        {
-            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
-        }
-
-        if (server_settings.total_memory_tracker_sample_probability > 0.0)
-        {
-            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
-        }
-
-        if (server_settings.total_memory_profiler_sample_min_allocation_size)
-        {
-            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
-        }
-
-        if (server_settings.total_memory_profiler_sample_max_allocation_size)
-        {
-            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
-        }
-    }
+    has_trace_collector = hasPHDRCache() && config().has("trace_log");
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
@@ -830,7 +806,22 @@ try
         has_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
 
     if (has_trace_collector)
+    {
         global_context->createTraceCollector();
+
+        /// Set up server-wide memory profiler (for total memory tracker).
+        if (server_settings.total_memory_profiler_step)
+            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
+
+        if (server_settings.total_memory_tracker_sample_probability > 0.0)
+            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
+
+        if (server_settings.total_memory_profiler_sample_min_allocation_size)
+            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
+
+        if (server_settings.total_memory_profiler_sample_max_allocation_size)
+            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
+    }
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
