@@ -499,14 +499,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         auto log_element_names_and_types = LogElement::getColumnsDescription();
 
         for (const auto & name_and_type : log_element_names_and_types.getAll())
-        {
-            auto & column = log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
-            column.column->reserve(to_flush.size());
-        }
+            log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
 
         Block block(std::move(log_element_columns));
 
         MutableColumns columns = block.mutateColumns();
+
+        for (auto & column : columns)
+            column->reserve(to_flush.size());
+
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
