@@ -130,7 +130,6 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 

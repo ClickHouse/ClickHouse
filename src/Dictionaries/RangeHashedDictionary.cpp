@@ -56,27 +56,20 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
         if (is_short_circuit)
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
-            size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t, const Array & value, bool)
-                    {
-                        out->insert(value);
-                    },
-                    default_mask);
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, modified_key_columns, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
                 auto * out = column.get();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         modified_key_columns,
                         [&](size_t row, StringRef value, bool is_null)
@@ -86,13 +79,10 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                         },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                    getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t, StringRef value, bool)
-                        {
-                            out->insertData(value.data, value.size);
-                        },
+                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                         default_mask);
             }
             else
@@ -100,7 +90,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 auto & out = column->getData();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         modified_key_columns,
                         [&](size_t row, const auto value, bool is_null)
@@ -110,20 +100,9 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                         },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, const auto value, bool)
-                        {
-                            out[row] = value;
-                        },
-                        default_mask);
-
-                out.resize(keys_found);
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, modified_key_columns, [&](size_t row, const auto value, bool) { out[row] = value; }, default_mask);
             }
-
-            if (is_attribute_nullable)
-                vec_null_map_to->resize(keys_found);
         }
         else
         {

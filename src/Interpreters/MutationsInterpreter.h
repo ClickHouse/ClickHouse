@@ -102,7 +102,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_STATISTIC_PROJECTION,
+            MUTATE_INDEX_STATISTICS_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 

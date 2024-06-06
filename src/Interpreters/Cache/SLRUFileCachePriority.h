@@ -125,7 +125,10 @@ private:
 
     SLRUFileCachePriority * cache_priority;
     LRUFileCachePriority::LRUIterator lru_iterator;
-    const EntryPtr entry;
+    /// Entry itself is stored by lru_iterator.entry.
+    /// We have it as a separate field to use entry without requiring any lock
+    /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).
+    const std::weak_ptr<Entry> entry;
     /// Atomic,
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.

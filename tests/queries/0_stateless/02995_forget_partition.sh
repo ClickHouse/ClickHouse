@@ -17,7 +17,10 @@ create table forget_partition
 )
 engine = ReplicatedMergeTree('/test/02995/{database}/rmt', '1')
 order by (k, d)
-partition by toYYYYMMDD(d);
+partition by toYYYYMMDD(d)
+-- Reduce max_merge_selecting_sleep_ms and max_cleanup_delay_period to speed up the part being dropped from memory (RMT)
+-- Same with old_parts_lifetime for SMT
+SETTINGS old_parts_lifetime=5, merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=5000, cleanup_delay_period=3, max_cleanup_delay_period=5;
 
 insert into forget_partition select number, '2024-01-01' + interval number day, randomString(20) from system.numbers limit 10;
 
@@ -26,7 +29,7 @@ alter table forget_partition drop partition '20240102';
 """
 
 # DROP PARTITION do not wait for a part to be removed from memory due to possible concurrent SELECTs, so we have to do wait manually here
-while [[ $(${CLICKHOUSE_CLIENT} -q "select count() from system.parts where database=currentDatabase() and table='forget_partition' and partition='20240101'") != 0 ]]; do sleep 0.1; done
+while [[ $(${CLICKHOUSE_CLIENT} -q "select count() from system.parts where database=currentDatabase() and table='forget_partition' and partition IN ('20240101', '20240102')") != 0 ]]; do sleep 1; done
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 set allow_unrestricted_reads_from_keeper=1;

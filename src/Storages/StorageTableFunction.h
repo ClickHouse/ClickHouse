@@ -63,14 +63,6 @@ public:
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
 
-    String getName() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getName();
-        return StorageProxy::getName();
-    }
-
     void startup() override { }
     void shutdown(bool is_drop) override
     {

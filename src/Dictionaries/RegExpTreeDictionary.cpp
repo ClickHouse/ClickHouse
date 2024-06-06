@@ -807,6 +807,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                 if (attributes_to_set.contains(name_))
                     continue;
 
+                columns[name_]->insertDefault();
                 default_mask.value().get()[key_idx] = 1;
             }
 

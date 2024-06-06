@@ -13,11 +13,11 @@ from commit_status_helper import (
     trigger_mergeable_check,
     update_upstream_sync_status,
 )
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import PENDING, SUCCESS, FAILURE
+from report import FAILURE, PENDING, SUCCESS, StatusType
 from synchronizer_utils import SYNC_BRANCH_PREFIX
-from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 
 
 def main():
@@ -81,7 +81,7 @@ def main():
             else:
                 has_failure = True
 
-        ci_state = SUCCESS
+        ci_state = SUCCESS  # type: StatusType
         if has_failure:
             ci_state = FAILURE
         elif has_pending:

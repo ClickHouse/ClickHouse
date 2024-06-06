@@ -175,11 +175,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!getContext()->getSettings().allow_experimental_statistic && (
-            command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
-            command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
-            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTIC))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistic");
+        if (!getContext()->getSettings().allow_experimental_statistics && (
+            command_ast->type == ASTAlterCommand::ADD_STATISTICS ||
+            command_ast->type == ASTAlterCommand::DROP_STATISTICS ||
+            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -343,19 +343,24 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
             break;
         }
-        case ASTAlterCommand::ADD_STATISTIC:
+        case ASTAlterCommand::ADD_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
-        case ASTAlterCommand::DROP_STATISTIC:
+        case ASTAlterCommand::MODIFY_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
-        case ASTAlterCommand::MATERIALIZE_STATISTIC:
+        case ASTAlterCommand::DROP_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTICS, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_STATISTICS:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

@@ -332,9 +332,10 @@ void KeeperDispatcher::snapshotThread()
             if (shutdown_called)
                 break;
 
-            if (snapshot_file_info.path.empty())
+            if (!snapshot_file_info)
                 continue;
 
+            chassert(snapshot_file_info->disk != nullptr);
             if (isLeader())
                 snapshot_s3.uploadSnapshot(snapshot_file_info);
         }

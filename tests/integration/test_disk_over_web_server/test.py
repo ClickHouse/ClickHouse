@@ -358,7 +358,6 @@ def test_page_cache(cluster):
         node.query("SYSTEM FLUSH LOGS")
 
         def get_profile_events(query_name):
-            print(f"asdqwe {query_name}")
             text = node.query(
                 f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
             )
@@ -367,7 +366,6 @@ def test_page_cache(cluster):
                 if line == "":
                     continue
                 name, value = line.split("\t")
-                print(f"asdqwe {name} = {int(value)}")
                 res[name] = int(value)
             return res
 

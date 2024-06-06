@@ -267,6 +267,9 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Tuple:
         {
             auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
+            if (elements.empty())
+                return ColumnTuple::create(limit);
+
             const size_t tuple_size = elements.size();
             Columns tuple_columns(tuple_size);
 
