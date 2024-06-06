@@ -252,6 +252,12 @@ static DataTypePtr parseORCType(
             if (skipped)
                 return {};
 
+            if (!DataTypeMap::isValidKeyType(key_type) && skip_columns_with_unsupported_types)
+            {
+                skipped = true;
+                return {};
+            }
+
             DataTypePtr value_type = parseORCType(
                 orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
             if (skipped)
