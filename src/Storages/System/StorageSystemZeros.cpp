@@ -44,16 +44,15 @@ protected:
         auto column_ptr = column;
         size_t column_size = column_ptr->size();
 
-        if (state)
+        UInt64 total_rows = state->add_total_rows.fetch_and(0);
+        if (total_rows)
+            addTotalRowsApprox(total_rows);
+
+        if (limit)
         {
             auto generated_rows = state->num_generated_rows.fetch_add(column_size, std::memory_order_acquire);
-
             if (generated_rows >= limit)
                 return {};
-
-            UInt64 total_rows = state->add_total_rows.fetch_and(0);
-            if (total_rows)
-                addTotalRowsApprox(total_rows);
 
             if (generated_rows + column_size > limit)
             {
@@ -109,30 +108,22 @@ Pipe StorageSystemZeros::read(
 {
     storage_snapshot->check(column_names);
 
-    bool use_multiple_streams = multithreaded;
+    UInt64 query_limit = limit ? *limit : 0;
+    if (query_info.limit)
+        query_limit = query_limit ? std::min(query_limit, query_info.limit) : query_info.limit;
 
-    UInt64 query_limit = limit ? *limit : query_info.limit;
-    if (query_limit && query_limit > max_block_size)
+    if (query_limit && query_limit < max_block_size)
         max_block_size = query_limit;
 
-    if (use_multiple_streams && query_limit && num_streams * max_block_size < query_limit)
-    {
+    if (!multithreaded)
+        num_streams = 1;
+    else if (query_limit && num_streams * max_block_size > query_limit)
         /// We want to avoid spawning more streams than necessary
         num_streams = std::min(num_streams, ((query_limit + max_block_size - 1) / max_block_size));
-        if (num_streams <= 1)
-            use_multiple_streams = false;
-    }
 
-    if (!use_multiple_streams)
-        num_streams = 1;
+    ZerosStatePtr state = std::make_shared<ZerosState>(query_limit);
 
     Pipe res;
-
-    ZerosStatePtr state;
-
-    if (query_limit)
-        state = std::make_shared<ZerosState>(query_limit);
-
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<ZerosSource>(max_block_size, query_limit, state);
