@@ -83,7 +83,7 @@ namespace SettingsChangesHistory
 /// For newly added setting choose the most appropriate previous_value (for example, if new setting
 /// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
-static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
+static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
