@@ -1,7 +1,6 @@
 #include <Common/ProxyListConfigurationResolver.h>
 
 #include <Common/StringUtils.h>
-#include <Common/logger_useful.h>
 #include <Poco/URI.h>
 
 namespace DB

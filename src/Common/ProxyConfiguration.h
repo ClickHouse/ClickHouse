@@ -55,7 +55,7 @@ struct ProxyConfiguration
     uint16_t port = 0;
     bool tunneling = false;
     Protocol original_request_protocol = Protocol::HTTP;
-    std::string no_proxy_hosts = "";
+    std::string no_proxy_hosts = std::string{};
 
     bool isEmpty() const { return host.empty(); }
 };
