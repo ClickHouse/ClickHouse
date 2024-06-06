@@ -371,7 +371,6 @@ void S3QueueOrderedFileMetadata::setProcessedImpl()
     };
 
     const auto zk_client = getZooKeeper();
-    const auto node_metadata_str = node_metadata.toString();
     std::string failure_reason;
 
     while (true)
