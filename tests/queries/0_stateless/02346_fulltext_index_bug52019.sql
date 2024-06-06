@@ -1,6 +1,6 @@
 -- Test for Bug 52019: Undefined behavior
 
-SET allow_experimental_inverted_index=1;
+SET allow_experimental_full_text_index=1;
 
 DROP TABLE IF EXISTS tab;
 
