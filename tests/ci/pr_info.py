@@ -59,7 +59,7 @@ def get_pr_for_commit(sha, ref):
         data = response.json()
         our_prs = []  # type: List[Dict]
         if len(data) > 1:
-            print("Got more than one pr for commit", sha)
+            logging.warning("Got more than one pr for commit %s", sha)
         for pr in data:
             # We need to check if the PR is created in our repo, because
             # https://github.com/kaynewu/ClickHouse/pull/2
@@ -71,13 +71,20 @@ def get_pr_for_commit(sha, ref):
             if pr["head"]["ref"] in ref:
                 return pr
             our_prs.append(pr)
-        print(
-            f"Cannot find PR with required ref {ref}, sha {sha} - returning first one"
+        logging.warning(
+            "Cannot find PR with required ref %s, sha %s - returning first one",
+            ref,
+            sha,
         )
         first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
-        print(f"Cannot fetch PR info from commit {ref}, {sha}", ex)
+        logging.error(
+            "Cannot fetch PR info from commit ref %s, sha %s, exception: %s",
+            ref,
+            sha,
+            ex,
+        )
     return None
 
 
@@ -289,8 +296,10 @@ class PRInfo:
             else:
                 # assume this is a dispatch
                 self.event_type = EventType.DISPATCH
-            print("event.json does not match pull_request or push:")
-            print(json.dumps(github_event, sort_keys=True, indent=4))
+            logging.warning(
+                "event.json does not match pull_request or push:\n%s",
+                json.dumps(github_event, sort_keys=True, indent=4),
+            )
             self.sha = os.getenv(
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
@@ -357,7 +366,7 @@ class PRInfo:
             diff_object = PatchSet(response.text)
             self.changed_files.update({f.path for f in diff_object})
         self.changed_files_requested = True
-        print(f"Fetched info about {len(self.changed_files)} changed files")
+        logging.info("Fetched info about %s changed files", len(self.changed_files))
 
     def get_dict(self):
         return {
