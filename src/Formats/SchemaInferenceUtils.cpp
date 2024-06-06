@@ -318,19 +318,40 @@ namespace
         type_indexes.erase(TypeIndex::UInt64);
     }
 
-    /// if setting try_infer_variant is true
-    /// and nested types are not equal then we convert to type variant.
+    /// if setting 'try_infer_variant' is true then we convert to type variant.
     void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         auto typesAreEqual = checkIfTypesAreEqual(data_types);
         auto typesContainVariant = checkIfTypesContainVariant(data_types);
-        if (typesAreEqual || typesContainVariant)
+        if (typesAreEqual)
             return;
 
         DataTypes new_data_types;
         TypeIndexesSet new_type_indexes;
+        std::shared_ptr<DataTypeVariant> variant_type;
 
-        auto variant_type = std::make_shared<DataTypeVariant>(data_types);
+        /// extract the nested types of variant and make a new variant with the nested types and the other type.
+        /// eg. Type 1: variant<String, Array>, Type 2: Date -> variant<String, Array, Date>.
+        if (typesContainVariant)
+        {
+            DataTypes extracted_types;
+            for (size_t i=0; i<data_types.size(); i++)
+            {
+                if (isVariant(data_types[i]))
+                {
+                    if (const auto * variant = typeid_cast<const DataTypeVariant *>(data_types[i].get()))
+                        extracted_types = variant->getVariants();
+                }
+                else
+                    extracted_types.push_back(data_types[i]);
+            }
+            variant_type = std::make_shared<DataTypeVariant>(extracted_types);
+        }
+        else
+        {
+            variant_type = std::make_shared<DataTypeVariant>(data_types);
+        }
+
         size_t i = 0;
         while (i != data_types.size())
         {
