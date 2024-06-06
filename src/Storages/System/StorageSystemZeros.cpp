@@ -16,7 +16,9 @@ namespace
 
 struct ZerosState
 {
+    ZerosState(UInt64 limit) : add_total_rows(limit) { }
     std::atomic<UInt64> num_generated_rows = 0;
+    std::atomic<UInt64> add_total_rows = 0;
 };
 
 using ZerosStatePtr = std::shared_ptr<ZerosState>;
@@ -48,6 +50,10 @@ protected:
 
             if (generated_rows >= limit)
                 return {};
+
+            UInt64 total_rows = state->add_total_rows.fetch_and(0);
+            if (total_rows)
+                addTotalRowsApprox(total_rows);
 
             if (generated_rows + column_size > limit)
             {
@@ -105,10 +111,16 @@ Pipe StorageSystemZeros::read(
 
     bool use_multiple_streams = multithreaded;
 
-    if (limit && *limit < max_block_size)
+    UInt64 query_limit = limit ? *limit : query_info.limit;
+    if (query_limit && query_limit > max_block_size)
+        max_block_size = query_limit;
+
+    if (use_multiple_streams && query_limit && num_streams * max_block_size < query_limit)
     {
-        max_block_size = static_cast<size_t>(*limit);
-        use_multiple_streams = false;
+        /// We want to avoid spawning more streams than necessary
+        num_streams = std::min(num_streams, ((query_limit + max_block_size - 1) / max_block_size));
+        if (num_streams <= 1)
+            use_multiple_streams = false;
     }
 
     if (!use_multiple_streams)
@@ -118,21 +130,12 @@ Pipe StorageSystemZeros::read(
 
     ZerosStatePtr state;
 
-    if (limit)
-        state = std::make_shared<ZerosState>();
+    if (query_limit)
+        state = std::make_shared<ZerosState>(query_limit);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<ZerosSource>(max_block_size, limit ? *limit : 0, state);
-
-        if (i == 0)
-        {
-            if (limit)
-                source->addTotalRowsApprox(*limit);
-            else if (query_info.limit)
-                source->addTotalRowsApprox(query_info.limit);
-        }
-
+        auto source = std::make_shared<ZerosSource>(max_block_size, query_limit, state);
         res.addSource(std::move(source));
     }
 
