@@ -37,7 +37,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
-    , sort_description(group_by_description_)
+    , sort_description(sort_description_for_merging)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
@@ -59,7 +59,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
         key_columns_raw.resize(params->params.keys_size);
 
-        for (size_t i = group_by_info->sort_description_for_merging.size(); i < group_by_description_.size(); ++i)
+        for (size_t i = sort_description.size(); i < group_by_description_.size(); ++i)
             sort_description.push_back(group_by_description_[i]);
     }
 }
