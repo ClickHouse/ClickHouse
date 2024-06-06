@@ -56,6 +56,23 @@ WHERE number > 5
 GROUP BY n
 ```
 
+### CREATE VIEW with invalid query
+
+The new infrastructure always performs type-checking.
+Previously, it was possible to create a `VIEW` with an invalid `SELECT` query, and it'd fail during the first SELECT or insert (in the case of `MATERIALIZED VIEW`).
+
+Now, it's not possible to create such `VIEW`s anymore.
+
+**Example:**
+
+```sql
+CREATE TABLE source (data String) ENGINE=MergeTree ORDER BY tuple();
+
+CREATE VIEW some_view
+AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
+FROM source;
+```
+
 ### Known incompatibilities of JOIN clause
 
 #### Join using column from projection
