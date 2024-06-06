@@ -41,7 +41,7 @@ allow_experimental_query_deduplication	0
 allow_experimental_refreshable_materialized_view	0
 allow_experimental_s3queue	1
 allow_experimental_shared_merge_tree	0
-allow_experimental_statistic	0
+allow_experimental_statistics	0
 allow_experimental_undrop_table_query	1
 allow_experimental_usearch_index	0
 allow_experimental_window_functions	1
@@ -58,7 +58,7 @@ allow_prefetched_read_pool_for_remote_filesystem	1
 allow_push_predicate_when_subquery_contains_with	1
 allow_settings_after_format_in_insert	0
 allow_simdjson	1
-allow_statistic_optimize	0
+allow_statistics_optimize	0
 allow_suspicious_codecs	0
 allow_suspicious_fixed_string_types	0
 allow_suspicious_indices	0
