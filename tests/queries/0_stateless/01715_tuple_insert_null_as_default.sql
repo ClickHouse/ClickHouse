@@ -45,8 +45,6 @@ DROP TABLE test_tuple_nested_in_array_nested_in_tuple;
 
 SELECT 'Tuple nested in Map';
 
-SET allow_experimental_map_type = 1;
-
 DROP TABLE IF EXISTS test_tuple_nested_in_map;
 CREATE TABLE test_tuple_nested_in_map (value Map(String, Tuple(UInt8, UInt8))) ENGINE=TinyLog;
 
