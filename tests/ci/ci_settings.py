@@ -209,7 +209,12 @@ class CiSettings:
         res = {}
         for job, job_config in job_configs.items():
             if self._check_if_selected(
-                job, job_config, is_release=is_release, is_pr=is_pr, is_mq=is_mq, labels=labels
+                job,
+                job_config,
+                is_release=is_release,
+                is_pr=is_pr,
+                is_mq=is_mq,
+                labels=labels,
             ):
                 res[job] = job_config
 
