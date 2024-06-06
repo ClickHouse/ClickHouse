@@ -430,7 +430,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     auto validator = [](const Poco::Util::AbstractConfiguration &, const std::string &, const std::string &) { return true; };
 
     constexpr auto config_prefix = "storage_configuration.disks";
-    auto disk_selector = std::make_shared<DiskSelector>();
+    auto disk_selector = std::make_shared<DiskSelector>(std::unordered_set{"cache", "encrypted"});
     disk_selector->initialize(config(), config_prefix, global_context, validator);
 
     std::vector<std::pair<DiskPtr, std::optional<String>>> disks_with_path;

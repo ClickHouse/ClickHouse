@@ -53,8 +53,12 @@ void DiskSelector::initialize(
 
         if (disk_validator && !disk_validator(config, disk_config_prefix, disk_name))
             continue;
-
-        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
+        auto created_disk
+            = factory.create(disk_name, config, disk_config_prefix, context, disks, /*attach*/ false, /*custom_disk*/ false, skip_types);
+        if (created_disk.get())
+        {
+            disks.emplace(disk_name, std::move(created_disk));
+        }
     }
     if (!has_default_disk)
     {
