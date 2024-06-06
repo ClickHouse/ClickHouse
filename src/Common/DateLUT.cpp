@@ -263,7 +263,7 @@ void DateLUT::setTZDataSource(bool system)
             if (!tz_file.empty())
                 return std::make_unique<Source>(tz_file.data(), tz_file.size());
 
-            /// In not found in system AND in built-in, let fallback() handle this.
+            /// If not found in system AND in built-in, let fallback() handle this.
             return fallback(name);
         };
     else

@@ -2,7 +2,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 
-
 #include <algorithm>
 #include <cassert>
 #include <chrono>
