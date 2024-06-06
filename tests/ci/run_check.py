@@ -156,24 +156,6 @@ def main():
         )
         sys.exit(1)
 
-    if (
-        Labels.PR_FEATURE in pr_info.labels
-        and not pr_info.has_changes_in_documentation()
-    ):
-        print(
-            f"The '{Labels.PR_FEATURE}' in the labels, "
-            "but there's no changed documentation"
-        )
-        post_commit_status(
-            commit,
-            FAILURE,
-            "",
-            f"expect adding docs for {Labels.PR_FEATURE}",
-            PR_CHECK,
-            pr_info,
-        )
-        # allow the workflow to continue
-
     if not can_run:
         post_commit_status(
             commit,
@@ -186,11 +168,25 @@ def main():
         print("::notice ::Cannot run")
         sys.exit(1)
 
+    if (
+        Labels.PR_FEATURE in pr_info.labels
+        and not pr_info.has_changes_in_documentation()
+    ):
+        print(
+            f"The '{Labels.PR_FEATURE}' in the labels, "
+            "but there's no changed documentation"
+        )
+        status = FAILURE
+        description = f"expect adding docs for {Labels.PR_FEATURE}"
+    else:
+        status = SUCCESS
+        description = "ok"
+
     post_commit_status(
         commit,
-        SUCCESS,
+        status,
         "",
-        "ok",
+        description,
         PR_CHECK,
         pr_info,
     )
