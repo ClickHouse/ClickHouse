@@ -36,30 +36,24 @@ void IObjectStorageIteratorAsync::deactivate()
 void IObjectStorageIteratorAsync::nextBatch()
 {
     std::lock_guard lock(mutex);
+
     if (is_finished)
     {
         current_batch.clear();
         current_batch_iterator = current_batch.begin();
+        return;
     }
-    else
-    {
-        if (!is_initialized)
-        {
-            outcome_future = scheduleBatch();
-            is_initialized = true;
-        }
 
+    if (!is_initialized)
+    {
+        outcome_future = scheduleBatch();
+        is_initialized = true;
+    }
+
+    try
+    {
         chassert(outcome_future.valid());
-        BatchAndHasNext result;
-        try
-        {
-            result = outcome_future.get();
-        }
-        catch (...)
-        {
-            is_finished = true;
-            throw;
-        }
+        BatchAndHasNext result = outcome_future.get();
 
         current_batch = std::move(result.batch);
         current_batch_iterator = current_batch.begin();
@@ -70,6 +64,11 @@ void IObjectStorageIteratorAsync::nextBatch()
             outcome_future = scheduleBatch();
         else
             is_finished = true;
+    }
+    catch (...)
+    {
+        is_finished = true;
+        throw;
     }
 }
 
@@ -95,35 +94,39 @@ std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIterator
 
 bool IObjectStorageIteratorAsync::isValid()
 {
+    std::lock_guard lock(mutex);
+
     if (!is_initialized)
         nextBatch();
 
-    std::lock_guard lock(mutex);
     return current_batch_iterator != current_batch.end();
 }
 
 RelativePathWithMetadataPtr IObjectStorageIteratorAsync::current()
 {
+    std::lock_guard lock(mutex);
+
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
-    std::lock_guard lock(mutex);
     return *current_batch_iterator;
 }
 
 
 RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
 {
+    std::lock_guard lock(mutex);
+
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
-    std::lock_guard lock(mutex);
     return current_batch;
 }
 
 std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrentBatchAndScheduleNext()
 {
     std::lock_guard lock(mutex);
+
     if (!is_initialized)
         nextBatch();
 
