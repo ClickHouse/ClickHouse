@@ -839,8 +839,8 @@ void BaseDaemon::initialize(Application & self)
 
     /// `prefer_system_tzdata` and `timezone` parameters must be processed before any usage of DateLUT.
     /// In particular, before any logging.
-    if (config().has("prefer_system_tzdata"))
-        DateLUT::setTZDataSource(config().getBool("prefer_system_tzdata"));
+    if (config().has("prefer_system_tzdata") && config().getBool("prefer_system_tzdata"))
+        DateLUT::setPreferSystemTZData();
 
     if (config().has("timezone"))
     {

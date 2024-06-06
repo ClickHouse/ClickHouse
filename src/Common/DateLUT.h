@@ -56,7 +56,7 @@ protected:
     DateLUT();
 
     friend class BaseDaemon;
-    static void setTZDataSource(bool system);
+    static void setPreferSystemTZData();
 
 private:
     static DateLUT & getInstance();

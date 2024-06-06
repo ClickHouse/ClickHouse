@@ -211,72 +211,76 @@ std::string DateLUT::extractTimezoneFromContext(DB::ContextPtr query_context)
 /// By default prefer to load timezones from blobs linked to the binary.
 /// The blobs are provided by "tzdata" library.
 /// This allows to avoid dependency on system tzdata.
-namespace
+namespace cctz_extension
 {
-class Source : public cctz::ZoneInfoSource
-{
-public:
-    Source(const char * data_, size_t size_) : data(data_), size(size_) {}
-
-    size_t Read(void * buf, size_t bytes) override
+    namespace
     {
-        bytes = std::min(bytes, size);
-        memcpy(buf, data, bytes);
-        data += bytes;
-        size -= bytes;
-        return bytes;
-    }
+        class Source : public cctz::ZoneInfoSource
+        {
+        public:
+            Source(const char * data_, size_t size_) : data(data_), size(size_) { }
 
-    int Skip(size_t offset) override
-    {
-        if (offset <= size)
+            size_t Read(void * buf, size_t bytes) override
+            {
+                bytes = std::min(bytes, size);
+                memcpy(buf, data, bytes);
+                data += bytes;
+                size -= bytes;
+                return bytes;
+            }
+
+            int Skip(size_t offset) override
+            {
+                if (offset <= size)
+                {
+                    data += offset;
+                    size -= offset;
+                    return 0;
+                }
+                else
+                {
+                    errno = EINVAL;
+                    return -1;
+                }
+            }
+
+        private:
+            const char * data;
+            size_t size;
+        };
+
+        std::unique_ptr<cctz::ZoneInfoSource>
+        custom_factory(const std::string & name, const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
         {
-            data += offset;
-            size -= offset;
-            return 0;
-        }
-        else
-        {
-            errno = EINVAL;
-            return -1;
+            std::string_view tz_file = getTimeZone(name.data());
+
+            if (!tz_file.empty())
+                return std::make_unique<Source>(tz_file.data(), tz_file.size());
+
+            return fallback(name);
         }
     }
-private:
-    const char * data;
-    size_t size;
-};
+    cctz_extension::ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
 }
 
-void DateLUT::setTZDataSource(bool system)
+/// If `prefer_system_tzdata` is turned on in config, redefine tzdata lookup order:
+/// First, try to use system tzdata, then use built-in.
+void DateLUT::setPreferSystemTZData()
 {
-    if (system)
-        cctz_extension::zone_info_source_factory = [] (
-                                                       const std::string & name,
-                                                       const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback
-                                                       ) -> std::unique_ptr<cctz::ZoneInfoSource>
-        {
-            if (auto tz_source = fallback(name))
-                return tz_source;
+    cctz_extension::zone_info_source_factory = [] (
+                                                   const std::string & name,
+                                                   const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback
+                                                   ) -> std::unique_ptr<cctz::ZoneInfoSource>
+    {
+        if (auto tz_source = fallback(name))
+            return tz_source;
 
-            std::string_view tz_file = ::getTimeZone(name.data());
+        std::string_view tz_file = ::getTimeZone(name.data());
 
-            if (!tz_file.empty())
-                return std::make_unique<Source>(tz_file.data(), tz_file.size());
+        if (!tz_file.empty())
+            return std::make_unique<cctz_extension::Source>(tz_file.data(), tz_file.size());
 
-            /// If not found in system AND in built-in, let fallback() handle this.
-            return fallback(name);
-        };
-    else
-        cctz_extension::zone_info_source_factory = [] (
-                                                       const std::string & name,
-                                                       const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback
-                                                       ) -> std::unique_ptr<cctz::ZoneInfoSource>
-        {
-            std::string_view tz_file = ::getTimeZone(name.data());
-
-            if (!tz_file.empty())
-                return std::make_unique<Source>(tz_file.data(), tz_file.size());
-
-            return fallback(name);
-        };
+        /// If not found in system AND in built-in, let fallback() handle this.
+        return fallback(name);
+    };
 }
