@@ -96,7 +96,7 @@ public:
             case HashJoin::Type::TYPE: \
                 return insertFromBlockImplTypeCase<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
                     join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted); \
-                    break;
+                break;
 
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -170,20 +170,20 @@ public:
         {
             /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
             for (size_t i = 0; i < existing_columns; ++i)
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(added_columns.filter, -1);
+                block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(added_columns.filter, -1);
 
             /// Add join key columns from right block if needed using value from left table because of equality
             for (size_t i = 0; i < join.required_right_keys.columns(); ++i)
             {
-            const auto & right_key = join.required_right_keys.getByPosition(i);
-            /// asof column is already in block.
-            if (join_features.is_asof_join && right_key.name == join.table_join->getOnlyClause().key_names_right.back())
-                continue;
+                const auto & right_key = join.required_right_keys.getByPosition(i);
+                /// asof column is already in block.
+                if (join_features.is_asof_join && right_key.name == join.table_join->getOnlyClause().key_names_right.back())
+                    continue;
 
-            const auto & left_column = block.getByName(join.required_right_keys_sources[i]);
-            const auto & right_col_name = join.getTableJoin().renamedRightColumnName(right_key.name);
-            auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
-            block.insert(std::move(right_col));
+                const auto & left_column = block.getByName(join.required_right_keys_sources[i]);
+                const auto & right_col_name = join.getTableJoin().renamedRightColumnName(right_key.name);
+                auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
+                block.insert(std::move(right_col));
             }
         }
         else if (has_required_right_keys)
@@ -191,18 +191,18 @@ public:
             /// Add join key columns from right block if needed.
             for (size_t i = 0; i < join.required_right_keys.columns(); ++i)
             {
-            const auto & right_key = join.required_right_keys.getByPosition(i);
-            auto right_col_name = join.getTableJoin().renamedRightColumnName(right_key.name);
-            /// asof column is already in block.
-            if (join_features.is_asof_join && right_key.name == join.table_join->getOnlyClause().key_names_right.back())
-                continue;
+                const auto & right_key = join.required_right_keys.getByPosition(i);
+                auto right_col_name = join.getTableJoin().renamedRightColumnName(right_key.name);
+                /// asof column is already in block.
+                if (join_features.is_asof_join && right_key.name == join.table_join->getOnlyClause().key_names_right.back())
+                    continue;
 
-            const auto & left_column = block.getByName(join.required_right_keys_sources[i]);
-            auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &added_columns.filter);
-            block.insert(std::move(right_col));
+                const auto & left_column = block.getByName(join.required_right_keys_sources[i]);
+                auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &added_columns.filter);
+                block.insert(std::move(right_col));
 
-            if constexpr (join_features.need_replication)
-                right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
+                if constexpr (join_features.need_replication)
+                    right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
             }
         }
 
@@ -213,13 +213,13 @@ public:
             /// If ALL ... JOIN - we replicate all the columns except the new ones.
             for (size_t i = 0; i < existing_columns; ++i)
             {
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
+                block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
             }
 
             /// Replicate additional right keys
             for (size_t pos : right_keys_to_replicate)
             {
-            block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
+               block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
             }
         }
 
@@ -310,7 +310,7 @@ private:
             }
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \
-                {                                                           \
+            {                                                           \
                 using MapTypeVal = const typename std::remove_reference_t<decltype(MapsTemplate::TYPE)>::element_type; \
                 using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, MapTypeVal>::Type; \
                 std::vector<const MapTypeVal *> a_map_type_vector(mapv.size()); \
@@ -341,12 +341,12 @@ private:
     {
         if (added_columns.need_filter)
         {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
         }
         else
         {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
         }
     }
@@ -412,12 +412,12 @@ private:
         {
             if constexpr (join_features.need_replication)
             {
-            if (unlikely(current_offset >= max_joined_block_rows))
-            {
+                if (unlikely(current_offset >= max_joined_block_rows))
+                {
                     added_columns.offsets_to_replicate->resize_assume_reserved(i);
                     added_columns.filter.resize_assume_reserved(i);
                     break;
-            }
+                }
             }
 
             bool right_row_found = false;
@@ -425,16 +425,16 @@ private:
             KnownRowsHolder<flag_per_row> known_rows;
             for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
             {
-            const auto & join_keys = added_columns.join_on_keys[onexpr_idx];
-            if (join_keys.null_map && (*join_keys.null_map)[i])
-                    continue;
+                const auto & join_keys = added_columns.join_on_keys[onexpr_idx];
+                if (join_keys.null_map && (*join_keys.null_map)[i])
+                        continue;
 
-            bool row_acceptable = !join_keys.isRowFiltered(i);
-            using FindResult = typename KeyGetter::FindResult;
-            auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), i, pool) : FindResult();
+                bool row_acceptable = !join_keys.isRowFiltered(i);
+                using FindResult = typename KeyGetter::FindResult;
+                auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), i, pool) : FindResult();
 
-            if (find_result.isFound())
-            {
+                if (find_result.isFound())
+                {
                     right_row_found = true;
                     auto & mapped = find_result.getMapped();
                     if constexpr (join_features.is_asof_join)
@@ -507,7 +507,7 @@ private:
                             break;
                         }
                     }
-            }
+                }
             }
 
             if (!right_row_found)
@@ -821,9 +821,7 @@ private:
             {
                 // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
                 if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
-                {
                     exceeded_max_block_rows = true;
-                }
             }
         }
 
