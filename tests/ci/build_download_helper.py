@@ -10,8 +10,20 @@ from typing import Any, Callable, List, Optional, Union
 
 import requests
 
-import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
+
+try:
+    # A work around for scripts using this downloading module without required deps
+    import get_robot_token as grt  # we need an updated ROBOT_TOKEN
+except ImportError:
+
+    class grt:  # type: ignore
+        ROBOT_TOKEN = None
+
+        @staticmethod
+        def get_best_robot_token() -> str:
+            return ""
+
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -63,15 +75,10 @@ def get_gh_api(
     """
 
     def set_auth_header():
-        if "headers" in kwargs:
-            if "Authorization" not in kwargs["headers"]:
-                kwargs["headers"][
-                    "Authorization"
-                ] = f"Bearer {grt.get_best_robot_token()}"
-        else:
-            kwargs["headers"] = {
-                "Authorization": f"Bearer {grt.get_best_robot_token()}"
-            }
+        headers = kwargs.get("headers", {})
+        if "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {grt.get_best_robot_token()}"
+        kwargs["headers"] = headers
 
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()

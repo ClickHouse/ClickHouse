@@ -595,7 +595,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, true, false);
         return true;
     }
     else if (function_name == "endsWith")
@@ -604,7 +604,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, false, true);
         return true;
     }
     else if (function_name == "multiSearchAny")
@@ -622,7 +622,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
 
             gin_filters.back().emplace_back(params);
             const auto & value = element.get<String>();
-            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back().back());
+            token_extractor->substringToGinFilter(value.data(), value.size(), gin_filters.back().back(), false, false);
         }
         out.set_gin_filters = std::move(gin_filters);
         return true;
@@ -650,14 +650,14 @@ bool MergeTreeConditionFullText::traverseASTEquals(
             for (const auto & alternative : alternatives)
             {
                gin_filters.back().emplace_back(params);
-               token_extractor->stringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back());
+               token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
             }
             out.set_gin_filters = std::move(gin_filters);
         }
         else
         {
             out.gin_filter = std::make_unique<GinFilter>(params);
-            token_extractor->stringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter);
+            token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
         }
 
         return true;
@@ -742,6 +742,7 @@ bool MergeTreeConditionFullText::tryPrepareSetGinFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
 {
+    /// ------
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
     /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
     /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
@@ -749,6 +750,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     /// TODO: remove this at the end of 2024.
     if (index.type == INVERTED_INDEX_NAME)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full-text'");
+    /// ------
 
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }

@@ -71,8 +71,14 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings)
+    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings, bool is_attach)
     {
+        if (!is_attach && !s3queue_settings.mode.changed)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered) is not specified, but is required.");
+        }
+        /// In case !is_attach, we leave Ordered mode as default for compatibility.
+
         if (!s3queue_settings.s3queue_processing_threads_num)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `s3queue_processing_threads_num` cannot be set to zero");
@@ -125,15 +131,7 @@ StorageS3Queue::StorageS3Queue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
     }
 
-    if (mode == LoadingStrictnessLevel::CREATE
-        && !context_->getSettingsRef().s3queue_allow_experimental_sharded_mode
-        && s3queue_settings->mode == S3QueueMode::ORDERED
-        && (s3queue_settings->s3queue_buckets > 1 || s3queue_settings->s3queue_processing_threads_num > 1))
-    {
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue sharded mode is not allowed. To enable use `s3queue_allow_experimental_sharded_mode`");
-    }
-
-    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
+    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
