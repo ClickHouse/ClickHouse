@@ -126,7 +126,6 @@ public:
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         const ReadFromMergeTree * analyzed_merge_tree,
-        bool enable_parallel_reading_,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
         std::optional<MergeTreeReadTaskCallback> read_task_callback_,
         std::optional<size_t> number_of_current_replica_);
@@ -151,6 +150,11 @@ public:
 
     struct Indexes
     {
+        explicit Indexes(KeyCondition key_condition_)
+            : key_condition(std::move(key_condition_))
+            , use_skip_indexes(false)
+        {}
+
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;

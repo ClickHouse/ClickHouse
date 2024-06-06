@@ -337,7 +337,6 @@ ReadFromMergeTree::ReadFromMergeTree(
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
     const ReadFromMergeTree * analyzed_merge_tree,
-    bool enable_parallel_reading_,
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
     std::optional<MergeTreeReadTaskCallback> read_task_callback_,
     std::optional<size_t> number_of_current_replica_)
@@ -354,8 +353,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         requested_num_streams,
         max_block_numbers_to_read,
         log,
-        analyzed_merge_tree->analyzed_result_ptr,
-        enable_parallel_reading_,
+        (analyzed_merge_tree ? analyzed_merge_tree->analyzed_result_ptr : nullptr),
+        true,
         all_ranges_callback_,
         read_task_callback_,
         number_of_current_replica_);
@@ -1424,11 +1423,8 @@ static void buildIndexes(
 
     const auto & settings = context->getSettingsRef();
 
-    indexes.emplace(ReadFromMergeTree::Indexes{{
-        filter_actions_dag,
-        context,
-        primary_key_column_names,
-        primary_key.expression}, {}, {}, {}, {}, false, {}});
+    indexes.emplace(
+        ReadFromMergeTree::Indexes{KeyCondition{filter_actions_dag, context, primary_key_column_names, primary_key.expression}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1950,6 +1946,33 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, Actions
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
+
+    if (is_parallel_reading_from_replicas && context->canUseParallelReplicasOnInitiator())
+    {
+        CoordinationMode mode = CoordinationMode::Default;
+        switch (result.read_type)
+        {
+            case ReadFromMergeTree::ReadType::Default:
+                mode = CoordinationMode::Default;
+                break;
+            case ReadFromMergeTree::ReadType::InOrder:
+                mode = CoordinationMode::WithOrder;
+                break;
+            case ReadFromMergeTree::ReadType::InReverseOrder:
+                mode = CoordinationMode::ReverseOrder;
+                break;
+            case ReadFromMergeTree::ReadType::ParallelReplicas:
+                chassert(false);
+                UNREACHABLE();
+        }
+
+        chassert(number_of_current_replica.has_value());
+        chassert(all_ranges_callback.has_value());
+
+        /// initialize working set from local replica
+        all_ranges_callback.value()(
+            InitialAllRangesAnnouncement(mode, result.parts_with_ranges.getDescriptions(), number_of_current_replica.value()));
+    }
 
     if (enable_remove_parts_from_snapshot_optimization)
     {

@@ -273,44 +273,21 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     }
 
     chassert(reading);
-    if (!analyzed_read_from_merge_tree)
-        analyzed_read_from_merge_tree = std::move(node->step);
 
-    auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
-    /// if no analysis is done yet, let's do it (happens with JOINs)
-    if (!analyzed_merge_tree->hasAnalyzedResult())
-        analyzed_merge_tree->setAnalyzedResult(analyzed_merge_tree->selectRangesToRead());
+    ReadFromMergeTree * analyzed_merge_tree = nullptr;
+    if (analyzed_read_from_merge_tree.get())
+        analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
 
-    chassert(analyzed_merge_tree->hasAnalyzedResult());
-
-    CoordinationMode mode = CoordinationMode::Default;
-    switch (analyzed_merge_tree->getReadType())
-    {
-        case ReadFromMergeTree::ReadType::Default:
-            mode = CoordinationMode::Default;
-            break;
-        case ReadFromMergeTree::ReadType::InOrder:
-            mode = CoordinationMode::WithOrder;
-            break;
-        case ReadFromMergeTree::ReadType::InReverseOrder:
-            mode = CoordinationMode::ReverseOrder;
-            break;
-        case ReadFromMergeTree::ReadType::ParallelReplicas:
-            chassert(false);
-            UNREACHABLE();
-    }
-
-    const auto number_of_local_replica = new_context->getSettingsRef().max_parallel_replicas - 1;
-    coordinator->handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement(
-        mode, analyzed_merge_tree->getAnalysisResult().parts_with_ranges.getDescriptions(), number_of_local_replica));
-
-    MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement) {};
+    MergeTreeAllRangesCallback all_ranges_cb
+        = [coordinator](InitialAllRangesAnnouncement announcement) { coordinator->handleInitialAllRangesAnnouncement(announcement); };
 
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
     { return coordinator->handleRequest(std::move(req)); };
 
+    const auto number_of_local_replica = new_context->getSettingsRef().max_parallel_replicas - 1;
+
     auto read_from_merge_tree_parallel_replicas
-        = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, true, all_ranges_cb, read_task_cb, number_of_local_replica);
+        = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, all_ranges_cb, read_task_cb, number_of_local_replica);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, has_missing_objects);
