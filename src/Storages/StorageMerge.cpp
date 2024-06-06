@@ -405,6 +405,11 @@ ReadFromMerge::ReadFromMerge(
 void ReadFromMerge::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     SourceStepWithFilter::updatePrewhereInfo(prewhere_info_value);
+
+    /// Rebuild children plans to apply new prewhere info
+    child_plans.reset();
+    filterTablesAndCreateChildrenPlans();
+
     common_header = applyPrewhereActions(common_header, prewhere_info);
 }
 
@@ -878,6 +883,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     SelectQueryInfo modified_query_info = query_info;
     if (modified_query_info.optimized_prewhere_info && !modified_query_info.prewhere_info)
         modified_query_info.prewhere_info = modified_query_info.optimized_prewhere_info;
+
+    if (prewhere_info && !modified_query_info.prewhere_info)
+        modified_query_info.prewhere_info = prewhere_info;
 
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
