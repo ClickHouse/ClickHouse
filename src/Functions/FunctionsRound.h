@@ -626,7 +626,7 @@ public:
 };
 
 /// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
-/// Accept an additional optional parameter (0 by default).
+/// Accept an additional optional parameter of type (U)Int8/16/32/64 (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class FunctionRounding : public IFunction
 {
@@ -640,19 +640,17 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if ((arguments.empty()) || (arguments.size() > 2))
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "A number to round"},
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"N", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "The number of decimal places to round to"},
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
-        for (const auto & type : arguments)
-            if (!isNumber(type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arguments[0]->getName(), getName());
-
-        return arguments[0];
+        return arguments[0].type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

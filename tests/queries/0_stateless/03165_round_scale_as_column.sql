@@ -120,3 +120,4 @@ SELECT round(1, 1);
 SELECT round(materialize(1), materialize(1));
 SELECT round(1, materialize(1)); --{serverError ILLEGAL_COLUMN}
 SELECT round(materialize(1), 1);
+SELECT materialize(10.1) AS x, ceil(x, toUInt256(123)); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
