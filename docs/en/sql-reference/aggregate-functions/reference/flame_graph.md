@@ -5,7 +5,7 @@ sidebar_position: 110
 
 # flameGraph
 
-Aggregate function which builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces. Outputs an array of strings which can be used by [flamegraph.pl util](https://github.com/brendangregg/FlameGraph) to render an SVG of the flamegraph.
+Aggregate function which builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces. Outputs an array of strings which can be used by [flamegraph.pl utility](https://github.com/brendangregg/FlameGraph) to render an SVG of the flamegraph.
 
 ## Syntax
 
