@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 SharedLibrary::SharedLibrary(std::string_view path, int flags)
 {
-    handle = dlopen(path.data(), flags);
+    handle = dlopen(path.data(), flags); // NOLINT
     if (!handle)
         throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror()); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
 
@@ -34,7 +34,7 @@ void * SharedLibrary::getImpl(std::string_view name, bool no_throw)
 {
     dlerror(); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
 
-    auto * res = dlsym(handle, name.data());
+    auto * res = dlsym(handle, name.data()); // NOLINT
 
     if (char * error = dlerror()) // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
     {

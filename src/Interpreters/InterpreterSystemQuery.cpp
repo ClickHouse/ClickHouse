@@ -51,11 +51,12 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -500,17 +501,17 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageFile::getSchemaCache(getContext()).clear();
 #if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
-                StorageS3::getSchemaCache(getContext()).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
 #endif
 #if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
-                StorageHDFS::getSchemaCache(getContext()).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageAzureBlob::getSchemaCache(getContext()).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
 #endif
             break;
         }
@@ -778,6 +779,11 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
+            break;
+        }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            unloadPrimaryKeys();
             break;
         }
 
@@ -1157,6 +1163,42 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    if (!table_id.empty())
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        {
+            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
+            merge_tree->unloadPrimaryKeys();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+        }
+    }
+    else
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "Unloading primary keys for all tables");
+
+        for (auto & database : DatabaseCatalog::instance().getDatabases())
+        {
+            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+            {
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                {
+                    merge_tree->unloadPrimaryKeys();
+                }
+            }
+        }
+    }
+}
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1468,6 +1510,14 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_THREAD_FUZZER:

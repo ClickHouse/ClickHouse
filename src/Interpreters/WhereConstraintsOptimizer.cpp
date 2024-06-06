@@ -27,7 +27,7 @@ WhereConstraintsOptimizer::WhereConstraintsOptimizer(
 namespace
 {
 
-enum class MatchState
+enum class MatchState : uint8_t
 {
     FULL_MATCH, /// a = b
     NOT_MATCH, /// a = not b
@@ -91,6 +91,22 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
     return false;
 }
 
+bool checkIfGroupAlwaysTrueAtoms(const CNFQuery::OrGroup & group)
+{
+    /// Filters out groups containing mutually exclusive atoms,
+    /// since these groups are always True
+
+    for (const auto & atom : group)
+    {
+        auto negated(atom);
+        negated.negative = !atom.negative;
+        if (group.contains(negated))
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const ConstraintsDescription & constraints_description)
 {
@@ -158,7 +174,8 @@ void WhereConstraintsOptimizer::perform()
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {
                 /// remove always true groups from CNF
-                return !checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints()) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+                return !checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints())
+                    && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
             })
             .filterAlwaysFalseAtoms([&compare_graph, this](const auto & atom)
             {

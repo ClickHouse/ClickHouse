@@ -144,6 +144,9 @@ static std::atomic_flag fatal_error_printed;
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+        siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
+
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -184,6 +187,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     errno = saved_errno;
 }
+
 
 static bool getenvBool(const char * name)
 {
@@ -706,6 +710,8 @@ BaseDaemon::~BaseDaemon()
         }
 
     signal_pipe.close();
+
+    SentryWriter::resetInstance();
 }
 
 
