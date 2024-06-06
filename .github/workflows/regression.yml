@@ -162,9 +162,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -210,9 +209,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -260,9 +258,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -313,9 +310,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -362,9 +358,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -406,9 +401,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -455,9 +449,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -509,9 +502,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
@@ -565,9 +557,8 @@ jobs:
         with:
           path: ${{ env.REPORTS_PATH }}
           name: build_report_package_${{ inputs.arch }}
-      - name: Unzip reports
+      - name: Rename reports
         run: |
-          unzip ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }} -d ${{ env.REPORTS_PATH }}
           mv ${{ env.REPORTS_PATH }}/build_report_*.json ${{ env.REPORTS_PATH }}/build_report_package_${{ inputs.arch }}
       - name: Setup
         run: .github/setup.sh
