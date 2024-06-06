@@ -4103,6 +4103,13 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
+    bool enable_blob_storage_log = settings.enable_blob_storage_log;
+    if (hasQueryContext())
+        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
+
+    if (!enable_blob_storage_log)
+        return {};
+
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)

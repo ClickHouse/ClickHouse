@@ -398,8 +398,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
         return;
-    if (format_settings.parquet.use_native_reader)
-        LOG_INFO(&Poco::Logger::get("ParquetBlockInputFormat"), "using native parquet reader");
 
     // Create arrow file adapter.
     // TODO: Make the adapter do prefetching on IO threads, based on the full set of ranges that
