@@ -58,7 +58,7 @@ static ColumnsStatistics getStatisticsForColumns(
     for (const auto & column : columns_to_read)
     {
         const auto * desc = all_columns.tryGet(column.name);
-        if (desc && desc->statistics.empty())
+        if (desc && !desc->statistics.empty())
         {
             auto statistics = MergeTreeStatisticsFactory::instance().get(desc->statistics);
             all_statistics.push_back(std::move(statistics));
