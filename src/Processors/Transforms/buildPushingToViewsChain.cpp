@@ -414,7 +414,8 @@ std::optional<Chain> generateViewChain(
         out.getInputHeader(),
         view_id,
         nullptr,
-        std::move(runtime_stats)});
+        std::move(runtime_stats),
+        insert_context});
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
@@ -590,7 +591,7 @@ Chain buildPushingToViewsChain(
 
 static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
 {
-    const auto & context = views_data.context;
+    const auto & context = view.context;
 
     /// We create a table with the same name as original table and the same alias columns,
     ///  but it will contain single block (that is INSERT-ed into main table).
@@ -897,8 +898,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     {
         return std::current_exception();
     }
-
-    UNREACHABLE();
 }
 
 void FinalizingViewsTransform::work()

@@ -66,11 +66,8 @@ DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & valu
 
 void DataTypeMap::assertKeyType() const
 {
-    if (!checkKeyType(key_type))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Type of Map key must be a type, that can be represented by integer "
-                        "or String or FixedString (possibly LowCardinality) or UUID or IPv6,"
-                        " but {} given", key_type->getName());
+    if (!isValidKeyType(key_type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Map cannot have a key of type {}", key_type->getName());
 }
 
 
@@ -116,7 +113,7 @@ bool DataTypeMap::equals(const IDataType & rhs) const
     return nested->equals(*rhs_map.nested);
 }
 
-bool DataTypeMap::checkKeyType(DataTypePtr key_type)
+bool DataTypeMap::isValidKeyType(DataTypePtr key_type)
 {
     return !isNullableOrLowCardinalityNullable(key_type);
 }
