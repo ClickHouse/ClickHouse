@@ -16,7 +16,12 @@ namespace
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPandHTTPS)
 {
-    std::string no_proxy_string = "localhost,,127.0.0.1,some_other_domain,,,, last_domain,";
+    // Some other tests rely on HTTP clients (e.g, gtest_aws_s3_client), which depend on proxy configuration
+    // since in https://github.com/ClickHouse/ClickHouse/pull/63314 the environment proxy resolver reads only once
+    // from the environment, the proxy configuration will always be there.
+    // The problem is that the proxy server does not exist, causing the test to fail.
+    // To work around this issue, `no_proxy` is set to bypass all domains.
+    std::string no_proxy_string = "*";
     std::string poco_no_proxy_regex = buildPocoNonProxyHosts(no_proxy_string);
     EnvironmentProxySetter setter(http_proxy_server, https_proxy_server, no_proxy_string);
 
