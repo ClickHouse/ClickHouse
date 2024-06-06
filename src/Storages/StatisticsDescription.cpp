@@ -171,7 +171,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
 
 ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(const ASTColumnDeclaration & column)
 {
-    const auto & stat_type_list_ast = column.stat_type->as<ASTFunction &>().arguments;
+    const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", queryToString(column));
     ColumnStatisticsDescription stats;

@@ -450,8 +450,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (!column.statistics.empty())
         {
-            column_declaration->stat_type = column.statistics.getAST();
-            column_declaration->children.push_back(column_declaration->stat_type);
+            column_declaration->statistics_desc = column.statistics.getAST();
+            column_declaration->children.push_back(column_declaration->statistics_desc);
         }
 
         if (column.ttl)
@@ -676,7 +676,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
         column.statistics.column_name = column.name; /// We assign column name here for better exception error message.
-        if (col_decl.stat_type)
+        if (col_decl.statistics_desc)
         {
             if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistics)
                  throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");

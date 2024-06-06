@@ -25,6 +25,7 @@
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include "Parsers/ASTSetQuery.h"
+#include "Storages/StatisticsDescription.h"
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -207,6 +208,9 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
             if (col_ast->settings)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
+
+            if (col_ast->statistics_desc)
+                statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast);
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
