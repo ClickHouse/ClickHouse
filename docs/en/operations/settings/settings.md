@@ -4622,7 +4622,7 @@ Small allocations and deallocations are grouped in thread local variable and tra
 Default value: `4MiB`.
 
 ## min_untracked_memory {#min_untracked_memory}
-Lower bound for untracked memory limit which is applied to threads with low memory consumption. Untracked memory limit equals thread memory usage devided by 16 and clamped between `min_untracked_memory` and `max_untracked_memory` for every thread. It guarantees that total untracked memory does not exceed 10% of current memory footprint even with a lot of small threads. To disable dynamic limit for untracked memory set value `4MiB`.
+Lower bound for untracked memory limit which is applied to threads with low memory consumption. Untracked memory limit equals thread memory usage divided by 16 and clamped between `min_untracked_memory` and `max_untracked_memory` for every thread. It guarantees that total untracked memory does not exceed 10% of current memory footprint even with a lot of small threads. To disable dynamic limit for untracked memory set value `4MiB`.
 
 Default value: `4KiB`.
 
