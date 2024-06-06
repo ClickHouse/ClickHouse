@@ -235,7 +235,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
     loadFromConfig(context->getConfigRef(), lock);
     loadFromSQL(lock);
 
-    if (metadata_storage->requiresPeriodicUpdate())
+    if (metadata_storage->supportsPeriodicUpdate())
     {
         update_task = context->getMessageBrokerSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();

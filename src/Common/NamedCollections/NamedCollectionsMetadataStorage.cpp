@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -66,6 +67,8 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
+    virtual bool supportsPeriodicUpdate() const = 0;
+
     virtual void waitUpdate(size_t /* timeout */) {}
 };
 
@@ -85,6 +88,8 @@ public:
     }
 
     ~LocalStorage() override = default;
+
+    bool supportsPeriodicUpdate() const override { return false; }
 
     std::vector<std::string> list() const override
     {
@@ -214,6 +219,8 @@ public:
     }
 
     ~ZooKeeperStorage() override = default;
+
+    bool supportsPeriodicUpdate() const override { return true; }
 
     void waitUpdate(size_t timeout) override
     {
@@ -430,16 +437,20 @@ void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedColle
     storage->write(getFileName(query.collection_name), serializeAST(*normalized_query), replace);
 }
 
-bool NamedCollectionsMetadataStorage::requiresPeriodicUpdate() const
+bool NamedCollectionsMetadataStorage::supportsPeriodicUpdate() const
 {
-    const auto & config = Context::getGlobalContextInstance()->getConfigRef();
-    return config.has(named_collections_storage_config_path + ".update_timeout_ms");
+    return storage->supportsPeriodicUpdate();
 }
 
 void NamedCollectionsMetadataStorage::waitUpdate()
 {
+    if (!storage->supportsPeriodicUpdate())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Periodic updates are not supported");
+
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();
-    storage->waitUpdate(config.getUInt(named_collections_storage_config_path + ".update_timeout_ms"));
+    const size_t timeout = config.getUInt(named_collections_storage_config_path + ".update_timeout_ms", 5000);
+
+    storage->waitUpdate(timeout);
 }
 
 std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage::create(const ContextPtr & context_)

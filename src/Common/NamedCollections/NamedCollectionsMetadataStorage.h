@@ -31,7 +31,7 @@ public:
 
     void waitUpdate();
 
-    bool requiresPeriodicUpdate() const;
+    bool supportsPeriodicUpdate() const;
 
 private:
     class INamedCollectionsStorage;
