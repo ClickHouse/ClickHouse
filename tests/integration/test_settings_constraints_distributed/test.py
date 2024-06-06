@@ -137,7 +137,7 @@ def test_select_clamps_settings():
 
     assert (
         distributed.query(
-            query, settings={"max_memory_usage": 1, "min_untracked_memory": 4194304}
+            query, settings={"max_memory_usage": 1, "min_untracked_memory": 4 * 1024 * 1024}
         )
         == "node1\tmax_memory_usage\t11111111\n"
         "node1\treadonly\t0\n"
