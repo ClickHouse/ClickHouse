@@ -148,6 +148,12 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 The new analyzer significantly changed the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `allow_experimental_analyzer` setting values.
 
+### Mutations are interpreted by previous analyzer
+
+Mutations are still using the old analyzer.
+This means some new ClickHouse SQL features can't be used in mutations. For example, the `QUALIFY` clause.
+Status can be checked [here](https://github.com/ClickHouse/ClickHouse/issues/61563).
+
 ### Unsupported features
 
 The list of features new analyzer currently doesn't support:
