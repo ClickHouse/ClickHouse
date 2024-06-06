@@ -186,8 +186,7 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
-            /// FIXME
-            added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
+            added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
         }
 
