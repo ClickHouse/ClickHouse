@@ -26,24 +26,46 @@ def started_cluster():
 # asynchronous_metric_update_period_s is being set to 2s so that the metrics are populated faster and
 # are available for querying during the test.
 def test_event_time_microseconds_field(started_cluster):
-    node1.query("SYSTEM JEMALLOC ENABLE PROFILE")
-    res_o = node1.query("SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;")
+    # prof:true -> default open
+    res_o = node1.query(
+        "SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;"
+    )
     assert (
-        res_o== """Row 1:
+        res_o
+        == """Row 1:
 ──────
 metric:      jemalloc.prof.active
 value:       1
 description: An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 """
     )
+    # disable
     node1.query("SYSTEM JEMALLOC DISABLE PROFILE")
     time.sleep(5)
-    res_t = node1.query("SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;")
+    res_t = node1.query(
+        "SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;"
+    )
     assert (
-        res_t== """Row 1:
+        res_t
+        == """Row 1:
 ──────
 metric:      jemalloc.prof.active
 value:       0
+description: An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
+"""
+    )
+    # enable
+    node1.query("SYSTEM JEMALLOC ENABLE PROFILE")
+    time.sleep(5)
+    res_f = node1.query(
+        "SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;"
+    )
+    assert (
+        res_f
+        == """Row 1:
+──────
+metric:      jemalloc.prof.active
+value:       1
 description: An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 """
     )
