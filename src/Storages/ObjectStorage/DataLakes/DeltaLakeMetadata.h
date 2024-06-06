@@ -20,9 +20,13 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    Strings getDataFiles() const override;
+    Strings getDataFiles() const override { return data_files; }
 
-    NamesAndTypesList getTableSchema() const override { return {}; }
+    NamesAndTypesList getTableSchema() const override { return schema; }
+
+    DataLakePartitionColumns getPartitionColumns() const override { return partition_columns; }
+
+    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -44,6 +48,10 @@ private:
     struct Impl;
     const std::shared_ptr<Impl> impl;
     mutable Strings data_files;
+
+    NamesAndTypesList schema;
+    std::unordered_map<String, String> column_name_to_physical_name;
+    DataLakePartitionColumns partition_columns;
 };
 
 }

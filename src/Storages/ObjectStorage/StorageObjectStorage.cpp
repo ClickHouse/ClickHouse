@@ -111,7 +111,8 @@ public:
         const bool need_only_count_,
         ContextPtr context_,
         size_t max_block_size_,
-        size_t num_streams_)
+        size_t num_streams_,
+        const DataLakePartitionColumns & partition_columns_)
         : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
@@ -123,6 +124,7 @@ public:
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
         , distributed_processing(distributed_processing_)
+        , partition_columns(partition_columns_)
     {
     }
 
@@ -161,7 +163,7 @@ public:
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
                 getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
+                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count, partition_columns);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
@@ -190,6 +192,7 @@ private:
     const size_t max_block_size;
     size_t num_streams;
     const bool distributed_processing;
+    DataLakePartitionColumns partition_columns;
 
     void createIterator(const ActionsDAG::Node * predicate)
     {
@@ -201,6 +204,15 @@ private:
             context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
+}
+
+ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    bool supports_subset_of_columns,
+    ContextPtr /* local_context */)
+{
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
 }
 
 void StorageObjectStorage::read(
@@ -222,7 +234,7 @@ void StorageObjectStorage::read(
     }
 
     const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -240,7 +252,8 @@ void StorageObjectStorage::read(
         need_only_count,
         local_context,
         max_block_size,
-        num_streams);
+        num_streams,
+        partition_columns);
 
     query_plan.addStep(std::move(read_step));
 }

@@ -6,6 +6,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 
 
 namespace DB
@@ -39,7 +40,8 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads_,
-        bool need_only_count_);
+        bool need_only_count_,
+        const DataLakePartitionColumns & partition_columns_ = {});
 
     ~StorageObjectStorageSource() override;
 
@@ -81,6 +83,7 @@ protected:
     bool initialized = false;
     size_t total_rows_in_file = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
+    DataLakePartitionColumns partition_columns;
 
     struct ReaderHolder : private boost::noncopyable
     {
