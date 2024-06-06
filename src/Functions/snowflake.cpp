@@ -18,12 +18,62 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
 constexpr int time_shift = 22;
+
+template <typename ReturnType>
+DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, bool allow_nonconst_timezone_arguments, const String & function_name)
+{
+    /// Originally, the only supported call syntax was:
+    ///     snowflakeToDateTime[64](val[, time_zone]).
+    /// Later, an epoch argument was added. Since the time_zone is always the last argument by convention and we can't break existing usage, a second overload was added:
+    ///     snowflakeToDateTime[64](val[, epoch[, time_zone]])
+
+    if (arguments.size() < 1 || arguments.size() > 3)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: passed {}, should be 1, 2, or 3.",
+                function_name, arguments.size());
+
+    /// Initially only Int64 was supported as input type. As 'generateSnowflakeID' returns UInt64, support it too.
+    if (!isUInt64OrInt64(arguments[0].type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. Must be UInt32 or Int64.",
+                arguments[0].type->getName(), function_name);
+
+    String timezone;
+    if (arguments.size() == 2)
+    {
+        if (isString(arguments[1].type))
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. Must be String.",
+                    arguments[1].type->getName(), function_name);
+    }
+
+    if (arguments.size() == 3)
+    {
+        if (!isNativeUInt(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. Must be UInt8, UInt16, UInt32, or UInt64",
+                    arguments[1].type->getName(), function_name);
+        if (!isColumnConst(*arguments[1].column))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. Must be const.",
+                    arguments[1].type->getName(), function_name);
+
+        if (isString(arguments[2].type))
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. Must be String.",
+                    arguments[2].type->getName(), function_name);
+    }
+
+    if constexpr (std::is_same_v<ReturnType, DataTypeDateTime>)
+        return std::make_shared<ReturnType>(timezone);
+    else
+        return std::make_shared<ReturnType>(3, timezone);
+}
 
 class FunctionDateTimeToSnowflake : public IFunction
 {
@@ -58,7 +108,7 @@ public:
         const auto & col_src = *src.column;
 
         size_t epoch = 0;
-        if (arguments.size() >= 2 && input_rows_count != 0)
+        if (arguments.size() == 3 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
@@ -95,21 +145,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Int64 as input type was supported originally. 'generateSnowflakeID' returns UInt64, so support it too.
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64OrInt64), nullptr, "(U)Int64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"},
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime>(timezone);
+        return getReturnType<DataTypeDateTime>(arguments, allow_nonconst_timezone_arguments, getName());
     }
 
     template <typename T>
@@ -196,7 +232,7 @@ public:
         const auto & src_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col_src).getData();
 
         size_t epoch = 0;
-        if (arguments.size() >= 2 && input_rows_count != 0)
+        if (arguments.size() == 3 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
@@ -239,21 +275,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Int64 as input type was supported originally. 'generateSnowflakeID' returns UInt64, so support it too.
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64OrInt64), nullptr, "(U)Int64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"},
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime64>(3, timezone);
+        return getReturnType<DataTypeDateTime64>(arguments, allow_nonconst_timezone_arguments, getName());
     }
 
     template <typename T>
