@@ -138,7 +138,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
     ParserKeyword s_comment{Keyword::COMMENT};
     ParserKeyword s_codec{Keyword::CODEC};
-    ParserKeyword s_stat{Keyword::STATISTIC};
+    ParserKeyword s_stat{Keyword::STATISTICS};
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -155,7 +155,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
-    ParserStatisticType stat_type_parser;
+    ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
     ParserSetQuery settings_parser(true);
 
@@ -452,15 +452,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStatisticDeclaration : public IParserBase
+class ParserStatisticsDeclaration : public IParserBase
 {
 public:
-    ParserStatisticDeclaration() = default;
+    ParserStatisticsDeclaration() = default;
 
 protected:
     const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+class ParserStatisticsDeclarationWithoutTypes : public IParserBase
+{
+public:
+    ParserStatisticsDeclarationWithoutTypes() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 class ParserConstraintDeclaration : public IParserBase
 {

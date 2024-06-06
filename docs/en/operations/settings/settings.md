@@ -1956,7 +1956,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `10485760`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -3169,6 +3169,18 @@ Possible values:
 - 2 - The query waits for all mutations to complete on all replicas (if they exist).
 
 Default value: `0`.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
+
+The same as 'mutation_sync', but controls only execution of lightweight deletes. 
+
+Possible values:
+
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for the lightweight deletes to complete on the current server.
+- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+
+Default value: `2`.
 
 **See Also**
 
@@ -5108,7 +5120,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
+## allow_experimental_statistics {#allow_experimental_statistics}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
