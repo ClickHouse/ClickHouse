@@ -446,6 +446,7 @@ KafkaLibrdkafkaThreads
 KafkaProducers
 KafkaWrites
 Kahan
+Kaser
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequets
@@ -466,6 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
+Lemir
 Levenshtein
 Liao
 LibFuzzer
@@ -1998,6 +2000,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
@@ -2150,6 +2154,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers

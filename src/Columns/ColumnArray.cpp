@@ -828,7 +828,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+        return filterGeneric(filt, result_size_hint);
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -1265,7 +1265,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+        return replicateGeneric(replicate_offsets);
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)

@@ -161,6 +161,8 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
 
+    size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const override;
+
     void reserve(size_t n) override
     {
         data.reserve_exact(n);
