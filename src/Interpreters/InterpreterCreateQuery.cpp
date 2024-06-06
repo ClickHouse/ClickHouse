@@ -1128,6 +1128,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
+        /// Set replicated or not replicated MergeTree engine in metadata and query
+        if (create.attach_as_replicated.has_value())
+            convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
+
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
@@ -1780,6 +1784,11 @@ BlockIO InterpreterCreateQuery::execute()
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        if (create.attach_as_replicated.has_value())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
+
         auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
             return executeQueryOnCluster(create);
@@ -1940,6 +1949,87 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
     if (sql_security.type == SQLSecurityType::NONE && !is_attach)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
+}
+
+static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated)
+{
+    auto * storage = create_query.storage;
+    auto args = std::make_shared<ASTExpressionList>();
+    auto engine = std::make_shared<ASTFunction>();
+    String engine_name;
+
+    if (replicated)
+    {
+        const auto & server_settings = context->getServerSettings();
+        String replica_path = server_settings.default_replica_path;
+        String replica_name = server_settings.default_replica_name;
+
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+
+        /// Add old engine's arguments
+        if (storage->engine->arguments)
+        {
+            for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
+                args->children.push_back(storage->engine->arguments->children[i]->clone());
+        }
+
+        engine_name = "Replicated" + storage->engine->name;
+    }
+    else
+    {
+        /// Add old engine's arguments without first two
+        if (storage->engine->arguments)
+        {
+            for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
+                args->children.push_back(storage->engine->arguments->children[i]->clone());
+        }
+
+        engine_name = storage->engine->name.substr(strlen("Replicated"));
+    }
+
+    /// Set new engine for the old query
+    engine->name = engine_name;
+    engine->arguments = args;
+    create_query.storage->set(create_query.storage->engine, engine->clone());
+}
+
+void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
+{
+    /// Check engine can be changed
+    if (database->getEngineName() != "Atomic")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion to replicated is supported only for Atomic databases");
+
+    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion is supported only for MergeTree family engines");
+
+    String engine_name = create.storage->engine->name;
+    if (engine_name.starts_with("Replicated"))
+    {
+        if (to_replicated)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Table is already replicated");
+    }
+    else if (!to_replicated)
+       throw Exception(ErrorCodes::INCORRECT_QUERY, "Table is already not replicated");
+
+    /// Set new engine
+    setMergeTreeEngine(create, getContext(), to_replicated);
+
+    /// Save new metadata
+    String table_metadata_path = database->getObjectMetadataPath(create.getTable());
+    String table_metadata_tmp_path = table_metadata_path + ".tmp";
+    String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
+    {
+        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(statement, out);
+        out.next();
+        if (getContext()->getSettingsRef().fsync_metadata)
+            out.sync();
+        out.close();
+    }
+    fs::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

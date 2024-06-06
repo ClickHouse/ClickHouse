@@ -351,6 +351,14 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
                           << quoteString(*attach_from_path);
 
+        if (attach_as_replicated.has_value())
+        {
+            if (attach_as_replicated.value())
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS REPLICATED" << (settings.hilite ? hilite_none : "");
+            else
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS NOT REPLICATED" << (settings.hilite ? hilite_none : "");
+        }
+
         formatOnCluster(settings);
     }
     else

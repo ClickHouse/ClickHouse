@@ -680,6 +680,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_on(Keyword::ON);
+    ParserKeyword s_as(Keyword::AS);
+    ParserKeyword s_not(Keyword::NOT);
+    ParserKeyword s_replicated(Keyword::REPLICATED);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -734,11 +737,23 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!table_name_p.parse(pos, table, expected))
         return false;
 
-    if (attach && s_from.ignore(pos, expected))
+    std::optional<bool> attach_as_replicated = std::nullopt;
+    if (attach)
     {
-        ParserStringLiteral from_path_p;
-        if (!from_path_p.parse(pos, from_path, expected))
-            return false;
+        if (s_from.ignore(pos, expected))
+        {
+            ParserStringLiteral from_path_p;
+            if (!from_path_p.parse(pos, from_path, expected))
+                return false;
+        } else if (s_as.ignore(pos, expected))
+        {
+            if (s_not.ignore(pos, expected))
+                attach_as_replicated = false;
+            if (!s_replicated.ignore(pos, expected))
+                return false;
+            if (!attach_as_replicated.has_value())
+                attach_as_replicated = true;
+        }
     }
 
     if (s_on.ignore(pos, expected))
@@ -764,6 +779,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+
+        query->attach_as_replicated = attach_as_replicated;
 
         if (query->database)
             query->children.push_back(query->database);
