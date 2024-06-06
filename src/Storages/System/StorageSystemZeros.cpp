@@ -16,7 +16,7 @@ namespace
 
 struct ZerosState
 {
-    ZerosState(UInt64 limit) : add_total_rows(limit) { }
+    explicit ZerosState(UInt64 limit) : add_total_rows(limit) { }
     std::atomic<UInt64> num_generated_rows = 0;
     std::atomic<UInt64> add_total_rows = 0;
 };
@@ -119,7 +119,7 @@ Pipe StorageSystemZeros::read(
         num_streams = 1;
     else if (query_limit && num_streams * max_block_size > query_limit)
         /// We want to avoid spawning more streams than necessary
-        num_streams = std::min(num_streams, ((query_limit + max_block_size - 1) / max_block_size));
+        num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
 
     ZerosStatePtr state = std::make_shared<ZerosState>(query_limit);
 
