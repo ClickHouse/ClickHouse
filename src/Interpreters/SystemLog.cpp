@@ -499,7 +499,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         auto log_element_names_and_types = LogElement::getColumnsDescription();
 
         for (const auto & name_and_type : log_element_names_and_types.getAll())
-            log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
+        {
+            auto & column = log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
+            column.column->reserve(to_flush.size());
+        }
 
         Block block(std::move(log_element_columns));
 
@@ -532,7 +535,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
+            table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
 
     queue->confirm(to_flush_end);
