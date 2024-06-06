@@ -19,6 +19,7 @@ Optimizations could rewrite the initial query so it becomes valid and can be exe
 
 In the new infrastructure, query validation takes place before the optimization step.
 This means that invalid queries that were possible to execute before are now unsupported.
+In such cases, the query must be fixed manually.
 
 **Example 1:**
 
@@ -44,6 +45,16 @@ HAVING number > 5
 
 The same problem occurs in this query: column `number` is used after aggregation with another key.
 The previous query analyzer fixed this query by moving the `number > 5` filter from the `HAVING` clause to the `WHERE` clause.
+
+To fix the query, you should move all conditions that apply to non-aggregated columns to the `WHERE` section to conform to standard SQL syntax:
+```sql
+SELECT
+    number % 2 AS n,
+    sum(number)
+FROM numbers(10)
+WHERE number > 5
+GROUP BY n
+```
 
 ### Known incompatibilities of JOIN clause
 
