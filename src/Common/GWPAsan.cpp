@@ -53,6 +53,9 @@ static bool guarded_alloc_initialized = []
         gwp_asan::options::initOptions(env_options_raw, printString);
 
     auto & opts = gwp_asan::options::getOptions();
+    if (!env_options_raw || !std::string_view{env_options_raw}.contains("MaxSimultaneousAllocations"))
+        opts.MaxSimultaneousAllocations = 1024;
+
     opts.Backtrace = getBackTrace;
     GuardedAlloc.init(opts);
 
