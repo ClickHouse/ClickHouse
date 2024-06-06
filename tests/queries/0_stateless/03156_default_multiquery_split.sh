@@ -7,6 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SQL_FILE_NAME=$"03156_default_multiquery_split_$$.sql"
 
+# create table test1, test2, then
+# 1. insert 101, 102 into test1
+# 2. insert 1, 2; into test2, ';' will be treated as a part of a value
+# 3. insert 3, 4; '6' will be treated as the next query because of the empty line, we use empty line to determine the end of insert query(format IS NOT VALUES)
 cat << EOF > "$SQL_FILE_NAME"
 drop table if exists test1; drop table if exists test2;
 create table test1 (value Float64) ENGINE=MergeTree ORDER BY tuple();
@@ -27,6 +31,8 @@ EOF
 
 $CLICKHOUSE_CLIENT -m -n < "$SQL_FILE_NAME"
 
+# insert 7, 8, 9 into test2, because we use semicolon to determine the end of insert query(format is VALUES)
+# then select all data from test1 and test2
 cat << EOF > "$SQL_FILE_NAME"
 insert into test2 values
 ('7'),
