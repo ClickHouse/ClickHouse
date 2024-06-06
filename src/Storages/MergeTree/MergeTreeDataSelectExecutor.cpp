@@ -764,9 +764,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
+
+            /// Instances of ThreadPool "borrow" threads from the global thread pool.
+            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
+            /// For example, queries can already be running with threads from the
+            /// global pool, and if we saturate max_thread_pool_size whilst requesting
+            /// more in this loop, queries will block infinitely.
+            /// So we wait until lock_acquire_timeout, and then raise an exception.
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
             {
-                pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrow([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
                     setThreadName("MergeTreeIndex");
 
@@ -778,7 +785,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         CurrentThread::attachToGroupIfDetached(thread_group);
 
                     process_part(part_index);
-                });
+                }, Priority{}, context->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
             }
 
             pool.wait();
