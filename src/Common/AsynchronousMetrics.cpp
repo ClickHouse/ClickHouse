@@ -416,7 +416,7 @@ Value saveAllArenasMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-static Value saveJemallocProf(AsynchronousMetricValues & values,
+Value saveJemallocProf(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
