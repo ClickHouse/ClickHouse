@@ -2,7 +2,7 @@
 import sys
 import os
 import logging
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import TEMP_PATH, REPO_COPY, REPORT_PATH
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from build_download_helper import download_builds_filter
@@ -47,7 +47,7 @@ def sign_file(file_path):
     return out_file_path
 
 def main():
-    reports_path = REPORTS_PATH
+    reports_path = REPORT_PATH
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)

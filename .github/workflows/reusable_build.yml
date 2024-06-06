@@ -111,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           path: ${{ env.TEMP_PATH }}/build_report_*.json
-          name: build_report_${{inputs.build_name}}.json
+          name: build_report_${{inputs.build_name}}
       - name: Clean
         if: always()
         uses: ./.github/actions/clean
