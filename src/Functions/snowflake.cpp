@@ -106,6 +106,31 @@ public:
         return std::make_shared<DataTypeDateTime>(timezone);
     }
 
+    template <typename T>
+    bool executeNonConst(const IColumn & col_src, ColumnDateTime::Container & res_data, size_t input_rows_count) const
+    {
+        if (const auto * col_src_non_const = typeid_cast<const T *>(&col_src))
+        {
+            const auto & src_data = col_src_non_const->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = static_cast<UInt32>(((src_data[i] >> time_shift) + snowflake_epoch) / 1000);
+            return true;
+        }
+        return false;
+    }
+
+    bool executeConst(const IColumn & col_src, ColumnDateTime::Container & res_data, size_t input_rows_count) const
+    {
+        if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
+        {
+            Int64 src_val = col_src_const->getValue<Int64>();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = static_cast<UInt32>(((src_val >> time_shift) + snowflake_epoch) / 1000);
+            return true;
+        }
+        return false;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
@@ -114,22 +139,12 @@ public:
         auto col_res = ColumnDateTime::create(input_rows_count);
         auto & res_data = col_res->getData();
 
-        if (const auto * col_src_non_const = typeid_cast<const ColumnInt64 *>(&col_src))
-        {
-            const auto & src_data = col_src_non_const->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_data[i] >> time_shift) + snowflake_epoch) / 1000);
-        }
-        else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
-        {
-            Int64 src_val = col_src_const->getValue<Int64>();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_val >> time_shift) + snowflake_epoch) / 1000);
-        }
+        if (executeNonConst<ColumnInt64>(col_src, res_data, input_rows_count))
+            return col_res;
+        else if (executeConst(col_src, res_data, input_rows_count))
+            return col_res;
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
-
-        return col_res;
     }
 };
 
@@ -215,6 +230,31 @@ public:
         return std::make_shared<DataTypeDateTime64>(3, timezone);
     }
 
+    template <typename T>
+    bool executeNonConst(const IColumn & col_src, ColumnDateTime64::Container & res_data, size_t input_rows_count) const
+    {
+        if (const auto * col_src_non_const = typeid_cast<const T *>(&col_src))
+        {
+            const auto & src_data = col_src_non_const->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = (src_data[i] >> time_shift) + snowflake_epoch;
+            return true;
+        }
+        return false;
+    }
+
+    bool executeConst(const IColumn & col_src, ColumnDateTime64::Container & res_data, size_t input_rows_count) const
+    {
+        if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
+        {
+            Int64 src_val = col_src_const->getValue<Int64>();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = (src_val >> time_shift) + snowflake_epoch;
+            return true;
+        }
+        return false;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
@@ -223,22 +263,12 @@ public:
         auto col_res = ColumnDateTime64::create(input_rows_count, 3);
         auto & res_data = col_res->getData();
 
-        if (const auto * col_src_non_const = typeid_cast<const ColumnInt64 *>(&col_src))
-        {
-            const auto & src_data = col_src_non_const->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_data[i] >> time_shift) + snowflake_epoch;
-        }
-        else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
-        {
-            Int64 src_val = col_src_const->getValue<Int64>();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_val >> time_shift) + snowflake_epoch;
-        }
+        if (executeNonConst<ColumnInt64>(col_src, res_data, input_rows_count))
+            return col_res;
+        else if (executeConst(col_src, res_data, input_rows_count))
+            return col_res;
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
-
-        return col_res;
     }
 };
 
