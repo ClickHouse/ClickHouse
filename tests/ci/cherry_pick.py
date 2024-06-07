@@ -490,22 +490,20 @@ class Backport:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        # FIXME: currently backport to all branches, for branch-specified backports too
-        #    Handle different branch name formats in cloud
-        # if self.must_create_backport_label in pr_labels:
-        branches = [
-            ReleaseBranch(br, pr, self.repo, self.backport_created_label)
-            for br in self.release_branches
-        ]  # type: List[ReleaseBranch]
-        # else:
-        #     branches = [
-        #         ReleaseBranch(br, pr, self.repo, self.backport_created_label)
-        #         for br in [
-        #             label.split("-", 1)[0][1:]  # v21.8-must-backport
-        #             for label in pr_labels
-        #             if label in self.labels_to_backport
-        #         ]
-        #     ]
+        if self.must_create_backport_labels in pr_labels or self._repo_name != self._fetch_from:
+            branches = [
+                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                for br in self.release_branches
+            ]  # type: List[ReleaseBranch]
+        else:
+            branches = [
+                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                for br in [
+                    label.split("-", 1)[0][1:]  # v21.8-must-backport
+                    for label in pr_labels
+                    if label in self.labels_to_backport
+                ]
+            ]
         assert branches, "BUG!"
 
         logging.info(
