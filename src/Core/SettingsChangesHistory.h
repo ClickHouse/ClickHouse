@@ -83,7 +83,7 @@ namespace SettingsChangesHistory
 /// For newly added setting choose the most appropriate previous_value (for example, if new setting
 /// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
-static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
+static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
@@ -96,6 +96,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
               {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
               {"s3_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"},
+              {"min_untracked_memory", 4_MiB, 4_KiB, "A new setting to enable more accurate memory tracking."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
               {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
               {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
