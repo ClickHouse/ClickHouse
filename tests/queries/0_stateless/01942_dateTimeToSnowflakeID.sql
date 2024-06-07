@@ -59,13 +59,20 @@ WITH
     now64(0) AS dt64_0,
     now64(1) AS dt64_1,
     now64(2) AS dt64_2,
-    now64(3) AS dt64_3,
-    now64(4) AS dt64_4
+    now64(3) AS dt64_3
 SELECT
     snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_0), 0, 'UTC') == dt64_0,
     snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_1), 0, 'UTC') == dt64_1,
     snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_2), 0, 'UTC') == dt64_2,
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_3), 0, 'UTC') == dt64_3,
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_4), 0, 'UTC') == dt64_4
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_3), 0, 'UTC') == dt64_3
+FORMAT
+    Vertical;
+
+-- not idempotent
+WITH
+    toDateTime64('2023-11-11 11:11:11.1231', 4, 'UTC') AS dt64_4
+SELECT
+    dt64_4,
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_4))
 FORMAT
     Vertical;
