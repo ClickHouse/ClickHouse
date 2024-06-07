@@ -27,6 +27,9 @@ def started_cluster():
 # are available for querying during the test.
 def test_event_time_microseconds_field(started_cluster):
     # prof:true -> default open
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
     res_o = node1.query(
         "SELECT * FROM system.asynchronous_metrics WHERE metric ILIKE '%jemalloc.prof.active%' FORMAT Vertical;"
     )
