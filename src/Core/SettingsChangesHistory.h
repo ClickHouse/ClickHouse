@@ -98,6 +98,7 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"s3_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"},
               {"s3_max_part_number", 10000, 10000, "Maximum part number number for s3 upload part"},
               {"s3_max_single_operation_copy_size", 32 * 1024 * 1024, 32 * 1024 * 1024, "Maximum size for a single copy operation in s3"},
+              {"min_untracked_memory", 4_MiB, 4_KiB, "A new setting to enable more accurate memory tracking."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
               {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
               {"allow_experimental_statistic", false, false, "Old setting which popped up here being renamed."},
