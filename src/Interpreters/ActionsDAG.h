@@ -195,6 +195,8 @@ public:
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
+    void removeAliasesForFilter(const std::string & filter_name);
+
     /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
