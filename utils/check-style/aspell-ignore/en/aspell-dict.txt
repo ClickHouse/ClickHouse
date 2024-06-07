@@ -1008,6 +1008,8 @@ Updatable
 Uppercased
 Uptime
 Uptrace
+UrlDecode
+UrlEncode
 UserID
 Util
 VARCHAR
