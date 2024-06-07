@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cppkafka/topic_partition.h>
+#include <fmt/ostream.h>
 #include <boost/circular_buffer.hpp>
 
 #include <Core/Names.h>
@@ -197,3 +199,6 @@ private:
 };
 
 }
+
+template <> struct fmt::formatter<cppkafka::TopicPartition> : fmt::ostream_formatter {};
+template <> struct fmt::formatter<cppkafka::Error> : fmt::ostream_formatter {};

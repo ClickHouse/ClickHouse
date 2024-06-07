@@ -623,7 +623,7 @@ struct fmt::formatter<DB::DataTypePtr>
     }
 
     template <typename FormatContext>
-    auto format(const DB::DataTypePtr & type, FormatContext & ctx)
+    auto format(const DB::DataTypePtr & type, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", type->getName());
     }

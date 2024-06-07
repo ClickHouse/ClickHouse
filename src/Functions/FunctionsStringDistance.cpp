@@ -159,7 +159,7 @@ struct ByteJaccardIndexImpl
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(haystack, haystack_end - haystack));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(haystack, haystack_end - haystack));
                 }
             }
         }
@@ -186,7 +186,7 @@ struct ByteJaccardIndexImpl
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(needle, needle_end - needle));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(needle, needle_end - needle));
                 }
             }
         }
