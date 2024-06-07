@@ -3,6 +3,8 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+
+#include <filesystem>
 #include <shared_mutex>
 
 namespace Poco
@@ -71,11 +73,6 @@ public:
     void shutdown() override;
 
     void startup() override;
-
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
 
     String getObjectsNamespace() const override { return ""; }
 

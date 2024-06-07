@@ -30,7 +30,7 @@ run_with_custom_key "SELECT * FROM cluster(test_cluster_one_shard_three_replicas
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE 02535_custom_key"
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE 02535_custom_key (x String, y Int32) ENGINE = MergeTree ORDER BY cityHash64(x)"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE 02535_custom_key (x String, y UInt32) ENGINE = MergeTree ORDER BY cityHash64(x)"
 $CLICKHOUSE_CLIENT --query="INSERT INTO 02535_custom_key SELECT toString(number), number % 3 FROM numbers(1000)"
 
 function run_count_with_custom_key {

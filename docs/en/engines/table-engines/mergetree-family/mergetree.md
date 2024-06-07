@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTICS(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -177,6 +177,10 @@ Additional parameters that control the behavior of the `MergeTree` (optional):
 #### max_partitions_to_read
 
 `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](/docs/en/operations/settings/merge-tree-settings.md/#max-partitions-to-read) in the global setting.
+
+#### allow_experimental_optimized_row_order
+
+`allow_experimental_optimized_row_order` - Experimental. Enables the optimization of the row order during inserts to improve the compressability of the data for compression codecs (e.g. LZ4). Analyzes and reorders the data, and thus increases the CPU overhead of inserts.
 
 **Example of Sections Setting**
 
@@ -954,7 +958,7 @@ In the case of `MergeTree` tables, data is getting to disk in different ways:
 - As a result of an insert (`INSERT` query).
 - During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
 - When downloading from another replica.
-- As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
+- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -966,7 +970,7 @@ Under the hood, mutations and partition freezing make use of [hard links](https:
 In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
 Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/docs/en/operations/system-tables/part_log.md/#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](/docs/en/operations/system-tables/parts.md/#system_tables-parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
 
-User can force moving a part or a partition from one volume to another using the query [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](/docs/en/sql-reference/statements/alter/partition.md/#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
+User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/docs/en/sql-reference/statements/alter/partition.md/#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
 
 Moving data does not interfere with data replication. Therefore, different storage policies can be specified for the same table on different replicas.
 
@@ -1039,12 +1043,12 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column Statistics (Experimental) {#column-statistics}
 
-The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
+The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
 ``` sql
 CREATE TABLE tab
 (
-    a Int64 STATISTIC(tdigest),
+    a Int64 STATISTICS(TDigest, Uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1054,18 +1058,22 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
-ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab DROP STATISTICS a;
 ```
 
-These lightweight statistics aggregate information about distribution of values in columns.
-They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
+These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
+They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
 #### Available Types of Column Statistics {#available-types-of-column-statistics}
 
--   `tdigest`
+- `TDigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+- `Uniq`
+    
+    Estimate the number of distinct values of a column by HyperLogLog.
 
 ## Column-level Settings {#column-level-settings}
 
