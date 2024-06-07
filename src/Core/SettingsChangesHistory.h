@@ -91,6 +91,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               {"cross_join_min_rows_to_compress", 0, 10000000, "Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached."},
               {"cross_join_min_bytes_to_compress", 0, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached."},
+              {"allow_experimental_full_text_index", false, false, "Enable experimental full-text index"},
               {"http_max_chunk_size", 0, 0, "Internal limitation"},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
               {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
