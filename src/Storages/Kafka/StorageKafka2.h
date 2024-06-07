@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <list>
+#include <filesystem>
 #include <mutex>
 #include <rdkafka.h>
 
@@ -191,7 +192,7 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     // Returns true if this is the first replica
-    bool createTableIfNotExists(const KafkaConsumer2Ptr & consumer);
+    bool createTableIfNotExists();
     // Returns true if all of the nodes were cleaned up
     bool removeTableNodesFromZooKeeper(const zkutil::EphemeralNodeHolder::Ptr & drop_lock);
     // Creates only the replica in ZooKeeper. Shouldn't be called on the first replica as it is created in createTableIfNotExists
@@ -211,7 +212,7 @@ private:
 
     zkutil::ZooKeeperPtr getZooKeeper();
 
-    std::string getTopicPartitionPath(const TopicPartition & topic_partition);
+    std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };

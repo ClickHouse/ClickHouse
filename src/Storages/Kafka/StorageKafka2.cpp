@@ -163,23 +163,23 @@ StorageKafka2::StorageKafka2(
             tryLogCurrentException(log);
         }
     }
-    for (auto try_count = 0; try_count < 5; ++try_count)
-    {
-        bool all_had_assignment = true;
-        for (auto & consumer_info : consumers)
-        {
-            if (nullptr == consumer_info.consumer->getKafkaAssignment())
-            {
-                all_had_assignment = false;
-                consumer_info.consumer->pollEvents();
-            }
-        }
+    // for (auto try_count = 0; try_count < 5; ++try_count)
+    // {
+    //     bool all_had_assignment = true;
+    //     for (auto & consumer_info : consumers)
+    //     {
+    //         if (nullptr == consumer_info.consumer->getKafkaAssignment())
+    //         {
+    //             all_had_assignment = false;
+    //             consumer_info.consumer->pollEvents();
+    //         }
+    //     }
 
-        if (all_had_assignment)
-            break;
-    }
+    //     if (all_had_assignment)
+    //         break;
+    // }
 
-    const auto first_replica = createTableIfNotExists(consumers.front().consumer);
+    const auto first_replica = createTableIfNotExists();
 
     if (!first_replica)
         createReplica();
@@ -551,7 +551,7 @@ const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
 
-std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const std::string & path)
+std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
     std::string result;
     if (!keeper.tryGet(path, result))
@@ -561,7 +561,7 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const std::string &
 }
 }
 
-bool StorageKafka2::createTableIfNotExists(const KafkaConsumer2Ptr & consumer)
+bool StorageKafka2::createTableIfNotExists()
 {
     const auto & keeper_path = fs::path(kafka_settings->kafka_keeper_path.value);
 
@@ -613,22 +613,15 @@ bool StorageKafka2::createTableIfNotExists(const KafkaConsumer2Ptr & consumer)
         const auto topics_path = keeper_path / "topics";
         ops.emplace_back(zkutil::makeCreateRequest(topics_path, "", zkutil::CreateMode::Persistent));
 
-
-        const auto topic_partition_counts = consumer->getPartitionCounts();
-        for (const auto & topic_partition_count : topic_partition_counts)
+        for (const auto & topic : topics)
         {
-            LOG_DEBUG(
-                log,
-                "Creating path in keeper for topic {} with {} partitions",
-                topic_partition_count.topic,
-                topic_partition_count.partition_count);
-            ops.emplace_back(zkutil::makeCreateRequest(topics_path / topic_partition_count.topic, "", zkutil::CreateMode::Persistent));
+            LOG_DEBUG(log, "Creating path in keeper for topic {}", topic);
 
-            const auto partitions_path = topics_path / topic_partition_count.topic / "partitions";
+            const auto topic_path = topics_path / topic;
+            ops.emplace_back(zkutil::makeCreateRequest(topic_path, "", zkutil::CreateMode::Persistent));
+
+            const auto partitions_path = topic_path / "partitions";
             ops.emplace_back(zkutil::makeCreateRequest(partitions_path, "", zkutil::CreateMode::Persistent));
-            // TODO(antaljanosbenjamin): handle changing number of partitions
-            for (auto partition_id{0U}; partition_id < topic_partition_count.partition_count; ++partition_id)
-                ops.emplace_back(zkutil::makeCreateRequest(partitions_path / toString(partition_id), "", zkutil::CreateMode::Persistent));
         }
 
         // Create the first replica
@@ -799,18 +792,21 @@ void StorageKafka2::dropReplica()
 std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
-    std::vector<std::string> topic_partition_paths;
+    std::vector<fs::path> topic_partition_paths;
     topic_partition_paths.reserve(topic_partitions.size());
     for (const auto & topic_partition : topic_partitions)
         topic_partition_paths.emplace_back(getTopicPartitionPath(topic_partition));
 
     Coordination::Requests ops;
 
+    static constexpr auto ignore_if_exists = true;
+
     for (const auto & topic_partition_path : topic_partition_paths)
     {
-        LOG_TRACE(log, "Creating locking ops for: {}", topic_partition_path + lock_file_name);
-        ops.push_back(zkutil::makeCreateRequest(
-            topic_partition_path + lock_file_name, kafka_settings->kafka_replica_name.value, zkutil::CreateMode::Ephemeral));
+        const auto lock_file_path = String(topic_partition_path / lock_file_name);
+        LOG_TRACE(log, "Creating locking ops for: {}", lock_file_path);
+        ops.push_back(zkutil::makeCreateRequest(topic_partition_path, "", zkutil::CreateMode::Persistent, ignore_if_exists));
+        ops.push_back(zkutil::makeCreateRequest(lock_file_path, kafka_settings->kafka_replica_name.value, zkutil::CreateMode::Ephemeral));
     }
     Coordination::Responses responses;
 
@@ -831,10 +827,10 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         for (; tp_it != topic_partitions.end(); ++tp_it, ++path_it)
         {
             using zkutil::EphemeralNodeHolder;
-            LockedTopicPartitionInfo lock_info{.lock = EphemeralNodeHolder::existing(*path_it + lock_file_name, keeper_to_use)};
+            LockedTopicPartitionInfo lock_info{.lock = EphemeralNodeHolder::existing(*path_it / lock_file_name, keeper_to_use)};
 
-            lock_info.committed_offset = getNumber(keeper_to_use, *path_it + commit_file_name);
-            lock_info.intent_size = getNumber(keeper_to_use, *path_it + intent_file_name);
+            lock_info.committed_offset = getNumber(keeper_to_use, *path_it / commit_file_name);
+            lock_info.intent_size = getNumber(keeper_to_use, *path_it / intent_file_name);
 
             LOG_TRACE(
                 log,
@@ -855,9 +851,9 @@ void StorageKafka2::saveCommittedOffset(
     zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
 {
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    keeper_to_use.createOrUpdate(partition_prefix + commit_file_name, toString(topic_partition.offset), zkutil::CreateMode::Persistent);
+    keeper_to_use.createOrUpdate(partition_prefix / commit_file_name, toString(topic_partition.offset), zkutil::CreateMode::Persistent);
     // This is best effort, if it fails we will try to remove in the next round
-    keeper_to_use.tryRemove(partition_prefix + intent_file_name, -1);
+    keeper_to_use.tryRemove(partition_prefix / intent_file_name, -1);
     LOG_TEST(log, "Saved offset {} for topic-partition [{}:{}]", topic_partition.offset, topic_partition.topic, topic_partition.partition_id);
 }
 
@@ -871,7 +867,7 @@ void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPar
         topic_partition.partition_id,
         topic_partition.offset);
     keeper_to_use.createOrUpdate(
-        getTopicPartitionPath(topic_partition) + intent_file_name, toString(intent), zkutil::CreateMode::Persistent);
+        getTopicPartitionPath(topic_partition) / intent_file_name, toString(intent), zkutil::CreateMode::Persistent);
 }
 
 
@@ -1325,10 +1321,10 @@ zkutil::ZooKeeperPtr StorageKafka2::getZooKeeper()
 }
 
 
-std::string StorageKafka2::getTopicPartitionPath(const TopicPartition & topic_partition)
+fs::path StorageKafka2::getTopicPartitionPath(const TopicPartition & topic_partition)
 {
-    return kafka_settings->kafka_keeper_path.value + "/topics/" + topic_partition.topic + "/partitions/"
-        + std::to_string(topic_partition.partition_id) + '/';
+    return fs::path(kafka_settings->kafka_keeper_path.value) / "topics" / topic_partition.topic / "partitions"
+        / std::to_string(topic_partition.partition_id);
 }
 
 }
