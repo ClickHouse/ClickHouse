@@ -12,7 +12,6 @@
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Interpreters/Context.h>
-#include "Common/Scheduler/ResourceRequest.h"
 
 
 namespace DB
