@@ -85,6 +85,85 @@ struct TryBase64Decode
     }
 };
 
+struct Base64UrlEncode : Base64Encode
+{
+    static constexpr auto name = "base64UrlEncode";
+
+    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
+    {
+        auto out_len = Base64Encode::perform(src, dst);
+
+        // Do postprocessing as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
+        for (size_t i = 0; i < out_len; ++i)
+        {
+            switch (dst[i])
+            {
+            case '/':
+                dst[i] = '_';
+                break;
+            case '+':
+                dst[i] = '-';
+                break;
+            case '=': // stop when padding is detected
+                return i;
+            default:
+                break;
+            }
+        }
+        return out_len;
+    }
+};
+
+struct Base64UrlDecode : Base64Decode
+{
+    static constexpr auto name = "base64UrlDecode";
+
+    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
+    {
+        std::vector<UInt8> tmp{};
+        // insert padding to please alcomp library
+        auto size = src.size();
+        auto remainder = size % 4;
+        switch (remainder)
+        {
+            case 0:
+                break; // no padding needed
+            case 1:
+                break; // invalid input, let it be detected by alcomp library
+            case 2:
+                size += 2; // two bytes padding
+                break;
+            default: // remainder == 3
+                ++size; // one byte padding
+        }
+        tmp.resize(size);
+
+        size_t i = 0;
+        for (; i < src.size(); ++i)
+        {
+            switch (src[i])
+            {
+            case '_':
+                tmp[i] = '/';
+                break;
+            case '-':
+                tmp[i] = '+';
+                break;
+            default:
+                tmp[i] = src[i];
+                break;
+            }
+        }
+        if (remainder == 2 || remainder == 3)
+            tmp[i++] = '=';
+        if (remainder == 2)
+            tmp[i++] = '=';
+
+        return Base64Decode::perform(tmp, dst);
+    }
+};
+
+
 template <typename Func>
 class FunctionBase64Conversion : public IFunction
 {

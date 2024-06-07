@@ -1140,11 +1140,19 @@ Encodes a String or FixedString as base64.
 
 Alias: `TO_BASE64`.
 
+## base64UrlEncode
+
+Encodes an URL (String or FixedString) as base64 according to [RFC 4648](https://tools.ietf.org/html/rfc4648).
+
 ## base64Decode
 
 Decodes a base64-encoded String or FixedString. Throws an exception in case of error.
 
 Alias: `FROM_BASE64`.
+
+## base64UrlDecode
+
+Decodes a base64-encoded URL (String or FixedString) according to [RFC 4648](https://tools.ietf.org/html/rfc4648). Throws an exception in case of error.
 
 ## tryBase64Decode
 
