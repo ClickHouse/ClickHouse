@@ -551,10 +551,9 @@ class Release:
         self, tag: str, commit: str, tag_message: str = ""
     ) -> Iterator[None]:
         tag_message = tag_message or "Release {tag}"
-        self.run(
-            f"git tag -a -m '{tag_message}' '{tag}' {commit}", dry_run=self.dry_run
-        )
-        rollback_cmd = f"{self.dry_run_prefix}git tag -d '{tag}'"
+        # Create tag even in dry-run
+        self.run(f"git tag -a -m '{tag_message}' '{tag}' {commit}")
+        rollback_cmd = f"git tag -d '{tag}'"
         self._rollback_stack.append(rollback_cmd)
         try:
             with self._push(tag):
