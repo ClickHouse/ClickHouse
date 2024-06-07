@@ -91,7 +91,7 @@ close it.
         name: str,
         pr: PullRequest,
         repo: Repository,
-        backport_created_label: str,
+        backport_created_label: str = Labels.PR_BACKPORTS_CREATED,
     ):
         self.name = name
         self.pr = pr
@@ -115,12 +115,11 @@ close it.
         if branch_updated:
             self._backported = True
 
-    def pop_prs(self, prs: PullRequests) -> PullRequests:
+    def pop_prs(self, prs: PullRequests) -> None:
         """the method processes all prs and pops the ReleaseBranch related prs"""
         to_pop = []  # type: List[int]
         for i, pr in enumerate(prs):
             if self.name not in pr.head.ref:
-                # this pr is not for the current branch
                 continue
             if pr.head.ref.startswith(f"cherrypick/{self.name}"):
                 self.cherrypick_pr = pr
@@ -129,22 +128,19 @@ close it.
                 self.backport_pr = pr
                 to_pop.append(i)
             else:
-                assert False, f"BUG! Invalid PR's branch [{pr.head.ref}]"
-
-            # Cherry-pick or backport PR found, set @backported flag for current release branch
-            self._backported = True
-
+                logging.error(
+                    "head ref of PR #%s isn't starting with known suffix",
+                    pr.number,
+                )
         for i in reversed(to_pop):
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
-        return prs
 
     def process(  # pylint: disable=too-many-return-statements
         self, dry_run: bool
     ) -> None:
         if self.backported:
             return
-
         if not self.cherrypick_pr:
             if dry_run:
                 logging.info(
@@ -152,39 +148,41 @@ close it.
                 )
                 return
             self.create_cherrypick()
-        assert self.cherrypick_pr, "BUG!"
-
-        if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
-            if dry_run:
-                logging.info(
-                    "DRY RUN: Would merge cherry-pick PR for #%s", self.pr.number
-                )
-                return
-            self.cherrypick_pr.merge()
-            # The PR needs update, since PR.merge doesn't update the object
-            self.cherrypick_pr.update()
-        if self.cherrypick_pr.merged:
-            if dry_run:
-                logging.info(
-                    "DRY RUN: Would create backport PR for #%s", self.pr.number
-                )
-                return
-            self.create_backport()
+        if self.backported:
             return
-        if self.cherrypick_pr.state == "closed":
+        if self.cherrypick_pr is not None:
+            # Try to merge cherrypick instantly
+            if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
+                if dry_run:
+                    logging.info(
+                        "DRY RUN: Would merge cherry-pick PR for #%s", self.pr.number
+                    )
+                    return
+                self.cherrypick_pr.merge()
+                # The PR needs update, since PR.merge doesn't update the object
+                self.cherrypick_pr.update()
+            if self.cherrypick_pr.merged:
+                if dry_run:
+                    logging.info(
+                        "DRY RUN: Would create backport PR for #%s", self.pr.number
+                    )
+                    return
+                self.create_backport()
+                return
+            if self.cherrypick_pr.state == "closed":
+                logging.info(
+                    "The cherrypick PR #%s for PR #%s is discarded",
+                    self.cherrypick_pr.number,
+                    self.pr.number,
+                )
+                self._backported = True
+                return
             logging.info(
-                "The cherry-pick PR #%s for PR #%s is discarded",
+                "Cherrypick PR #%s for PR #%s have conflicts and unable to be merged",
                 self.cherrypick_pr.number,
                 self.pr.number,
             )
-            self._backported = True
-            return
-        logging.info(
-            "Cherry-pick PR #%s for PR #%s has conflicts and unable to be merged",
-            self.cherrypick_pr.number,
-            self.pr.number,
-        )
-        self.ping_cherry_pick_assignees(dry_run)
+            self.ping_cherry_pick_assignees(dry_run)
 
     def create_cherrypick(self):
         # First, create backport branch:
@@ -218,6 +216,7 @@ close it.
                     self.name,
                     self.pr.number,
                 )
+                self._backported = True
                 return
         except CalledProcessError:
             # There are most probably conflicts, they'll be resolved in PR
@@ -226,7 +225,7 @@ close it.
             # There are changes to apply, so continue
             git_runner(f"{GIT_PREFIX} reset --merge")
 
-        # Push, create the cherry-pick PR, label and assign it
+        # Push, create the cherrypick PR, lable and assign it
         for branch in [self.cherrypick_branch, self.backport_branch]:
             git_runner(f"{GIT_PREFIX} push -f {self.REMOTE} {branch}:{branch}")
 
@@ -247,7 +246,6 @@ close it.
             self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
         elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
             self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
-        self._backported = True
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
         self.cherrypick_pr.update()
@@ -340,7 +338,7 @@ close it.
 
     @property
     def backported(self) -> bool:
-        return self._backported
+        return self._backported or self.backport_pr is not None
 
     def __repr__(self):
         return self.name
@@ -353,22 +351,16 @@ class Backport:
         repo: str,
         fetch_from: Optional[str],
         dry_run: bool,
+        must_create_backport_labels: List[str],
+        backport_created_label: str,
     ):
         self.gh = gh
         self._repo_name = repo
         self._fetch_from = fetch_from
         self.dry_run = dry_run
 
-        self.must_create_backport_label = (
-            Labels.MUST_BACKPORT
-            if self._repo_name == self._fetch_from
-            else Labels.MUST_BACKPORT_CLOUD
-        )
-        self.backport_created_label = (
-            Labels.PR_BACKPORTS_CREATED
-            if self._repo_name == self._fetch_from
-            else Labels.PR_BACKPORTS_CREATED_CLOUD
-        )
+        self.must_create_backport_labels = must_create_backport_labels
+        self.backport_created_label = backport_created_label
 
         self._remote = ""
         self._remote_line = ""
@@ -468,7 +460,7 @@ class Backport:
         query_args = {
             "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
             "label": ",".join(
-                self.labels_to_backport + [self.must_create_backport_label]
+                self.labels_to_backport + self.must_create_backport_labels
             ),
             "merged": [since_date, tomorrow],
         }
@@ -485,19 +477,23 @@ class Backport:
                 self.process_pr(pr)
             except Exception as e:
                 logging.error(
-                    "During processing the PR #%s error occurred: %s", pr.number, e
+                    "During processing the PR #%s error occured: %s", pr.number, e
                 )
                 self.error = e
 
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if self.must_create_backport_label in pr_labels:
-            branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
-                for br in self.release_branches
-            ]  # type: List[ReleaseBranch]
-        else:
+        for label in self.must_create_backport_labels:
+            # We backport any vXXX-must-backport to all branches of the fetch repo (better than no backport)
+            if label in pr_labels or self._fetch_from:
+                branches = [
+                    ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                    for br in self.release_branches
+                ]  # type: List[ReleaseBranch]
+                break
+
+        if not branches:
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in [
@@ -506,14 +502,20 @@ class Backport:
                     if label in self.labels_to_backport
                 ]
             ]
-        assert branches, "BUG!"
+            if not branches:
+                # This is definitely some error. There must be at least one branch
+                # It also make the whole program exit code non-zero
+                self.error = Exception(
+                    f"There are no branches to backport PR #{pr.number}, logical error"
+                )
+                raise self.error
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
             pr.number,
             ", ".join(map(str, branches)),
         )
-        # All PRs for cherry-pick and backport branches as heads
+        # All PRs for cherrypick and backport branches as heads
         query_suffix = " ".join(
             [
                 f"head:{branch.backport_branch} head:{branch.cherrypick_branch}"
@@ -525,15 +527,29 @@ class Backport:
             label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
         for br in branches:
-            bp_cp_prs = br.pop_prs(bp_cp_prs)
-        assert not bp_cp_prs, "BUG!"
+            br.pop_prs(bp_cp_prs)
+
+        if bp_cp_prs:
+            # This is definitely some error. All prs must be consumed by
+            # branches with ReleaseBranch.pop_prs. It also makes the whole
+            # program exit code non-zero
+            self.error = Exception(
+                "The following PRs are not filtered by release branches:\n"
+                "\n".join(map(str, bp_cp_prs))
+            )
+            raise self.error
+
+        if all(br.backported for br in branches):
+            # Let's check if the PR is already backported
+            self.mark_pr_backported(pr)
+            return
 
         for br in branches:
             br.process(self.dry_run)
 
-        for br in branches:
-            assert br.backported, f"BUG! backport to branch [{br}] failed"
-        self.mark_pr_backported(pr)
+        if all(br.backported for br in branches):
+            # And check it after the running
+            self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
@@ -570,6 +586,19 @@ def parse_args():
     )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
 
+    parser.add_argument(
+        "--must-create-backport-label",
+        default=Labels.MUST_BACKPORT,
+        choices=(Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD),
+        help="label to filter PRs to backport",
+        nargs="+",
+    )
+    parser.add_argument(
+        "--backport-created-label",
+        default=Labels.PR_BACKPORTS_CREATED,
+        choices=(Labels.PR_BACKPORTS_CREATED, Labels.PR_BACKPORTS_CREATED_CLOUD),
+        help="label to mark PRs as backported",
+    )
     parser.add_argument(
         "--reserve-search-days",
         default=0,
@@ -634,6 +663,12 @@ def main():
         args.repo,
         args.from_repo,
         args.dry_run,
+        (
+            args.must_create_backport_label
+            if isinstance(args.must_create_backport_label, list)
+            else [args.must_create_backport_label]
+        ),
+        args.backport_created_label,
     )
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = temp_path / "gh_cache"
