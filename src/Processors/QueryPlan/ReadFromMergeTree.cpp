@@ -135,8 +135,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-static MergeTreeReaderSettings getMergeTreeReaderSettings(
-    const ContextPtr & context, const SelectQueryInfo & query_info)
+static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     return
@@ -144,7 +143,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .read_settings = context->getReadSettings(),
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
-        .read_in_order = query_info.input_order_info != nullptr,
         .apply_deleted_mask = settings.apply_deleted_mask,
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
@@ -277,7 +275,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
         query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
-    , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
+    , reader_settings(getMergeTreeReaderSettings(context_))
     , prepared_parts(std::move(parts_))
     , alter_conversions_for_parts(std::move(alter_conversions_))
     , all_column_names(std::move(all_column_names_))
@@ -569,7 +567,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// In this case we won't set approximate rows, because it will be accounted multiple times.
     /// Also do not count amount of read rows if we read in order of sorting key,
     /// because we don't know actual amount of read rows in case when limit is set.
-    bool set_rows_approx = !is_parallel_reading_from_replicas && !reader_settings.read_in_order;
+    bool set_rows_approx = !is_parallel_reading_from_replicas && !read_in_order;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -656,73 +654,56 @@ Pipe ReadFromMergeTree::read(
     return pipe;
 }
 
-namespace
+
+ReadFromMergeTree::PartRangesReadInfo::PartRangesReadInfo(
+    const RangesInDataParts & parts,
+    const Settings & settings,
+    const MergeTreeSettings & data_settings)
 {
+    /// Count marks for each part.
+    sum_marks_in_parts.resize(parts.size());
 
-struct PartRangesReadInfo
-{
-    std::vector<size_t> sum_marks_in_parts;
-
-    size_t sum_marks = 0;
-    size_t total_rows = 0;
-    size_t adaptive_parts = 0;
-    size_t index_granularity_bytes = 0;
-    size_t max_marks_to_use_cache = 0;
-    size_t min_marks_for_concurrent_read = 0;
-    bool use_uncompressed_cache = false;
-
-    PartRangesReadInfo(
-        const RangesInDataParts & parts,
-        const Settings & settings,
-        const MergeTreeSettings & data_settings)
+    for (size_t i = 0; i < parts.size(); ++i)
     {
-        /// Count marks for each part.
-        sum_marks_in_parts.resize(parts.size());
+        total_rows += parts[i].getRowsCount();
+        sum_marks_in_parts[i] = parts[i].getMarksCount();
+        sum_marks += sum_marks_in_parts[i];
 
-        for (size_t i = 0; i < parts.size(); ++i)
-        {
-            total_rows += parts[i].getRowsCount();
-            sum_marks_in_parts[i] = parts[i].getMarksCount();
-            sum_marks += sum_marks_in_parts[i];
-
-            if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
-                ++adaptive_parts;
-        }
-
-        if (adaptive_parts > parts.size() / 2)
-            index_granularity_bytes = data_settings.index_granularity_bytes;
-
-        max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
-            settings.merge_tree_max_rows_to_use_cache,
-            settings.merge_tree_max_bytes_to_use_cache,
-            data_settings.index_granularity,
-            index_granularity_bytes);
-
-        auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
-
-        size_t min_rows_for_concurrent_read;
-        size_t min_bytes_for_concurrent_read;
-        if (all_parts_on_remote_disk)
-        {
-            min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
-            min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
-        }
-        else
-        {
-            min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read;
-            min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read;
-        }
-
-        min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-            min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
-            data_settings.index_granularity, index_granularity_bytes, sum_marks);
-
-        use_uncompressed_cache = settings.use_uncompressed_cache;
-        if (sum_marks > max_marks_to_use_cache)
-            use_uncompressed_cache = false;
+        if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
+            ++adaptive_parts;
     }
-};
 
+    if (adaptive_parts > parts.size() / 2)
+        index_granularity_bytes = data_settings.index_granularity_bytes;
+
+    max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
+        settings.merge_tree_max_rows_to_use_cache,
+        settings.merge_tree_max_bytes_to_use_cache,
+        data_settings.index_granularity,
+        index_granularity_bytes);
+
+    auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
+
+    size_t min_rows_for_concurrent_read;
+    size_t min_bytes_for_concurrent_read;
+    if (all_parts_on_remote_disk)
+    {
+        min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
+        min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
+    }
+    else
+    {
+        min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read;
+        min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read;
+    }
+
+    min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
+        min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
+        data_settings.index_granularity, index_granularity_bytes, sum_marks);
+
+    use_uncompressed_cache = settings.use_uncompressed_cache;
+    if (sum_marks > max_marks_to_use_cache)
+        use_uncompressed_cache = false;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names)
@@ -900,6 +881,114 @@ static MarkRanges splitRangesInOrder(const MarkRanges & ranges, int direction, s
     return new_ranges;
 }
 
+template <typename PipeCreator>
+Pipes ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderCommon(
+    RangesInDataParts && parts_with_ranges,
+    PipeCreator && pipe_creator,
+    PartRangesReadInfo && part_ranges_info,
+    size_t num_streams,
+    const InputOrderInfo & input_order_info)
+{
+    std::vector<RangesInDataParts> splitted_parts_and_ranges;
+    splitted_parts_and_ranges.reserve(num_streams);
+
+    const size_t min_marks_per_stream = (part_ranges_info.sum_marks - 1) / num_streams + 1;
+    for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
+    {
+        size_t need_marks = min_marks_per_stream;
+        RangesInDataParts new_parts;
+
+        /// Loop over parts.
+        /// We will iteratively take part or some subrange of a part from the back
+        ///  and assign a stream to read from it.
+        while (need_marks > 0 && !parts_with_ranges.empty())
+        {
+            RangesInDataPart part = parts_with_ranges.back();
+            parts_with_ranges.pop_back();
+            size_t & marks_in_part = part_ranges_info.sum_marks_in_parts.back();
+
+            /// We will not take too few rows from a part.
+            if (marks_in_part >= part_ranges_info.min_marks_for_concurrent_read && need_marks < part_ranges_info.min_marks_for_concurrent_read)
+                need_marks = part_ranges_info.min_marks_for_concurrent_read;
+
+            /// Do not leave too few rows in the part.
+            if (marks_in_part > need_marks && marks_in_part - need_marks < part_ranges_info.min_marks_for_concurrent_read)
+                need_marks = marks_in_part;
+
+            MarkRanges ranges_to_get_from_part;
+
+            /// We take full part if it contains enough marks or
+            /// if we know limit and part contains less than 'limit' rows.
+            bool take_full_part = marks_in_part <= need_marks || (input_order_info.limit && input_order_info.limit > part.getRowsCount());
+
+            /// We take the whole part if it is small enough.
+            if (take_full_part)
+            {
+                ranges_to_get_from_part = part.ranges;
+
+                need_marks -= marks_in_part;
+                part_ranges_info.sum_marks_in_parts.pop_back();
+            }
+            else
+            {
+                /// Loop through ranges in part. Take enough ranges to cover "need_marks".
+                while (need_marks > 0)
+                {
+                    if (part.ranges.empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
+
+                    MarkRange & range = part.ranges.front();
+
+                    const size_t marks_in_range = range.end - range.begin;
+                    const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+                    ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+                    range.begin += marks_to_get_from_range;
+                    marks_in_part -= marks_to_get_from_range;
+                    need_marks -= marks_to_get_from_range;
+                    if (range.begin == range.end)
+                        part.ranges.pop_front();
+                }
+                parts_with_ranges.emplace_back(part);
+            }
+
+            new_parts.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
+        }
+
+        splitted_parts_and_ranges.emplace_back(std::move(new_parts));
+    }
+
+    Pipes pipes;
+    for (auto && item : splitted_parts_and_ranges)
+        pipes.emplace_back(pipe_creator(std::move(item)));
+    return pipes;
+}
+
+template <typename PipeCreator>
+Pipes ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderUseLayers(
+    RangesInDataParts && parts_with_ranges,
+    PipeCreator && pipe_creator,
+    size_t num_streams,
+    const InputOrderInfo & input_order_info)
+{
+    size_t prefix_size = input_order_info.used_prefix_of_sorting_key_size;
+    const auto & sorting_key = metadata_for_reading->getSortingKey();
+    auto sorting_key_prefix = sorting_key.getKeyPrefix(prefix_size, metadata_for_reading->getColumns(), context);
+    auto sorting_prefix_expr = std::make_shared<ExpressionActions>(sorting_key_prefix.expression->getActionsDAG().clone());
+
+    auto split_ranges_result = splitPartsWithRangesByPrimaryKey(
+        sorting_key_prefix,
+        sorting_prefix_expr,
+        std::move(parts_with_ranges),
+        num_streams,
+        context,
+        std::move(pipe_creator),
+        /*split_parts_ranges_into_intersecting_and_non_intersecting=*/ false,
+        /*split_intersecting_parts_ranges_into_layers=*/ true);
+
+    return std::move(split_ranges_result.merging_pipes);
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     size_t num_streams,
@@ -941,45 +1030,33 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .use_uncompressed_cache = info.use_uncompressed_cache,
     };
 
-    Pipes pipes;
+    auto pipe_creator = [&](auto parts)
+    {
+        for (auto & part_with_ranges : parts)
+        {
+            part_with_ranges.ranges = splitRangesInOrder(
+                part_with_ranges.ranges,
+                input_order_info->direction,
+                data_settings->index_granularity,
+                block_size.max_block_size_rows);
+        }
 
+        return readInOrder(std::move(parts), column_names, pool_settings, read_type, input_order_info->limit);
+    };
+
+    Pipes pipes;
     if (is_parallel_reading_from_replicas)
     {
         /// For parallel replicas the split will be performed on the initiator side.
         pipes.emplace_back(readInOrder(std::move(parts_with_ranges), column_names, pool_settings, read_type, input_order_info->limit));
     }
+    else if (read_in_order_use_layers)
+    {
+        pipes = spreadMarkRangesAmongStreamsWithOrderUseLayers(std::move(parts_with_ranges), std::move(pipe_creator), num_streams, *input_order_info);
+    }
     else
     {
-        auto in_order_reading_step_getter = [&](auto parts)
-        {
-            for (auto & part_with_ranges : parts)
-            {
-                part_with_ranges.ranges = splitRangesInOrder(
-                    part_with_ranges.ranges,
-                    input_order_info->direction,
-                    data_settings->index_granularity,
-                    block_size.max_block_size_rows);
-            }
-            return readInOrder(std::move(parts), column_names, pool_settings, read_type, input_order_info->limit);
-        };
-
-        size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
-        const auto & sorting_key = metadata_for_reading->getSortingKey();
-        auto sorting_key_prefix = sorting_key.getKeyPrefix(prefix_size, metadata_for_reading->getColumns(), context);
-        auto sorting_prefix_expr = std::make_shared<ExpressionActions>(sorting_key_prefix.expression->getActionsDAG().clone());
-
-        auto split_ranges_result = splitPartsWithRangesByPrimaryKey(
-            sorting_key_prefix,
-            sorting_prefix_expr,
-            std::move(parts_with_ranges),
-            num_streams,
-            context,
-            std::move(in_order_reading_step_getter),
-            /*split_parts_ranges_into_intersecting_and_non_intersecting=*/ false,
-            /*split_intersecting_parts_ranges_into_layers=*/ true);
-
-        for (auto && merging_pipe : split_ranges_result.merging_pipes)
-            pipes.push_back(std::move(merging_pipe));
+        pipes = spreadMarkRangesAmongStreamsWithOrderCommon(std::move(parts_with_ranges), std::move(pipe_creator), std::move(info), num_streams, *input_order_info);
     }
 
     Block pipe_header;
@@ -1616,7 +1693,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
+        auto reader_settings = getMergeTreeReaderSettings(context_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             std::move(alter_conversions),
@@ -1665,7 +1742,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     return std::make_shared<AnalysisResult>(std::move(result));
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit, bool use_layers)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -1677,7 +1754,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         return false;
 
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
-    reader_settings.read_in_order = true;
+
+    read_in_order = true;
+    read_in_order_use_layers = use_layers;
 
     /// In case or read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
@@ -1687,20 +1766,22 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// update sort info for output stream
     SortDescription sort_description;
     const Names & sorting_key_columns = metadata_for_reading->getSortingKeyColumns();
-    const Block & header = output_stream->header;
     const int sort_direction = getSortDirection();
+
     for (const auto & column_name : sorting_key_columns)
     {
-        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
-            == header.end())
+        if (!output_stream->header.has(column_name))
             break;
+
         sort_description.emplace_back(column_name, sort_direction);
     }
+
     if (!sort_description.empty())
     {
         const size_t used_prefix_of_sorting_key_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
         if (sort_description.size() > used_prefix_of_sorting_key_size)
             sort_description.resize(used_prefix_of_sorting_key_size);
+
         output_stream->sort_description = std::move(sort_description);
         output_stream->sort_scope = DataStream::SortScope::Stream;
     }
@@ -1708,13 +1789,17 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
-
     return true;
 }
 
 bool ReadFromMergeTree::readsInOrder() const
 {
-    return reader_settings.read_in_order;
+    return read_in_order;
+}
+
+bool ReadFromMergeTree::readsInOrderWithLayers() const
+{
+    return readsInOrder() && read_in_order_use_layers;
 }
 
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -1872,8 +1957,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     }
     else if (query_info.input_order_info)
     {
-        return spreadMarkRangesAmongStreamsWithOrder(
-            std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, query_info.input_order_info);
+        return spreadMarkRangesAmongStreamsWithOrder(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, query_info.input_order_info);
     }
     else
     {

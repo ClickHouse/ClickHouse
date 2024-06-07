@@ -129,7 +129,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 
     /// update input order info in read_from_merge_tree step
     const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
-    bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
+    bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint(), false);
     if (!can_read)
         return 0;
 

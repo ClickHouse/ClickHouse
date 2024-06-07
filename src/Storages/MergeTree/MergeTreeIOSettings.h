@@ -28,8 +28,6 @@ struct MergeTreeReaderSettings
     bool save_marks_in_cache = false;
     /// Validate checksums on reading (should be always enabled in production).
     bool checksum_on_read = true;
-    /// True if we read in order of sorting key.
-    bool read_in_order = false;
     /// Use one buffer for each column or for all columns while reading from compact.
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.

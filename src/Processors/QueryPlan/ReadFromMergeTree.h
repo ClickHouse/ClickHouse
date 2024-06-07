@@ -172,8 +172,9 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, bool use_layers);
     bool readsInOrder() const;
+    bool readsInOrderWithLayers() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool isQueryWithSampling() const;
@@ -196,6 +197,21 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
+    struct PartRangesReadInfo
+    {
+        std::vector<size_t> sum_marks_in_parts;
+
+        size_t sum_marks = 0;
+        size_t total_rows = 0;
+        size_t adaptive_parts = 0;
+        size_t index_granularity_bytes = 0;
+        size_t max_marks_to_use_cache = 0;
+        size_t min_marks_for_concurrent_read = 0;
+        bool use_uncompressed_cache = false;
+
+        PartRangesReadInfo(const RangesInDataParts & parts, const Settings & settings, const MergeTreeSettings & data_settings);
+    };
+
     static AnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
@@ -218,6 +234,13 @@ private:
     }
 
     MergeTreeReaderSettings reader_settings;
+
+    /// True if we read in order of sorting key.
+    bool read_in_order = false;
+
+    /// True if it is allowed to optimize reading in order of sorting key
+    /// by splitting input streams into non-intersected layers.
+    bool read_in_order_use_layers = false;
 
     MergeTreeData::DataPartsVector prepared_parts;
     std::vector<AlterConversionsPtr> alter_conversions_for_parts;
@@ -266,6 +289,21 @@ private:
         const Names & column_names,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
+
+    template <typename PipeCreator>
+    Pipes spreadMarkRangesAmongStreamsWithOrderCommon(
+        RangesInDataParts && parts_with_ranges,
+        PipeCreator && pipe_creator,
+        PartRangesReadInfo && part_ranges_info,
+        size_t num_streams,
+        const InputOrderInfo & input_order_info);
+
+    template <typename PipeCreator>
+    Pipes spreadMarkRangesAmongStreamsWithOrderUseLayers(
+        RangesInDataParts && parts_with_ranges,
+        PipeCreator && pipe_creator,
+        size_t num_streams,
+        const InputOrderInfo & input_order_info);
 
     bool doNotMergePartsAcrossPartitionsFinal() const;
 
