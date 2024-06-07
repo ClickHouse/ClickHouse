@@ -490,7 +490,10 @@ class Backport:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if self.must_create_backport_labels in pr_labels or self._repo_name != self._fetch_from:
+        if (
+            any(label in pr_labels for label in self.must_create_backport_labels)
+            or self._repo_name != self._fetch_from
+        ):
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in self.release_branches
