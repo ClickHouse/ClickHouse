@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/defines.h"
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/NetUtils.h>
@@ -33,7 +34,26 @@ public:
             return;
 
         if (pos <= reinterpret_cast<Position>(chunk_size_ptr) + sizeof(*chunk_size_ptr))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: attempt to send empty chunk");
+        {
+            if (chunk_size_ptr == last_finish_chunk) // prevent duplicate finish chunk
+                return;
+            
+            /// If current chunk is empty it means we are finishing a chunk previously sent by next(),
+            /// we want to convert current chunk header into end-of-chunk marker and initialize next chunk.
+            /// We don't need to wary about if it's the end of the buffer because next() always sends the whole buffer
+            /// so it should be a beginning of the buffer.
+
+            chassert(reinterpret_cast<Position>(chunk_size_ptr) == working_buffer.begin());
+
+            *chunk_size_ptr = 0;
+            /// Initialize next chunk
+            chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(pos);
+            pos += std::min(available(), sizeof(*chunk_size_ptr));
+
+            last_finish_chunk = chunk_size_ptr;
+
+            return;
+        }
 
         /// Fill up current chunk size
         *chunk_size_ptr = toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr)));
@@ -62,6 +82,8 @@ public:
         /// Initialize next chunk
         chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(pos);
         pos += std::min(available(), sizeof(*chunk_size_ptr));
+
+        last_finish_chunk = chunk_size_ptr;
     }
 
 protected:
@@ -70,6 +92,7 @@ protected:
         if (!chunked)
             return WriteBufferFromPocoSocket::nextImpl();
 
+        /// next() after finishChunk ar the end of the buffer
         if (finishing < sizeof(*chunk_size_ptr))
         {
             pos -= finishing;
@@ -85,15 +108,34 @@ protected:
             chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
             nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
 
+            last_finish_chunk = chunk_size_ptr;
+
             return;
         }
 
-        if (offset() == sizeof(*chunk_size_ptr)) // prevent sending empty chunk
+        /// Send end-of-chunk buffered by finishChunk
+        if (offset() == 2 * sizeof(*chunk_size_ptr))
+        {
+            pos -= sizeof(*chunk_size_ptr);
+            /// Send end-of-chunk
+            WriteBufferFromPocoSocket::nextImpl();
+            /// Initialize next chunk
+            chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
+            nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
+
+            last_finish_chunk = chunk_size_ptr;
+
+            return;
+        }
+
+        /// Prevent sending empty chunk
+        if (offset() == sizeof(*chunk_size_ptr))
         {
             nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
             return;
         }
 
+        /// Finish chunk at the end of the buffer
         if (working_buffer.end() - reinterpret_cast<Position>(chunk_size_ptr) <= static_cast<std::ptrdiff_t>(sizeof(*chunk_size_ptr)))
         {
             pos = reinterpret_cast<Position>(chunk_size_ptr);
@@ -106,9 +148,9 @@ protected:
             return;
         }
 
-        if (pos - reinterpret_cast<Position>(chunk_size_ptr) == sizeof(*chunk_size_ptr))
+        if (pos - reinterpret_cast<Position>(chunk_size_ptr) == sizeof(*chunk_size_ptr)) // next() after finishChunk
             pos -= sizeof(*chunk_size_ptr);
-        else /// Fill up current chunk size
+        else // fill up current chunk size
         {
             *chunk_size_ptr = toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr)));
             if (!chunk_started)
@@ -141,6 +183,7 @@ protected:
 private:
     LoggerPtr log;
     bool chunked = false;
+    UInt32 * last_finish_chunk = nullptr; // pointer to the last chunk header created by finishChunk
     bool chunk_started = false; // chunk started flag
     UInt32 * chunk_size_ptr = nullptr; // pointer to the chunk size holder in the buffer
     size_t finishing = sizeof(*chunk_size_ptr); // indicates not enough buffer for end-of-chunk marker
