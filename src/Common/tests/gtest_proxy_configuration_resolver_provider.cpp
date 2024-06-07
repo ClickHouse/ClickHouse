@@ -28,22 +28,12 @@ protected:
 
 DB::ContextMutablePtr ProxyConfigurationResolverProviderTests::context;
 
-Poco::URI http_env_proxy_server = Poco::URI("http://http_environment_proxy:3128");
-Poco::URI https_env_proxy_server = Poco::URI("http://https_environment_proxy:3128");
-
 Poco::URI http_list_proxy_server = Poco::URI("http://http_list_proxy:3128");
 Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
 
-// Some other tests rely on HTTP clients (e.g, gtest_aws_s3_client), which depend on proxy configuration
-// since in https://github.com/ClickHouse/ClickHouse/pull/63314 the environment proxy resolver reads only once
-// from the environment, the proxy configuration will always be there.
-// The problem is that the proxy server does not exist, causing the test to fail.
-// To work around this issue, `no_proxy` is set to bypass all domains.
-static std::string no_proxy_hosts = "*";
-
 TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
-    EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server, no_proxy_hosts);
+    EnvironmentProxySetter setter;
     const auto & config = getContext().context->getConfigRef();
 
     auto http_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, config);
@@ -58,7 +48,6 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
-    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy.http", "");
     config->setString("proxy.http.uri", http_list_proxy_server.toString());
     context->setConfig(config);
@@ -74,7 +63,6 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
-    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy", "");
     config->setString("proxy.https", "");
     config->setString("proxy.https.uri", https_list_proxy_server.toString());
@@ -91,7 +79,6 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
-    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy", "");
     config->setString("proxy.http", "");
     config->setString("proxy.http.uri", http_list_proxy_server.toString());
@@ -137,7 +124,6 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverHTTPSOnly)
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
-    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy.https", "");
     config->setString("proxy.https.resolver", "");
     config->setString("proxy.https.resolver.endpoint", "http://resolver:8080/hostname");

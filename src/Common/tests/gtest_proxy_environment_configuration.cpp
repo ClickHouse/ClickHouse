@@ -8,22 +8,14 @@
 namespace DB
 {
 
-namespace
-{
-    auto http_proxy_server = Poco::URI("http://proxy_server:3128");
-    auto https_proxy_server = Poco::URI("https://proxy_server:3128");
-}
-
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPandHTTPS)
 {
-    // Some other tests rely on HTTP clients (e.g, gtest_aws_s3_client), which depend on proxy configuration
-    // since in https://github.com/ClickHouse/ClickHouse/pull/63314 the environment proxy resolver reads only once
-    // from the environment, the proxy configuration will always be there.
-    // The problem is that the proxy server does not exist, causing the test to fail.
-    // To work around this issue, `no_proxy` is set to bypass all domains.
-    std::string no_proxy_string = "*";
-    std::string poco_no_proxy_regex = buildPocoNonProxyHosts(no_proxy_string);
-    EnvironmentProxySetter setter(http_proxy_server, https_proxy_server, no_proxy_string);
+    const auto http_proxy_server = Poco::URI(EnvironmentProxySetter::HTTP_PROXY);
+    const auto https_proxy_server = Poco::URI(EnvironmentProxySetter::HTTPS_PROXY);
+
+    std::string poco_no_proxy_regex = buildPocoNonProxyHosts(EnvironmentProxySetter::NO_PROXY);
+
+    EnvironmentProxySetter setter;
 
     EnvironmentProxyConfigurationResolver http_resolver(ProxyConfiguration::Protocol::HTTP);
 
