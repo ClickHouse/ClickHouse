@@ -424,6 +424,7 @@ def _configure_jobs(
     s3: S3Helper,
     pr_info: PRInfo,
     ci_settings: CiSettings,
+    skip_jobs: bool,
 ) -> CiCache:
     """
     returns CICache instance with configured job's data
@@ -434,11 +435,14 @@ def _configure_jobs(
     """
 
     # get all jobs
-    job_configs = CI_CONFIG.get_workflow_jobs_with_configs(
-        is_mq=pr_info.is_merge_queue,
-        is_docs_only=pr_info.has_changes_in_documentation_only(),
-        is_master=pr_info.is_master,
-    )
+    if not skip_jobs:
+        job_configs = CI_CONFIG.get_workflow_jobs_with_configs(
+            is_mq=pr_info.is_merge_queue,
+            is_docs_only=pr_info.has_changes_in_documentation_only(),
+            is_master=pr_info.is_master,
+        )
+    else:
+        job_configs = {}
 
     # filter jobs in accordance with ci settings
     job_configs = ci_settings.apply(
@@ -447,7 +451,9 @@ def _configure_jobs(
 
     # check jobs in ci cache
     ci_cache = CiCache.calc_digests_and_create(
-        s3, job_configs, cache_enabled=not ci_settings.no_ci_cache and CI
+        s3,
+        job_configs,
+        cache_enabled=not ci_settings.no_ci_cache and not skip_jobs and CI,
     )
     ci_cache.update()
     ci_cache.apply(job_configs, is_release=pr_info.is_release)
@@ -971,6 +977,7 @@ def main() -> int:
             s3,
             pr_info,
             ci_settings,
+            args.skip_jobs,
         )
         ci_cache.print_status()
 
@@ -989,15 +996,15 @@ def main() -> int:
         result["ci_settings"] = ci_settings.as_dict()
         if not args.skip_jobs:
             result["stages_data"] = _generate_ci_stage_config(ci_cache.jobs_to_do)
-        result["jobs_data"] = {
-            "jobs_to_do": list(ci_cache.jobs_to_do),
-            "jobs_to_skip": ci_cache.jobs_to_skip,
-            "digests": ci_cache.job_digests,
-            "jobs_params": {
-                job: {"batches": config.batches, "num_batches": config.num_batches}
-                for job, config in ci_cache.jobs_to_do.items()
-            },
-        }
+            result["jobs_data"] = {
+                "jobs_to_do": list(ci_cache.jobs_to_do),
+                "jobs_to_skip": ci_cache.jobs_to_skip,
+                "digests": ci_cache.job_digests,
+                "jobs_params": {
+                    job: {"batches": config.batches, "num_batches": config.num_batches}
+                    for job, config in ci_cache.jobs_to_do.items()
+                },
+            }
         result["docker_data"] = docker_data
     ### CONFIGURE action: end
 
