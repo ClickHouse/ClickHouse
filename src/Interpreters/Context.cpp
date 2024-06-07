@@ -2413,6 +2413,17 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
+void Context::setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType background_operation)
+{
+    chassert(background_operation != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION);
+    client_info.background_operation_type = background_operation;
+}
+
+bool Context::isBackgroundOperationContext() const
+{
+    return client_info.background_operation_type != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION;
+}
+
 void Context::killCurrentQuery() const
 {
     if (auto elem = getProcessListElement())
@@ -4133,6 +4144,13 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
+    bool enable_blob_storage_log = settings.enable_blob_storage_log;
+    if (hasQueryContext())
+        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
+
+    if (!enable_blob_storage_log)
+        return {};
+
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)

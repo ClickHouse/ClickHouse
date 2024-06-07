@@ -13,6 +13,8 @@ create table dist_out as data engine=Distributed(test_shard_localhost, currentDa
 
 set prefer_localhost_replica=0;
 
+set min_untracked_memory='4Mi'; -- Disable precise memory tracking
+
 insert into dist_in select number/100, number from system.numbers limit 1e6 settings max_memory_usage='20Mi';
 system flush distributed dist_in; -- { serverError MEMORY_LIMIT_EXCEEDED }
 system flush distributed dist_in settings max_memory_usage=0;

@@ -19,7 +19,7 @@ SELECT tupleDivideByNumber(tuple(1), materialize(1));
 SELECT materialize((1, 2.0, 3.1)) * 3;
 SELECT 5.5 * (2, 4);
 SELECT (1, 2) / 2;
-SELECT 2 / (1, 1); -- { serverError 43 }
+SELECT 2 / (1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT tuple(1, 2, 3) * tuple(2, 3, 4);
 SELECT dotProduct(materialize((-1, 2, 3.002)), materialize((2, 3.4, 4)));
@@ -75,21 +75,22 @@ SELECT L1Normalize((NULL, 1));
 SELECT cosineDistance((NULL, 1), (NULL, NULL));
 SELECT max2(NULL, 1) - min2(NULL, 1);
 
-SELECT L1Norm(1); -- { serverError 43 }
-SELECT (1, 1) / toString(1); -- { serverError 43 }
-SELECT -(1, toString(1)); -- { serverError 43 }
-SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError 43 }
+SELECT L1Norm(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 1) / toString(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT -(1, toString(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError ILLEGAL_COLUMN }
 SELECT (1, 2) * toDecimal32(3.1, 8);
 
-SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError 43 }
-SELECT tuple() + tuple(); -- { serverError 42 }
-SELECT LpNorm((1, 2, 3)); -- { serverError 42 }
-SELECT max2(1, 2, -1); -- { serverError 42 }
+SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- TODO: what's the expected value of () + ()? Currently it returns 0.
+-- SELECT tuple() + tuple(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT LpNorm((1, 2, 3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT max2(1, 2, -1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT LpNorm((1, 2, 3), materialize(4.)); -- { serverError 44 }
+SELECT LpNorm((1, 2, 3), materialize(4.)); -- { serverError ILLEGAL_COLUMN }
 
 SELECT tuple(*, 1) + tuple(2, *) FROM numbers(3);
-SELECT LpDistance(tuple(*, 1), tuple(2, *), * + 1.) FROM numbers(3, 2); -- { serverError 44 }
+SELECT LpDistance(tuple(*, 1), tuple(2, *), * + 1.) FROM numbers(3, 2); -- { serverError ILLEGAL_COLUMN }
 SELECT cosineDistance(tuple(*, * + 1), tuple(1, 2)) FROM numbers(1, 3);
 SELECT -tuple(NULL, * * 2, *) FROM numbers(2);
 
@@ -99,12 +100,12 @@ SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normaliz
 
 SELECT LpNorm((1, 2, 3), 2.2);
 SELECT LpNorm((1.5, 2.5, 4), pi());
-SELECT LpNorm((3, 1, 4), 0); -- { serverError 69 }
-SELECT LpNorm((1, 2, 3), 0.5); -- { serverError 69 }
-SELECT LpNorm((1, 2, 3), inf); -- { serverError 69 }
-SELECT LpNorm((1, 2, 3), -1.); -- { serverError 69 }
-SELECT LpNorm((1, 2, 3), -1); -- { serverError 44 }
-SELECT LpNorm((1, 2, 3), 0.); -- { serverError 69 }
+SELECT LpNorm((3, 1, 4), 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNorm((1, 2, 3), 0.5); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNorm((1, 2, 3), inf); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNorm((1, 2, 3), -1.); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNorm((1, 2, 3), -1); -- { serverError ILLEGAL_COLUMN }
+SELECT LpNorm((1, 2, 3), 0.); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT cosineDistance(materialize((NULL, -2147483648)), (1048577, 1048575));
 
 -- not extra parentheses

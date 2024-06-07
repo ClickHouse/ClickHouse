@@ -43,12 +43,13 @@ namespace
             endpoint,
             proxy_scheme,
             proxy_port,
-            cache_ttl
+            std::chrono::seconds {cache_ttl}
         };
 
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
+            std::make_shared<RemoteProxyHostFetcherImpl>(),
             isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 

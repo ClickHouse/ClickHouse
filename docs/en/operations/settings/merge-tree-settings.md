@@ -903,3 +903,47 @@ Default value: an empty string
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+### allow_experimental_optimized_row_order
+
+Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
+
+MergeTree tables are (optionally) compressed using [compression codecs](../../sql-reference/statements/create/table.md#column_compression_codec).
+Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.
+Long runs of the same value typically compress very well.
+
+If this setting is enabled, ClickHouse attempts to store the data in newly inserted parts in a row order that minimizes the number of equal-value runs across the columns of the new table part.
+In other words, a small number of equal-value runs mean that individual runs are long and compress well.
+
+Finding the optimal row order is computationally infeasible (NP hard).
+Therefore, ClickHouse uses a heuristics to quickly find a row order which still improves compression rates over the original row order.
+
+<details markdown="1">
+
+<summary>Heuristics for finding a row order</summary>
+
+It is generally possible to shuffle the rows of a table (or table part) freely as SQL considers the same table (table part) in different row order equivalent.
+
+This freedom of shuffling rows is restricted when a primary key is defined for the table.
+In ClickHouse, a primary key `C1, C2, ..., CN` enforces that the table rows are sorted by columns `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
+As a result, rows can only be shuffled within "equivalence classes" of row, i.e. rows which have the same values in their primary key columns.
+The intuition is that primary keys with high-cardinality, e.g. primary keys involving a `DateTime64` timestamp column, lead to many small equivalence classes.
+Likewise, tables with a low-cardinality primary key, create few and large equivalence classes.
+A table with no primary key represents the extreme case of a single equivalence class which spans all rows.
+
+The fewer and the larger the equivalence classes are, the higher the degree of freedom when re-shuffling rows.
+
+The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemir, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
+It performs three steps:
+1. Find all equivalence classes based on the row values in primary key columns.
+2. For each equivalence class, calculate (usually estimate) the cardinalities of the non-primary-key columns.
+3. For each equivalence class, sort the rows in order of ascending non-primary-key column cardinality.
+
+</details>
+
+If enabled, insert operations incur additional CPU costs to analyze and optimize the row order of the new data.
+INSERTs are expected to take 30-50% longer depending on the data characteristics.
+Compression rates of LZ4 or ZSTD improve on average by 20-40%.
+
+This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
+High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
