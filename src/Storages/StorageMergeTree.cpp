@@ -774,31 +774,18 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-        const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
-        auto versions_it = std::lower_bound(
-            part_versions.begin(), part_versions.end(), needle, lessVersion);
 
-        LOG_TRACE(log, "lower_bound for {} points to {}", entry.file_name, versions_it->name);
-        for (; versions_it != part_versions.begin();)
+        auto versions_it = part_versions.begin();
+        for (; versions_it != part_versions.end() && versions_it->version < mutation_version; ++versions_it)
         {
-            versions_it--;
-
             if (entry.affectsPartition(versions_it->partition_id))
             {
-                ++versions_it;
+                result.emplace(entry.file_name, entry.commands);
                 break;
             }
         }
-        LOG_TRACE(log, "after loop for {} points to {}", entry.file_name, versions_it->name);
-
-
-        size_t parts_to_do = versions_it - part_versions.begin();
-        LOG_TRACE(log, "parts_to_do {}", parts_to_do);
-        if (parts_to_do > 0)
-        {
-            result.emplace(entry.file_name, entry.commands);
-        }
     }
+
     return result;
 }
 
