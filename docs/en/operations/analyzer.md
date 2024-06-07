@@ -1,6 +1,9 @@
 ---
 slug: /en/operations/analyzer
 sidebar_label: Analyzer
+title: Analyzer
+description: Details about ClickHouse's query analyzer
+keywords: [analyzer]
 ---
 
 # Analyzer
@@ -9,15 +12,15 @@ sidebar_label: Analyzer
 
 ## Known incompatibilities
 
-In ClickHouse version `24.3`, new query analysis was enabled by default.
-Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour.
+In ClickHouse version `24.3`, the new query analyzer was enabled by default.
+Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour. Please read the following changes to determine how to rewrite your queries for the new analyzer.
 
-### Invalid before optimization queries
+### Invalid queries are no longer optimized
 
 The previous query planning infrastructure applied AST-level optimizations before the query validation step.
 Optimizations could rewrite the initial query so it becomes valid and can be executed.
 
-In the new infrastructure, query validation takes place before the optimization step.
+In the new analyzer, query validation takes place before the optimization step.
 This means that invalid queries that were possible to execute before are now unsupported.
 In such cases, the query must be fixed manually.
 
@@ -30,7 +33,7 @@ GROUP BY toString(number)
 ```
 
 The following query uses column `number` in the projection list when only `toString(number)` is available after the aggregation.
-In the old infrastructure, `GROUP BY toString(number)` was optimized into `GROUP BY number,` making the query valid.
+In the old analyzer, `GROUP BY toString(number)` was optimized into `GROUP BY number,` making the query valid.
 
 **Example 2:**
 
@@ -58,8 +61,8 @@ GROUP BY n
 
 ### CREATE VIEW with invalid query
 
-The new infrastructure always performs type-checking.
-Previously, it was possible to create a `VIEW` with an invalid `SELECT` query, and it'd fail during the first SELECT or insert (in the case of `MATERIALIZED VIEW`).
+The new analyzer always performs type-checking.
+Previously, it was possible to create a `VIEW` with an invalid `SELECT` query. It would then fail during the first `SELECT` or `INSERT` (in the case of `MATERIALIZED VIEW`).
 
 Now, it's not possible to create such `VIEW`s anymore.
 
@@ -73,15 +76,15 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-### Known incompatibilities of JOIN clause
+### Known incompatibilities of the `JOIN` clause
 
 #### Join using column from projection
 
-Alias from the `SELECT` list can not be used as a `JOIN USING` key  by default.
+Alias from the `SELECT` list can not be used as a `JOIN USING` key by default.
 
-A new setting, `analyzer_compatibility_join_using_top_level_identifier`, when enabled, alters the behavior of `JOIN USING` to prefer to resolve identifiers based on expressions from the projection list of the SELECT query, rather than using the columns from left table directly.
+A new setting, `analyzer_compatibility_join_using_top_level_identifier`, when enabled, alters the behavior of `JOIN USING` to prefer to resolve identifiers based on expressions from the projection list of the `SELECT` query, rather than using the columns from left table directly.
 
-*Example:*
+**Example:**
 
 ```sql
 SELECT a + 1 AS b, t2.s
@@ -90,15 +93,15 @@ JOIN Values('b UInt64, s String', (1, 'one'), (2, 'two')) t2
 USING (b);
 ```
 
-With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of earlier versions. So, the result will be `2, 'two'`
+With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of earlier versions. So, the result will be `2, 'two'`.
 When the setting is `false`, the join condition defaults to `t1.b = t2.b`, and the query will return `2, 'one'`.
-In case then `b` is not present in `t1`, the query will fail with an error.
+If `b` is not present in `t1`, the query will fail with an error.
 
-#### Changes in Behavior with `JOIN USING` and `ALIAS/MATERIALIZED` Columns
+#### Changes in behavior with `JOIN USING` and `ALIAS`/`MATERIALIZED` columns
 
-In the new analyzer, using `*` in a `JOIN USING` query that involves `ALIAS` or `MATERIALIZED` columns will include that columns in the result set by default.
+In the new analyzer, using `*` in a `JOIN USING` query that involves `ALIAS` or `MATERIALIZED` columns will include those columns in the result set by default.
 
-*Example:*
+**Example:**
 
 ```sql
 CREATE TABLE t1 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
@@ -123,7 +126,7 @@ In the new version of the analyzer, the rules for determining the common superty
   
 - `Nullable(T)` and `T`: When a column of type `Nullable(T)` is joined with a column of type `T`, the resulting common supertype will be `Nullable(T)`, ensuring that the nullable property is preserved.
 
-*Example:*
+**Example:**
 
 ```sql
 SELECT id, toTypeName(id) FROM Values('id LowCardinality(String)', ('a')) AS t1
@@ -135,7 +138,7 @@ In this query, the common supertype for `id` is determined as `String`, discardi
 
 ### Projection column names changes
 
-During projection names computation aliases are not substituted.
+During projection names, computation aliases are not substituted.
 
 ```sql
 SELECT
@@ -161,7 +164,7 @@ FORMAT PrettyCompact
 
 ### Incompatible function arguments types
 
-In the new infrastructure type inference happens during initial query analysis.
+In the new analyzer, type inference happens during initial query analysis.
 This change means that type checks are done before short-circuit evaluation; thus, `if` function arguments must always have a common supertype.
 
 **Example:**
