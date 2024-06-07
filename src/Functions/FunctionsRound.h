@@ -149,8 +149,6 @@ struct IntegerRoundingComputation
                 return x;
             }
         }
-
-        UNREACHABLE();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -163,8 +161,6 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
         }
-
-        UNREACHABLE();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
@@ -247,8 +243,6 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
     }
-
-    UNREACHABLE();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -260,8 +254,6 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
     }
-
-    UNREACHABLE();
 }
 
 template <typename T>
