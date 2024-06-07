@@ -142,7 +142,7 @@ private:
     LoggerPtr log;
     bool chunked = false;
     bool chunk_started = false; // chunk started flag
-    UInt32 * chunk_size_ptr = nullptr; // pointer to the chunk size holder in the buffer 
+    UInt32 * chunk_size_ptr = nullptr; // pointer to the chunk size holder in the buffer
     size_t finishing = sizeof(*chunk_size_ptr); // indicates not enough buffer for end-of-chunk marker
 };
 
