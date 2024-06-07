@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cerrno>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -111,8 +112,9 @@ void KeeperStateMachine<Storage>::init()
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
+            chassert(latest_snapshot_info);
 
-            if (isLocalDisk(*latest_snapshot_info.disk))
+            if (isLocalDisk(*latest_snapshot_info->disk))
                 latest_snapshot_buf = nullptr;
 
             storage = std::move(snapshot_deserialization_result.storage);
@@ -634,7 +636,11 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                         }
 
                         ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                        LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), latest_snapshot_info.path);
+                        LOG_DEBUG(
+                            log,
+                            "Created persistent snapshot {} with path {}",
+                            latest_snapshot_meta->get_last_log_idx(),
+                            latest_snapshot_info->path);
                     }
                 }
             }
@@ -658,7 +664,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
         when_done(ret, exception);
 
-        return ret ? latest_snapshot_info : SnapshotFileInfo{};
+        return ret ? latest_snapshot_info : nullptr;
     };
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
@@ -666,9 +672,9 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
         auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
-        if (!snapshot_file_info.path.empty() && snapshot_manager_s3)
+        if (snapshot_file_info && snapshot_manager_s3)
         {
-            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info.path);
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info->path);
             snapshot_manager_s3->uploadSnapshot(snapshot_file_info, /* asnyc_upload */ false);
         }
 
@@ -704,7 +710,7 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
         latest_snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
         latest_snapshot_meta = cloned_meta;
         latest_snapshot_buf = std::move(cloned_buffer);
-        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info.path);
+        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info->path);
         obj_id++;
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
     }
@@ -765,7 +771,7 @@ int IKeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const auto & [path, disk] = latest_snapshot_info;
+    const auto & [path, disk, size] = *latest_snapshot_info;
     if (isLocalDisk(*disk))
     {
         auto full_path = fs::path(disk->getPath()) / path;
@@ -912,12 +918,27 @@ uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
 }
 
 template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getLatestSnapshotBufSize() const
+uint64_t KeeperStateMachine<Storage>::getLatestSnapshotSize() const
 {
-    std::lock_guard lock(snapshots_lock);
-    if (latest_snapshot_buf)
-        return latest_snapshot_buf->size();
-    return 0;
+    auto snapshot_info = [&]
+    {
+        std::lock_guard lock(snapshots_lock);
+        return latest_snapshot_info;
+    }();
+
+    if (snapshot_info == nullptr || snapshot_info->disk == nullptr)
+        return 0;
+
+    /// there is a possibility multiple threads can try to get size
+    /// this can happen in rare cases while it's not a heavy operation
+    size_t size = snapshot_info->size.load(std::memory_order_relaxed);
+    if (size == 0)
+    {
+        size = snapshot_info->disk->getFileSize(snapshot_info->path);
+        snapshot_info->size.store(size, std::memory_order_relaxed);
+    }
+
+    return size;
 }
 
 ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const

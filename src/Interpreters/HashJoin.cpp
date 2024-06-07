@@ -35,9 +35,16 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
+#include "Core/Joins.h"
+#include "Interpreters/TemporaryDataOnDisk.h"
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
+}
 
 namespace DB
 {
@@ -63,6 +70,7 @@ struct NotProcessedCrossJoin : public ExtraBlock
 {
     size_t left_position;
     size_t right_block;
+    std::unique_ptr<TemporaryFileStream::Reader> reader;
 };
 
 
@@ -216,7 +224,7 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     {
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
-            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column))
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column))
                 column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
 
         JoinCommon::removeColumnNullability(column);
@@ -249,6 +257,10 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
+    , tmp_data(
+          table_join_->getTempDataOnDisk()
+              ? std::make_unique<TemporaryDataOnDisk>(table_join_->getTempDataOnDisk(), CurrentMetrics::TemporaryFilesForJoin)
+              : nullptr)
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
@@ -693,7 +705,6 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
-        UNREACHABLE();
     }
 }
 
@@ -827,15 +838,40 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
+    size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
+    size_t max_rows_in_join = table_join->sizeLimits().max_rows;
+
+    if (kind == JoinKind::Cross && tmp_data
+        && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
+            || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
+    {
+        if (tmp_stream == nullptr)
+        {
+            tmp_stream = &tmp_data->createStream(right_sample_block);
+        }
+        tmp_stream->write(block_to_save);
+        return true;
+    }
+
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
         if (storage_join_lock)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
-
         assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
+
+        size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
+        size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
+
+        if (kind == JoinKind::Cross
+            && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
+                || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
+        {
+            block_to_save = block_to_save.compress();
+        }
+
+        data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
@@ -933,7 +969,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     }
 
     shrinkStoredBlocksToFit(total_bytes);
-
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
@@ -2228,11 +2263,13 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 {
     size_t start_left_row = 0;
     size_t start_right_block = 0;
+    std::unique_ptr<TemporaryFileStream::Reader> reader = nullptr;
     if (not_processed)
     {
         auto & continuation = static_cast<NotProcessedCrossJoin &>(*not_processed);
         start_left_row = continuation.left_position;
         start_right_block = continuation.right_block;
+        reader = std::move(continuation.reader);
         not_processed.reset();
     }
 
@@ -2261,16 +2298,12 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
     size_t rows_left = block.rows();
     size_t rows_added = 0;
-
     for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
         size_t block_number = 0;
-        for (const Block & block_right : data->blocks)
-        {
-            ++block_number;
-            if (block_number < start_right_block)
-                continue;
 
+        auto process_right_block = [&](const Block & block_right)
+        {
             size_t rows_right = block_right.rows();
             rows_added += rows_right;
 
@@ -2282,6 +2315,44 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
                 const IColumn & column_right = *block_right.getByPosition(col_num).column;
                 dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
             }
+        };
+
+        for (const Block & compressed_block_right : data->blocks)
+        {
+            ++block_number;
+            if (block_number < start_right_block)
+                continue;
+
+            auto block_right = compressed_block_right.decompress();
+            process_right_block(block_right);
+            if (rows_added > max_joined_block_rows)
+            {
+                break;
+            }
+        }
+
+        if (tmp_stream && rows_added <= max_joined_block_rows)
+        {
+            if (reader == nullptr)
+            {
+                tmp_stream->finishWritingAsyncSafe();
+                reader = tmp_stream->getReadStream();
+            }
+            while (auto block_right = reader->read())
+            {
+                ++block_number;
+                process_right_block(block_right);
+                if (rows_added > max_joined_block_rows)
+                {
+                    break;
+                }
+            }
+
+            /// It means, that reader->read() returned {}
+            if (rows_added <= max_joined_block_rows)
+            {
+                reader.reset();
+            }
         }
 
         start_right_block = 0;
@@ -2289,7 +2360,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
         if (rows_added > max_joined_block_rows)
         {
             not_processed = std::make_shared<NotProcessedCrossJoin>(
-                NotProcessedCrossJoin{{block.cloneEmpty()}, left_row, block_number + 1});
+                NotProcessedCrossJoin{{block.cloneEmpty()}, left_row, block_number + 1, std::move(reader)});
             not_processed->block.swap(block);
             break;
         }
@@ -2415,10 +2486,15 @@ HashJoin::~HashJoin()
 {
     if (!data)
     {
-        LOG_TRACE(log, "{}Join data has been already released", instance_log_id);
+        LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
-    LOG_TRACE(log, "{}Join data is being destroyed, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
+    LOG_TEST(
+        log,
+        "{}Join data is being destroyed, {} bytes and {} rows in hash table",
+        instance_log_id,
+        getTotalByteCount(),
+        getTotalRowCount());
 }
 
 template <typename Mapped>
@@ -2564,8 +2640,6 @@ private:
             default:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type);
         }
-
-        UNREACHABLE();
     }
 
     template <typename Map>

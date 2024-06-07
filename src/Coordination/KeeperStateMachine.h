@@ -99,7 +99,7 @@ public:
     virtual uint64_t getTotalEphemeralNodesCount() const = 0;
     virtual uint64_t getApproximateDataSize() const = 0;
     virtual uint64_t getKeyArenaSize() const = 0;
-    virtual uint64_t getLatestSnapshotBufSize() const = 0;
+    virtual uint64_t getLatestSnapshotSize() const = 0;
 
     virtual void recalculateStorageStats() = 0;
 
@@ -110,7 +110,7 @@ protected:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    SnapshotFileInfo latest_snapshot_info;
+    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
@@ -240,7 +240,7 @@ public:
     uint64_t getTotalEphemeralNodesCount() const override;
     uint64_t getApproximateDataSize() const override;
     uint64_t getKeyArenaSize() const override;
-    uint64_t getLatestSnapshotBufSize() const override;
+    uint64_t getLatestSnapshotSize() const override;
 
     void recalculateStorageStats() override;
 

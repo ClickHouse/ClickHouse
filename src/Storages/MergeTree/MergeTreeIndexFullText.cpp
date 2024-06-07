@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_INDEX;
     extern const int INCORRECT_QUERY;
 }
 
@@ -477,11 +478,11 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         if (function.getFunctionName() == "arrayElement")
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
+              * we return default the value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
+              * that way we skip necessary granules where map key does not exist.
               */
             if (value_field == value_type->getDefault())
                 return false;
@@ -741,6 +742,14 @@ bool MergeTreeConditionFullText::tryPrepareSetGinFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
 {
+    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
+    /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
+    /// have an old index.
+    /// TODO: remove this at the end of 2024.
+    if (index.type == INVERTED_INDEX_NAME)
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full-text'");
+
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
 

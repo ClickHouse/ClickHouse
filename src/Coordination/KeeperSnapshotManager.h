@@ -1,5 +1,6 @@
 #pragma once
 #include <Coordination/KeeperStorage.h>
+#include <Common/CopyableAtomic.h>
 #include <libnuraft/nuraft.hxx>
 
 namespace DB
@@ -104,16 +105,23 @@ public:
 
 struct SnapshotFileInfo
 {
+    SnapshotFileInfo(std::string path_, DiskPtr disk_)
+        : path(std::move(path_))
+        , disk(std::move(disk_))
+    {}
+
     std::string path;
     DiskPtr disk;
+    mutable std::atomic<size_t> size{0};
 };
 
+using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
 #if USE_ROCKSDB
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
 #endif
-using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&, bool)>;
+using CreateSnapshotCallback = std::function<SnapshotFileInfoPtr(KeeperStorageSnapshotPtr &&, bool)>;
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot
 /// has it's path on disk and log index.
@@ -135,10 +143,10 @@ public:
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const;
 
     /// Serialize already compressed snapshot to disk (return path)
-    SnapshotFileInfo serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+    SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     /// Serialize snapshot directly to disk
-    SnapshotFileInfo serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
+    SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
 
     SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
@@ -157,7 +165,7 @@ public:
     /// The most fresh snapshot log index we have
     size_t getLatestSnapshotIndex() const;
 
-    SnapshotFileInfo getLatestSnapshotInfo() const;
+    SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
@@ -173,7 +181,7 @@ private:
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
-    std::map<uint64_t, SnapshotFileInfo> existing_snapshots;
+    std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage

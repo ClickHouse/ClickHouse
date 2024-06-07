@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 
 /// Sets denominator type.
-enum class DenominatorMode
+enum class DenominatorMode : uint8_t
 {
     Compact,        /// Compact denominator.
     StableIfBig,    /// Stable denominator falling back to Compact if rank storage is not big enough.
@@ -128,13 +128,13 @@ public:
     {
     }
 
-    inline void update(UInt8 cur_rank, UInt8 new_rank)
+    void update(UInt8 cur_rank, UInt8 new_rank)
     {
         denominator -= static_cast<T>(1.0) / (1ULL << cur_rank);
         denominator += static_cast<T>(1.0) / (1ULL << new_rank);
     }
 
-    inline void update(UInt8 rank)
+    void update(UInt8 rank)
     {
         denominator += static_cast<T>(1.0) / (1ULL << rank);
     }
@@ -166,13 +166,13 @@ public:
         rank_count[0] = static_cast<UInt32>(initial_value);
     }
 
-    inline void update(UInt8 cur_rank, UInt8 new_rank)
+    void update(UInt8 cur_rank, UInt8 new_rank)
     {
         --rank_count[cur_rank];
         ++rank_count[new_rank];
     }
 
-    inline void update(UInt8 rank)
+    void update(UInt8 rank)
     {
         ++rank_count[rank];
     }
@@ -246,7 +246,7 @@ struct RankWidth<UInt64>
 
 
 /// Sets behavior of HyperLogLog class.
-enum class HyperLogLogMode
+enum class HyperLogLogMode : uint8_t
 {
     Raw,            /// No error correction.
     LinearCounting, /// LinearCounting error correction.
@@ -429,13 +429,13 @@ public:
 
 private:
     /// Extract subset of bits in [begin, end[ range.
-    inline HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
+    HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
     {
         return (val >> begin) & ((1ULL << (end - begin)) - 1);
     }
 
     /// Rank is number of trailing zeros.
-    inline UInt8 calculateRank(HashValueType val) const
+    UInt8 calculateRank(HashValueType val) const
     {
         if (unlikely(val == 0))
             return max_rank;
@@ -448,7 +448,7 @@ private:
         return zeros_plus_one;
     }
 
-    inline HashValueType getHash(Value key) const
+    HashValueType getHash(Value key) const
     {
         /// NOTE: this should be OK, since value is the same as key for HLL.
         return static_cast<HashValueType>(
@@ -496,7 +496,7 @@ private:
             throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    inline double applyCorrection(double raw_estimate) const
+    double applyCorrection(double raw_estimate) const
     {
         double fixed_estimate;
 
@@ -525,7 +525,7 @@ private:
     /// Correction used in HyperLogLog++ algorithm.
     /// Source: "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art Cardinality Estimation Algorithm"
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
-    inline double applyBiasCorrection(double raw_estimate) const
+    double applyBiasCorrection(double raw_estimate) const
     {
         double fixed_estimate;
 
@@ -540,7 +540,7 @@ private:
     /// Calculation of unique values using LinearCounting algorithm.
     /// Source: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
-    inline double applyLinearCorrection(double raw_estimate) const
+    double applyLinearCorrection(double raw_estimate) const
     {
         double fixed_estimate;
 
