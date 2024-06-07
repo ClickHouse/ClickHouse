@@ -109,7 +109,7 @@ protected:
         }
 
         /// Send end-of-chunk buffered by finishChunk
-        if (offset() == 2 * sizeof(*chunk_size_ptr))
+        if (offset() == 2 * sizeof(*chunk_size_ptr) && last_finish_chunk == chunk_size_ptr)
         {
             pos -= sizeof(*chunk_size_ptr);
             /// Send end-of-chunk
@@ -140,6 +140,8 @@ protected:
             chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
             nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
 
+            last_finish_chunk = nullptr;
+
             return;
         }
 
@@ -164,6 +166,8 @@ protected:
         /// Initialize next chunk
         chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
         nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
+
+        last_finish_chunk = nullptr;
     }
 
     Poco::Net::SocketAddress peerAddress()
