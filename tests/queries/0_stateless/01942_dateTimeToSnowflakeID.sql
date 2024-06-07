@@ -62,10 +62,10 @@ WITH
     now64(3) AS dt64_3,
     now64(4) AS dt64_4
 SELECT
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_0)) == dt64_0,
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_1)) == dt64_1,
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_2)) == dt64_2,
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_3)) == dt64_3,
-    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_4)) == dt64_4
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_0), 0, 'UTC') == dt64_0,
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_1), 0, 'UTC') == dt64_1,
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_2), 0, 'UTC') == dt64_2,
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_3), 0, 'UTC') == dt64_3,
+    snowflakeIDToDateTime64(dateTime64ToSnowflakeID(dt64_4), 0, 'UTC') == dt64_4
 FORMAT
     Vertical;
