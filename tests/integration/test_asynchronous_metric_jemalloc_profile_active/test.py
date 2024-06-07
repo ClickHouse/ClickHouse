@@ -21,11 +21,11 @@ def started_cluster():
         cluster.shutdown()
 
 
-# Tests that the system.asynchronous_metric_log table gets populated.
+
 # asynchronous metrics are updated once every 60s by default. To make the test run faster, the setting
-# asynchronous_metric_update_period_s is being set to 2s so that the metrics are populated faster and
+# asynchronous_metric_update_period_s is being set to 1s so that the metrics are populated faster and
 # are available for querying during the test.
-def test_event_time_microseconds_field(started_cluster):
+def test_asynchronous_metric_jemalloc_profile_active(started_cluster):
     # prof:true -> default open
     if node1.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
