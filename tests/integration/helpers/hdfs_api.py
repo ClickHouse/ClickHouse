@@ -110,10 +110,9 @@ class HDFSApi(object):
                         logging.debug(
                             "Stdout:\n{}\n".format(res.stdout.decode("utf-8"))
                         )
-                        logging.debug("Env:\n{}\n".format(env))
                         raise Exception(
                             "Command {} return non-zero code {}: {}".format(
-                                args, res.returncode, res.stderr.decode("utf-8")
+                                cmd, res.returncode, res.stderr.decode("utf-8")
                             )
                         )
 

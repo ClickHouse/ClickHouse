@@ -7,7 +7,8 @@
 -- sizeof(HLL) is (2^K * 6 / 8)
 -- hence max_memory_usage for 100 rows = (96<<10)*100 = 9830400
 
-SET use_uncompressed_cache = 0; 
+SET use_uncompressed_cache = 0;
+SET min_untracked_memory = '4Mi';
 
 -- HashTable for UInt32 (used until (1<<13) elements), hence 8192 elements
 SELECT 'UInt32';
