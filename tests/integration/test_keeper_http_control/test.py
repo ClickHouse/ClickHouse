@@ -73,6 +73,7 @@ def test_http_readiness_partitioned_cluster(started_cluster):
         assert readiness_data["details"]["role"] == "follower"
         assert readiness_data["details"]["hasLeader"] == False
 
+
 def test_http_commands_basic_responses(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
     response = requests.get(
