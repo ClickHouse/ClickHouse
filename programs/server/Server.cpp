@@ -944,6 +944,18 @@ try
         }
     }
 
+    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    fs::path path = path_str;
+
+    /// Check that the process user id matches the owner of the data.
+    assertProcessUserMatchesDataOwner(path_str, [&](const std::string & message){ global_context->addWarningMessage(message); });
+
+    global_context->setPath(path_str);
+
+    StatusFile status{path / "status", StatusFile::write_full_info};
+
+    ServerUUID::load(path / "uuid", log);
+
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
@@ -955,7 +967,7 @@ try
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
             main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
-        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
+        config_processor.savePreprocessedConfig(loaded_config, path_str);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
         global_context->setConfig(loaded_config.configuration);
@@ -1088,19 +1100,6 @@ try
 
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
-
-    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
-    fs::path path = path_str;
-    std::string default_database = server_settings.default_database.toString();
-
-    /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path_str, [&](const std::string & message){ global_context->addWarningMessage(message); });
-
-    global_context->setPath(path_str);
-
-    StatusFile status{path / "status", StatusFile::write_full_info};
-
-    ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -1889,6 +1888,7 @@ try
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
+    std::string default_database = server_settings.default_database.toString();
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
     LOG_INFO(log, "Loading metadata from {}", path_str);

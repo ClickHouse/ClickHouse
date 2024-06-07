@@ -11,6 +11,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_FILE;
+    extern const int LOGICAL_ERROR;
+}
+
+UUID ServerUUID::get()
+{
+    if (server_uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ServerUUID is not initialized yet");
+    return server_uuid;
 }
 
 void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
