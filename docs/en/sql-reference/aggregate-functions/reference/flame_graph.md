@@ -26,7 +26,7 @@ Only allocations which were not freed are shown. Non mapped deallocations are ig
 
 ## Returned value
 
-- An array of strings for use with [flamegraph.pl util](https://github.com/brendangregg/FlameGraph). [Array](../../data-types/array.md)([String](../../data-types/string.md)).
+- An array of strings for use with [flamegraph.pl utility](https://github.com/brendangregg/FlameGraph). [Array](../../data-types/array.md)([String](../../data-types/string.md)).
 
 ## Examples
 
