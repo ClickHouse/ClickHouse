@@ -153,8 +153,6 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
     }
     else
     {
-        chassert(c_pos == data_end);
-
         if (!ReadBufferFromPocoSocketBase::nextImpl())
             return false;
         data_end = buffer().end();

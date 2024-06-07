@@ -625,7 +625,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
 
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
-        out->finishPacket();
+        out->finishChunk();
         out->next();
 
         if (in->eof())
@@ -675,7 +675,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 
     UInt64 response_type = 0;
@@ -827,7 +827,7 @@ void Connection::sendQuery(
     block_profile_events_in.reset();
     block_out.reset();
 
-    out->finishPacket();
+    out->finishChunk();
 
     /// Send empty block which means end of data.
     if (!with_pending_data)
@@ -845,7 +845,7 @@ void Connection::sendCancel()
         return;
 
     writeVarUInt(Protocol::Client::Cancel, *out);
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -871,9 +871,10 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     size_t prev_bytes = out->count();
 
     block_out->write(block);
-    maybe_compressed_out->next();
+    if (maybe_compressed_out != out)
+        maybe_compressed_out->next();
     if (!block)
-        out->finishPacket();
+        out->finishChunk();
     out->next();
 
     if (throttler)
@@ -884,7 +885,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
     writeVectorBinary(uuids, *out);
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -894,7 +895,7 @@ void Connection::sendReadTaskResponse(const String & response)
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
     writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
     writeStringBinary(response, *out);
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -903,7 +904,7 @@ void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & resp
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
     response.serialize(*out);
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -922,7 +923,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     else
         copyData(input, *out, size);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -951,7 +952,7 @@ void Connection::sendScalarsData(Scalars & data)
         sendData(elem.second, elem.first, true /* scalar */);
     }
 
-    out->finishPacket();
+    out->finishChunk();
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;

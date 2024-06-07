@@ -1188,7 +1188,7 @@ void TCPHandler::processTablesStatusRequest()
 
     response.write(*out, client_tcp_protocol_version);
 
-    out->finishPacket();
+    out->finishChunk();
 }
 
 void TCPHandler::receiveUnexpectedTablesStatusRequest()
@@ -1210,7 +1210,7 @@ void TCPHandler::sendPartUUIDs()
         writeVarUInt(Protocol::Server::PartUUIDs, *out);
         writeVectorBinary(uuids, *out);
 
-        out->finishPacket();
+        out->finishChunk();
         out->next();
     }
 }
@@ -1220,7 +1220,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 {
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -1230,7 +1230,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
     announcement.serialize(*out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -1240,7 +1240,7 @@ void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest re
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -1250,7 +1250,7 @@ void TCPHandler::sendProfileInfo(const ProfileInfo & info)
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -1267,7 +1267,7 @@ void TCPHandler::sendTotals(const Block & totals)
         state.block_out->write(totals);
         state.maybe_compressed_out->next();
 
-        out->finishPacket();
+        out->finishChunk();
         out->next();
     }
 }
@@ -1285,7 +1285,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
         state.block_out->write(extremes);
         state.maybe_compressed_out->next();
 
-        out->finishPacket();
+        out->finishChunk();
         out->next();
     }
 }
@@ -1304,7 +1304,7 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
 
-        out->finishPacket();
+        out->finishChunk();
         out->next();
 
         auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
@@ -1343,7 +1343,7 @@ void TCPHandler::sendTimezone()
     writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
     writeStringBinary(tz, *out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -1700,7 +1700,7 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
-            out->finishPacket();
+            out->finishChunk();
             out->next();
             return false;
 
@@ -2290,9 +2290,11 @@ void TCPHandler::sendData(const Block & block)
         }
 
         state.block_out->write(block);
-        state.maybe_compressed_out->next();
 
-        out->finishPacket();
+        if (state.maybe_compressed_out != out)
+            state.maybe_compressed_out->next();
+
+        out->finishChunk();
         out->next();
     }
     catch (...)
@@ -2329,7 +2331,7 @@ void TCPHandler::sendLogData(const Block & block)
 
     state.logs_block_out->write(block);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -2341,7 +2343,7 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
     writeStringBinary("", *out);
     writeStringBinary(columns.toString(), *out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -2352,7 +2354,7 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -2364,7 +2366,7 @@ void TCPHandler::sendEndOfStream()
 
     writeVarUInt(Protocol::Server::EndOfStream, *out);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
@@ -2384,7 +2386,7 @@ void TCPHandler::sendProgress()
     state.prev_elapsed_ns = current_elapsed_ns;
     increment.write(*out, client_tcp_protocol_version);
 
-    out->finishPacket();
+    out->finishChunk();
     out->next();
 }
 
