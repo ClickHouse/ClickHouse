@@ -442,7 +442,11 @@ def _configure_jobs(
 
     # filter jobs in accordance with ci settings
     job_configs = ci_settings.apply(
-        job_configs, pr_info.is_release, is_pr=pr_info.is_pr, labels=pr_info.labels
+        job_configs,
+        pr_info.is_release,
+        is_pr=pr_info.is_pr,
+        is_mq=pr_info.is_merge_queue,
+        labels=pr_info.labels,
     )
 
     # check jobs in ci cache
