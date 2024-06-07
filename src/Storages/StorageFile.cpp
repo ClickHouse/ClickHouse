@@ -1371,7 +1371,7 @@ Chunk StorageFileSource::generate()
                 struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtim.tv_sec);
+                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
                 if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                     continue;
