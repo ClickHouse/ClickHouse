@@ -562,6 +562,9 @@ Chain buildPushingToViewsChain(
         auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+
+        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(sink->getHeader()));
+
         result_chain.addSource(std::move(sink));
     }
 
