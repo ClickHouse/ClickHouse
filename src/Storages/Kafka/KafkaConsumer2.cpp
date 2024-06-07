@@ -419,7 +419,7 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
             if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                 committed = true;
             else
-                LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
+                LOG_WARNING(log, "Exception during commit attempt: {}", e.what());
         }
     }
 
@@ -429,8 +429,7 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
         ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
         LOG_INFO(
             log,
-            "All commit attempts failed. Last block was already written to target table(s), "
-            "but was not committed to Kafka.");
+            "All commit attempts failed");
     }
     else
     {
