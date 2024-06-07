@@ -1561,7 +1561,6 @@
     <rocksdb>
         <options>
             <max_background_jobs>8</max_background_jobs>
-            <info_log_level>DEBUG_LEVEL</info_log_level>
         </options>
         <column_family_options>
             <num_levels>2</num_levels>
