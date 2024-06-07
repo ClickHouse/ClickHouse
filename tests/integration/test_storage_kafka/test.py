@@ -155,9 +155,16 @@ def kafka_topic(
     num_partitions=1,
     replication_factor=1,
     max_retries=50,
-    config=None
+    config=None,
 ):
-    kafka_create_topic(admin_client, topic_name, num_partitions, replication_factor, max_retries, config)
+    kafka_create_topic(
+        admin_client,
+        topic_name,
+        num_partitions,
+        replication_factor,
+        max_retries,
+        config,
+    )
     try:
         yield None
     finally:
@@ -174,7 +181,10 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
 
 
 def get_admin_client(kafka_cluster):
-     return KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    return KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
     logging.debug(
@@ -230,19 +240,31 @@ def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messa
     logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
 
 
-
-def kafka_consume_with_retry(kafka_cluster, topic, expected_messages, need_decode=True, timestamp=0, retry_count=20, sleep_time=0.1):
+def kafka_consume_with_retry(
+    kafka_cluster,
+    topic,
+    expected_messages,
+    need_decode=True,
+    timestamp=0,
+    retry_count=20,
+    sleep_time=0.1,
+):
     messages = []
     try_count = 0
     while try_count < retry_count:
         try_count += 1
-        messages.extend(kafka_consume(kafka_cluster, topic, need_decode=need_decode, timestamp=timestamp))
+        messages.extend(
+            kafka_consume(
+                kafka_cluster, topic, need_decode=need_decode, timestamp=timestamp
+            )
+        )
         if len(messages) == expected_messages:
             break
         time.sleep(sleep_time)
     if len(messages) != expected_messages:
         raise Exception(f"Got only {len(messages)} messages")
     return messages
+
 
 def kafka_produce_protobuf_messages_no_delimiters(
     kafka_cluster, topic, start_index, num_messages
@@ -331,6 +353,7 @@ def avro_confluent_message(schema_registry_client, value):
     )
     return serializer.encode_record_with_schema("test_subject", schema, value)
 
+
 def create_settings_string(settings):
     if settings is None:
         return ""
@@ -349,41 +372,43 @@ def create_settings_string(settings):
     for key in keys:
         if key == first_key:
             continue
-        settings_string +=", " + str(key) + " = " + format_value(settings[key])
+        settings_string += ", " + str(key) + " = " + format_value(settings[key])
     return settings_string
 
 
 def generate_old_create_table_query(
-        table_name,
-        columns_def,
-        database="test",
-        brokers="{kafka_broker}:19092",
-        topic_list="{kafka_topic_new}",
-        consumer_group="{kafka_group_name_new}",
-        format="{kafka_format_json_each_row}",
-        row_delimiter= "\\n",
-        keeper_path=None, # it is not used, but it is easier to handle keeper_path and replica_name like this
-        replica_name=None,
-        settings=None):
-
-    settings_string=create_settings_string(settings)
+    table_name,
+    columns_def,
+    database="test",
+    brokers="{kafka_broker}:19092",
+    topic_list="{kafka_topic_new}",
+    consumer_group="{kafka_group_name_new}",
+    format="{kafka_format_json_each_row}",
+    row_delimiter="\\n",
+    keeper_path=None,  # it is not used, but it is easier to handle keeper_path and replica_name like this
+    replica_name=None,
+    settings=None,
+):
+    settings_string = create_settings_string(settings)
     query = f"""CREATE TABLE {database}.{table_name} ({columns_def}) ENGINE = Kafka('{brokers}', '{topic_list}', '{consumer_group}', '{format}', '{row_delimiter}')
 {settings_string}"""
     logging.debug(f"Generated old create query: {query}")
     return query
 
+
 def generate_new_create_table_query(
-        table_name,
-        columns_def,
-        database="test",
-        brokers="{kafka_broker}:19092",
-        topic_list="{kafka_topic_new}",
-        consumer_group="{kafka_group_name_new}",
-        format="{kafka_format_json_each_row}",
-        row_delimiter= "\\n",
-        keeper_path=None,
-        replica_name=None,
-        settings=None):
+    table_name,
+    columns_def,
+    database="test",
+    brokers="{kafka_broker}:19092",
+    topic_list="{kafka_topic_new}",
+    consumer_group="{kafka_group_name_new}",
+    format="{kafka_format_json_each_row}",
+    row_delimiter="\\n",
+    keeper_path=None,
+    replica_name=None,
+    settings=None,
+):
     if settings is None:
         settings = {}
     if keeper_path is None:
@@ -392,12 +417,13 @@ def generate_new_create_table_query(
         replica_name = "r1"
     settings["kafka_keeper_path"] = keeper_path
     settings["kafka_replica_name"] = replica_name
-    settings_string=create_settings_string(settings)
+    settings_string = create_settings_string(settings)
     query = f"""CREATE TABLE {database}.{table_name} ({columns_def}) ENGINE = Kafka('{brokers}', '{topic_list}', '{consumer_group}', '{format}', '{row_delimiter}')
 {settings_string}
 SETTINGS allow_experimental_kafka_store_offsets_in_keeper=1"""
     logging.debug(f"Generated new create query: {query}")
     return query
+
 
 def must_use_thread_per_consumer(generator):
     if generator == generate_old_create_table_query:
@@ -414,8 +440,12 @@ def get_topic_postfix(generator):
         return "new"
     raise Exception("Unexpected generator")
 
+
 # Tests
-@pytest.mark.parametrize('create_query_generator, do_direct_read', [(generate_old_create_table_query, True), (generate_new_create_table_query, False)])
+@pytest.mark.parametrize(
+    "create_query_generator, do_direct_read",
+    [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
+)
 def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_read):
     def assert_returned_exception(e):
         assert e.value.returncode == 36
@@ -426,12 +456,12 @@ def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_rea
 
     # check column with DEFAULT expression
     with pytest.raises(QueryRuntimeException) as exception:
-        instance.query(create_query_generator('kafka', 'a Int, b Int DEFAULT 0'))
+        instance.query(create_query_generator("kafka", "a Int, b Int DEFAULT 0"))
     assert_returned_exception(exception)
 
     # check EPHEMERAL
     with pytest.raises(QueryRuntimeException) as exception:
-        instance.query(create_query_generator('kafka', 'a Int, b Int EPHEMERAL'))
+        instance.query(create_query_generator("kafka", "a Int, b Int EPHEMERAL"))
     assert_returned_exception(exception)
 
     # check MATERIALIZED
@@ -446,7 +476,13 @@ def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_rea
 
     if do_direct_read:
         # check ALIAS
-        instance.query(create_query_generator("kafka", "a Int, b String Alias toString(a)", settings={"kafka_commit_on_select": True}))
+        instance.query(
+            create_query_generator(
+                "kafka",
+                "a Int, b String Alias toString(a)",
+                settings={"kafka_commit_on_select": True},
+            )
+        )
         messages = []
         for i in range(5):
             messages.append(json.dumps({"a": i}))
@@ -634,9 +670,15 @@ def test_kafka_json_as_string(kafka_cluster):
         "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: [0-9]*) return no rows"
     )
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_formats(kafka_cluster, create_query_generator):
-    schema_registry_client = CachedSchemaRegistryClient({"url":f"http://localhost:{kafka_cluster.schema_registry_port}"})
+    schema_registry_client = CachedSchemaRegistryClient(
+        {"url": f"http://localhost:{kafka_cluster.schema_registry_port}"}
+    )
 
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
@@ -759,7 +801,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                 '(id = 1, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 2, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 3, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 4, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 5, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 6, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 7, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 8, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 9, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 10, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 11, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 12, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 13, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 14, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 15, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
                 '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
             ],
-            "extra_settings": {"format_template_row":"template_row.format"},
+            "extra_settings": {"format_template_row": "template_row.format"},
         },
         "Regexp": {
             "data_sample": [
@@ -770,7 +812,10 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                 # On empty message exception happens: Line "" doesn't match the regexp.: (at row 1)
                 # /src/Processors/Formats/Impl/RegexpRowInputFormat.cpp:140: DB::RegexpRowInputFormat::readRow(std::__1::vector<COW<DB::IColumn>::mutable_ptr<DB::IColumn>, std::__1::allocator<COW<DB::IColumn>::mutable_ptr<DB::IColumn> > >&, DB::RowReadExtension&) @ 0x1df82fcb in /usr/bin/clickhouse
             ],
-            "extra_settings": {"format_regexp":r"\(id = (.+?), blockNo = (.+?), val1 = \"(.+?)\", val2 = (.+?), val3 = (.+?)\)", "format_regexp_escaping_rule": "Escaped"},
+            "extra_settings": {
+                "format_regexp": r"\(id = (.+?), blockNo = (.+?), val1 = \"(.+?)\", val2 = (.+?), val3 = (.+?)\)",
+                "format_regexp_escaping_rule": "Escaped",
+            },
         },
         ## BINARY FORMATS
         # dumped with
@@ -842,7 +887,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                 # /src/Processors/Formats/Impl/ProtobufRowInputFormat.cpp:25: DB::ProtobufRowInputFormat::readRow(std::__1::vector<COW<DB::IColumn>::mutable_ptr<DB::IColumn>, std::__1::allocator<COW<DB::IColumn>::mutable_ptr<DB::IColumn> > >&, DB::RowReadExtension&) @ 0x1df4cc71 in /usr/bin/clickhouse
                 # /src/Processors/Formats/IRowInputFormat.cpp:64: DB::IRowInputFormat::generate() @ 0x1de727cf in /usr/bin/clickhouse
             ],
-            "extra_settings": {"kafka_schema":"test:TestMessage"},
+            "extra_settings": {"kafka_schema": "test:TestMessage"},
         },
         "ORC": {
             "data_sample": [
@@ -866,7 +911,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                 # /src/Processors/Formats/Impl/CapnProtoRowInputFormat.cpp:212: DB::CapnProtoRowInputFormat::readMessage() @ 0x1ded1cab in /usr/bin/clickhouse
                 # /src/Processors/Formats/Impl/CapnProtoRowInputFormat.cpp:241: DB::CapnProtoRowInputFormat::readRow(std::__1::vector<COW<DB::IColumn>::mutable_ptr<DB::IColumn>, std::__1::allocator<COW<DB::IColumn>::mutable_ptr<DB::IColumn> > >&, DB::RowReadExtension&) @ 0x1ded205d in /usr/bin/clickhouse
             ],
-            "extra_settings": {"kafka_schema":"test:TestRecordStruct"},
+            "extra_settings": {"kafka_schema": "test:TestRecordStruct"},
         },
         "Parquet": {
             "data_sample": [
@@ -901,9 +946,12 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                     {"id": 0, "blockNo": 0, "val1": str("AM"), "val2": 0.5, "val3": 1},
                 ),
             ],
-            "extra_settings": {"format_avro_schema_registry_url":"http://{}:{}".format(
-                kafka_cluster.schema_registry_host, kafka_cluster.schema_registry_port
-            )},
+            "extra_settings": {
+                "format_avro_schema_registry_url": "http://{}:{}".format(
+                    kafka_cluster.schema_registry_host,
+                    kafka_cluster.schema_registry_port,
+                )
+            },
             "supports_empty_value": True,
         },
         "Avro": {
@@ -980,7 +1028,8 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                     topic_list=f"{topic_name}",
                     consumer_group=f"{topic_name}_group",
                     format=format_name,
-                    settings=extra_settings),
+                    settings=extra_settings,
+                ),
             )
         )
     raw_expected = """\
@@ -1021,7 +1070,10 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             [1, 2, 3] if format_opts.get("supports_empty_value", False) else [0, 1, 2]
         )
         result = instance.query_with_retry(
-            "SELECT * FROM test.kafka_{format_name}_mv;".format(format_name=format_name), check_callback=lambda x: x.count('\n') == raw_expected.count('\n')
+            "SELECT * FROM test.kafka_{format_name}_mv;".format(
+                format_name=format_name
+            ),
+            check_callback=lambda x: x.count("\n") == raw_expected.count("\n"),
         )
         expected = raw_expected.format(
             topic_name=topic_name,
@@ -1693,9 +1745,13 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 """
     assert TSV(result) == TSV(expected)
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_materialized_view(kafka_cluster, create_query_generator):
-    topic_name="mv"
+    topic_name = "mv"
 
     instance.query(
         f"""
@@ -1718,7 +1774,9 @@ def test_kafka_materialized_view(kafka_cluster, create_query_generator):
     kafka_produce(kafka_cluster, topic_name, messages)
 
     with existing_kafka_topic(get_admin_client(kafka_cluster), topic_name):
-        result = instance.query_with_retry("SELECT * FROM test.view", check_callback=kafka_check_result)
+        result = instance.query_with_retry(
+            "SELECT * FROM test.view", check_callback=kafka_check_result
+        )
 
         kafka_check_result(result, True)
 
@@ -1731,10 +1789,19 @@ def test_kafka_materialized_view(kafka_cluster, create_query_generator):
         )
 
 
-@pytest.mark.parametrize('create_query_generator, log_line', [
-    (generate_new_create_table_query, r"kafka.*Saved offset [0-9]+ for topic-partition \[recreate_kafka_table:[0-9]+"),
-    (generate_old_create_table_query, "kafka.*Committed offset [0-9]+.*recreate_kafka_table"),
-])
+@pytest.mark.parametrize(
+    "create_query_generator, log_line",
+    [
+        (
+            generate_new_create_table_query,
+            r"kafka.*Saved offset [0-9]+ for topic-partition \[recreate_kafka_table:[0-9]+",
+        ),
+        (
+            generate_old_create_table_query,
+            "kafka.*Committed offset [0-9]+.*recreate_kafka_table",
+        ),
+    ],
+)
 def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_line):
     """
     Checks that materialized view work properly after dropping and recreating the Kafka table.
@@ -1753,7 +1820,8 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
                 "kafka_flush_interval_ms": 1000,
                 "kafka_skip_broken_messages": 1048577,
                 "kafka_thread_per_consumer": thread_per_consumer,
-            })
+            },
+        )
 
         instance.query(
             f"""
@@ -1808,10 +1876,16 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         )
 
 
-@pytest.mark.parametrize('create_query_generator, log_line', [
-    (generate_old_create_table_query, "Committed offset {offset}"),
-    (generate_new_create_table_query, r"kafka.*Saved offset [0-9]+ for topic-partition \[{topic}:[0-9]+\]")
-])
+@pytest.mark.parametrize(
+    "create_query_generator, log_line",
+    [
+        (generate_old_create_table_query, "Committed offset {offset}"),
+        (
+            generate_new_create_table_query,
+            r"kafka.*Saved offset [0-9]+ for topic-partition \[{topic}:[0-9]+\]",
+        ),
+    ],
+)
 def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line):
     """
     Regression for UB in snappy-c (that is used in librdkafka),
@@ -1866,16 +1940,19 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
                         "kafka",
                         "key UInt64, value String",
                         topic_list=topic_name,
-                        #brokers="kafka1:19092",
-                        #consumer_group=f"{topic_name}_group",
+                        # brokers="kafka1:19092",
+                        # consumer_group=f"{topic_name}_group",
                         format="JSONEachRow",
-                        settings={"kafka_flush_interval_ms": 1000}),
+                        settings={"kafka_flush_interval_ms": 1000},
+                    ),
                 )
             )
 
             kafka_produce(kafka_cluster, topic_name, messages)
 
-            instance.wait_for_log_line(log_line.format(offset=number_of_messages, topic=topic_name))
+            instance.wait_for_log_line(
+                log_line.format(offset=number_of_messages, topic=topic_name)
+            )
 
             result = instance.query("SELECT * FROM test.consumer")
             assert TSV(result) == TSV(expected)
@@ -1884,12 +1961,20 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
             instance.query("DROP TABLE test.consumer SYNC")
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_new_create_table_query, generate_old_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_new_create_table_query, generate_old_create_table_query],
+)
 def test_kafka_materialized_view_with_subquery(kafka_cluster, create_query_generator):
     topic_name = "mysq"
     logging.debug(f"Using topic {topic_name}")
 
-    create_query = create_query_generator("kafka", "key UInt64, value UInt64", topic_list=topic_name, consumer_group=topic_name)
+    create_query = create_query_generator(
+        "kafka",
+        "key UInt64, value UInt64",
+        topic_list=topic_name,
+        consumer_group=topic_name,
+    )
     instance.query(
         f"""
         DROP TABLE IF EXISTS test.kafka;
@@ -1911,7 +1996,12 @@ def test_kafka_materialized_view_with_subquery(kafka_cluster, create_query_gener
     kafka_produce(kafka_cluster, topic_name, messages)
 
     with existing_kafka_topic(get_admin_client(kafka_cluster), topic_name):
-        result = instance.query_with_retry("SELECT * FROM test.view", check_callback=kafka_check_result, retry_count=40, sleep_time=0.75)
+        result = instance.query_with_retry(
+            "SELECT * FROM test.view",
+            check_callback=kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
+        )
 
         instance.query(
             """
@@ -1923,14 +2013,17 @@ def test_kafka_materialized_view_with_subquery(kafka_cluster, create_query_gener
         kafka_check_result(result, True)
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     topic_name = f"mmv-{get_topic_postfix(create_query_generator)}"
     create_query = create_query_generator(
         "kafka",
         "key UInt64, value UInt64",
         topic_list=topic_name,
-        consumer_group=f"{topic_name}-group"
+        consumer_group=f"{topic_name}-group",
     )
 
     instance.query(
@@ -1959,8 +2052,12 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     kafka_produce(kafka_cluster, topic_name, messages)
 
     with existing_kafka_topic(get_admin_client(kafka_cluster), topic_name):
-        result1 = instance.query_with_retry("SELECT * FROM test.view1", check_callback=kafka_check_result)
-        result2 = instance.query_with_retry("SELECT * FROM test.view2", check_callback=kafka_check_result)
+        result1 = instance.query_with_retry(
+            "SELECT * FROM test.view1", check_callback=kafka_check_result
+        )
+        result2 = instance.query_with_retry(
+            "SELECT * FROM test.view2", check_callback=kafka_check_result
+        )
 
         instance.query(
             """
@@ -1975,7 +2072,10 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
         kafka_check_result(result2, True)
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_flush_on_big_message(kafka_cluster, create_query_generator):
     # Create batches of messages of size ~100Kb
     kafka_messages = 1000
@@ -1995,7 +2095,7 @@ def test_kafka_flush_on_big_message(kafka_cluster, create_query_generator):
             "key UInt64, value String",
             topic_list=topic_name,
             consumer_group=topic_name,
-            settings={"kafka_max_block_size": 10}
+            settings={"kafka_max_block_size": 10},
         )
 
         instance.query(
@@ -2079,8 +2179,13 @@ def test_kafka_virtual_columns(kafka_cluster):
         kafka_check_result(result, True, "test_kafka_virtual1.reference")
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
-def test_kafka_virtual_columns_with_materialized_view(kafka_cluster, create_query_generator):
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
+def test_kafka_virtual_columns_with_materialized_view(
+    kafka_cluster, create_query_generator
+):
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
         "retention.ms": "-1",
@@ -2092,10 +2197,9 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster, create_quer
         "kafka",
         "key UInt64, value UInt64",
         topic_list=topic_name,
-        consumer_group=f"{topic_name}-group"
+        consumer_group=f"{topic_name}-group",
     )
     with kafka_topic(get_admin_client(kafka_cluster), topic_name, config=topic_config):
-
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.view;
@@ -2116,9 +2220,11 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster, create_quer
 
         def check_callback(result):
             return kafka_check_result(result, False, "test_kafka_virtual2.reference")
+
         result = instance.query_with_retry(
             "SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key, key",
-            check_callback=check_callback)
+            check_callback=check_callback,
+        )
 
         kafka_check_result(result, True, "test_kafka_virtual2.reference")
 
@@ -2128,6 +2234,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster, create_quer
             DROP TABLE test.view;
         """
         )
+
 
 def insert_with_retry(instance, values, table_name="kafka", max_try_couunt=5):
     try_count = 0
@@ -2144,7 +2251,10 @@ def insert_with_retry(instance, values, table_name="kafka", max_try_couunt=5):
                 raise
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_insert(kafka_cluster, create_query_generator):
     topic_name = "insert1" + get_topic_postfix(create_query_generator)
 
@@ -2154,8 +2264,8 @@ def test_kafka_insert(kafka_cluster, create_query_generator):
             "key UInt64, value UInt64",
             topic_list=topic_name,
             consumer_group=topic_name,
-            format="TSV"
-            )
+            format="TSV",
+        )
     )
 
     message_count = 50
@@ -2171,7 +2281,10 @@ def test_kafka_insert(kafka_cluster, create_query_generator):
     kafka_check_result(result, True)
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_produce_consume(kafka_cluster, create_query_generator):
     topic_name = "insert2" + get_topic_postfix(create_query_generator)
 
@@ -2180,7 +2293,7 @@ def test_kafka_produce_consume(kafka_cluster, create_query_generator):
         "key UInt64, value UInt64",
         topic_list=topic_name,
         consumer_group=topic_name,
-        format="TSV"
+        format="TSV",
     )
     instance.query(
         f"""
@@ -2219,7 +2332,8 @@ def test_kafka_produce_consume(kafka_cluster, create_query_generator):
             "SELECT count() FROM test.view",
             sleep_time=1,
             retry_count=20,
-            check_callback=lambda result: int(result) == expected_row_count)
+            check_callback=lambda result: int(result) == expected_row_count,
+        )
 
         instance.query(
             """
@@ -2236,9 +2350,12 @@ def test_kafka_produce_consume(kafka_cluster, create_query_generator):
         ), "ClickHouse lost some messages: {}".format(result)
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
-    topic_name="block" + get_topic_postfix(create_query_generator)
+    topic_name = "block" + get_topic_postfix(create_query_generator)
     create_query = create_query_generator(
         "kafka",
         "key UInt64, value UInt64",
@@ -2279,7 +2396,8 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
     instance.query_with_retry(
         "SELECT count() FROM test.view",
         sleep_time=1,
-        check_callback=lambda res: int(res) >= 100)
+        check_callback=lambda res: int(res) >= 100,
+    )
 
     cancel.set()
 
@@ -2291,7 +2409,8 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
     instance.query_with_retry(
         "SELECT uniqExact(key) FROM test.view",
         sleep_time=1,
-        check_callback=lambda res: int(res) >= i[0])
+        check_callback=lambda res: int(res) >= i[0],
+    )
 
     result = int(instance.query("SELECT count() == uniqExact(key) FROM test.view"))
 
@@ -2306,10 +2425,17 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
 
     assert result == 1, "Messages from kafka get duplicated!"
 
-@pytest.mark.parametrize('create_query_generator, log_line', [
-    (generate_old_create_table_query, "kafka.*Committed offset 2.*virt2_[01]"),
-    (generate_new_create_table_query, r"kafka.*Saved offset 2[0-9]* for topic-partition \[virt2_[01]:[0-9]+"),
-])
+
+@pytest.mark.parametrize(
+    "create_query_generator, log_line",
+    [
+        (generate_old_create_table_query, "kafka.*Committed offset 2.*virt2_[01]"),
+        (
+            generate_new_create_table_query,
+            r"kafka.*Saved offset 2[0-9]* for topic-partition \[virt2_[01]:[0-9]+",
+        ),
+    ],
+)
 def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line):
     admin_client = get_admin_client(kafka_cluster)
 
@@ -2320,9 +2446,11 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
     thread_per_consumer = must_use_thread_per_consumer(create_query_generator)
     topic_name_0 = "virt2_0"
     topic_name_1 = "virt2_1"
-    consumer_group = "virt2"+get_topic_postfix(create_query_generator)
+    consumer_group = "virt2" + get_topic_postfix(create_query_generator)
     with kafka_topic(admin_client, topic_name_0, num_partitions=2, config=topic_config):
-        with kafka_topic(admin_client, topic_name_1, num_partitions=2, config=topic_config):
+        with kafka_topic(
+            admin_client, topic_name_1, num_partitions=2, config=topic_config
+        ):
             create_query = create_query_generator(
                 "kafka",
                 "value UInt64",
@@ -2331,7 +2459,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
                 settings={
                     "kafka_num_consumers": 2,
                     "kafka_thread_per_consumer": thread_per_consumer,
-                }
+                },
             )
 
             instance.query(
@@ -2430,7 +2558,9 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
             # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
             # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
 
-            result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
+            result = instance.query(
+                "SELECT * FROM test.view ORDER BY value", ignore_error=True
+            )
 
             expected = f"""\
         1	k1	{topic_name_0}	0	0	1577836801	1577836801001	['content-encoding']	['base64']
@@ -2452,6 +2582,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
             """
             )
             instance.rotate_logs()
+
 
 # TODO(antaljanosbenjamin)
 def test_kafka_producer_consumer_separate_settings(kafka_cluster):
@@ -2531,10 +2662,13 @@ def test_kafka_producer_consumer_separate_settings(kafka_cluster):
         assert property_in_log in kafka_producer_applyed_properties
 
 
-@pytest.mark.parametrize('create_query_generator, log_line', [
-    (generate_new_create_table_query,"Saved offset 5"),
-    (generate_old_create_table_query, "Committed offset 5"),
-])
+@pytest.mark.parametrize(
+    "create_query_generator, log_line",
+    [
+        (generate_new_create_table_query, "Saved offset 5"),
+        (generate_old_create_table_query, "Committed offset 5"),
+    ],
+)
 def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_line):
     topic_name = "insert3"
     topic_config = {
@@ -2548,13 +2682,15 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
             "key UInt64, value UInt64, _key String, _timestamp DateTime('UTC')",
             topic_list=topic_name,
             consumer_group=topic_name,
-            format="TSV")
+            format="TSV",
+        )
         reader_create_query = create_query_generator(
             "kafka",
             "key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime('UTC')",
             topic_list=topic_name,
             consumer_group=topic_name,
-            format="TSV")
+            format="TSV",
+        )
 
         instance.query(
             f"""
@@ -2603,12 +2739,16 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
             ignore_error=True,
             retry_count=5,
             sleep_time=1,
-            check_callback=lambda res: TSV(res) == TSV(expected))
+            check_callback=lambda res: TSV(res) == TSV(expected),
+        )
 
         assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_insert_avro(kafka_cluster, create_query_generator):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -2617,7 +2757,7 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
         # default retention, since predefined timestamp_ms is used.
         "retention.ms": "-1",
     }
-    topic_name="avro1" + get_topic_postfix(create_query_generator)
+    topic_name = "avro1" + get_topic_postfix(create_query_generator)
     with kafka_topic(admin_client, topic_name, config=topic_config):
         create_query = create_query_generator(
             "kafka",
@@ -2638,7 +2778,13 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
         )
 
         message_count = 2
-        messages = kafka_consume_with_retry(kafka_cluster, topic_name, message_count, need_decode=False, timestamp=1636505534)
+        messages = kafka_consume_with_retry(
+            kafka_cluster,
+            topic_name,
+            message_count,
+            need_decode=False,
+            timestamp=1636505534,
+        )
 
         result = ""
         for a_message in messages:
@@ -2654,11 +2800,13 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
         assert result == expected_result
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_produce_consume_avro(kafka_cluster, create_query_generator):
     topic_name = "insert_avro" + get_topic_postfix(create_query_generator)
     with kafka_topic(get_admin_client(kafka_cluster), topic_name):
-
         num_rows = 75
 
         writer_create_query = create_query_generator(
@@ -2712,11 +2860,14 @@ def test_kafka_produce_consume_avro(kafka_cluster, create_query_generator):
         assert int(expected_max_key) == (num_rows - 1) * 10
 
 
-@pytest.mark.parametrize('create_query_generator', [
-    generate_old_create_table_query,
-    # TODO(antaljanosbenjamin):  Something is off with timing
-    # generate_new_create_table_query
-])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        generate_old_create_table_query,
+        # TODO(antaljanosbenjamin):  Something is off with timing
+        # generate_new_create_table_query
+    ],
+)
 def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -2731,7 +2882,7 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
             consumer_group=topic_name,
             settings={
                 "kafka_max_block_size": 100,
-            }
+            },
         )
         instance.query(
             f"""
@@ -2782,11 +2933,15 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
         assert TSV(result) == TSV("2	1")
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
     topic_name = "flush_by_block_size" + get_topic_postfix(create_query_generator)
 
     cancel = threading.Event()
+
     def produce():
         while not cancel.is_set():
             messages = []
@@ -2807,7 +2962,7 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
                 "kafka_max_block_size": 100,
                 "kafka_poll_max_batch_size": 1,
                 "kafka_flush_interval_ms": 120000,
-            }
+            },
         )
 
         instance.query(
@@ -2855,13 +3010,20 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
         ), "Messages from kafka should be flushed when block of size kafka_max_block_size is formed!"
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
-def test_kafka_lot_of_partitions_partial_commit_of_bulk(kafka_cluster, create_query_generator):
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
+def test_kafka_lot_of_partitions_partial_commit_of_bulk(
+    kafka_cluster, create_query_generator
+):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    topic_name = "topic_with_multiple_partitions2" + get_topic_postfix(create_query_generator)
+    topic_name = "topic_with_multiple_partitions2" + get_topic_postfix(
+        create_query_generator
+    )
     with kafka_topic(admin_client, topic_name):
         create_query = create_query_generator(
             "kafka",
@@ -2871,7 +3033,7 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(kafka_cluster, create_qu
             settings={
                 "kafka_max_block_size": 211,
                 "kafka_flush_interval_ms": 500,
-            }
+            },
         )
         instance.query(
             f"""
@@ -2898,7 +3060,9 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(kafka_cluster, create_qu
 
         instance.wait_for_log_line("kafka.*Stalled", repetitions=5)
 
-        result = instance.query("SELECT count(), uniqExact(key), max(key) FROM test.view")
+        result = instance.query(
+            "SELECT count(), uniqExact(key), max(key) FROM test.view"
+        )
         logging.debug(result)
         assert TSV(result) == TSV("{0}\t{0}\t{0}".format(count))
 
@@ -2910,10 +3074,13 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(kafka_cluster, create_qu
         )
 
 
-@pytest.mark.parametrize('create_query_generator, log_line', [
-    (generate_old_create_table_query, "{}.*Polled offset [0-9]+"),
-    (generate_new_create_table_query, "{}.*Saved offset"),
-])
+@pytest.mark.parametrize(
+    "create_query_generator, log_line",
+    [
+        (generate_old_create_table_query, "{}.*Polled offset [0-9]+"),
+        (generate_new_create_table_query, "{}.*Saved offset"),
+    ],
+)
 def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
     NUMBER_OF_CONSURRENT_CONSUMERS = 11
 
@@ -2938,11 +3105,12 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
-    topic_name = "topic_with_multiple_partitions" + get_topic_postfix(create_query_generator)
+    topic_name = "topic_with_multiple_partitions" + get_topic_postfix(
+        create_query_generator
+    )
     table_name_prefix = "kafka_consumer"
     keeper_path = f"/clickhouse/{{database}}/{table_name_prefix}"
     with kafka_topic(admin_client, topic_name, num_partitions=11):
-
         cancel = threading.Event()
 
         msg_index = [0]
@@ -2974,7 +3142,7 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
                 settings={
                     "kafka_max_block_size": 33,
                     "kafka_flush_interval_ms": 500,
-                }
+                },
             )
             instance.query(
                 f"""
@@ -3081,15 +3249,20 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
 
 
 # TODO(antaljanosbenjamin): find another way to make insertion fail
-@pytest.mark.parametrize('create_query_generator', [
-    generate_old_create_table_query,
-    # generate_new_create_table_query,
-])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        generate_old_create_table_query,
+        # generate_new_create_table_query,
+    ],
+)
 def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_generator):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
-    topic_name = "no_holes_when_write_suffix_failed" + get_topic_postfix(create_query_generator)
+    topic_name = "no_holes_when_write_suffix_failed" + get_topic_postfix(
+        create_query_generator
+    )
 
     with kafka_topic(admin_client, topic_name):
         messages = [json.dumps({"key": j + 1, "value": "x" * 300}) for j in range(22)]
@@ -3103,7 +3276,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             settings={
                 "kafka_max_block_size": 20,
                 "kafka_flush_interval_ms": 2000,
-            }
+            },
         )
         instance.query(
             f"""
@@ -3140,7 +3313,9 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         pm.heal_all()
         instance.wait_for_log_line("Committed offset 22")
 
-        result = instance.query("SELECT count(), uniqExact(key), max(key) FROM test.view")
+        result = instance.query(
+            "SELECT count(), uniqExact(key), max(key) FROM test.view"
+        )
         logging.debug(result)
 
         # kafka_cluster.open_bash_shell('instance')
@@ -3198,9 +3373,14 @@ def test_exception_from_destructor(kafka_cluster):
     assert TSV(instance.query("SELECT 1")) == TSV("1")
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_generator):
-    topic_name = "commits_of_unprocessed_messages_on_drop" + get_topic_postfix(create_query_generator)
+    topic_name = "commits_of_unprocessed_messages_on_drop" + get_topic_postfix(
+        create_query_generator
+    )
     messages = [json.dumps({"key": j + 1, "value": j + 1}) for j in range(1)]
 
     kafka_produce(kafka_cluster, topic_name, messages)
@@ -3213,7 +3393,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
         settings={
             "kafka_max_block_size": 1000,
             "kafka_flush_interval_ms": 1000,
-        }
+        },
     )
     instance.query(
         f"""
@@ -3259,9 +3439,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
             for _ in range(113):
                 messages.append(json.dumps({"key": i[0], "value": i[0]}))
                 i[0] += 1
-            kafka_produce(
-                kafka_cluster, topic_name, messages
-            )
+            kafka_produce(kafka_cluster, topic_name, messages)
             time.sleep(0.5)
 
     kafka_thread = threading.Thread(target=produce)
@@ -3282,11 +3460,9 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
         settings={
             "kafka_max_block_size": 10000,
             "kafka_flush_interval_ms": 1000,
-        }
+        },
     )
-    instance.query(
-        new_create_query
-    )
+    instance.query(new_create_query)
 
     cancel.set()
     instance.wait_for_log_line("kafka.*Stalled", repetitions=5)
@@ -3310,7 +3486,10 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
     assert TSV(result) == TSV("{0}\t{0}\t{0}".format(i[0] - 1)), "Missing data!"
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_bad_reschedule(kafka_cluster, create_query_generator):
     topic_name = "test_bad_reschedule" + get_topic_postfix(create_query_generator)
 
@@ -3325,7 +3504,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
         settings={
             "kafka_max_block_size": 1000,
             "kafka_flush_interval_ms": 1000,
-        }
+        },
     )
     instance.query(
         f"""
@@ -3432,7 +3611,10 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 # But in cases of some peaky loads in kafka topic the current contract sounds more predictable and
 # easier to understand, so let's keep it as is for now.
 # also we can came to eof because we drained librdkafka internal queue too fast
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_premature_flush_on_eof(kafka_cluster, create_query_generator):
     topic_name = "premature_flush_on_eof" + get_topic_postfix(create_query_generator)
     create_query = create_query_generator(
@@ -3510,14 +3692,16 @@ def test_premature_flush_on_eof(kafka_cluster, create_query_generator):
     )
 
 
-@pytest.mark.parametrize('create_query_generator, do_direct_read', [
-    (generate_old_create_table_query, True),
-    (generate_new_create_table_query, False)
-])
+@pytest.mark.parametrize(
+    "create_query_generator, do_direct_read",
+    [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
+)
 def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):
-    number_of_messages=20000
+    number_of_messages = 20000
     topic_name = "test_bad_reschedule" + get_topic_postfix(create_query_generator)
-    messages = [json.dumps({"key": j + 1, "value": j + 1}) for j in range(number_of_messages)]
+    messages = [
+        json.dumps({"key": j + 1, "value": j + 1}) for j in range(number_of_messages)
+    ]
     kafka_produce(kafka_cluster, topic_name, messages)
 
     with existing_kafka_topic(get_admin_client(kafka_cluster), topic_name):
@@ -3528,7 +3712,7 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
             "key UInt64, value UInt64",
             topic_list=topic_name,
             consumer_group=topic_name,
-            settings={"kafka_max_block_size": 1000}
+            settings={"kafka_max_block_size": 1000},
         )
         instance.query(
             f"""
@@ -3559,12 +3743,16 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
         result = instance.query_with_retry(
             "SELECT count() FROM test.destination_unavailable",
             sleep_time=1,
-            check_callback=lambda res: int(res) == number_of_messages)
+            check_callback=lambda res: int(res) == number_of_messages,
+        )
 
         assert int(result) == number_of_messages
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_issue14202(kafka_cluster, create_query_generator):
     """
     INSERT INTO Kafka Engine from an empty SELECT sub query was leading to failure
@@ -3638,9 +3826,14 @@ def random_string(size=8):
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator):
-    topic_name = "kafka_engine_put_errors_to_stream" + get_topic_postfix(create_query_generator)
+    topic_name = "kafka_engine_put_errors_to_stream" + get_topic_postfix(
+        create_query_generator
+    )
     create_query = create_query_generator(
         "kafka",
         "i Int64, s String",
@@ -3649,7 +3842,7 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
         settings={
             "kafka_max_block_size": 128,
             "kafka_handle_error_mode": "stream",
-        }
+        },
     )
     instance.query(
         f"""
@@ -3726,9 +3919,17 @@ def gen_message_with_jsons(jsons=10, malformed=0):
     return s.getvalue()
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
-def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(kafka_cluster, create_query_generator):
-    topic_name = "kafka_engine_put_errors_to_stream_with_random_malformed_json" + get_topic_postfix(create_query_generator)
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
+def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
+    kafka_cluster, create_query_generator
+):
+    topic_name = (
+        "kafka_engine_put_errors_to_stream_with_random_malformed_json"
+        + get_topic_postfix(create_query_generator)
+    )
     create_query = create_query_generator(
         "kafka",
         "i Int64, s String",
@@ -3738,7 +3939,7 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(kafka_clus
             "kafka_max_block_size": 100,
             "kafka_poll_max_batch_size": 1,
             "kafka_handle_error_mode": "stream",
-        }
+        },
     )
 
     instance.query(
@@ -3788,7 +3989,10 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(kafka_clus
         )
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
@@ -3808,8 +4012,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 '{"id":"0","blockNo":"BAD","val1":"AM","val2":0.5,"val3":1}',
             ],
             "expected": {
-                "raw_message":"{\"id\":\"0\",\"blockNo\":\"BAD\",\"val1\":\"AM\",\"val2\":0.5,\"val3\":1}",
-                "error":"Cannot parse input: expected '\"' before: 'BAD\",\"val1\":\"AM\",\"val2\":0.5,\"val3\":1}': (while reading the value of key blockNo)"
+                "raw_message": '{"id":"0","blockNo":"BAD","val1":"AM","val2":0.5,"val3":1}',
+                "error": 'Cannot parse input: expected \'"\' before: \'BAD","val1":"AM","val2":0.5,"val3":1}\': (while reading the value of key blockNo)',
             },
             "supports_empty_value": True,
             "printable": True,
@@ -3824,8 +4028,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 '["0", "BAD", "AM", 0.5, 1]',
             ],
             "expected": {
-                "raw_message":"[\"0\", \"BAD\", \"AM\", 0.5, 1]",
-                "error":"Cannot parse input: expected '\"' before: 'BAD\", \"AM\", 0.5, 1]': (while reading the value of key blockNo)"
+                "raw_message": '["0", "BAD", "AM", 0.5, 1]',
+                "error": "Cannot parse input: expected '\"' before: 'BAD\", \"AM\", 0.5, 1]': (while reading the value of key blockNo)",
             },
             "supports_empty_value": True,
             "printable": True,
@@ -3839,8 +4043,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 '["0", "BAD", "AM", 0.5, 1]',
             ],
             "expected": {
-                "raw_message":"[\"0\", \"BAD\", \"AM\", 0.5, 1]",
-                "error":"Cannot parse JSON string: expected opening quote"
+                "raw_message": '["0", "BAD", "AM", 0.5, 1]',
+                "error": "Cannot parse JSON string: expected opening quote",
             },
             "printable": True,
         },
@@ -3853,8 +4057,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "id=0\tblockNo=BAD\tval1=AM\tval2=0.5\tval3=1\n",
             ],
             "expected": {
-                "raw_message":"id=0\tblockNo=BAD\tval1=AM\tval2=0.5\tval3=1\n",
-                "error":"Found garbage after field in TSKV format: blockNo: (at row 1)\n"
+                "raw_message": "id=0\tblockNo=BAD\tval1=AM\tval2=0.5\tval3=1\n",
+                "error": "Found garbage after field in TSKV format: blockNo: (at row 1)\n",
             },
             "printable": True,
         },
@@ -3867,8 +4071,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 '0,"BAD","AM",0.5,1\n',
             ],
             "expected": {
-                "raw_message":"0,\"BAD\",\"AM\",0.5,1\n",
-                "error":"Cannot parse input: expected '\"' before: 'BAD\",\"AM\",0.5,1\\n'"
+                "raw_message": '0,"BAD","AM",0.5,1\n',
+                "error": "Cannot parse input: expected '\"' before: 'BAD\",\"AM\",0.5,1\\n'",
             },
             "printable": True,
             "supports_empty_value": True,
@@ -3882,8 +4086,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "0\tBAD\tAM\t0.5\t1\n",
             ],
             "expected": {
-                "raw_message":"0\tBAD\tAM\t0.5\t1\n",
-                "error":"Cannot parse input: expected '\\t' before: 'BAD\\tAM\\t0.5\\t1\\n'"
+                "raw_message": "0\tBAD\tAM\t0.5\t1\n",
+                "error": "Cannot parse input: expected '\\t' before: 'BAD\\tAM\\t0.5\\t1\\n'",
             },
             "supports_empty_value": True,
             "printable": True,
@@ -3897,8 +4101,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 '"id","blockNo","val1","val2","val3"\n0,"BAD","AM",0.5,1\n',
             ],
             "expected": {
-                "raw_message":"\"id\",\"blockNo\",\"val1\",\"val2\",\"val3\"\n0,\"BAD\",\"AM\",0.5,1\n",
-                "error":"Cannot parse input: expected '\"' before: 'BAD\",\"AM\",0.5,1\\n'"
+                "raw_message": '"id","blockNo","val1","val2","val3"\n0,"BAD","AM",0.5,1\n',
+                "error": "Cannot parse input: expected '\"' before: 'BAD\",\"AM\",0.5,1\\n'",
             },
             "printable": True,
         },
@@ -3911,8 +4115,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "(0,'BAD','AM',0.5,1)",
             ],
             "expected": {
-                "raw_message":"(0,'BAD','AM',0.5,1)",
-                "error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero/NULL instead of throwing exception"
+                "raw_message": "(0,'BAD','AM',0.5,1)",
+                "error": "Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero/NULL instead of throwing exception",
             },
             "supports_empty_value": True,
             "printable": True,
@@ -3926,8 +4130,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "id\tblockNo\tval1\tval2\tval3\n0\tBAD\tAM\t0.5\t1\n",
             ],
             "expected": {
-                "raw_message":"id\tblockNo\tval1\tval2\tval3\n0\tBAD\tAM\t0.5\t1\n",
-                "error":"Cannot parse input: expected '\\t' before: 'BAD\\tAM\\t0.5\\t1\\n"
+                "raw_message": "id\tblockNo\tval1\tval2\tval3\n0\tBAD\tAM\t0.5\t1\n",
+                "error": "Cannot parse input: expected '\\t' before: 'BAD\\tAM\\t0.5\\t1\\n",
             },
             "supports_empty_value": True,
             "printable": True,
@@ -3941,8 +4145,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "id\tblockNo\tval1\tval2\tval3\nInt64\tUInt16\tString\tFloat32\tUInt8\n0\tBAD\tAM\t0.5\t1\n",
             ],
             "expected": {
-                "raw_message":"id\tblockNo\tval1\tval2\tval3\nInt64\tUInt16\tString\tFloat32\tUInt8\n0\tBAD\tAM\t0.5\t1\n",
-                "error":"Cannot parse input: expected '\\t' before: 'BAD\\tAM\\t0.5\\t1\\n'"
+                "raw_message": "id\tblockNo\tval1\tval2\tval3\nInt64\tUInt16\tString\tFloat32\tUInt8\n0\tBAD\tAM\t0.5\t1\n",
+                "error": "Cannot parse input: expected '\\t' before: 'BAD\\tAM\\t0.5\\t1\\n'",
             },
             "printable": True,
         },
@@ -3955,8 +4159,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 b"\x05\x01\x02\x69\x64\x05\x49\x6e\x74\x36\x34\x00\x00\x00\x00\x00\x00\x00\x00\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x06\x53\x74\x72\x69\x6e\x67\x03\x42\x41\x44\x04\x76\x61\x6c\x31\x06\x53\x74\x72\x69\x6e\x67\x02\x41\x4d\x04\x76\x61\x6c\x32\x07\x46\x6c\x6f\x61\x74\x33\x32\x00\x00\x00\x3f\x04\x76\x61\x6c\x33\x05\x55\x49\x6e\x74\x38\x01",
             ],
             "expected": {
-                "raw_message":"050102696405496E743634000000000000000007626C6F636B4E6F06537472696E67034241440476616C3106537472696E6702414D0476616C3207466C6F617433320000003F0476616C330555496E743801",
-                "error":"Cannot convert: String to UInt16"
+                "raw_message": "050102696405496E743634000000000000000007626C6F636B4E6F06537472696E67034241440476616C3106537472696E6702414D0476616C3207466C6F617433320000003F0476616C330555496E743801",
+                "error": "Cannot convert: String to UInt16",
             },
             "printable": False,
         },
@@ -3969,8 +4173,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 b"\x00\x00\x00\x00\x00\x00\x00\x00\x03\x42\x41\x44\x02\x41\x4d\x00\x00\x00\x3f\x01",
             ],
             "expected": {
-                "raw_message":"00000000000000000342414402414D0000003F01",
-                "error":"Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\n"
+                "raw_message": "00000000000000000342414402414D0000003F01",
+                "error": "Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\n",
             },
             "printable": False,
         },
@@ -3983,8 +4187,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 b"\x05\x02\x69\x64\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x04\x76\x61\x6c\x31\x04\x76\x61\x6c\x32\x04\x76\x61\x6c\x33\x05\x49\x6e\x74\x36\x34\x06\x53\x74\x72\x69\x6e\x67\x06\x53\x74\x72\x69\x6e\x67\x07\x46\x6c\x6f\x61\x74\x33\x32\x05\x55\x49\x6e\x74\x38\x00\x00\x00\x00\x00\x00\x00\x00\x03\x42\x41\x44\x02\x41\x4d\x00\x00\x00\x3f\x01",
             ],
             "expected": {
-                "raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01",
-                "error":"Type of 'blockNo' must be UInt16, not String"
+                "raw_message": "0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01",
+                "error": "Type of 'blockNo' must be UInt16, not String",
             },
             "printable": False,
         },
@@ -3997,8 +4201,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 b"\x4f\x52\x43\x0a\x0b\x0a\x03\x00\x00\x00\x12\x04\x08\x01\x50\x00\x0a\x15\x0a\x05\x00\x00\x00\x00\x00\x12\x0c\x08\x01\x12\x06\x08\x00\x10\x00\x18\x00\x50\x00\x0a\x12\x0a\x06\x00\x00\x00\x00\x00\x00\x12\x08\x08\x01\x42\x02\x08\x06\x50\x00\x0a\x12\x0a\x06\x00\x00\x00\x00\x00\x00\x12\x08\x08\x01\x42\x02\x08\x04\x50\x00\x0a\x29\x0a\x04\x00\x00\x00\x00\x12\x21\x08\x01\x1a\x1b\x09\x00\x00\x00\x00\x00\x00\xe0\x3f\x11\x00\x00\x00\x00\x00\x00\xe0\x3f\x19\x00\x00\x00\x00\x00\x00\xe0\x3f\x50\x00\x0a\x15\x0a\x05\x00\x00\x00\x00\x00\x12\x0c\x08\x01\x12\x06\x08\x02\x10\x02\x18\x02\x50\x00\xff\x80\xff\x80\xff\x00\xff\x80\xff\x03\x42\x41\x44\xff\x80\xff\x02\x41\x4d\xff\x80\x00\x00\x00\x3f\xff\x80\xff\x01\x0a\x06\x08\x06\x10\x00\x18\x0d\x0a\x06\x08\x06\x10\x01\x18\x17\x0a\x06\x08\x06\x10\x02\x18\x14\x0a\x06\x08\x06\x10\x03\x18\x14\x0a\x06\x08\x06\x10\x04\x18\x2b\x0a\x06\x08\x06\x10\x05\x18\x17\x0a\x06\x08\x00\x10\x00\x18\x02\x0a\x06\x08\x00\x10\x01\x18\x02\x0a\x06\x08\x01\x10\x01\x18\x02\x0a\x06\x08\x00\x10\x02\x18\x02\x0a\x06\x08\x02\x10\x02\x18\x02\x0a\x06\x08\x01\x10\x02\x18\x03\x0a\x06\x08\x00\x10\x03\x18\x02\x0a\x06\x08\x02\x10\x03\x18\x02\x0a\x06\x08\x01\x10\x03\x18\x02\x0a\x06\x08\x00\x10\x04\x18\x02\x0a\x06\x08\x01\x10\x04\x18\x04\x0a\x06\x08\x00\x10\x05\x18\x02\x0a\x06\x08\x01\x10\x05\x18\x02\x12\x04\x08\x00\x10\x00\x12\x04\x08\x00\x10\x00\x12\x04\x08\x00\x10\x00\x12\x04\x08\x00\x10\x00\x12\x04\x08\x00\x10\x00\x12\x04\x08\x00\x10\x00\x1a\x03\x47\x4d\x54\x0a\x59\x0a\x04\x08\x01\x50\x00\x0a\x0c\x08\x01\x12\x06\x08\x00\x10\x00\x18\x00\x50\x00\x0a\x08\x08\x01\x42\x02\x08\x06\x50\x00\x0a\x08\x08\x01\x42\x02\x08\x04\x50\x00\x0a\x21\x08\x01\x1a\x1b\x09\x00\x00\x00\x00\x00\x00\xe0\x3f\x11\x00\x00\x00\x00\x00\x00\xe0\x3f\x19\x00\x00\x00\x00\x00\x00\xe0\x3f\x50\x00\x0a\x0c\x08\x01\x12\x06\x08\x02\x10\x02\x18\x02\x50\x00\x08\x03\x10\xec\x02\x1a\x0c\x08\x03\x10\x8e\x01\x18\x1d\x20\xc1\x01\x28\x01\x22\x2e\x08\x0c\x12\x05\x01\x02\x03\x04\x05\x1a\x02\x69\x64\x1a\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x1a\x04\x76\x61\x6c\x31\x1a\x04\x76\x61\x6c\x32\x1a\x04\x76\x61\x6c\x33\x20\x00\x28\x00\x30\x00\x22\x08\x08\x04\x20\x00\x28\x00\x30\x00\x22\x08\x08\x08\x20\x00\x28\x00\x30\x00\x22\x08\x08\x08\x20\x00\x28\x00\x30\x00\x22\x08\x08\x05\x20\x00\x28\x00\x30\x00\x22\x08\x08\x01\x20\x00\x28\x00\x30\x00\x30\x01\x3a\x04\x08\x01\x50\x00\x3a\x0c\x08\x01\x12\x06\x08\x00\x10\x00\x18\x00\x50\x00\x3a\x08\x08\x01\x42\x02\x08\x06\x50\x00\x3a\x08\x08\x01\x42\x02\x08\x04\x50\x00\x3a\x21\x08\x01\x1a\x1b\x09\x00\x00\x00\x00\x00\x00\xe0\x3f\x11\x00\x00\x00\x00\x00\x00\xe0\x3f\x19\x00\x00\x00\x00\x00\x00\xe0\x3f\x50\x00\x3a\x0c\x08\x01\x12\x06\x08\x02\x10\x02\x18\x02\x50\x00\x40\x90\x4e\x48\x01\x08\xd5\x01\x10\x00\x18\x80\x80\x04\x22\x02\x00\x0b\x28\x5b\x30\x06\x82\xf4\x03\x03\x4f\x52\x43\x18",
             ],
             "expected": {
-                "raw_message":"4F52430A0B0A030000001204080150000A150A050000000000120C0801120608001000180050000A120A06000000000000120808014202080650000A120A06000000000000120808014202080450000A290A0400000000122108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50000A150A050000000000120C080112060802100218025000FF80FF80FF00FF80FF03424144FF80FF02414DFF800000003FFF80FF010A0608061000180D0A060806100118170A060806100218140A060806100318140A0608061004182B0A060806100518170A060800100018020A060800100118020A060801100118020A060800100218020A060802100218020A060801100218030A060800100318020A060802100318020A060801100318020A060800100418020A060801100418040A060800100518020A060801100518021204080010001204080010001204080010001204080010001204080010001204080010001A03474D540A590A04080150000A0C0801120608001000180050000A0808014202080650000A0808014202080450000A2108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50000A0C080112060802100218025000080310EC021A0C0803108E01181D20C1012801222E080C120501020304051A0269641A07626C6F636B4E6F1A0476616C311A0476616C321A0476616C33200028003000220808042000280030002208080820002800300022080808200028003000220808052000280030002208080120002800300030013A04080150003A0C0801120608001000180050003A0808014202080650003A0808014202080450003A2108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50003A0C08011206080210021802500040904E480108D5011000188080042202000B285B300682F403034F524318",
-                "error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero/NULL instead of throwing exception."
+                "raw_message": "4F52430A0B0A030000001204080150000A150A050000000000120C0801120608001000180050000A120A06000000000000120808014202080650000A120A06000000000000120808014202080450000A290A0400000000122108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50000A150A050000000000120C080112060802100218025000FF80FF80FF00FF80FF03424144FF80FF02414DFF800000003FFF80FF010A0608061000180D0A060806100118170A060806100218140A060806100318140A0608061004182B0A060806100518170A060800100018020A060800100118020A060801100118020A060800100218020A060802100218020A060801100218030A060800100318020A060802100318020A060801100318020A060800100418020A060801100418040A060800100518020A060801100518021204080010001204080010001204080010001204080010001204080010001204080010001A03474D540A590A04080150000A0C0801120608001000180050000A0808014202080650000A0808014202080450000A2108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50000A0C080112060802100218025000080310EC021A0C0803108E01181D20C1012801222E080C120501020304051A0269641A07626C6F636B4E6F1A0476616C311A0476616C321A0476616C33200028003000220808042000280030002208080820002800300022080808200028003000220808052000280030002208080120002800300030013A04080150003A0C0801120608001000180050003A0808014202080650003A0808014202080450003A2108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50003A0C08011206080210021802500040904E480108D5011000188080042202000B285B300682F403034F524318",
+                "error": "Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero/NULL instead of throwing exception.",
             },
             "printable": False,
         },
@@ -4027,7 +4231,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             settings={
                 "kafka_handle_error_mode": "stream",
                 "kafka_flush_interval_ms": 1000,
-            }
+            },
         )
         instance.query(
             f"""
@@ -4118,10 +4322,13 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         kafka_delete_topic(admin_client, topic_name)
 
 
-@pytest.mark.parametrize('create_query_generator', [
-    generate_old_create_table_query,
-    # generate_new_create_table_query TODO(antaljanosbenjamin): crashes CH
-])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        generate_old_create_table_query,
+        # generate_new_create_table_query TODO(antaljanosbenjamin): crashes CH
+    ],
+)
 def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
     topic_name = "kafka_consumer_failover" + get_topic_postfix(create_query_generator)
 
@@ -4129,16 +4336,18 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
         consumer_group = f"{topic_name}_group"
         create_queries = []
         for counter in range(3):
-            create_queries.append(create_query_generator(
-                f"kafka{counter+1}",
-                "key UInt64, value UInt64",
-                topic_list=topic_name,
-                consumer_group=consumer_group,
-                settings={
-                    "kafka_max_block_size": 1,
-                    "kafka_poll_timeout_ms": 200,
-                }
-            ))
+            create_queries.append(
+                create_query_generator(
+                    f"kafka{counter+1}",
+                    "key UInt64, value UInt64",
+                    topic_list=topic_name,
+                    consumer_group=consumer_group,
+                    settings={
+                        "kafka_max_block_size": 1,
+                        "kafka_poll_timeout_ms": 200,
+                    },
+                )
+            )
 
         instance.query(
             f"""
@@ -4188,7 +4397,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
         producer.flush()
 
         count_query = "SELECT count() FROM test.destination"
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > 0)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > 0
+        )
 
         ## 2 attached, 2 working
         instance.query("DETACH TABLE test.kafka1")
@@ -4203,7 +4414,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
         ## 1 attached, 1 working
         instance.query("DETACH TABLE test.kafka2")
@@ -4218,7 +4431,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
         ## 2 attached, 2 working
         instance.query("ATTACH TABLE test.kafka1")
@@ -4233,7 +4448,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
         ## 1 attached, 1 working
         instance.query("DETACH TABLE test.kafka3")
@@ -4248,7 +4465,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
         ## 2 attached, 2 working
         instance.query("ATTACH TABLE test.kafka2")
@@ -4263,7 +4482,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
         ## 3 attached, 2 working
         instance.query("ATTACH TABLE test.kafka3")
@@ -4278,7 +4499,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
         ## 2 attached, same 2 working
         instance.query("DETACH TABLE test.kafka3")
@@ -4293,7 +4516,9 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
             partition=1,
         )
         producer.flush()
-        prev_count = instance.query_with_retry(count_query, check_callback=lambda res: int(res) > prev_count)
+        prev_count = instance.query_with_retry(
+            count_query, check_callback=lambda res: int(res) > prev_count
+        )
 
 
 def test_kafka_predefined_configuration(kafka_cluster):
@@ -4323,7 +4548,10 @@ def test_kafka_predefined_configuration(kafka_cluster):
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/26643
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_issue26643(kafka_cluster, create_query_generator):
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
@@ -4383,7 +4611,7 @@ def test_issue26643(kafka_cluster, create_query_generator):
                 "kafka_schema": "message_with_repeated.proto:Message",
                 "kafka_skip_broken_messages": 10000,
                 "kafka_thread_per_consumer": thread_per_consumer,
-            }
+            },
         )
 
         instance.query(
@@ -4440,8 +4668,10 @@ def test_issue26643(kafka_cluster, create_query_generator):
         assert TSV(result) == TSV(expected)
 
 
-
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_num_consumers_limit(kafka_cluster, create_query_generator):
     instance.query("DROP TABLE IF EXISTS test.kafka")
 
@@ -4452,12 +4682,15 @@ def test_num_consumers_limit(kafka_cluster, create_query_generator):
         "key UInt64, value UInt64",
         settings={
             "kafka_num_consumers": 100,
-            "kafka_thread_per_consumer": thread_per_consumer
-        }
+            "kafka_thread_per_consumer": thread_per_consumer,
+        },
     )
     error = instance.query_and_get_error(create_query)
 
-    assert "BAD_ARGUMENTS" in error and "The number of consumers can not be bigger than" in error
+    assert (
+        "BAD_ARGUMENTS" in error
+        and "The number of consumers can not be bigger than" in error
+    )
 
     instance.query(
         f"""
@@ -4469,7 +4702,10 @@ def test_num_consumers_limit(kafka_cluster, create_query_generator):
     instance.query("DROP TABLE test.kafka")
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_format_with_prefix_and_suffix(kafka_cluster, create_query_generator):
     topic_name = "custom" + get_topic_postfix(create_query_generator)
 
@@ -4479,7 +4715,7 @@ def test_format_with_prefix_and_suffix(kafka_cluster, create_query_generator):
             "key UInt64, value UInt64",
             topic_list=topic_name,
             consumer_group=topic_name,
-            format="CustomSeparated"
+            format="CustomSeparated",
         )
         instance.query(
             f"""
@@ -4498,13 +4734,19 @@ def test_format_with_prefix_and_suffix(kafka_cluster, create_query_generator):
         assert len(messages) == 2
 
         assert (
-            "".join(messages) == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
+            "".join(messages)
+            == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
         )
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_max_rows_per_message(kafka_cluster, create_query_generator):
-    topic_name = "custom_max_rows_per_message" + get_topic_postfix(create_query_generator)
+    topic_name = "custom_max_rows_per_message" + get_topic_postfix(
+        create_query_generator
+    )
 
     with kafka_topic(get_admin_client(kafka_cluster), topic_name):
         num_rows = 5
@@ -4519,7 +4761,7 @@ def test_max_rows_per_message(kafka_cluster, create_query_generator):
                 "format_custom_result_before_delimiter": "<prefix>\n",
                 "format_custom_result_after_delimiter": "<suffix>\n",
                 "kafka_max_rows_per_message": 3,
-            }
+            },
         )
         instance.query(
             f"""
@@ -4546,13 +4788,19 @@ def test_max_rows_per_message(kafka_cluster, create_query_generator):
             == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
         )
 
-        instance.query_with_retry("SELECT count() FROM test.view", check_callback=lambda res: int(res) == num_rows)
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res) == num_rows,
+        )
 
         result = instance.query("SELECT * FROM test.view")
         assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_row_based_formats(kafka_cluster, create_query_generator):
     admin_client = get_admin_client(kafka_cluster)
 
@@ -4589,7 +4837,7 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
                 topic_list=topic_name,
                 consumer_group=topic_name,
                 format=format_name,
-                settings={"kafka_max_rows_per_message": max_rows_per_message}
+                settings={"kafka_max_rows_per_message": max_rows_per_message},
             )
 
             instance.query(
@@ -4606,11 +4854,16 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
             """
             )
 
-            messages = kafka_consume_with_retry(kafka_cluster, topic_name, message_count, need_decode=False)
+            messages = kafka_consume_with_retry(
+                kafka_cluster, topic_name, message_count, need_decode=False
+            )
 
             assert len(messages) == message_count
 
-            instance.query_with_retry("SELECT count() FROM test.view", check_callback=lambda res: int(res) == num_rows)
+            instance.query_with_retry(
+                "SELECT count() FROM test.view",
+                check_callback=lambda res: int(res) == num_rows,
+            )
 
             result = instance.query("SELECT * FROM test.view")
             expected = ""
@@ -4619,7 +4872,10 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
             assert result == expected
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_block_based_formats_1(kafka_cluster, create_query_generator):
     topic_name = "pretty_space" + get_topic_postfix(create_query_generator)
 
@@ -4629,7 +4885,7 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
             "key UInt64, value UInt64",
             topic_list=topic_name,
             consumer_group=topic_name,
-            format="PrettySpace"
+            format="PrettySpace",
         )
         instance.query(
             f"""
@@ -4662,7 +4918,10 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
         ]
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_block_based_formats_2(kafka_cluster, create_query_generator):
     admin_client = get_admin_client(kafka_cluster)
     num_rows = 100
@@ -4683,7 +4942,7 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
-                format=format_name
+                format=format_name,
             )
 
             instance.query(
@@ -4699,10 +4958,17 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
                 INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
             """
             )
-            messages = kafka_consume_with_retry(kafka_cluster, topic_name, message_count, need_decode=False)
+            messages = kafka_consume_with_retry(
+                kafka_cluster, topic_name, message_count, need_decode=False
+            )
             assert len(messages) == message_count
 
-            rows = int(instance.query_with_retry("SELECT count() FROM test.view", check_callback=lambda res: int(res) == num_rows))
+            rows = int(
+                instance.query_with_retry(
+                    "SELECT count() FROM test.view",
+                    check_callback=lambda res: int(res) == num_rows,
+                )
+            )
 
             assert rows == num_rows
 
@@ -5049,7 +5315,6 @@ def test_formats_errors(kafka_cluster):
         "MySQLDump",
     ]:
         with kafka_topic(admin_client, format_name):
-
             table_name = f"kafka_{format_name}"
 
             instance.query(
@@ -5081,9 +5346,9 @@ def test_formats_errors(kafka_cluster):
             )
 
             num_errors = int(
-                    instance.query_with_retry(
+                instance.query_with_retry(
                     f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'",
-                    check_callback=lambda res: int(res) > 0
+                    check_callback=lambda res: int(res) > 0,
                 )
             )
 
@@ -5093,7 +5358,10 @@ def test_formats_errors(kafka_cluster):
             instance.query("DROP TABLE test.view")
 
 
-@pytest.mark.parametrize('create_query_generator', [generate_old_create_table_query, generate_new_create_table_query])
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [generate_old_create_table_query, generate_new_create_table_query],
+)
 def test_multiple_read_in_materialized_views(kafka_cluster, create_query_generator):
     topic_name = "multiple_read_from_mv" + get_topic_postfix(create_query_generator)
 
