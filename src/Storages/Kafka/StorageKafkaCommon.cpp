@@ -2,6 +2,7 @@
 
 
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
@@ -12,12 +13,12 @@
 #include <Storages/StorageFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/logger_useful.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 #include <boost/algorithm/string/replace.hpp>
 #include <cppkafka/cppkafka.h>
