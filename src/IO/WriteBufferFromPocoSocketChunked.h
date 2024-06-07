@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class WriteBufferFromPocoSocketChunked: public WriteBufferFromPocoSocket
 {
 public:
@@ -37,7 +32,7 @@ public:
         {
             if (chunk_size_ptr == last_finish_chunk) // prevent duplicate finish chunk
                 return;
-            
+
             /// If current chunk is empty it means we are finishing a chunk previously sent by next(),
             /// we want to convert current chunk header into end-of-chunk marker and initialize next chunk.
             /// We don't need to wary about if it's the end of the buffer because next() always sends the whole buffer
