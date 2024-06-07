@@ -260,6 +260,8 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_row_2"
 
+echo "===== TestInsertChain ====="
+
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 CREATE TABLE $db.session_events(
     clientId UUID,
@@ -298,5 +300,17 @@ EOF
 ${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000"
 ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
+
+echo "===== TestOnCluster ====="
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+
+CREATE TABLE $db.test_cluster ON CLUSTER test_shard_localhost (a String) Engine = MergeTree() ORDER BY a FORMAT Null;
+CREATE TABLE $db.test_cluster_2 ON CLUSTER test_shard_localhost (a String) Engine = MergeTree() ORDER BY a FORMAT Null;
+CREATE MATERIALIZED VIEW $db.cluster_mv ON CLUSTER test_shard_localhost TO $db.test_cluster_2 AS SELECT * FROM $db.test_cluster FORMAT Null;
+ALTER TABLE $db.cluster_mv ON CLUSTER test_shard_localhost MODIFY DEFINER = $user3 FORMAT Null;
+EOF
+
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.cluster_mv" | grep -c "DEFINER = $user3"
+
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";
