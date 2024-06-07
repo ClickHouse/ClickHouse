@@ -13,7 +13,7 @@ TEST(ProxyConfigurationToPocoProxyConfiguration, TestNoProxyHostRegexBuildMatchA
 {
     ASSERT_EQ(
         DB::buildPocoNonProxyHosts("*"),
-        "(.*?)");
+        ".*");
 }
 
 TEST(ProxyConfigurationToPocoProxyConfiguration, TestNoProxyHostRegexBuildEmpty)

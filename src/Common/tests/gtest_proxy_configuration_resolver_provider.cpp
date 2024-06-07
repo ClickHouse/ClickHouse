@@ -34,7 +34,12 @@ Poco::URI https_env_proxy_server = Poco::URI("http://https_environment_proxy:312
 Poco::URI http_list_proxy_server = Poco::URI("http://http_list_proxy:3128");
 Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
 
-static std::string no_proxy_hosts = "localhost,,127.0.0.1,some_other_domain,,,, sub-domain.domain.com,";
+// Some other tests rely on HTTP clients (e.g, gtest_aws_s3_client), which depend on proxy configuration
+// since in https://github.com/ClickHouse/ClickHouse/pull/63314 the environment proxy resolver reads only once
+// from the environment, the proxy configuration will always be there.
+// The problem is that the proxy server does not exist, causing the test to fail.
+// To work around this issue, `no_proxy` is set to bypass all domains.
+static std::string no_proxy_hosts = "*";
 
 TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
