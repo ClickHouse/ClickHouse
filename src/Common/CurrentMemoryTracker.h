@@ -12,7 +12,9 @@ struct CurrentMemoryTracker
 
     /// This function should be called after memory deallocation.
     [[nodiscard]] static AllocationTrace free(Int64 size);
+
     static void check();
+    [[nodiscard]] static Int64 get();
 
     /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)
     static void injectFault();

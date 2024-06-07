@@ -7,7 +7,7 @@ from typing import Dict, Set
 import unittest
 from ci_config import Build, JobNames
 from s3_helper import S3Helper
-from ci import CiCache
+from ci_cache import CiCache
 from digest_helper import JOB_DIGEST_LEN
 from commit_status_helper import CommitStatusData
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH

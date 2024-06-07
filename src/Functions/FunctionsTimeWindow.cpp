@@ -232,7 +232,6 @@ struct TimeWindowImpl<TUMBLE>
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
-        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind unit>
@@ -422,7 +421,6 @@ struct TimeWindowImpl<HOP>
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
-        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind kind>

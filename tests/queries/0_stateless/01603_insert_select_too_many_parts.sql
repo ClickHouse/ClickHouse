@@ -12,6 +12,6 @@ INSERT INTO too_many_parts SELECT * FROM numbers(10) SETTINGS max_insert_threads
 SELECT count() FROM too_many_parts;
 
 -- exception is thrown if threshold is exceeded on new INSERT.
-INSERT INTO too_many_parts SELECT * FROM numbers(10); -- { serverError 252 }
+INSERT INTO too_many_parts SELECT * FROM numbers(10); -- { serverError TOO_MANY_PARTS }
 
 DROP TABLE too_many_parts;

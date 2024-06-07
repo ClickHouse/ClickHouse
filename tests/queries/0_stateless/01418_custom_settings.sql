@@ -23,12 +23,12 @@ SELECT getSetting('custom_d') as v, toTypeName(v);
 SELECT name, value FROM system.settings WHERE name LIKE 'custom_%' ORDER BY name;
 
 SELECT '--- undefined setting ---';
-SELECT getSetting('custom_e') as v, toTypeName(v); -- { serverError 115 } -- Setting not found.
+SELECT getSetting('custom_e') as v, toTypeName(v); -- { serverError UNKNOWN_SETTING } -- Setting not found.
 SET custom_e = 404;
 SELECT getSetting('custom_e') as v, toTypeName(v);
 
 SELECT '--- wrong prefix ---';
-SET invalid_custom = 8; -- { serverError 115 } -- Setting is neither a builtin nor started with one of the registered prefixes for user-defined settings.
+SET invalid_custom = 8; -- { serverError UNKNOWN_SETTING } -- Setting is neither a builtin nor started with one of the registered prefixes for user-defined settings.
 
 SELECT '--- using query context ---';
 SELECT getSetting('custom_e') as v, toTypeName(v) SETTINGS custom_e = -0.333;
@@ -38,7 +38,7 @@ SELECT name, value FROM system.settings WHERE name = 'custom_e';
 
 SELECT getSetting('custom_f') as v, toTypeName(v) SETTINGS custom_f = 'word';
 SELECT name, value FROM system.settings WHERE name = 'custom_f' SETTINGS custom_f = 'word';
-SELECT getSetting('custom_f') as v, toTypeName(v); -- { serverError 115 } -- Setting not found.
+SELECT getSetting('custom_f') as v, toTypeName(v); -- { serverError UNKNOWN_SETTING } -- Setting not found.
 SELECT COUNT() FROM system.settings WHERE name = 'custom_f';
 
 SELECT '--- compound identifier ---';

@@ -58,7 +58,7 @@ jobs:
     env:
       GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
     strategy:
-      fail-fast: false  # we always wait for entire matrix
+      fail-fast: false  # we always wait for the entire matrix
       matrix:
         batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
     steps:

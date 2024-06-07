@@ -183,6 +183,12 @@ public:
     Int64 untracked_memory = 0;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// To keep total untracked memory limited to `untracked_memory_ratio * RSS` we have to account threads with small and large memory footprint differently.
+    /// For this purpose we dynamically change `untracked_memory_limit` after every tracking event using a simple formula:
+    /// untracked_memory_limit = clamp(untracked_memory_ratio * cur_memory_bytes, min_untracked_memory, max_untracked_memory)
+    /// Note that this values are updated when thread is attached to a group
+    Int64 min_untracked_memory = 4 * 1024 * 1024; // Default value is kept 4MB mostly for tests and client (should be changed to 4KB as default value a setting)
+    Int64 max_untracked_memory = 4 * 1024 * 1024;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -308,6 +314,12 @@ public:
     void flushUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
+
+    void updateUntrackedMemoryLimit(Int64 current)
+    {
+        constexpr Int64 untracked_memory_ratio_bits = 4; // untracked_memory_ratio = 1.0 / (1 << untracked_memory_ratio_bits) = 1.0 / 16 = 6.25%
+        untracked_memory_limit = std::clamp<Int64>(current >> untracked_memory_ratio_bits, min_untracked_memory, max_untracked_memory);
+    }
 
 private:
     void applyGlobalSettings();

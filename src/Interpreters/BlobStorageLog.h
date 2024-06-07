@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
-#include <Poco/Message.h>
-#include <Storages/ColumnsDescription.h>
 #include <chrono>
+#include <shared_mutex>
+
+#include <Poco/Message.h>
+
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/SystemLog.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -51,7 +54,23 @@ struct BlobStorageLogElement
 
 class BlobStorageLog : public SystemLog<BlobStorageLogElement>
 {
+public:
     using SystemLog<BlobStorageLogElement>::SystemLog;
+
+    /// We should not log events for table itself to avoid infinite recursion
+    bool shouldIgnorePath(const String & path) const
+    {
+        std::shared_lock lock{prepare_mutex};
+        return !prefix_to_ignore.empty() && path.starts_with(prefix_to_ignore);
+    }
+
+protected:
+    void prepareTable() override;
+    void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;
+
+private:
+    mutable std::shared_mutex prepare_mutex;
+    String prefix_to_ignore;
 };
 
 }

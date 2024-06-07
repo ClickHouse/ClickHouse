@@ -109,12 +109,12 @@ def main():
         test_script = jobs_scripts[test_job]
         if report_file.exists():
             report_file.unlink()
-        extra_timeout_option = ""
-        if test_job == JobNames.STATELESS_TEST_RELEASE:
-            extra_timeout_option = str(3600)
         # "bugfix" must be present in checkname, as integration test runner checks this
         check_name = f"Validate bugfix: {test_job}"
-        command = f"python3 {test_script} '{check_name}' {extra_timeout_option} --validate-bugfix --report-to-file {report_file}"
+        command = (
+            f"python3 {test_script} '{check_name}' "
+            f"--validate-bugfix --report-to-file {report_file}"
+        )
         print(f"Going to validate job [{test_job}], command [{command}]")
         _ = subprocess.run(
             command,

@@ -3,8 +3,8 @@
 drop table if exists test_table_hdfs_syntax
 ;
 create table test_table_hdfs_syntax (id UInt32) ENGINE = HDFS('')
-; -- { serverError 36 }
+; -- { serverError BAD_ARGUMENTS }
 create table test_table_hdfs_syntax (id UInt32) ENGINE = HDFS('','','', '')
-; -- { serverError 42 }
+; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 drop table if exists test_table_hdfs_syntax
 ;

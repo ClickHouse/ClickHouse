@@ -22,7 +22,7 @@ SELECT '\\' LIKE '%\\\\%';
 SELECT '\\' LIKE '\\\\%';
 SELECT '\\' LIKE '%\\\\';
 SELECT '\\' LIKE '\\\\';
-SELECT '\\' LIKE '\\'; -- { serverError 25 }
+SELECT '\\' LIKE '\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 
 SELECT '\\xyz\\' LIKE '\\\\%\\\\';
 SELECT '\\xyz\\' LIKE '\\\\___\\\\';

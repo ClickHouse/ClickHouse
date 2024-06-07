@@ -38,7 +38,7 @@ SELECT count(distinct(dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'se
 
 DETACH DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict1;
 
-SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', toUInt64(11)); -- {serverError 36}
+SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', toUInt64(11)); -- {serverError BAD_ARGUMENTS}
 
 ATTACH DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict1;
 
@@ -46,7 +46,7 @@ SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', t
 
 DROP DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict1;
 
-SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', toUInt64(11)); -- {serverError 36}
+SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', toUInt64(11)); -- {serverError BAD_ARGUMENTS}
 
 -- SOURCE(CLICKHOUSE(...)) uses default params if not specified
 DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.dict1;
@@ -86,7 +86,7 @@ SELECT dictGetFloat64({CLICKHOUSE_DATABASE:String} || '.dict1', 'fourth_column',
 
 DETACH DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict1;
 
-SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', tuple(toUInt64(11), '121')); -- {serverError 36}
+SELECT dictGetUInt8({CLICKHOUSE_DATABASE:String} || '.dict1', 'second_column', tuple(toUInt64(11), '121')); -- {serverError BAD_ARGUMENTS}
 
 ATTACH DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict1;
 
@@ -128,10 +128,10 @@ SELECT dictGetString({CLICKHOUSE_DATABASE:String} || '.dict3', 'some_column', to
 USE {CLICKHOUSE_DATABASE:Identifier};
 SELECT dictGetString(dict3, 'some_column', toUInt64(12));
 SELECT dictGetString({CLICKHOUSE_DATABASE:Identifier}.dict3, 'some_column', toUInt64(12));
-SELECT dictGetString(default.dict3, 'some_column', toUInt64(12)); -- {serverError 36}
+SELECT dictGetString(default.dict3, 'some_column', toUInt64(12)); -- {serverError BAD_ARGUMENTS}
 SELECT dictGet(dict3, 'some_column', toUInt64(12));
 SELECT dictGet({CLICKHOUSE_DATABASE:Identifier}.dict3, 'some_column', toUInt64(12));
-SELECT dictGet(default.dict3, 'some_column', toUInt64(12)); -- {serverError 36}
+SELECT dictGet(default.dict3, 'some_column', toUInt64(12)); -- {serverError BAD_ARGUMENTS}
 USE default;
 
 -- alias should be handled correctly
@@ -139,6 +139,6 @@ SELECT {CLICKHOUSE_DATABASE:String} || '.dict3' as n, dictGet(n, 'some_column', 
 
 DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.table_for_dict;
 
-SYSTEM RELOAD DICTIONARIES; -- {serverError 60}
+SYSTEM RELOAD DICTIONARIES; -- {serverError UNKNOWN_TABLE}
 
 SELECT dictGetString({CLICKHOUSE_DATABASE:String} || '.dict3', 'some_column', toUInt64(12));

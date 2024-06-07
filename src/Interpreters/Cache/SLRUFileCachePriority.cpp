@@ -325,7 +325,7 @@ void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityG
                         candidate_it->getEntry()->toString());
     }
 
-    const size_t entry_size = candidate_it->entry->size;
+    const size_t entry_size = candidate_it->getEntry()->size;
     if (!probationary_queue.canFit(entry_size, 1, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -483,7 +483,10 @@ SLRUFileCachePriority::SLRUIterator::SLRUIterator(
 
 SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() const
 {
-    return entry;
+    auto entry_ptr = entry.lock();
+    if (!entry_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry pointer expired");
+    return entry_ptr;
 }
 
 size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)

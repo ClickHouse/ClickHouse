@@ -21,6 +21,12 @@ SELECT mapExists((k, v) -> k = array(1,2), map(array(1,2), 4, array(3,4), 5));
 SELECT mapExists((k, v) -> k = map(1,2), map(map(1,2), 4, map(3,4), 5));
 SELECT mapExists((k, v) -> k = tuple(1,2), map(tuple(1,2), 4, tuple(3,4), 5));
 
+SELECT mapAll((k, v) -> k = 0.1::Float32, map(0.1::Float32, 4, 0.2::Float32, 5));
+SELECT mapAll((k, v) -> k = 0.1::Float64, map(0.1::Float64, 4, 0.2::Float64, 5));
+SELECT mapAll((k, v) -> k = array(1,2), map(array(1,2), 4, array(3,4), 5));
+SELECT mapAll((k, v) -> k = map(1,2), map(map(1,2), 4, map(3,4), 5));
+SELECT mapAll((k, v) -> k = tuple(1,2), map(tuple(1,2), 4, tuple(3,4), 5));
+
 SELECT mapSort((k, v) -> k, map(0.1::Float32, 4, 0.2::Float32, 5));
 SELECT mapSort((k, v) -> k, map(0.1::Float64, 4, 0.2::Float64, 5));
 SELECT mapSort((k, v) -> k, map(array(1,2), 4, array(3,4), 5));
@@ -41,6 +47,9 @@ SELECT mapConcat(map(tuple(1,2), 4), map(tuple(3,4), 5));
 SELECT mapExists((k, v) -> k LIKE '%3', col) FROM table_map ORDER BY id;
 SELECT mapExists((k, v) -> k LIKE '%2' AND v < 1000, col) FROM table_map ORDER BY id;
 
+SELECT mapAll((k, v) -> k LIKE '%3', col) FROM table_map ORDER BY id;
+SELECT mapAll((k, v) -> k LIKE '%2' AND v < 1000, col) FROM table_map ORDER BY id;
+
 SELECT mapSort(col) FROM table_map ORDER BY id;
 SELECT mapSort((k, v) -> v, col) FROM table_map ORDER BY id;
 SELECT mapPartialSort((k, v) -> k, 2, col) FROM table_map ORDER BY id;
@@ -50,6 +59,8 @@ SELECT mapApply((x, y) -> (x, x + 1), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> (x, x + 1), materialize(map(1, 0, 2, 0)));
 SELECT mapApply((x, y) -> ('x', 'y'), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> ('x', 'y'), materialize(map(1, 0, 2, 0)));
+SELECT mapApply((x, y) -> (x, x + 1), map(1.0, 0, 2.0, 0));
+SELECT mapApply((x, y) -> (x, x + 1), materialize(map(1.0, 0, 2.0, 0)));
 
 SELECT mapUpdate(map('k1', 1, 'k2', 2), map('k1', 11, 'k2', 22));
 SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), map('k1', 11, 'k2', 22));

@@ -290,8 +290,6 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
-    # DUMP()
-    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests

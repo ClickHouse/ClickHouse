@@ -25,13 +25,12 @@ Positions: 4 0 2 1
     Header: __table1.id UInt64
             __table1.value String
     Actions: INPUT : 1 -> value String : 0
-             INPUT :: 0 -> __table1.id UInt64 : 1
-             INPUT :: 2 -> id UInt64 : 2
-             ALIAS value :: 0 -> __table1.value String : 3
-    Positions: 1 3
+             INPUT : 0 -> id UInt64 : 1
+             ALIAS value :: 0 -> __table1.value String : 2
+             ALIAS id :: 1 -> __table1.id UInt64 : 0
+    Positions: 0 2
       ReadFromMergeTree (default.test_table_1)
-      Header: __table1.id UInt64
-              id UInt64
+      Header: id UInt64
               value String
       ReadType: Default
       Parts: 1
@@ -42,20 +41,18 @@ Positions: 4 0 2 1
         Prewhere filter column: notEquals(__table1.id, 0_UInt8) (removed)
         Actions: INPUT : 0 -> id UInt64 : 0
                  COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                 ALIAS id : 0 -> __table1.id UInt64 : 2
-                 FUNCTION notEquals(__table1.id : 2, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 3
-        Positions: 2 0 3
+                 FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
+        Positions: 0 2
     Expression
     Header: __table2.id UInt64
             __table2.value String
     Actions: INPUT : 1 -> value String : 0
-             INPUT :: 0 -> __table2.id UInt64 : 1
-             INPUT :: 2 -> id UInt64 : 2
-             ALIAS value :: 0 -> __table2.value String : 3
-    Positions: 1 3
+             INPUT : 0 -> id UInt64 : 1
+             ALIAS value :: 0 -> __table2.value String : 2
+             ALIAS id :: 1 -> __table2.id UInt64 : 0
+    Positions: 0 2
       ReadFromMergeTree (default.test_table_2)
-      Header: __table2.id UInt64
-              id UInt64
+      Header: id UInt64
               value String
       ReadType: Default
       Parts: 1
@@ -66,9 +63,8 @@ Positions: 4 0 2 1
         Prewhere filter column: notEquals(__table2.id, 0_UInt8) (removed)
         Actions: INPUT : 0 -> id UInt64 : 0
                  COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                 ALIAS id : 0 -> __table2.id UInt64 : 2
-                 FUNCTION notEquals(__table2.id : 2, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 3
-        Positions: 2 0 3
+                 FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 2
+        Positions: 0 2
 --
 2	Value_2	2	Value_2
 --
@@ -99,13 +95,12 @@ Positions: 4 0 2 1
     Header: __table1.id UInt64
             __table1.value String
     Actions: INPUT : 1 -> value String : 0
-             INPUT :: 0 -> __table1.id UInt64 : 1
-             INPUT :: 2 -> id UInt64 : 2
-             ALIAS value :: 0 -> __table1.value String : 3
-    Positions: 1 3
+             INPUT : 0 -> id UInt64 : 1
+             ALIAS value :: 0 -> __table1.value String : 2
+             ALIAS id :: 1 -> __table1.id UInt64 : 0
+    Positions: 0 2
       ReadFromMergeTree (default.test_table_1)
-      Header: __table1.id UInt64
-              id UInt64
+      Header: id UInt64
               value String
       ReadType: Default
       Parts: 1
@@ -116,20 +111,18 @@ Positions: 4 0 2 1
         Prewhere filter column: notEquals(__table1.id, 0_UInt8) (removed)
         Actions: INPUT : 0 -> id UInt64 : 0
                  COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                 ALIAS id : 0 -> __table1.id UInt64 : 2
-                 FUNCTION notEquals(__table1.id : 2, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 3
-        Positions: 2 0 3
+                 FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
+        Positions: 0 2
     Expression
     Header: __table2.id UInt64
             __table2.value String
     Actions: INPUT : 1 -> value String : 0
-             INPUT :: 0 -> __table2.id UInt64 : 1
-             INPUT :: 2 -> id UInt64 : 2
-             ALIAS value :: 0 -> __table2.value String : 3
-    Positions: 1 3
+             INPUT : 0 -> id UInt64 : 1
+             ALIAS value :: 0 -> __table2.value String : 2
+             ALIAS id :: 1 -> __table2.id UInt64 : 0
+    Positions: 0 2
       ReadFromMergeTree (default.test_table_2)
-      Header: __table2.id UInt64
-              id UInt64
+      Header: id UInt64
               value String
       ReadType: Default
       Parts: 1
@@ -140,9 +133,8 @@ Positions: 4 0 2 1
         Prewhere filter column: notEquals(__table2.id, 0_UInt8) (removed)
         Actions: INPUT : 0 -> id UInt64 : 0
                  COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                 ALIAS id : 0 -> __table2.id UInt64 : 2
-                 FUNCTION notEquals(__table2.id : 2, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 3
-        Positions: 2 0 3
+                 FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 2
+        Positions: 0 2
 --
 2	Value_2	2	Value_2
 --
@@ -173,13 +165,12 @@ Positions: 4 0 2 1
     Header: __table1.id UInt64
             __table1.value String
     Actions: INPUT : 1 -> value String : 0
-             INPUT :: 0 -> __table1.id UInt64 : 1
-             INPUT :: 2 -> id UInt64 : 2
-             ALIAS value :: 0 -> __table1.value String : 3
-    Positions: 1 3
+             INPUT : 0 -> id UInt64 : 1
+             ALIAS value :: 0 -> __table1.value String : 2
+             ALIAS id :: 1 -> __table1.id UInt64 : 0
+    Positions: 0 2
       ReadFromMergeTree (default.test_table_1)
-      Header: __table1.id UInt64
-              id UInt64
+      Header: id UInt64
               value String
       ReadType: Default
       Parts: 1
@@ -190,22 +181,20 @@ Positions: 4 0 2 1
         Prewhere filter column: and(notEquals(__table1.id, 0_UInt8), notEquals(__table1.id, 0_UInt8)) (removed)
         Actions: INPUT : 0 -> id UInt64 : 0
                  COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                 ALIAS id : 0 -> __table1.id UInt64 : 2
-                 FUNCTION notEquals(__table1.id : 2, 0_UInt8 : 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 3
-                 FUNCTION notEquals(__table1.id : 2, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 4
-                 FUNCTION and(notEquals(__table1.id, 0_UInt8) :: 4, notEquals(__table1.id, 0_UInt8) :: 3) -> and(notEquals(__table1.id, 0_UInt8), notEquals(__table1.id, 0_UInt8)) UInt8 : 1
-        Positions: 2 0 1
+                 FUNCTION notEquals(id : 0, 0_UInt8 : 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
+                 FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 3
+                 FUNCTION and(notEquals(__table1.id, 0_UInt8) :: 3, notEquals(__table1.id, 0_UInt8) :: 2) -> and(notEquals(__table1.id, 0_UInt8), notEquals(__table1.id, 0_UInt8)) UInt8 : 1
+        Positions: 0 1
     Expression
     Header: __table2.id UInt64
             __table2.value String
     Actions: INPUT : 1 -> value String : 0
-             INPUT :: 0 -> __table2.id UInt64 : 1
-             INPUT :: 2 -> id UInt64 : 2
-             ALIAS value :: 0 -> __table2.value String : 3
-    Positions: 1 3
+             INPUT : 0 -> id UInt64 : 1
+             ALIAS value :: 0 -> __table2.value String : 2
+             ALIAS id :: 1 -> __table2.id UInt64 : 0
+    Positions: 0 2
       ReadFromMergeTree (default.test_table_2)
-      Header: __table2.id UInt64
-              id UInt64
+      Header: id UInt64
               value String
       ReadType: Default
       Parts: 1
@@ -216,10 +205,9 @@ Positions: 4 0 2 1
         Prewhere filter column: and(notEquals(__table2.id, 0_UInt8), notEquals(__table2.id, 0_UInt8)) (removed)
         Actions: INPUT : 0 -> id UInt64 : 0
                  COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                 ALIAS id : 0 -> __table2.id UInt64 : 2
-                 FUNCTION notEquals(__table2.id : 2, 0_UInt8 : 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 3
-                 FUNCTION notEquals(__table2.id : 2, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 4
-                 FUNCTION and(notEquals(__table2.id, 0_UInt8) :: 4, notEquals(__table2.id, 0_UInt8) :: 3) -> and(notEquals(__table2.id, 0_UInt8), notEquals(__table2.id, 0_UInt8)) UInt8 : 1
-        Positions: 2 0 1
+                 FUNCTION notEquals(id : 0, 0_UInt8 : 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 2
+                 FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 3
+                 FUNCTION and(notEquals(__table2.id, 0_UInt8) :: 3, notEquals(__table2.id, 0_UInt8) :: 2) -> and(notEquals(__table2.id, 0_UInt8), notEquals(__table2.id, 0_UInt8)) UInt8 : 1
+        Positions: 0 1
 --
 2	Value_2	2	Value_2

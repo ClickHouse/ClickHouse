@@ -269,13 +269,12 @@ struct DeltaLakeMetadata::Impl
             header.insert({column.type->createColumn(), column.type, column.name});
 
         std::atomic<int> is_stopped{0};
-        auto arrow_file = asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
 
         std::unique_ptr<parquet::arrow::FileReader> reader;
         THROW_ARROW_NOT_OK(
             parquet::arrow::OpenFile(
                 asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                arrow::default_memory_pool(),
+                ArrowMemoryPool::instance(),
                 &reader));
 
         std::shared_ptr<arrow::Schema> schema;

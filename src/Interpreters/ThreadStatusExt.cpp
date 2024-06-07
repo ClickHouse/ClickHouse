@@ -11,6 +11,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
@@ -210,9 +211,12 @@ void ThreadStatus::applyQuerySettings()
     query_id_from_query_context = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
 
-    untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < static_cast<UInt64>(untracked_memory_limit))
-        untracked_memory_limit = settings.memory_profiler_step;
+    max_untracked_memory = settings.max_untracked_memory;
+    if (settings.memory_profiler_step && settings.memory_profiler_step < static_cast<UInt64>(max_untracked_memory))
+        max_untracked_memory = settings.memory_profiler_step;
+    min_untracked_memory = std::min<Int64>(settings.min_untracked_memory, max_untracked_memory);
+
+    updateUntrackedMemoryLimit(CurrentMemoryTracker::get());
 
 #if defined(OS_LINUX)
     /// Set "nice" value if required.

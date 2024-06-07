@@ -3,9 +3,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include "Storages/IndicesDescription.h"
+#include "base/types.h"
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
@@ -484,6 +487,21 @@ void ColumnLowCardinality::updatePermutationWithCollation(const Collator & colla
     };
 
     updatePermutationImpl(limit, res, equal_ranges, comparator, equal_comparator, DefaultSort(), DefaultPartialSort());
+}
+
+size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    HashSet<UInt64> elements;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        UInt64 index = getIndexes().getUInt(permutation[i]);
+        elements.insert(index);
+    }
+    return elements.size();
 }
 
 std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const

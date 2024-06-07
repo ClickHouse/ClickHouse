@@ -32,12 +32,12 @@ with client(
     )
     client1.expect(prompt)
     client1.send(f"INSERT INTO test.infile_progress FROM INFILE '{filename}'")
-    client1.expect("Progress: 5.00 rows, 10.00 B.*\)")
+    client1.expect("Progress: 5.00 rows, 10.00 B.*\\)")
     client1.expect(prompt)
 
     # send Ctrl-C
     client1.send("\x03", eol="")
-    match = client1.expect("(%s)|([#\$] )" % prompt)
+    match = client1.expect("(%s)|([#\\$] )" % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)

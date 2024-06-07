@@ -1,4 +1,4 @@
-SET allow_experimental_inverted_index = 1;
+SET allow_experimental_full_text_index = 1;
 SET log_queries = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
@@ -67,7 +67,7 @@ CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE full_text())
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
-INSERT INTO tab_x VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick a10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
+INSERT INTO tab_x VALUES (101, 'x Alick a01 y'), (102, 'x Blick a02 y'), (103, 'x Click a03 y'), (104, 'x Dlick a04 y'), (105, 'x Elick a05 y'), (106, 'x Alick a06 y'), (107, 'x Blick a07 y'), (108, 'x Click a08 y'), (109, 'x Dlick a09 y'), (110, 'x Elick a10 y'), (111, 'x Alick b01 y'), (112, 'x Blick b02 y'), (113, 'x Click b03 y'), (114, 'x Dlick b04 y'), (115, 'x Elick b05 y'), (116, 'x Alick b06 y'), (117, 'x Blick b07 y'), (118, 'x Click b08 y'), (119, 'x Dlick b09 y'), (120, 'x Elick b10 y');
 
 -- check full_text index was created
 SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab_x' AND database = currentDatabase() LIMIT 1;
@@ -86,27 +86,27 @@ SELECT read_rows==8 from system.query_log
     LIMIT 1;
 
 -- search full_text index with IN operator
-SELECT * FROM tab_x WHERE s IN ('Alick a01', 'Alick a06') ORDER BY k;
+SELECT * FROM tab_x WHERE s IN ('x Alick a01 y', 'x Alick a06 y') ORDER BY k;
 
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
 SYSTEM FLUSH LOGS;
 SELECT read_rows==4 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE s IN (\'Alick a01\', \'Alick a06\') ORDER BY k;')
+        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE s IN (\'x Alick a01 y\', \'x Alick a06 y\') ORDER BY k;')
         AND type='QueryFinish'
         AND result_rows==2
     LIMIT 1;
 
 -- search full_text index with multiSearch
-SELECT * FROM tab_x WHERE multiSearchAny(s, ['a01', 'b01']) ORDER BY k;
+SELECT * FROM tab_x WHERE multiSearchAny(s, [' a01 ', ' b01 ']) ORDER BY k;
 
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
 SYSTEM FLUSH LOGS;
 SELECT read_rows==4 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE multiSearchAny(s, [\'a01\', \'b01\']) ORDER BY k;')
+        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE multiSearchAny(s, [\' a01 \', \' b01 \']) ORDER BY k;')
         AND type='QueryFinish'
         AND result_rows==2
     LIMIT 1;
@@ -126,14 +126,14 @@ INSERT INTO tab SELECT rowNumberInBlock(), groupArray(s) FROM tab_x GROUP BY k%1
 SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
 
 -- search full_text index with has
-SELECT * FROM tab WHERE has(s, 'Click a03') ORDER BY k;
+SELECT * FROM tab WHERE has(s, 'x Click a03 y') ORDER BY k;
 
 -- check the query must read all 10 granules (20 rows total; each granule has 2 rows)
 SYSTEM FLUSH LOGS;
 SELECT read_rows==2 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE has(s, \'Click a03\') ORDER BY k;')
+        AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE has(s, \'x Click a03 y\') ORDER BY k;')
         AND type='QueryFinish'
         AND result_rows==1
     LIMIT 1;
@@ -266,4 +266,4 @@ CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE full_text(3, 123))
                          SELECT
                          number,
                          format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
-                         FROM numbers(1024);  -- { serverError 80 }
+                         FROM numbers(1024);  -- { serverError INCORRECT_QUERY }

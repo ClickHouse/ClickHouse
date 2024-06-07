@@ -83,7 +83,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
-        storage.getConditionEstimatorByPredicate(source_step_with_filter->getQueryInfo(), storage_snapshot, context),
+        storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_step_with_filter->getFilterActionsDAG(), context),
         queried_columns,
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};
@@ -118,7 +118,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         outputs.resize(size);
     }
 
-    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true);
+    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.

@@ -413,7 +413,13 @@ void WriteBufferFromS3::createMultipartUpload()
 
     multipart_upload_id = outcome.GetResult().GetUploadId();
 
-    LOG_TRACE(limitedLog, "Multipart upload has created. {}", getShortLogDetails());
+    if (multipart_upload_id.empty())
+    {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+        throw Exception(ErrorCodes::S3_ERROR, "Invalid CreateMultipartUpload result: missing UploadId.");
+    }
+
+    LOG_TRACE(limitedLog, "Multipart upload was created. {}", getShortLogDetails());
 }
 
 void WriteBufferFromS3::abortMultipartUpload()

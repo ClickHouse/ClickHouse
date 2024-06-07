@@ -103,7 +103,7 @@ template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
-    int isEscapeSequence = false;
+    bool is_escape_sequence = false;
     size_t width = 0;
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
@@ -116,6 +116,9 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
         while (i + 15 < size)
         {
+            if (is_escape_sequence)
+                break;
+
             __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
 
             const uint16_t non_regular_width_mask = _mm_movemask_epi8(
@@ -132,25 +135,28 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
             }
             else
             {
-                if (isEscapeSequence)
-                {
-                    break;
-                }
-                else
-                {
-                    i += 16;
-                    width += 16;
-                }
+                i += 16;
+                width += 16;
             }
         }
 #endif
 
         while (i < size && isPrintableASCII(data[i]))
         {
-            if (!isEscapeSequence)
+            bool ignore_width = is_escape_sequence && (isCSIParameterByte(data[i]) || isCSIIntermediateByte(data[i]));
+
+            if (ignore_width || (data[i] == '[' && is_escape_sequence))
+            {
+                /// don't count the width
+            }
+            else if (is_escape_sequence && isCSIFinalByte(data[i]))
+            {
+                is_escape_sequence = false;
+            }
+            else
+            {
                 ++width;
-            else if (isCSIFinalByte(data[i]) && data[i - 1] != '\x1b')
-                isEscapeSequence = false; /// end of CSI escape sequence reached
+            }
             ++i;
         }
 
@@ -178,7 +184,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                 // special treatment for '\t' and for ESC
                 size_t next_width = width;
                 if (decoder.codepoint == '\x1b')
-                    isEscapeSequence = true;
+                    is_escape_sequence = true;
                 else if (decoder.codepoint == '\t')
                     next_width += 8 - (prefix + width) % 8;
                 else

@@ -735,7 +735,7 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
-The opposite operations of this function are [fromReadableDecimalSize](#fromReadableDecimalSize), [fromReadableDecimalSizeOrZero](#fromReadableDecimalSizeOrZero), and [fromReadableDecimalSizeOrNull](#fromReadableDecimalSizeOrNull).
+The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
 
 **Syntax**
 
@@ -768,7 +768,7 @@ Result:
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
 
-The opposite operations of this function are [fromReadableSize](#fromReadableSize), [fromReadableSizeOrZero](#fromReadableSizeOrZero), and [fromReadableSizeOrNull](#fromReadableSizeOrNull).
+The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
 
 **Syntax**
 
@@ -894,22 +894,22 @@ SELECT
 └────────────────────┴────────────────────────────────────────────────┘
 ```
 
-## fromReadableSize
+## parseReadableSize
 
-Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes.
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
 If the function is unable to parse the input value, it throws an exception.
 
-The opposite operation of this function is [formatReadableSize](#fromReadableSize).
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
 
 **Syntax**
 
 ```sql
-fromReadableSize(x)
+formatReadableSize(x)
 ```
 
 **Arguments**
 
-- `x` : Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md)).
+- `x` : Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
@@ -919,35 +919,35 @@ fromReadableSize(x)
 
 ```sql
 SELECT
-    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB']) AS readable_sizes,
-    fromReadableSize(readable_sizes) AS sizes
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes,  
+    parseReadableSize(readable_sizes) AS sizes;
 ```
 
 ```text
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
-│ 3 MiB          │ 3145728 │
+│ 3 MB           │ 3000000 │
 │ 5.314 KiB      │    5442 │
 └────────────────┴─────────┘
 ```
 
-## fromReadableSizeOrNull
+## parseReadableSizeOrNull
 
-Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes.
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
 If the function is unable to parse the input value, it returns `NULL`.
 
-The opposite operation of this function is [formatReadableSize](#fromReadableSize).
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
 
 **Syntax**
 
 ```sql
-fromReadableSizeOrNull(x)
+parseReadableSizeOrNull(x)
 ```
 
 **Arguments**
 
-- `x` : Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md)).
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
@@ -957,36 +957,36 @@ fromReadableSizeOrNull(x)
 
 ```sql
 SELECT
-    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes,
-    fromReadableSizeOrNull(readable_sizes) AS sizes
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes,  
+    parseReadableSizeOrNull(readable_sizes) AS sizes;
 ```
 
 ```text
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
-│ 3 MiB          │ 3145728 │
+│ 3 MB           │ 3000000 │
 │ 5.314 KiB      │    5442 │
 │ invalid        │    ᴺᵁᴸᴸ │
 └────────────────┴─────────┘
 ```
 
-## fromReadableSizeOrZero
+## parseReadableSizeOrZero
 
-Given a string containing a byte size and `B`, `KiB`, `MiB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) unit), this function returns the corresponding number of bytes.
-If the function is unable to parse the input value, it returns `0`.
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`.
 
-The opposite operation of this function is [formatReadableSize](#fromReadableSize).
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
 
 **Syntax**
 
 ```sql
-fromReadableSizeOrZero(x)
+parseReadableSizeOrZero(x)
 ```
 
 **Arguments**
 
-- `x` : Readable size with ISO/IEC 80000-13 units ([String](../../sql-reference/data-types/string.md)).
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit  ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
@@ -996,132 +996,16 @@ fromReadableSizeOrZero(x)
 
 ```sql
 SELECT
-    arrayJoin(['1 B', '1 KiB', '3 MiB', '5.314 KiB', 'invalid']) AS readable_sizes,
-    fromReadableSizeOrZero(readable_sizes) AS sizes
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes,  
+    parseReadableSizeOrZero(readable_sizes) AS sizes;
 ```
 
 ```text
 ┌─readable_sizes─┬───sizes─┐
 │ 1 B            │       1 │
 │ 1 KiB          │    1024 │
-│ 3 MiB          │ 3145728 │
+│ 3 MB           │ 3000000 │
 │ 5.314 KiB      │    5442 │
-│ invalid        │       0 │
-└────────────────┴─────────┘
-```
-
-## fromReadableDecimalSize
-
-Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes.
-If the function is unable to parse the input value, it throws an exception.
-
-The opposite operation of this function is [formatReadableDecimalSize](#formatReadableDecimalSize).
-
-**Syntax**
-
-```sql
-fromReadableDecimalSize(x)
-```
-
-**Arguments**
-
-- `x` : Readable size with decimal units ([String](../../sql-reference/data-types/string.md)).
-
-**Returned value**
-
-- Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
-
-**Example**
-
-```sql
-SELECT
-    arrayJoin(['1 B', '1 KB', '3 MB', '5.314 KB']) AS readable_sizes,
-    fromReadableDecimalSize(readable_sizes) AS sizes
-```
-
-```text
-┌─readable_sizes─┬───sizes─┐
-│ 1 B            │       1 │
-│ 1 KB           │    1000 │
-│ 3 MB           │ 3000000 │
-│ 5.314 KB       │    5314 │
-└────────────────┴─────────┘
-```
-
-## fromReadableDecimalSizeOrNull
-
-Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes.
-If the function is unable to parse the input value, it returns `NULL`.
-
-The opposite operation of this function is [formatReadableDecimalSize](#formatReadableDecimalSize).
-
-**Syntax**
-
-```sql
-fromReadableDecimalSizeOrNull(x)
-```
-
-**Arguments**
-
-- `x` : Readable size with decimal units ([String](../../sql-reference/data-types/string.md)).
-
-**Returned value**
-
-- Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
-
-**Example**
-
-```sql
-SELECT
-    arrayJoin(['1 B', '1 KB', '3 MB', '5.314 KB', 'invalid']) AS readable_sizes,
-    fromReadableDecimalSizeOrNull(readable_sizes) AS sizes
-```
-
-```text
-┌─readable_sizes─┬───sizes─┐
-│ 1 B            │       1 │
-│ 1 KB           │    1000 │
-│ 3 MB           │ 3000000 │
-│ 5.314 KB       │    5314 │
-│ invalid        │    ᴺᵁᴸᴸ │
-└────────────────┴─────────┘
-```
-
-## fromReadableDecimalSizeOrZero
-
-Given a string containing a byte size and `B`, `KB`, `MB`, etc. as a unit, this function returns the corresponding number of bytes.
-If the function is unable to parse the input value, it returns `0`.
-
-The opposite operation of this function is [formatReadableDecimalSize](#formatReadableDecimalSize).
-
-**Syntax**
-
-```sql
-fromReadableDecimalSizeOrZero(x)
-```
-
-**Arguments**
-
-- `x` : Readable size with decimal units ([String](../../sql-reference/data-types/string.md)).
-
-**Returned value**
-
-- Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
-
-**Example**
-
-```sql
-SELECT
-    arrayJoin(['1 B', '1 KB', '3 MB', '5.314 KB', 'invalid']) AS readable_sizes,
-    fromReadableSizeOrZero(readable_sizes) AS sizes
-```
-
-```text
-┌─readable_sizes─┬───sizes─┐
-│ 1 B            │       1 │
-│ 1 KB           │    1000 │
-│ 3 MB           │ 3000000 │
-│ 5.314 KB       │    5000 │
 │ invalid        │       0 │
 └────────────────┴─────────┘
 ```

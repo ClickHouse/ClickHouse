@@ -578,7 +578,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     settings.parallel_replicas_count,
                     settings.parallel_replica_offset,
                     std::move(custom_key_ast),
-                    settings.parallel_replicas_custom_key_filter_type,
+                    {settings.parallel_replicas_custom_key_filter_type,
+                     settings.parallel_replicas_custom_key_range_lower,
+                     settings.parallel_replicas_custom_key_range_upper},
                     storage->getInMemoryMetadataPtr()->columns,
                     context);
             }
@@ -657,7 +659,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
-                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
+                    storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};

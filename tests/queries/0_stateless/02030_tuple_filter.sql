@@ -35,9 +35,9 @@ SELECT * FROM test_tuple_filter WHERE (1, value) = (id, 'A');
 SELECT * FROM test_tuple_filter WHERE tuple(id) = tuple(1);
 SELECT * FROM test_tuple_filter WHERE (id, (id, id) = (1, NULL)) == (NULL, NULL);
 
-SELECT * FROM test_tuple_filter WHERE (log_date, value) = tuple('2021-01-01'); -- { serverError 43 }
-SELECT * FROM test_tuple_filter WHERE (id, value) = tuple(1); -- { serverError 43 }
-SELECT * FROM test_tuple_filter WHERE tuple(id, value) = tuple(value, id); -- { serverError 386 }
-SELECT * FROM test_tuple_filter WHERE equals((id, value)); -- { serverError 42 }
+SELECT * FROM test_tuple_filter WHERE (log_date, value) = tuple('2021-01-01'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM test_tuple_filter WHERE (id, value) = tuple(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM test_tuple_filter WHERE tuple(id, value) = tuple(value, id); -- { serverError NO_COMMON_TYPE }
+SELECT * FROM test_tuple_filter WHERE equals((id, value)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 DROP TABLE IF EXISTS test_tuple_filter;

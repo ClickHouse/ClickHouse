@@ -139,7 +139,7 @@ For the query to run successfully, the following conditions must be met:
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`.
+This query copies the data partition from `table1` to `table2` and replaces the existing partition in `table2`. The operation is atomic.
 
 Note that:
 
