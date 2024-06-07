@@ -9,6 +9,8 @@ struct DataLakePartitionColumn
 {
     NameAndTypePair name_and_type;
     Field value;
+
+    bool operator ==(const DataLakePartitionColumn & other) const = default;
 };
 
 /// Data file -> partition columns

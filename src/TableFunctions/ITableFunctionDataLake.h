@@ -69,8 +69,6 @@ protected:
         /// Set default format to Parquet if it's not specified in arguments.
         TableFunction::parseArguments(ast_function, context);
     }
-
-    ColumnsDescription structure_hint;
 };
 
 struct TableFunctionIcebergName

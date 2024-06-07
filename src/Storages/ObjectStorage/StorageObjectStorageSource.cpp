@@ -212,21 +212,17 @@ Chunk StorageObjectStorageSource::generate()
                     if (!read_from_format_info.source_header.has(name_and_type.name))
                         continue;
 
-                    auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
 
-                    const auto & type = name_and_type.type;
-                    auto partition_column = type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
                     /// This column is filled with default value now, remove it.
                     chunk.erase(column_pos);
+
                     /// Add correct values.
                     if (chunk.hasColumns())
-                    {
                         chunk.addColumn(column_pos, std::move(partition_column));
-                    }
                     else
-                    {
                         chunk.addColumn(std::move(partition_column));
-                    }
                 }
             }
 

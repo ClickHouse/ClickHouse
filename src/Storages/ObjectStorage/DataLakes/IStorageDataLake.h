@@ -99,7 +99,10 @@ public:
         Storage::updateConfiguration(local_context);
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
-        Storage::partition_columns = new_metadata->getPartitionColumns();
+        auto partition_columns = new_metadata->getPartitionColumns();
+
+        if (partition_columns != Storage::partition_columns)
+            Storage::partition_columns = partition_columns;
 
         if (current_metadata && *current_metadata == *new_metadata)
             return;

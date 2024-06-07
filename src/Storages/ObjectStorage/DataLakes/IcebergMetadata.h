@@ -84,6 +84,8 @@ public:
 
     const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
+    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
+
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
@@ -107,6 +109,7 @@ private:
     NamesAndTypesList schema;
     mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
+    DataLakePartitionColumns partition_columns;
     LoggerPtr log;
 };
 
