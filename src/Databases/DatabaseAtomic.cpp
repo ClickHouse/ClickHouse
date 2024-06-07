@@ -112,6 +112,13 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
     not_in_use = cleanupDetachedTables();
+
+    if (!not_in_use.empty())
+    {
+        not_in_use.clear();
+        LOG_DEBUG(log, "Finish removing non using detached tables");
+    }
+
     return table;
 }
 
