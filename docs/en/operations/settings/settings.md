@@ -3170,6 +3170,18 @@ Possible values:
 
 Default value: `0`.
 
+## lightweight_deletes_sync {#lightweight_deletes_sync}
+
+The same as 'mutation_sync', but controls only execution of lightweight deletes.
+
+Possible values:
+
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for the lightweight deletes to complete on the current server.
+- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+
+Default value: `2`.
+
 **See Also**
 
 - [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
@@ -4604,6 +4616,16 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
+## max_untracked_memory {#max_untracked_memory}
+Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when amount (in absolute value) becomes larger than specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
+
+Default value: `4MiB`.
+
+## min_untracked_memory {#min_untracked_memory}
+Lower bound for untracked memory limit which is applied to threads with low memory consumption. Untracked memory limit equals thread memory usage divided by 16 and clamped between `min_untracked_memory` and `max_untracked_memory` for every thread. It guarantees that total untracked memory does not exceed 10% of current memory footprint even with a lot of small threads. To disable dynamic limit for untracked memory set value `4MiB`.
+
+Default value: `4KiB`.
+
 ## Schema Inference settings
 
 See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
@@ -5108,7 +5130,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
+## allow_experimental_statistics {#allow_experimental_statistics}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
