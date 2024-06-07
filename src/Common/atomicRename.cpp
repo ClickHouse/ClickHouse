@@ -57,15 +57,13 @@ namespace ErrorCodes
 namespace DB
 {
 
-static bool supportsAtomicRenameImpl(std::string * out_message)
+static std::optional<std::string> supportsAtomicRenameImpl()
 {
     VersionNumber renameat2_minimal_version(3, 15, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
     if (linux_version >= renameat2_minimal_version)
-        return true;
-    if (out_message)
-        *out_message = fmt::format("Linux kernel 3.15+ is required, got {}", linux_version.toString());
-    return false;
+        return std::nullopt;
+    return fmt::format("Linux kernel 3.15+ is required, got {}", linux_version.toString());
 }
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
@@ -103,8 +101,12 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
 
 bool supportsAtomicRename(std::string * out_message)
 {
-    static bool supports = supportsAtomicRenameImpl(out_message);
-    return supports;
+    static auto error = supportsAtomicRenameImpl();
+    if (!error.has_value())
+        return true;
+    if (out_message)
+        *out_message = error.value();
+    return false;
 }
 
 }
@@ -156,20 +158,22 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
 }
 
 
-static bool supportsAtomicRenameImpl(std::string * out_message)
+static std::optional<std::string> supportsAtomicRenameImpl()
 {
     auto fun = dlsym(RTLD_DEFAULT, "renamex_np");
     if (fun != nullptr)
-        return true;
-    if (out_message)
-        *out_message = "macOS 10.12 or later is required";
-    return false;
+        return std::nullopt;
+    return "macOS 10.12 or later is required";
 }
 
 bool supportsAtomicRename(std::string * out_message)
 {
-    static bool supports = supportsAtomicRenameImpl(out_message);
-    return supports;
+    static auto error = supportsAtomicRenameImpl();
+    if (!error.has_value())
+        return true;
+    if (out_message)
+        *out_message = error.value();
+    return false;
 }
 
 }
