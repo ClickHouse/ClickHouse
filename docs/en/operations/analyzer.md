@@ -138,7 +138,7 @@ In this query, the common supertype for `id` is determined as `String`, discardi
 
 ### Projection column names changes
 
-During projection names, computation aliases are not substituted.
+During projection names computation, aliases are not substituted.
 
 ```sql
 SELECT
