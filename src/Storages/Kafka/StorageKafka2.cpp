@@ -815,7 +815,7 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, responses);
 
-        // TODO(antaljanosbenjamin): maybe check the content, if we have the locks, we can continue with them
+        // Possible optimization: check the content of logfiles, if we locked them, then we can clean them up and retry to lock them.
         return std::nullopt;
     }
 
@@ -1022,7 +1022,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
             total_rows = total_rows + new_rows;
             batch_info.last_offset = consumer.currentOffset();
         }
-        // TODO(antaljanosbenjamin): think about this when rebalance is happening, because `isStalled()` will return true
         else if (consumer.isStalled())
         {
             ++failed_poll_attempts;
@@ -1168,7 +1167,6 @@ bool StorageKafka2::streamToViews(size_t idx)
             if (current_assignment == nullptr)
             {
                 // The consumer lost its assignment and haven't received a new one.
-                // TODO(antaljanosbenjamin): returning a proper value representing the state
                 // By returning true this function reports the current consumer as a "stalled" stream, which
                 return true;
             }

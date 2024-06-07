@@ -304,7 +304,6 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
             return next_message;
     }
 
-    // TODO(antaljanosbenjamin): check if we should poll new messages or not
     while (true)
     {
         stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
