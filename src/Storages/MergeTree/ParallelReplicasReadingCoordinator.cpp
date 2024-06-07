@@ -887,7 +887,9 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 
     ++stats[announcement.replica_num].number_of_requests;
 
-    if (new_rows_to_read > 0)
+    /// FIXME: this code updating total_rows_to_read but it needs to be done only once since we're taking working set from initiator
+    /// util I missing something, it seems this code is not necessary if working set is taken from initiator (todo: check it)
+    if (new_rows_to_read > 0 && progress_callback)
     {
         Progress progress;
         progress.total_rows_to_read = new_rows_to_read;
