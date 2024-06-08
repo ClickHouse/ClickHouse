@@ -48,6 +48,8 @@ if is_arm():
 # TODO: add test for SELECT LIMIT is working.
 
 
+KAFKA_TOPIC_OLD = "old_t"
+KAFKA_CONSUMER_GROUP_OLD = "old_cg"
 KAFKA_TOPIC_NEW = "new_t"
 KAFKA_CONSUMER_GROUP_NEW = "new_cg"
 
@@ -61,8 +63,8 @@ instance = cluster.add_instance(
     with_zookeeper=True,  # For Replicated Table
     macros={
         "kafka_broker": "kafka1",
-        "kafka_topic_old": "old",
-        "kafka_group_name_old": "old",
+        "kafka_topic_old": KAFKA_TOPIC_OLD,
+        "kafka_group_name_old": KAFKA_CONSUMER_GROUP_OLD,
         "kafka_topic_new": KAFKA_TOPIC_NEW,
         "kafka_group_name_new": KAFKA_CONSUMER_GROUP_NEW,
         "kafka_client_id": "instance",
@@ -517,13 +519,13 @@ def test_kafka_settings_old_syntax(kafka_cluster):
             ignore_error=True,
         )
     ) == TSV(
-        """kafka_broker	kafka1
+        f"""kafka_broker	kafka1
 kafka_client_id	instance
 kafka_format_json_each_row	JSONEachRow
-kafka_group_name_new	new
-kafka_group_name_old	old
-kafka_topic_new	new
-kafka_topic_old	old
+kafka_group_name_new	{KAFKA_CONSUMER_GROUP_NEW}
+kafka_group_name_old	{KAFKA_CONSUMER_GROUP_OLD}
+kafka_topic_new	new_t
+kafka_topic_old	old_t
 """
     )
 
@@ -540,7 +542,7 @@ kafka_topic_old	old
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    kafka_produce(kafka_cluster, "old", messages)
+    kafka_produce(kafka_cluster, KAFKA_TOPIC_OLD, messages)
 
     result = ""
     while True:
@@ -550,7 +552,7 @@ kafka_topic_old	old
 
     kafka_check_result(result, True)
 
-    members = describe_consumer_group(kafka_cluster, "old")
+    members = describe_consumer_group(kafka_cluster, KAFKA_CONSUMER_GROUP_OLD)
     assert members[0]["client_id"] == "ClickHouse-instance-test-kafka"
     # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
@@ -593,7 +595,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
-    members = describe_consumer_group(kafka_cluster, "new")
+    members = describe_consumer_group(kafka_cluster, KAFKA_CONSUMER_GROUP_NEW)
     assert members[0]["client_id"] == "instance test 1234"
 
 
