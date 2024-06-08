@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Tags: race
 
-unset CLICKHOUSE_LOG_COMMENT
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -17,7 +15,7 @@ echo "
 
 function read_thread_big()
 {
-    while true; do 
+    while true; do
         echo "
             SELECT * FROM ( SELECT number AS x FROM numbers(100000) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null;
         " | $CLICKHOUSE_CLIENT -n
@@ -26,7 +24,7 @@ function read_thread_big()
 
 function read_thread_small()
 {
-    while true; do 
+    while true; do
         echo "
             SELECT * FROM ( SELECT number AS x FROM numbers(10) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null;
         " | $CLICKHOUSE_CLIENT -n
@@ -53,8 +51,11 @@ timeout $TIMEOUT bash -c read_thread_big 2> /dev/null &
 timeout $TIMEOUT bash -c read_thread_small 2> /dev/null &
 timeout $TIMEOUT bash -c read_thread_select 2> /dev/null &
 
+# Run insert query with a sleep to make sure that it is executed all the time during the read queries.
 echo "
-    INSERT INTO storage_join_race SELECT number AS x, number AS y FROM numbers (10000000);
+    INSERT INTO storage_join_race
+        SELECT number AS x, sleepEachRow(0.1) + number AS y FROM numbers ($TIMEOUT * 10)
+        SETTINGS function_sleep_max_microseconds_per_block = 100000000, max_block_size = 10;
 " | $CLICKHOUSE_CLIENT -n
 
 wait

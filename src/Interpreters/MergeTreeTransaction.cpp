@@ -184,7 +184,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
     /// We should wait for mutations to finish before committing transaction, because some mutation may fail and cause rollback.
     for (const auto & table_and_mutation : mutations_to_wait)
-        table_and_mutation.first->waitForMutation(table_and_mutation.second);
+        table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
 
     assert([&]()
     {
@@ -212,6 +212,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
     /// and we will be able to remove old entries from transaction log in ZK.
@@ -248,6 +249,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
 bool MergeTreeTransaction::rollback() noexcept
 {
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
@@ -326,6 +328,8 @@ void MergeTreeTransaction::afterFinalize()
     is_read_only = storages.empty();
 
     /// Release shared pointers just in case
+    creating_parts.clear();
+    removing_parts.clear();
     storages.clear();
     mutations.clear();
     finalized = true;

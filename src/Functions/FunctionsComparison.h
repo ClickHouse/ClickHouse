@@ -42,12 +42,8 @@
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
-#pragma GCC diagnostic pop
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -287,7 +283,7 @@ struct StringComparisonImpl
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
-            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0);
+            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0); /// NOLINT(readability-container-data-pointer)
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector( /// NOLINT
@@ -595,7 +591,7 @@ template <> struct CompileOp<NotEqualsOp>
 {
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
     {
-        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpUNE(x, y);
     }
 };
 
@@ -647,13 +643,12 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
 
-    explicit FunctionComparison(ContextPtr context_)
-        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
+    explicit FunctionComparison(bool check_decimal_overflow_)
+        : check_decimal_overflow(check_decimal_overflow_) {}
 
 private:
-    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -816,7 +811,7 @@ private:
                 c0_const_size = c0_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
         }
 
         if (c1_const)
@@ -835,7 +830,7 @@ private:
                 c1_const_size = c1_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
         }
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
@@ -1116,6 +1111,11 @@ private:
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
 
+        /// This is a paranoid check to protect from a broken query analysis.
+        if (c0->isNullable() != c1->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Columns are assumed to be of identical types, but they are different in Nullable");
+
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
@@ -1176,26 +1176,19 @@ public:
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || (left.isIPv4() && right.isIPv4())
-            || (left.isIPv6() && right.isIPv6())
+            || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
-            try
-            {
-                getLeastSupertype(arguments);
-            }
-            catch (const Exception &)
-            {
+            if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
-            }
         }
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
+            auto func = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1234,8 +1227,11 @@ public:
         /// The case when arguments are the same (tautological comparison). Return constant.
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
-        /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
-        if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
+        if (left_type->equals(*right_type) &&
+            !left_type->isNullable() &&
+            !isTuple(left_type) &&
+            !WhichDataType(left_type).isFloat() &&
+            col_left_untyped == col_right_untyped)
         {
             ColumnPtr result_column;
 
@@ -1269,6 +1265,8 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
+        const bool left_is_ipv4 = which_left.isIPv4();
+        const bool right_is_ipv4 = which_right.isIPv4();
         const bool left_is_ipv6 = which_left.isIPv6();
         const bool right_is_ipv6 = which_right.isIPv6();
         const bool left_is_fixed_string = which_left.isFixedString();
@@ -1281,8 +1279,15 @@ public:
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
+        /// Interval data types can be compared only when having equal units.
+        bool left_is_interval = which_left.isInterval();
+        bool right_is_interval = which_right.isInterval();
+
+        bool types_equal = left_type->equals(*right_type);
+
         ColumnPtr res;
-        if (left_is_num && right_is_num && !date_and_datetime)
+        if (left_is_num && right_is_num && !date_and_datetime
+            && (!left_is_interval || !right_is_interval || types_equal))
         {
             if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt16>(col_left_untyped, col_right_untyped))
@@ -1319,10 +1324,13 @@ public:
         {
             return res;
         }
-        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+        else if (
+            (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+            || ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6))
+        )
         {
-            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
-            /// CAST is customized for this case
+            /// Special treatment for FixedString(16) as a binary representation of IPv6 & for comparing IPv4 & IPv6 values -
+            /// CAST is customized for this cases
             ColumnPtr left_column = left_is_ipv6 ?
                 col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
             ColumnPtr right_column = right_is_ipv6 ?
@@ -1374,7 +1382,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
-        else if (left_type->equals(*right_type))
+        else if (types_equal)
         {
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
         }
@@ -1383,37 +1391,6 @@ public:
             return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
         }
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & types) const override
-    {
-        if (2 != types.size())
-            return false;
-
-        WhichDataType data_type_lhs(types[0]);
-        WhichDataType data_type_rhs(types[1]);
-
-        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
-
-        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
-            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
-            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
-            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
-            return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-
-        return isCompilableType(types[0]) && isCompilableType(types[1]);
-    }
-
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
-    {
-        assert(2 == types.size() && 2 == values.size());
-
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto [x, y] = nativeCastToCommon(b, types[0], values[0], types[1], values[1]);
-        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
-        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
-    }
-#endif
 };
 
 }

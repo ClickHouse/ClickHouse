@@ -3,8 +3,6 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
-#include <Storages/MergeTree/RequestResponse.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
@@ -18,7 +16,8 @@ public:
     /// Initialize interpreter with query AST
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        const Names & column_names = {});
 
     /** Initialize interpreter with query AST and storage.
       * After query tree is built left most table expression is replaced with table node that
@@ -27,9 +26,12 @@ public:
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
         const StoragePtr & storage_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        const Names & column_names = {});
 
-    /// Initialize interpreter with query tree
+    /** Initialize interpreter with query tree.
+      * No query tree passes are applied.
+      */
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);
@@ -59,20 +61,19 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
 
     bool ignoreQuota() const override { return select_query_options.ignore_quota; }
 
-    /// Set merge tree read task callback in context and set collaborate_with_initiator in client info
-    void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
-
-    /// Set number_of_current_replica and count_participating_replicas in client_info
-    void setProperClientInfo(size_t replica_number, size_t count_participating_replicas);
-
     const Planner & getPlanner() const { return planner; }
+
     Planner & getPlanner() { return planner; }
+
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
 private:
     ASTPtr query;

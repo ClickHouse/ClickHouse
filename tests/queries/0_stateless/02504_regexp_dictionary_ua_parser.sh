@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p $user_files_path/test_02504
 
@@ -68,13 +68,13 @@ $CLICKHOUSE_CLIENT -n --query="
 insert into user_agents select ua from input('ua String') FORMAT LineAsString" < $CURDIR/data_ua_parser/useragents.txt
 
 $CLICKHOUSE_CLIENT -n --query="
-select device,
+select ua, device,
 concat(tupleElement(browser, 1), ' ', tupleElement(browser, 2), '.', tupleElement(browser, 3)) as browser ,
 concat(tupleElement(os, 1), ' ', tupleElement(os, 2), '.', tupleElement(os, 3), '.', tupleElement(os, 4)) as os
 from (
-     select dictGet('regexp_os', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), ua) os,
+     select ua, dictGet('regexp_os', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), ua) os,
      dictGet('regexp_browser', ('family_replacement', 'v1_replacement', 'v2_replacement'), ua) as browser,
-     dictGet('regexp_device', 'device_replacement', ua) device from user_agents);
+     dictGet('regexp_device', 'device_replacement', ua) device from user_agents) order by ua;
 "
 
 $CLICKHOUSE_CLIENT -n --query="

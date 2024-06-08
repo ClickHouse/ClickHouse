@@ -4,7 +4,7 @@ create table d (i int, j int) engine MergeTree partition by i % 2 order by tuple
 
 insert into d select number, number from numbers(10000);
 
-set max_rows_to_read = 2, allow_experimental_projection_optimization = 1;
+set max_rows_to_read = 2, optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 select min(i), max(i), count() from d;
 select min(i), max(i), count() from d group by _partition_id order by _partition_id;
@@ -76,6 +76,6 @@ insert into test select number, number from numbers(1e3);
 
 select count(if(d=4, d, 1)) from test settings force_optimize_projection = 1;
 select count(d/3) from test settings force_optimize_projection = 1;
-select count(if(d=4, Null, 1)) from test settings force_optimize_projection = 1; -- { serverError 584 }
+select count(if(d=4, Null, 1)) from test settings force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 
 drop table test;

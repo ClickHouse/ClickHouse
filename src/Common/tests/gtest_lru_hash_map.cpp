@@ -1,5 +1,4 @@
 #include <iomanip>
-#include <iostream>
 
 #include <Common/HashTable/LRUHashMap.h>
 

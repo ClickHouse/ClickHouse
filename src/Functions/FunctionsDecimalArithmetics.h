@@ -10,7 +10,6 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
 
@@ -281,7 +280,7 @@ public:
         /**
         At compile time, result is unknown. We only know the Scale (number of fractional digits) at runtime.
         Also nothing is known about size of whole part.
-        As in simple division/multiplication for decimals, we scale the result up, but is is explicit here and no downscale is performed.
+        As in simple division/multiplication for decimals, we scale the result up, but it is explicit here and no downscale is performed.
         It guarantees that result will have given scale and it can also be MANUALLY converted to other decimal types later.
         **/
         if (scale > DecimalUtils::max_precision<Decimal256>)

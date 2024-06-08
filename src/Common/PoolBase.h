@@ -7,7 +7,13 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
+namespace ProfileEvents
+{
+    extern const Event ConnectionPoolIsFullMicroseconds;
+}
 
 namespace DB
 {
@@ -144,12 +150,19 @@ public:
                 return Entry(*items.back());
             }
 
-            LOG_INFO(log, "No free connections in pool. Waiting.");
-
+            Stopwatch blocked;
             if (timeout < 0)
+            {
+                LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
                 available.wait(lock);
+            }
             else
-                available.wait_for(lock, std::chrono::microseconds(timeout));
+            {
+                auto timeout_ms = std::chrono::milliseconds(timeout);
+                LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
+                available.wait_for(lock, timeout_ms);
+            }
+            ProfileEvents::increment(ProfileEvents::ConnectionPoolIsFullMicroseconds, blocked.elapsedMicroseconds());
         }
     }
 
@@ -161,7 +174,7 @@ public:
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
     }
 
-    inline size_t size()
+    size_t size()
     {
         std::lock_guard lock(mutex);
         return items.size();
@@ -179,10 +192,9 @@ private:
     std::condition_variable available;
 
 protected:
+    LoggerPtr log;
 
-    Poco::Logger * log;
-
-    PoolBase(unsigned max_items_, Poco::Logger * log_)
+    PoolBase(unsigned max_items_, LoggerPtr log_)
        : max_items(max_items_), log(log_)
     {
         items.reserve(max_items);

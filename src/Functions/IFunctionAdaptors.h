@@ -18,11 +18,13 @@ protected:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
     {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
         return function->executeImpl(arguments, result_type, input_rows_count);
     }
 
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
     {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
         return function->executeImplDryRun(arguments, result_type, input_rows_count);
     }
 
@@ -55,11 +57,11 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override { return function->isCompilable(getArgumentTypes()); }
+    bool isCompilable() const override { return function->isCompilable(getArgumentTypes(), getResultType()); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & compile_arguments) const override
     {
-        return function->compile(builder, getArgumentTypes(), std::move(values));
+        return function->compile(builder, compile_arguments, getResultType());
     }
 
 #endif
@@ -90,9 +92,16 @@ public:
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
+    bool hasInformationAboutPreimage() const override { return function->hasInformationAboutPreimage(); }
+
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return function->getMonotonicityForRange(type, left, right);
+    }
+
+    OptionalFieldInterval getPreimage(const IDataType & type, const Field & point) const override
+    {
+        return function->getPreimage(type, point);
     }
 private:
     std::shared_ptr<IFunction> function;

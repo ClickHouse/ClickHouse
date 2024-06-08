@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -15,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -59,14 +59,14 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
         {
             return ColumnWithTypeAndName{nullptr, nested_type, col.name};
         }
-        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
+        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
         {
             const auto & nested_col = nullable->getNestedColumnPtr();
             return ColumnWithTypeAndName{nested_col, nested_type, col.name};
         }
-        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
+        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
         {
-            const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
+            const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&const_column->getDataColumn());
 
             ColumnPtr nullable_res;
             if (nullable_column)
@@ -81,7 +81,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for DataTypeNullable");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
     }
     return col;
 }
@@ -105,7 +105,7 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
 
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} expected {}",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
                         argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
 }
 
@@ -218,19 +218,6 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
-bool areTypesEqual(const IDataType & lhs, const IDataType & rhs)
-{
-    const auto & lhs_name = lhs.getName();
-    const auto & rhs_name = rhs.getName();
-
-    return lhs_name == rhs_name;
-}
-
-bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
-{
-    return areTypesEqual(*lhs, *rhs);
-}
-
 ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
 {
     ColumnPtr result_null_map_column;
@@ -240,7 +227,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
 
     if (src->onlyNull())
         return src;
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();
@@ -261,7 +248,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (isColumnConst(*elem.column))
             continue;
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
             if (!result_null_map_column)
@@ -312,4 +299,27 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
+/// Note that, for historical reasons, most of the functions use the first argument size to determine which is the
+/// size of all the columns. When short circuit optimization was introduced, `input_rows_count` was also added for
+/// all functions, but many have not been adjusted
+void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+{
+    for (size_t i = 0; i < arguments.size(); i++)
+    {
+        if (isColumnConst(*arguments[i].column))
+            continue;
+
+        size_t current_size = arguments[i].column->size();
+
+        if (current_size != input_rows_count)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected the argument nº#{} ('{}' of type {}) to have {} rows, but it has {}",
+                i + 1,
+                arguments[i].name,
+                arguments[i].type->getName(),
+                input_rows_count,
+                current_size);
+    }
+}
 }

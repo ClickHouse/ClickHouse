@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <memory>
 #include <mutex>
 
@@ -8,8 +7,9 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
-#include <Common/PoolBase.h>
 #include <Poco/URIStreamFactory.h>
+#include <Common/HTTPConnectionPool.h>
+#include <Common/ProxyConfiguration.h>
 
 #include <IO/ConnectionTimeouts.h>
 
@@ -18,20 +18,6 @@ namespace DB
 {
 
 class HTTPServerResponse;
-
-class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
-{
-private:
-    const std::string host;
-    const UInt16 port;
-    const bool https;
-    using Base = PoolBase<Poco::Net::HTTPClientSession>;
-
-    ObjectPtr allocObject() override;
-
-public:
-    SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_);
-};
 
 class HTTPException : public Exception
 {
@@ -48,9 +34,9 @@ public:
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
-    int getHTTPStatus() const { return http_status; }
+    Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
 private:
     Poco::Net::HTTPResponse::HTTPStatus http_status{};
@@ -66,17 +52,17 @@ private:
     const char * className() const noexcept override { return "DB::HTTPException"; }
 };
 
-using PooledHTTPSessionPtr = SingleEndpointHTTPSessionPool::Entry;
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
 void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
 
 /// Create session object to perform requests and set required parameters.
-HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host = true);
-
-/// As previous method creates session, but tooks it from pool, without and with proxy uri.
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host = true);
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Poco::URI & proxy_uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host = true);
+HTTPSessionPtr makeHTTPSession(
+    HTTPConnectionGroupType group,
+    const Poco::URI & uri,
+    const ConnectionTimeouts & timeouts,
+    const ProxyConfiguration & proxy_config = {}
+);
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 
@@ -89,5 +75,6 @@ std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
 void assertResponseIsOk(
-    const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
+    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
+
 }

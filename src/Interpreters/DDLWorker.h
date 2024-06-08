@@ -3,7 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -13,7 +13,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
+#include <unordered_set>
 
 namespace zkutil
 {
@@ -79,6 +81,33 @@ public:
     ZooKeeperPtr getAndSetZooKeeper();
 
 protected:
+
+    class ConcurrentSet
+    {
+    public:
+        bool contains(const String & key) const
+        {
+            std::shared_lock lock(mtx);
+            return set.contains(key);
+        }
+
+        bool insert(const String & key)
+        {
+            std::unique_lock lock(mtx);
+            return set.emplace(key).second;
+        }
+
+        bool remove(const String & key)
+        {
+            std::unique_lock lock(mtx);
+            return set.erase(key);
+        }
+
+    private:
+        std::unordered_set<String> set;
+        mutable std::shared_mutex mtx;
+    };
+
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
@@ -122,7 +151,9 @@ protected:
     void runCleanupThread();
 
     ContextMutablePtr context;
-    Poco::Logger * log;
+    LoggerPtr log;
+
+    std::optional<std::string> config_host_name; /// host_name from config
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
@@ -145,8 +176,8 @@ protected:
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = true;
 
-    ThreadFromGlobalPool main_thread;
-    ThreadFromGlobalPool cleanup_thread;
+    std::unique_ptr<ThreadFromGlobalPool> main_thread;
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;
@@ -160,6 +191,12 @@ protected:
     size_t max_tasks_in_queue = 1000;
 
     std::atomic<UInt32> max_id = 0;
+
+    ConcurrentSet entries_to_skip;
+
+    std::atomic_uint64_t subsequent_errors_count = 0;
+    String last_unexpected_error;
+
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

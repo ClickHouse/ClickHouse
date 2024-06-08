@@ -17,28 +17,26 @@ public:
     {
         command_name = "copy";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Recursively copy data containing at `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
+        description = "Recursively copy data from `FROM_PATH` to `TO_PATH`";
         usage = "copy [OPTION]... <FROM_PATH> <TO_PATH>";
         command_option_description->add_options()
-            ("diskFrom", po::value<String>(), "set name for disk from which we do operations")
-            ("diskTo", po::value<String>(), "set name for disk to which we do operations")
-            ;
-
+            ("disk-from", po::value<String>(), "disk from which we copy")
+            ("disk-to", po::value<String>(), "disk to which we copy");
     }
 
     void processOptions(
         Poco::Util::LayeredConfiguration & config,
         po::variables_map & options) const override
     {
-        if (options.count("diskFrom"))
-            config.setString("diskFrom", options["diskFrom"].as<String>());
-        if (options.count("diskTo"))
-            config.setString("diskTo", options["diskTo"].as<String>());
+        if (options.count("disk-from"))
+            config.setString("disk-from", options["disk-from"].as<String>());
+        if (options.count("disk-to"))
+            config.setString("disk-to", options["disk-to"].as<String>());
     }
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 2)
@@ -47,19 +45,19 @@ public:
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
-        String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));
-        String disk_name_to = config.getString("diskTo", config.getString("disk", "default"));
+        String disk_name_from = config.getString("disk-from", config.getString("disk", "default"));
+        String disk_name_to = config.getString("disk-to", config.getString("disk", "default"));
 
         const String & path_from = command_arguments[0];
         const String & path_to =  command_arguments[1];
 
-        DiskPtr disk_from = global_context->getDisk(disk_name_from);
-        DiskPtr disk_to = global_context->getDisk(disk_name_to);
+        DiskPtr disk_from = disk_selector->get(disk_name_from);
+        DiskPtr disk_to = disk_selector->get(disk_name_to);
 
         String relative_path_from = validatePathAndGetAsRelative(path_from);
         String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk_from->copy(relative_path_from, disk_to, relative_path_to);
+        disk_from->copyDirectoryContent(relative_path_from, disk_to, relative_path_to, /* read_settings= */ {}, /* write_settings= */ {}, /* cancellation_hook= */ {});
     }
 };
 }

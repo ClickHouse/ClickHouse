@@ -4,14 +4,23 @@
 
 #if USE_LIBURING
 
-#include <Common/ThreadPool.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool_fwd.h>
 #include <IO/AsynchronousReader.h>
 #include <deque>
 #include <unordered_map>
 #include <liburing.h>
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+class Exception;
 
 /** Perform reads using the io_uring Linux subsystem.
   *
@@ -30,7 +39,7 @@ private:
     uint32_t cq_entries;
 
     std::atomic<bool> cancelled{false};
-    ThreadFromGlobalPool ring_completion_monitor;
+    std::unique_ptr<ThreadFromGlobalPool> ring_completion_monitor;
 
     struct EnqueuedRequest
     {
@@ -52,29 +61,30 @@ private:
 
     void monitorRing();
 
-    template<typename T> inline void failPromise(std::promise<T> & promise, const Exception & ex)
+    template<typename T> void failPromise(std::promise<T> & promise, const Exception & ex)
     {
         promise.set_exception(std::make_exception_ptr(ex));
     }
 
-    inline std::future<Result> makeFailedResult(const Exception & ex)
+    std::future<Result> makeFailedResult(const Exception & ex)
     {
         auto promise = std::promise<Result>{};
         failPromise(promise, ex);
         return promise.get_future();
     }
 
-    const Poco::Logger * log;
+    const LoggerPtr log;
 
 public:
-    IOUringReader(uint32_t entries_);
+    explicit IOUringReader(uint32_t entries_);
 
-    inline bool isSupported() { return is_supported; }
+    bool isSupported() const { return is_supported; }
     std::future<Result> submit(Request request) override;
+    Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for IOUringReader"); }
 
     void wait() override {}
 
-    virtual ~IOUringReader() override;
+    ~IOUringReader() override;
 };
 
 }

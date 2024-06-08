@@ -114,6 +114,11 @@ public:
       */
     QueryTreeNodePtr getColumnSourceOrNull() const;
 
+    void setColumnSource(const QueryTreeNodePtr & source)
+    {
+        getSourceWeakPointer() = source;
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
@@ -132,9 +137,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

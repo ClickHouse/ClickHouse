@@ -29,8 +29,10 @@ public:
 
     const BlockMissingValues & getMissingValues() const override;
 
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 protected:
-    Chunk generate() override;
+    Chunk read() override;
 
     void onCancel() override
     {
@@ -50,6 +52,7 @@ private:
     std::vector<int> include_indices;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;
@@ -66,8 +69,13 @@ public:
     ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
+    std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };
 

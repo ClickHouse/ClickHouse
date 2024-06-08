@@ -21,10 +21,12 @@ system flush logs;
 drop table log_proxy_02572;
 drop table push_to_logs_proxy_mv_02572;
 
+set log_queries=0;
+
 system flush logs;
 -- lower() to pass through clickhouse-test "exception" check
-select count(), lower(type::String), errorCodeToName(exception_code)
+select replaceAll(query, '\n', '\\n'), lower(type::String), errorCodeToName(exception_code)
     from system.query_log
     where current_database = currentDatabase()
-    group by 2, 3
-    order by 2;
+    order by event_time_microseconds
+    format CSV;

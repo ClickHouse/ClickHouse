@@ -75,7 +75,7 @@ template <typename T>
 bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = {}; }
+void set(T & x) { x = T{}; }
 
 }
 
@@ -92,7 +92,8 @@ inline bool bitEquals(T && a, T && b)
     using RealT = std::decay_t<T>;
 
     if constexpr (std::is_floating_point_v<RealT>)
-        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
+        /// Note that memcmp with constant size is compiler builtin.
+        return 0 == memcmp(&a, &b, sizeof(RealT)); /// NOLINT
     else
         return a == b;
 }
@@ -117,7 +118,7 @@ inline bool bitEquals(T && a, T && b)
   * 3) Hash tables that store the key and do not have a "mapped" value, e.g. the normal HashTable.
   *    GetKey returns the key, and GetMapped returns a zero void pointer. This simplifies generic
   *    code that works with mapped values: it can overload on the return type of GetMapped(), and
-  *    doesn't need other parameters. One example is insertSetMapped() function.
+  *    doesn't need other parameters. One example is Cell::setMapped() function.
   *
   * 4) Hash tables that store both the key and the "mapped" value, e.g. HashMap. Both GetKey and
   *    GetMapped are supported.
@@ -201,11 +202,11 @@ struct HashTableCell
     void setMapped(const value_type & /*value*/) {}
 
     /// Serialization, in binary and text form.
-    void write(DB::WriteBuffer & wb) const         { DB::writeBinary(key, wb); }
+    void write(DB::WriteBuffer & wb) const         { DB::writeBinaryLittleEndian(key, wb); }
     void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
 
     /// Deserialization, in binary and text form.
-    void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
+    void read(DB::ReadBuffer & rb)        { DB::readBinaryLittleEndian(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 
     /// When cell pointer is moved during erase, reinsert or resize operations
@@ -215,17 +216,6 @@ struct HashTableCell
     static void move(HashTableCell * /* old_location */, HashTableCell * /* new_location */) {}
 
 };
-
-/**
-  * A helper function for HashTable::insert() to set the "mapped" value.
-  * Overloaded on the mapped type, does nothing if it's VoidMapped.
-  */
-template <typename ValueType>
-void insertSetMapped(VoidMapped /* dest */, const ValueType & /* src */) {}
-
-template <typename MappedType, typename ValueType>
-void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.second; }
-
 
 /** Determines the size of the hash table, and when and how much it should be resized.
   * Has very small state (one UInt8) and useful for Set-s allocated in automatic memory (see uniqExact as an example).
@@ -240,6 +230,8 @@ struct HashTableGrower
 
     /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
     static constexpr auto performs_linear_probing_with_single_step = true;
+
+    static constexpr size_t max_size_degree = 23;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -259,17 +251,18 @@ struct HashTableGrower
     /// Increase the size of the hash table.
     void increaseSize()
     {
-        size_degree += size_degree >= 23 ? 1 : 2;
+        size_degree += size_degree >= max_size_degree ? 1 : 2;
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        size_degree = num_elems <= 1
-             ? initial_size_degree
-             : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
-                 ? initial_size_degree
-                 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        if (num_elems <= 1)
+            size_degree = initial_size_degree;
+        else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
+            size_degree = initial_size_degree;
+        else
+            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
     }
 
     void setBufSize(size_t buf_size_)
@@ -281,6 +274,7 @@ struct HashTableGrower
 /** Determines the size of the hash table, and when and how much it should be resized.
   * This structure is aligned to cache line boundary and also occupies it all.
   * Precalculates some values to speed up lookups and insertion into the HashTable (and thus has bigger memory footprint than HashTableGrower).
+  * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
 class alignas(64) HashTableGrowerWithPrecalculation
@@ -290,6 +284,7 @@ class alignas(64) HashTableGrowerWithPrecalculation
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
+    static constexpr size_t max_size_degree = 23;
 
 public:
     UInt8 sizeDegree() const { return size_degree; }
@@ -319,16 +314,17 @@ public:
     bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table.
-    void increaseSize() { increaseSizeDegree(size_degree >= 23 ? 1 : 2); }
+    void increaseSize() { increaseSizeDegree(size_degree >= max_size_degree ? 1 : 2); }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        size_degree = num_elems <= 1
-             ? initial_size_degree
-             : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
-                 ? initial_size_degree
-                 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        if (num_elems <= 1)
+            size_degree = initial_size_degree;
+        else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
+            size_degree = initial_size_degree;
+        else
+            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
         increaseSizeDegree(0);
     }
 
@@ -649,7 +645,7 @@ protected:
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
-        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x));
+        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
@@ -753,6 +749,7 @@ protected:
 
 public:
     using key_type = Key;
+    using grower_type = Grower;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
     using cell_type = Cell;
@@ -764,6 +761,14 @@ public:
 
 
     HashTable()
+    {
+        if (Cell::need_zero_value_storage)
+            this->zeroValue()->setZero();
+        alloc(grower);
+    }
+
+    explicit HashTable(const Grower & grower_)
+        : grower(grower_)
     {
         if (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();
@@ -839,7 +844,7 @@ public:
             return true;
         }
 
-        inline const value_type & get() const
+        const value_type & get() const
         {
             if (!is_initialized || is_eof)
                 throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
@@ -849,7 +854,7 @@ public:
 
     private:
         DB::ReadBuffer & in;
-        Cell cell;
+        Cell cell{};
         size_t read_count = 0;
         size_t size = 0;
         bool is_eof = false;
@@ -993,6 +998,7 @@ protected:
                 --m_size;
                 buf[place_value].setZero();
                 inserted = false;
+                keyHolderDiscardKey(key_holder);
                 throw;
             }
 
@@ -1037,7 +1043,7 @@ public:
         }
 
         if (res.second)
-            insertSetMapped(res.first->getMapped(), x);
+            res.first->setMapped(x);
 
         return res;
     }
@@ -1269,6 +1275,10 @@ public:
         return !buf[place_value].isZero(*this);
     }
 
+    bool ALWAYS_INLINE contains(const Key & x) const
+    {
+        return has(x);
+    }
 
     void write(DB::WriteBuffer & wb) const
     {

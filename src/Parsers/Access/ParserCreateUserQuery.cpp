@@ -1,36 +1,30 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDatabaseOrNone.h>
+#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
+
 #include "config.h"
-#include <base/hex.h>
-#if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
-#endif
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int OPENSSL_ERROR;
-}
 
 namespace
 {
@@ -38,7 +32,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
             String maybe_new_name;
@@ -50,32 +44,36 @@ namespace
         });
     }
 
-
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data, std::optional<String> & temporary_password_for_checks)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"NOT IDENTIFIED"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
             {
-                auth_data = AuthenticationData{AuthenticationType::NO_PASSWORD};
+                auth_data = std::make_shared<ASTAuthenticationData>();
+                auth_data->type = AuthenticationType::NO_PASSWORD;
+
                 return true;
             }
 
-            if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::IDENTIFIED}.ignore(pos, expected))
                 return false;
 
             std::optional<AuthenticationType> type;
+
             bool expect_password = false;
             bool expect_hash = false;
             bool expect_ldap_server_name = false;
             bool expect_kerberos_realm = false;
             bool expect_common_names = false;
+            bool expect_public_ssh_key = false;
+            bool expect_http_auth_server = false;
 
-            if (ParserKeyword{"WITH"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::WITH}.ignore(pos, expected))
             {
                 for (auto check_type : collections::range(AuthenticationType::MAX))
                 {
-                    if (ParserKeyword{AuthenticationTypeInfo::get(check_type).raw_name}.ignore(pos, expected))
+                    if (ParserKeyword{AuthenticationTypeInfo::get(check_type).keyword}.ignore(pos, expected))
                     {
                         type = check_type;
 
@@ -85,6 +83,10 @@ namespace
                             expect_kerberos_realm = true;
                         else if (check_type == AuthenticationType::SSL_CERTIFICATE)
                             expect_common_names = true;
+                        else if (check_type == AuthenticationType::SSH_KEY)
+                            expect_public_ssh_key = true;
+                        else if (check_type == AuthenticationType::HTTP)
+                            expect_http_auth_server = true;
                         else if (check_type != AuthenticationType::NO_PASSWORD)
                             expect_password = true;
 
@@ -94,14 +96,19 @@ namespace
 
                 if (!type)
                 {
-                    if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
+                    if (ParserKeyword{Keyword::SHA256_HASH}.ignore(pos, expected))
                     {
                         type = AuthenticationType::SHA256_PASSWORD;
                         expect_hash = true;
                     }
-                    else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
+                    else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
                     {
                         type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
+                        expect_hash = true;
+                    }
+                    else if (ParserKeyword{Keyword::BCRYPT_HASH}.ignore(pos, expected))
+                    {
+                        type = AuthenticationType::BCRYPT_PASSWORD;
                         expect_hash = true;
                     }
                     else
@@ -109,111 +116,93 @@ namespace
                 }
             }
 
+            /// If authentication type is not specified, then the default password type is used
             if (!type)
-            {
-                type = AuthenticationType::SHA256_PASSWORD;
                 expect_password = true;
-            }
 
-            String value;
-            String parsed_salt;
-            boost::container::flat_set<String> common_names;
+            ASTPtr value;
+            ASTPtr parsed_salt;
+            ASTPtr common_names;
+            ASTPtr public_ssh_keys;
+            ASTPtr http_auth_scheme;
+
             if (expect_password || expect_hash)
             {
-                ASTPtr ast;
-                if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
+                if (!ParserKeyword{Keyword::BY}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
-                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
                 if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
                 {
-                    if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (ParserKeyword{Keyword::SALT}.ignore(pos, expected))
                     {
-                        parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
+                        if (!ParserStringAndSubstitution{}.parse(pos, parsed_salt, expected))
+                            return false;
                     }
                 }
             }
             else if (expect_ldap_server_name)
             {
-                ASTPtr ast;
-                if (!ParserKeyword{"SERVER"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
+                if (!ParserKeyword{Keyword::SERVER}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
-
-                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
             }
             else if (expect_kerberos_realm)
             {
-                if (ParserKeyword{"REALM"}.ignore(pos, expected))
+                if (ParserKeyword{Keyword::REALM}.ignore(pos, expected))
                 {
-                    ASTPtr ast;
-                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (!ParserStringAndSubstitution{}.parse(pos, value, expected))
                         return false;
-
-                    value = ast->as<const ASTLiteral &>().value.safeGet<String>();
                 }
             }
             else if (expect_common_names)
             {
-                if (!ParserKeyword{"CN"}.ignore(pos, expected))
+                if (!ParserKeyword{Keyword::CN}.ignore(pos, expected))
                     return false;
 
-                ASTPtr ast;
-                if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
                     return false;
-
-                for (const auto & ast_child : ast->children)
-                    common_names.insert(ast_child->as<const ASTLiteral &>().value.safeGet<String>());
             }
-
-            /// Save password separately for future complexity rules check
-            if (expect_password)
-                temporary_password_for_checks = value;
-
-            auth_data = AuthenticationData{*type};
-            if (auth_data.getType() == AuthenticationType::SHA256_PASSWORD)
+            else if (expect_public_ssh_key)
             {
-                if (!parsed_salt.empty())
-                {
-                    auth_data.setSalt(parsed_salt);
-                }
-                else if (expect_password)
-                {
-#if USE_SSL
-                    ///generate and add salt here
-                    ///random generator FIPS complaint
-                    uint8_t key[32];
-                    if (RAND_bytes(key, sizeof(key)) != 1)
-                    {
-                        char buf[512] = {0};
-                        ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-                    }
+                if (!ParserKeyword{Keyword::BY}.ignore(pos, expected))
+                    return false;
 
-                    String salt;
-                    salt.resize(sizeof(key) * 2);
-                    char * buf_pos = salt.data();
-                    for (uint8_t k : key)
-                    {
-                        writeHexByteUppercase(k, buf_pos);
-                        buf_pos += 2;
-                    }
-                    value.append(salt);
-                    auth_data.setSalt(salt);
-#else
-                    ///if USE_SSL is not defined, Exception thrown later
-#endif
+                if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
+                    return false;
+            }
+            else if (expect_http_auth_server)
+            {
+                if (!ParserKeyword{Keyword::SERVER}.ignore(pos, expected))
+                    return false;
+                if (!ParserStringAndSubstitution{}.parse(pos, value, expected))
+                    return false;
+
+                if (ParserKeyword{Keyword::SCHEME}.ignore(pos, expected))
+                {
+                    if (!ParserStringAndSubstitution{}.parse(pos, http_auth_scheme, expected))
+                        return false;
                 }
             }
-            if (expect_password)
-                auth_data.setPassword(value);
-            else if (expect_hash)
-                auth_data.setPasswordHashHex(value);
-            else if (expect_ldap_server_name)
-                auth_data.setLDAPServerName(value);
-            else if (expect_kerberos_realm)
-                auth_data.setKerberosRealm(value);
-            else if (expect_common_names)
-                auth_data.setSSLCertificateCommonNames(std::move(common_names));
+
+            auth_data = std::make_shared<ASTAuthenticationData>();
+
+            auth_data->type = type;
+            auth_data->contains_password = expect_password;
+            auth_data->contains_hash = expect_hash;
+
+            if (value)
+                auth_data->children.push_back(std::move(value));
+
+            if (parsed_salt)
+                auth_data->children.push_back(std::move(parsed_salt));
+
+            if (common_names)
+                auth_data->children = std::move(common_names->children);
+
+            if (public_ssh_keys)
+                auth_data->children = std::move(public_ssh_keys->children);
+
+            if (http_auth_scheme)
+                auth_data->children.push_back(std::move(http_auth_scheme));
 
             return true;
         });
@@ -226,22 +215,22 @@ namespace
 
         auto parse_host = [&]
         {
-            if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NONE}.ignore(pos, expected))
                 return true;
 
-            if (ParserKeyword{"ANY"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::ANY}.ignore(pos, expected))
             {
                 res_hosts.addAnyHost();
                 return true;
             }
 
-            if (ParserKeyword{"LOCAL"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::LOCAL}.ignore(pos, expected))
             {
                 res_hosts.addLocalHost();
                 return true;
             }
 
-            if (ParserKeyword{"REGEXP"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::REGEXP}.ignore(pos, expected))
             {
                 ASTPtr ast;
                 if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
@@ -252,7 +241,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"NAME"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NAME}.ignore(pos, expected))
             {
                 ASTPtr ast;
                 if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
@@ -264,7 +253,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"IP"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::IP}.ignore(pos, expected))
             {
                 ASTPtr ast;
                 if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
@@ -276,7 +265,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"LIKE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::LIKE}.ignore(pos, expected))
             {
                 ASTPtr ast;
                 if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
@@ -303,10 +292,10 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!prefix.empty() && !ParserKeyword{prefix}.ignore(pos, expected))
+            if (!prefix.empty() && !ParserKeyword::createDeprecated(prefix).ignore(pos, expected))
                 return false;
 
-            if (!ParserKeyword{"HOST"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::HOST}.ignore(pos, expected))
                 return false;
 
             AllowedClientHosts res_hosts;
@@ -323,7 +312,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::DEFAULT_ROLE}.ignore(pos, expected))
                 return false;
 
             ASTPtr ast;
@@ -343,7 +332,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
                 return false;
 
             ASTPtr new_settings_ast;
@@ -361,7 +350,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"GRANTEES"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::GRANTEES}.ignore(pos, expected))
                 return false;
 
             ASTPtr ast;
@@ -379,7 +368,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 
@@ -387,7 +376,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"DEFAULT DATABASE"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::DEFAULT_DATABASE}.ignore(pos, expected))
                 return false;
 
             ASTPtr ast;
@@ -399,6 +388,19 @@ namespace
             return true;
         });
     }
+
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution until_p;
+
+            return until_p.parse(pos, valid_until, expected);
+        });
+    }
 }
 
 
@@ -407,14 +409,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH USER"}.ignore(pos, expected))
+        if (!ParserKeyword{Keyword::ATTACH_USER}.ignore(pos, expected))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER USER"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::ALTER_USER}.ignore(pos, expected))
             alter = true;
-        else if (!ParserKeyword{"CREATE USER"}.ignore(pos, expected))
+        else if (!ParserKeyword{Keyword::CREATE_USER}.ignore(pos, expected))
             return false;
     }
 
@@ -423,14 +425,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_NOT_EXISTS}.ignore(pos, expected))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::OR_REPLACE}.ignore(pos, expected))
             or_replace = true;
     }
 
@@ -441,29 +443,33 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names_ref = names->names;
 
     std::optional<String> new_name;
-    std::optional<AuthenticationData> auth_data;
-    std::optional<String> temporary_password_for_checks;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
+    std::shared_ptr<ASTAuthenticationData> auth_data;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
+    ASTPtr valid_until;
     String cluster;
+    String storage_name;
 
     while (true)
     {
         if (!auth_data)
         {
-            AuthenticationData new_auth_data;
-            std::optional<String> new_temporary_password_for_checks;
-            if (parseAuthenticationData(pos, expected, new_auth_data, new_temporary_password_for_checks))
+            std::shared_ptr<ASTAuthenticationData> new_auth_data;
+            if (parseAuthenticationData(pos, expected, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
-                temporary_password_for_checks = std::move(new_temporary_password_for_checks);
                 continue;
             }
+        }
+
+        if (!valid_until)
+        {
+            parseValidUntil(pos, expected, valid_until);
         }
 
         AllowedClientHosts new_hosts;
@@ -502,7 +508,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 
-            if (parseHosts(pos, expected, "ADD", new_hosts))
+            if (parseHosts(pos, expected, toStringView(Keyword::ADD), new_hosts))
             {
                 if (!add_hosts)
                     add_hosts.emplace();
@@ -510,7 +516,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 continue;
             }
 
-            if (parseHosts(pos, expected, "DROP", new_hosts))
+            if (parseHosts(pos, expected, toStringView(Keyword::DROP), new_hosts))
             {
                 if (!remove_hosts)
                     remove_hosts.emplace();
@@ -518,6 +524,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 continue;
             }
         }
+
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+            continue;
 
         break;
     }
@@ -546,7 +555,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->auth_data = std::move(auth_data);
-    query->temporary_password_for_checks = std::move(temporary_password_for_checks);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
@@ -554,6 +562,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
+    query->valid_until = std::move(valid_until);
+    query->storage_name = std::move(storage_name);
+
+    if (query->auth_data)
+        query->children.push_back(query->auth_data);
+
+    if (query->valid_until)
+        query->children.push_back(query->valid_until);
 
     return true;
 }

@@ -16,16 +16,19 @@ public:
     std::optional<bool> null_modifier;
     String default_specifier;
     ASTPtr default_expression;
-    bool ephemeral_default;
+    bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
+    ASTPtr stat_type;
     ASTPtr ttl;
     ASTPtr collation;
+    ASTPtr settings;
+    bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

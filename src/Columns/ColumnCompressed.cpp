@@ -1,6 +1,7 @@
 #include <Columns/ColumnCompressed.h>
+#include <Common/formatReadable.h>
 
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wold-style-cast"
 
 #include <lz4.h>
 

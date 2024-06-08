@@ -9,7 +9,7 @@ alter table t add projection x (select * order by j);
 insert into t values (1, 4);
 insert into t values (1, 5);
 
-set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+set optimize_use_projections = 1, force_optimize_projection = 1;
 
 select i from t prewhere j = 4;
 

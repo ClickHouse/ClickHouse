@@ -168,7 +168,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
-
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
@@ -200,13 +199,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
-
-    /// This is related to parallel replicas.
-    /// Not to let the remote sources starve for CPU we create an
-    /// explicit dependency between processors which read from local replica
-    /// and ones that receive data from remote replicas and constantly answer
-    /// to coordination packets.
-    last_pipeline->connectDependencies();
 
     return last_pipeline;
 }
@@ -283,6 +275,14 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
         }
         else
         {
+            auto child_plans = frame.node->step->getChildPlans();
+
+            if (!frame.children_array && !child_plans.empty())
+                frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & child_plan : child_plans)
+                frame.children_array->add(child_plan->explainPlan(options));
+
             if (frame.children_array)
                 frame.node_map->add("Plans", std::move(frame.children_array));
 
@@ -368,7 +368,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
 {
     checkInitialized();
 
@@ -390,7 +390,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
         if (!frame.is_description_printed)
         {
-            settings.offset = (stack.size() - 1) * settings.indent;
+            settings.offset = (indent + stack.size() - 1) * settings.indent;
             explainStep(*frame.node->step, settings, options);
             frame.is_description_printed = true;
         }
@@ -401,7 +401,14 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
             ++frame.next_child;
         }
         else
+        {
+            auto child_plans = frame.node->step->getChildPlans();
+
+            for (const auto & child_plan : child_plans)
+                child_plan->explainPlan(buffer, options, indent + stack.size());
+
             stack.pop();
+        }
     }
 }
 
@@ -463,16 +470,24 @@ static void updateDataStreams(QueryPlan::Node & root)
 
         static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
 
-        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
+        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
         {
-            if (!parent_node || parent_node->children.size() != 1)
+            auto & current_step = *current_node->step;
+            if (!current_step.canUpdateInputStream() || current_node->children.empty())
                 return;
 
-            if (!current_node->step->hasOutputStream())
-                return;
+            for (const auto * child : current_node->children)
+            {
+                if (!child->step->hasOutputStream())
+                    return;
+            }
 
-            if (auto * parent_transform_step = dynamic_cast<ITransformingStep *>(parent_node->step.get()); parent_transform_step)
-                parent_transform_step->updateInputStream(current_node->step->getOutputStream());
+            DataStreams streams;
+            streams.reserve(current_node->children.size());
+            for (const auto * child : current_node->children)
+                streams.emplace_back(child->step->getOutputStream());
+
+            current_step.updateInputStreams(std::move(streams));
         }
     };
 
@@ -489,6 +504,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
 
     updateDataStreams(*root);
 }
@@ -504,10 +520,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
-
-        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
-        {
-        }
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
@@ -546,6 +558,11 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
     }
+}
+
+std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
+{
+    return {std::move(plan.nodes), std::move(plan.resources)};
 }
 
 }

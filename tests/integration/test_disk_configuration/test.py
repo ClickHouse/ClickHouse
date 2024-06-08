@@ -254,6 +254,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         ORDER BY tuple()
         SETTINGS
             disk = disk(
+                name='test_name',
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
@@ -262,7 +263,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     )
 
     expected = """
-        SETTINGS disk = disk(type = s3, endpoint = \\'[HIDDEN]\\', access_key_id = \\'[HIDDEN]\\', secret_access_key = \\'[HIDDEN]\\'), index_granularity = 8192
+        SETTINGS disk = disk(name = \\'test_name\\', type = s3, endpoint = \\'[HIDDEN]\\', access_key_id = \\'[HIDDEN]\\', secret_access_key = \\'[HIDDEN]\\'), index_granularity = 8192
     """
 
     assert expected.strip() in node1.query(f"SHOW CREATE TABLE {TABLE_NAME}_4").strip()
@@ -390,7 +391,7 @@ def test_merge_tree_setting_override(start_cluster):
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} NO DELAY;
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -412,7 +413,7 @@ def test_merge_tree_setting_override(start_cluster):
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} NO DELAY;
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()

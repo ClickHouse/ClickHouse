@@ -1,9 +1,9 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -19,10 +20,43 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+namespace
+{
+
+/// Checks that passed data types are tuples and have the same size.
+/// Returns size of tuples.
+size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {})
+{
+    const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(lhs_type.get());
+    const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(rhs_type.get());
+
+    if (!left_tuple)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0{} should be tuple, got {}",
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
+
+    if (!right_tuple)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1{}should be tuple, got {}",
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
+
+    const auto & left_types = left_tuple->getElements();
+    const auto & right_types = right_tuple->getElements();
+
+    if (left_types.size() != right_types.size())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Expected tuples of the same size as arguments{}, got {} and {}",
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName(), rhs_type->getName());
+    return left_types.size();
+}
+
+}
+
 struct PlusName { static constexpr auto name = "plus"; };
 struct MinusName { static constexpr auto name = "minus"; };
 struct MultiplyName { static constexpr auto name = "multiply"; };
 struct DivideName { static constexpr auto name = "divide"; };
+struct ModuloName { static constexpr auto name = "modulo"; };
+struct IntDivName { static constexpr auto name = "intDiv"; };
+struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
@@ -30,8 +64,7 @@ struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
-/// str starts from the lowercase letter; not constexpr due to the compiler version
-/*constexpr*/ std::string makeFirstLetterUppercase(const std::string& str)
+constexpr std::string makeFirstLetterUppercase(const std::string & str)
 {
     std::string res(str);
     res[0] += 'A' - 'a';
@@ -54,35 +87,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
 
-        if (!left_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
-                            getName(), arguments[0].type->getName());
+        const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
+        const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get())->getElements();
 
-        if (!right_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
-                            getName(), arguments[1].type->getName());
-
-        const auto & left_types = left_tuple->getElements();
-        const auto & right_types = right_tuple->getElements();
-
-        Columns left_elements;
-        Columns right_elements;
-        if (arguments[0].column)
-            left_elements = getTupleElements(*arguments[0].column);
-        if (arguments[1].column)
-            right_elements = getTupleElements(*arguments[1].column);
-
-        if (left_types.size() != right_types.size())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Expected tuples of the same size as arguments of function {}. Got {} and {}",
-                            getName(), arguments[0].type->getName(), arguments[1].type->getName());
-
-        size_t tuple_size = left_types.size();
-        if (tuple_size == 0)
-            return std::make_shared<DataTypeUInt8>();
+        Columns left_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
+        Columns right_elements = arguments[1].column ? getTupleElements(*arguments[1].column) : Columns();
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
         DataTypes types(tuple_size);
@@ -95,7 +106,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
                 types[i] = elem_func->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -116,7 +127,7 @@ public:
 
         size_t tuple_size = left_elements.size();
         if (tuple_size == 0)
-            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+            return ColumnTuple::create(input_rows_count);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
         Columns columns(tuple_size);
@@ -140,6 +151,12 @@ using FunctionTupleMinus = FunctionTupleOperator<MinusName>;
 using FunctionTupleMultiply = FunctionTupleOperator<MultiplyName>;
 
 using FunctionTupleDivide = FunctionTupleOperator<DivideName>;
+
+using FunctionTupleModulo = FunctionTupleOperator<ModuloName>;
+
+using FunctionTupleIntDiv = FunctionTupleOperator<IntDivName>;
+
+using FunctionTupleIntDivOrZero = FunctionTupleOperator<IntDivOrZeroName>;
 
 class FunctionTupleNegate : public ITupleFunction
 {
@@ -168,9 +185,6 @@ public:
             cur_elements = getTupleElements(*arguments[0].column);
 
         size_t tuple_size = cur_types.size();
-        if (tuple_size == 0)
-            return std::make_shared<DataTypeUInt8>();
-
         auto negate = FunctionFactory::instance().get("negate", context);
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
@@ -181,14 +195,14 @@ public:
                 auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
                 types[i] = elem_negate->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
             }
         }
 
-        return std::make_shared<DataTypeTuple>(types);
+        return std::make_shared<DataTypeTuple>(std::move(types));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -199,7 +213,7 @@ public:
 
         size_t tuple_size = cur_elements.size();
         if (tuple_size == 0)
-            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+            return ColumnTuple::create(input_rows_count);
 
         auto negate = FunctionFactory::instance().get("negate", context);
         Columns columns(tuple_size);
@@ -239,13 +253,9 @@ public:
 
         const auto & cur_types = cur_tuple->getElements();
 
-        Columns cur_elements;
-        if (arguments[0].column)
-            cur_elements = getTupleElements(*arguments[0].column);
+        Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
 
         size_t tuple_size = cur_types.size();
-        if (tuple_size == 0)
-            return std::make_shared<DataTypeUInt8>();
 
         const auto & p_column = arguments[1];
         auto func = FunctionFactory::instance().get(FuncName::name, context);
@@ -258,7 +268,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
                 types[i] = elem_func->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -276,7 +286,7 @@ public:
 
         size_t tuple_size = cur_elements.size();
         if (tuple_size == 0)
-            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+            return ColumnTuple::create(input_rows_count);
 
         const auto & p_column = arguments[1];
         auto func = FunctionFactory::instance().get(FuncName::name, context);
@@ -296,6 +306,12 @@ public:
 using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName>;
 
 using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
+
+using FunctionTupleModuloByNumber = FunctionTupleOperatorByNumber<ModuloName>;
+
+using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
+
+using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
 
 class FunctionDotProduct : public ITupleFunction
 {
@@ -363,7 +379,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -467,7 +483,7 @@ public:
                 auto plus_elem = plus->build({left, right});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -568,11 +584,14 @@ public:
             types = {arguments[0]};
         }
 
-        const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
-        const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
+        if (!types.empty())
+        {
+            const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
+            const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
 
-        if (!interval_last->equals(*interval_new))
-            types.push_back(arguments[1]);
+            if (!interval_last->equals(*interval_new))
+                types.push_back(arguments[1]);
+        }
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -617,14 +636,10 @@ public:
             size_t tuple_size = cur_elements.size();
 
             if (tuple_size == 0)
-            {
-                can_be_merged = false;
-            }
-            else
-            {
-                const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
-                can_be_merged = tuple_last_interval->equals(*second_interval);
-            }
+                return ColumnTuple::create(input_rows_count);
+
+            const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
+            can_be_merged = tuple_last_interval->equals(*second_interval);
 
             if (can_be_merged)
                 tuple_columns.resize(tuple_size);
@@ -711,9 +726,7 @@ public:
 
         const auto & cur_types = cur_tuple->getElements();
 
-        Columns cur_elements;
-        if (arguments[0].column)
-            cur_elements = getTupleElements(*arguments[0].column);
+        Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
 
         size_t tuple_size = cur_types.size();
         if (tuple_size == 0)
@@ -740,7 +753,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -842,7 +855,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -993,7 +1006,7 @@ public:
                 auto max_elem = max->build({left_type, right_type});
                 res_type = max_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1103,7 +1116,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1132,7 +1145,7 @@ public:
         double p;
         if (isFloat(p_column.column->getDataType()))
             p = p_column.column->getFloat64(0);
-        else if (isUnsignedInteger(p_column.column->getDataType()))
+        else if (isUInt(p_column.column->getDataType()))
             p = p_column.column->getUInt(0);
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
@@ -1329,6 +1342,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
+        if (tuple_size == 0)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Result of function {} is undefined for empty tuples", getName());
+
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.getReturnTypeImpl(arguments), {}};
 
@@ -1349,11 +1367,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (getReturnTypeImpl(arguments)->isNullable())
-        {
-            return DataTypeNullable(std::make_shared<DataTypeNothing>())
-                   .createColumnConstWithDefaultValue(input_rows_count);
-        }
+        /// TODO: cosineDistance does not support nullable arguments
+        /// https://github.com/ClickHouse/ClickHouse/pull/27933#issuecomment-916670286
+        auto return_type = getReturnTypeImpl(arguments);
+        if (return_type->isNullable())
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.executeImpl(arguments, DataTypePtr(), input_rows_count),
@@ -1385,7 +1403,7 @@ public:
                                                     divide_result.type, input_rows_count);
 
         auto minus_elem = minus->build({one, divide_result});
-        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), {});
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count);
     }
 };
 
@@ -1429,6 +1447,8 @@ private:
     FunctionPtr array_function;
 };
 
+extern FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
+
 extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
@@ -1441,6 +1461,14 @@ extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
+
+struct DotProduct
+{
+    static constexpr auto name = "dotProduct";
+
+    static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
+};
 
 struct L1NormTraits
 {
@@ -1530,6 +1558,8 @@ struct CosineDistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
 };
 
+using TupleOrArrayFunctionDotProduct = TupleOrArrayFunction<DotProduct>;
+
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
 using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
 using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTraits>;
@@ -1551,35 +1581,38 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
+    factory.registerFunction<FunctionTupleModulo>();
+    factory.registerFunction<FunctionTupleIntDiv>();
+    factory.registerFunction<FunctionTupleIntDivOrZero>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    factory.registerFunction<FunctionAddTupleOfIntervals>(
+    factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Consecutively adds a tuple of intervals to a Date or a DateTime.
 [example:tuple]
 )",
-            Documentation::Examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+            .examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+            .categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionSubtractTupleOfIntervals>(
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Consecutively subtracts a tuple of intervals from a Date or a DateTime.
 [example:tuple]
 )",
-            Documentation::Examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+            .examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+            .categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionTupleAddInterval>(
+    factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Adds an interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1587,16 +1620,16 @@ Adds an interval to another interval or tuple of intervals. The returned value i
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            Documentation::Examples{
-                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
-                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
-                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)"},
+            .examples{
+                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
+                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
+                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval"}
+            .categories{"Tuple", "Interval"}
         });
-    factory.registerFunction<FunctionTupleSubtractInterval>(
+    factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Adds an negated interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1604,19 +1637,22 @@ Adds an negated interval to another interval or tuple of intervals. The returned
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            Documentation::Examples{
-                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
-                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
-                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)"},
+            .examples{
+                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
+                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
+                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval"}
+            .categories{"Tuple", "Interval"}
         });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
+    factory.registerFunction<FunctionTupleModuloByNumber>();
+    factory.registerFunction<FunctionTupleIntDivByNumber>();
+    factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 
-    factory.registerFunction<FunctionDotProduct>();
-    factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<TupleOrArrayFunctionDotProduct>();
+    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();

@@ -63,17 +63,7 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
-{
-    UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
-        return id;
-
-    return std::nullopt;
-}
-
-
-bool MemoryAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::lock_guard lock{mutex};
     return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
@@ -116,7 +106,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ true);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     if (id_collision)
@@ -138,7 +128,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
             }
             return true;
         }
-        removeNoLock(id, /* throw_if_not_exists= */ true);
+        removeNoLock(id, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     /// Do insertion.
@@ -248,7 +238,7 @@ void MemoryAccessStorage::removeAllExceptNoLock(const boost::container::flat_set
         const auto & id = it->first;
         ++it; /// We must go to the next element in the map `entries_by_id` here because otherwise removeNoLock() can invalidate our iterator.
         if (!ids_to_keep.contains(id))
-            removeNoLock(id, /* throw_if_not_exists */ true);
+            removeNoLock(id, /* throw_if_not_exists */ true); // NOLINT
     }
 }
 
@@ -297,10 +287,10 @@ void MemoryAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
 
-    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
-        for (const auto & [id, entity] : entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+        for (const auto & [id, entity] : my_entities)
+            insert(id, entity, replace_if_exists, throw_if_exists);
     });
 }
 

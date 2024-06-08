@@ -1,8 +1,10 @@
 #pragma once
 #include <Columns/ColumnString.h>
-#include <Poco/UTF8Encoding.h>
-#include <Common/UTF8Helpers.h>
+#include <Functions/LowerUpperImpl.h>
 #include <base/defines.h>
+#include <Poco/UTF8Encoding.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -92,7 +94,15 @@ struct LowerUpperUTF8Impl
     {
         if (data.empty())
             return;
-        res_data.resize(data.size());
+
+        bool all_ascii = isAllASCII(data.data(), data.size());
+        if (all_ascii)
+        {
+            LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vector(data, offsets, res_data, res_offsets);
+            return;
+        }
+
+        res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
@@ -133,13 +143,11 @@ struct LowerUpperUTF8Impl
         }
         else
         {
-            static const Poco::UTF8Encoding utf8;
-
             size_t src_sequence_length = UTF8::seqLength(*src);
             /// In case partial buffer was passed (due to SSE optimization)
             /// we cannot convert it with current src_end, but we may have more
             /// bytes to convert and eventually got correct symbol.
-            if (partial && src_sequence_length > static_cast<size_t>(src_end-src))
+            if (partial && src_sequence_length > static_cast<size_t>(src_end - src))
                 return false;
 
             auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
@@ -176,12 +184,14 @@ private:
 
     static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
-        auto offset_it = offsets.begin();
+        const auto * offset_it = offsets.begin();
         const UInt8 * begin = src;
 
 #ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
-        const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
+
+        /// If we are before this position, we can still read at least bytes_sse.
+        const auto * src_end_sse = src_end - bytes_sse + 1;
 
         /// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
         const auto v_zero = _mm_setzero_si128();
@@ -227,9 +237,11 @@ private:
             {
                 /// UTF-8
 
+                /// Find the offset of the next string after src
                 size_t offset_from_begin = src - begin;
                 while (offset_from_begin >= *offset_it)
                     ++offset_it;
+
                 /// Do not allow one row influence another (since row may have invalid sequence, and break the next)
                 const UInt8 * row_end = begin + *offset_it;
                 chassert(row_end >= src);
@@ -247,8 +259,9 @@ private:
             }
         }
 
-        /// Find which offset src has now
-        while (offset_it != offsets.end() && static_cast<size_t>(src - begin) >= *offset_it)
+        /// Find the offset of the next string after src
+        size_t offset_from_begin = src - begin;
+        while (offset_it != offsets.end() && offset_from_begin >= *offset_it)
             ++offset_it;
 #endif
 

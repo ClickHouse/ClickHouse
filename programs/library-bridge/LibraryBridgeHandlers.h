@@ -20,13 +20,13 @@ class ExternalDictionaryLibraryBridgeRequestHandler : public HTTPRequestHandler,
 public:
     ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    static constexpr inline auto FORMAT = "RowBinary";
+    static constexpr auto FORMAT = "RowBinary";
 
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -36,11 +36,11 @@ class ExternalDictionaryLibraryBridgeExistsHandler : public HTTPRequestHandler, 
 public:
     ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -65,11 +65,11 @@ class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithConte
 public:
     CatBoostLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -79,11 +79,11 @@ class CatBoostLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContex
 public:
     CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

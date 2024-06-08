@@ -64,11 +64,5 @@ void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & 
         cloned.children.push_back(cloned.table);
     }
 }
-void ASTQueryWithTableAndOutput::formatHelper(const FormatSettings & settings, const char * name) const
-{
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << name << " " << (settings.hilite ? hilite_none : "");
-    settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
-}
 
 }
-

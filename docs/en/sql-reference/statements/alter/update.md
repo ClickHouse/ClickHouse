@@ -4,7 +4,7 @@ sidebar_position: 40
 sidebar_label: UPDATE
 ---
 
-# ALTER TABLE … UPDATE Statements
+# ALTER TABLE ... UPDATE Statements
 
 ``` sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
@@ -24,6 +24,11 @@ The synchronicity of the query processing is defined by the [mutations_sync](/do
 
 **See also**
 
--   [Mutations](/docs/en/sql-reference/statements/alter/index.md#mutations)
--   [Synchronicity of ALTER Queries](/docs/en/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
--   [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting
+- [Mutations](/docs/en/sql-reference/statements/alter/index.md#mutations)
+- [Synchronicity of ALTER Queries](/docs/en/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+- [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting
+
+
+## Related content
+
+- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

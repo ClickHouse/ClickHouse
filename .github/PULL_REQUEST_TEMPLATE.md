@@ -2,16 +2,18 @@
 A technical comment, you are free to remove or leave it as it is when PR is created
 The following categories are used in the next scripts, update them accordingly
 utils/changelog/changelog.py
-tests/ci/run_check.py
+tests/ci/cancel_and_rerun_workflow_lambda/app.py
 -->
 ### Changelog category (leave one):
 - New Feature
 - Improvement
-- Bug Fix (user-visible misbehavior in an official stable release)
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
+- Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)
+- Bug Fix (user-visible misbehavior in an official stable release)
+- CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
 
 
@@ -39,3 +41,26 @@ At a minimum, the following information should be added (but add more as needed)
 
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
+
+#### CI Settings (Only check the boxes if you know what you are doing):
+- [ ] <!---ci_set_required--> Allow: All Required Checks
+- [ ] <!---ci_include_stateless--> Allow: Stateless tests
+- [ ] <!---ci_include_stateful--> Allow: Stateful tests
+- [ ] <!---ci_include_integration--> Allow: Integration Tests
+- [ ] <!---ci_include_performance--> Allow: Performance tests
+- [ ] <!---ci_set_normal_builds--> Allow: Normal Builds
+- [ ] <!---ci_set_special_builds--> Allow: Special Builds
+- [ ] <!---ci_set_non_required--> Allow: All NOT Required Checks
+- [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
+- [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
+---
+- [ ] <!---ci_exclude_style--> Exclude: Style check
+- [ ] <!---ci_exclude_fast--> Exclude: Fast test
+- [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
+- [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
+- [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
+---
+- [ ] <!---do_not_test--> Do not test
+- [ ] <!---upload_all--> Upload binaries for special builds
+- [ ] <!---no_merge_commit--> Disable merge-commit
+- [ ] <!---no_ci_cache--> Disable CI cache

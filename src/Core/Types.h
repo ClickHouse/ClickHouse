@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/TypeId.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -20,11 +21,11 @@ namespace DB
 /// comparison which is used for nullable KeyCondition.
 struct Null
 {
-    enum class Value
+    enum class Value : int8_t
     {
-        Null,
-        PositiveInfinity,
-        NegativeInfinity,
+        NegativeInfinity = -1,
+        Null = 0,
+        PositiveInfinity = 1,
     };
 
     Value value{Value::Null};
@@ -33,62 +34,13 @@ struct Null
     bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
     bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
 
-    bool operator==(const Null & other) const
+    auto operator<=>(const Null & other) const
     {
-        return value == other.value;
+        return static_cast<int>(value) <=> static_cast<int>(other.value);
     }
 
-    bool operator!=(const Null & other) const
-    {
-        return !(*this == other);
-    }
+    bool operator==(const Null &) const = default;
 };
-
-/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
-enum class TypeIndex
-{
-    Nothing = 0,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    UInt256,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Int256,
-    Float32,
-    Float64,
-    Date,
-    Date32,
-    DateTime,
-    DateTime64,
-    String,
-    FixedString,
-    Enum8,
-    Enum16,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    Decimal256,
-    UUID,
-    Array,
-    Tuple,
-    Set,
-    Interval,
-    Nullable,
-    Function,
-    AggregateFunction,
-    LowCardinality,
-    Map,
-    Object,
-    IPv4,
-    IPv6,
-};
-
 
 using UInt128 = ::UInt128;
 using UInt256 = ::UInt256;

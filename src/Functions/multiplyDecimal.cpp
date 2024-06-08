@@ -17,7 +17,7 @@ struct MultiplyDecimalsImpl
     static constexpr auto name = "multiplyDecimal";
 
     template <typename FirstType, typename SecondType>
-    static inline Decimal256
+    static Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (a.value == 0 || b.value == 0)
@@ -58,8 +58,8 @@ struct MultiplyDecimalsImpl
 
 REGISTER_FUNCTION(MultiplyDecimals)
 {
-    factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(Documentation(
-        R"(
+    factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(FunctionDocumentation{
+        .description=R"(
 Performs multiplication on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
@@ -127,7 +127,7 @@ SELECT
 Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
-)"));
+)"});
 
 }
 

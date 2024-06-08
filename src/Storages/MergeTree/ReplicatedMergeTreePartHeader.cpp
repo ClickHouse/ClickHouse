@@ -3,7 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -12,9 +12,7 @@ static std::array<char, 16> getSipHash(const String & str)
 {
     SipHash hash;
     hash.update(str.data(), str.size());
-    std::array<char, 16> result;
-    hash.get128(result.data());
-    return result;
+    return getSipHash128AsArray(hash);
 }
 
 ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(

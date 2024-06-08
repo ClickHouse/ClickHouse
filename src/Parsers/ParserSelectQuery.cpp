@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -36,39 +37,41 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
-    ParserKeyword s_select("SELECT");
-    ParserKeyword s_all("ALL");
-    ParserKeyword s_distinct("DISTINCT");
-    ParserKeyword s_distinct_on("DISTINCT ON");
-    ParserKeyword s_from("FROM");
-    ParserKeyword s_prewhere("PREWHERE");
-    ParserKeyword s_where("WHERE");
-    ParserKeyword s_group_by("GROUP BY");
-    ParserKeyword s_with("WITH");
-    ParserKeyword s_totals("TOTALS");
-    ParserKeyword s_having("HAVING");
-    ParserKeyword s_window("WINDOW");
-    ParserKeyword s_order_by("ORDER BY");
-    ParserKeyword s_limit("LIMIT");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_by("BY");
-    ParserKeyword s_rollup("ROLLUP");
-    ParserKeyword s_cube("CUBE");
-    ParserKeyword s_grouping_sets("GROUPING SETS");
-    ParserKeyword s_top("TOP");
-    ParserKeyword s_with_ties("WITH TIES");
-    ParserKeyword s_offset("OFFSET");
-    ParserKeyword s_fetch("FETCH");
-    ParserKeyword s_only("ONLY");
-    ParserKeyword s_row("ROW");
-    ParserKeyword s_rows("ROWS");
-    ParserKeyword s_first("FIRST");
-    ParserKeyword s_next("NEXT");
-    ParserKeyword s_interpolate("INTERPOLATE");
+    ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_all(Keyword::ALL);
+    ParserKeyword s_distinct(Keyword::DISTINCT);
+    ParserKeyword s_distinct_on(Keyword::DISTINCT_ON);
+    ParserKeyword s_from(Keyword::FROM);
+    ParserKeyword s_prewhere(Keyword::PREWHERE);
+    ParserKeyword s_where(Keyword::WHERE);
+    ParserKeyword s_group_by(Keyword::GROUP_BY);
+    ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_recursive(Keyword::RECURSIVE);
+    ParserKeyword s_totals(Keyword::TOTALS);
+    ParserKeyword s_having(Keyword::HAVING);
+    ParserKeyword s_window(Keyword::WINDOW);
+    ParserKeyword s_qualify(Keyword::QUALIFY);
+    ParserKeyword s_order_by(Keyword::ORDER_BY);
+    ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_by(Keyword::BY);
+    ParserKeyword s_rollup(Keyword::ROLLUP);
+    ParserKeyword s_cube(Keyword::CUBE);
+    ParserKeyword s_grouping_sets(Keyword::GROUPING_SETS);
+    ParserKeyword s_top(Keyword::TOP);
+    ParserKeyword s_with_ties(Keyword::WITH_TIES);
+    ParserKeyword s_offset(Keyword::OFFSET);
+    ParserKeyword s_fetch(Keyword::FETCH);
+    ParserKeyword s_only(Keyword::ONLY);
+    ParserKeyword s_row(Keyword::ROW);
+    ParserKeyword s_rows(Keyword::ROWS);
+    ParserKeyword s_first(Keyword::FIRST);
+    ParserKeyword s_next(Keyword::NEXT);
+    ParserKeyword s_interpolate(Keyword::INTERPOLATE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
-    ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
+    ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
@@ -85,6 +88,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_expression_list;
     ASTPtr having_expression;
     ASTPtr window_list;
+    ASTPtr qualify_expression;
     ASTPtr order_expression_list;
     ASTPtr interpolate_expression_list;
     ASTPtr limit_by_length;
@@ -100,6 +104,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_with.ignore(pos, expected))
         {
+            select_query->recursive_with = s_recursive.ignore(pos, expected);
+
             if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
                      .parse(pos, with_expression_list, expected))
                 return false;
@@ -265,6 +271,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    /// QUALIFY expr
+    if (s_qualify.ignore(pos, expected))
+    {
+        if (!exp_elem.parse(pos, qualify_expression, expected))
+            return false;
+    }
+
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
@@ -287,10 +300,20 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
         }
+        else if (order_expression_list->children.size() == 1)
+        {
+            /// ORDER BY ALL
+            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
+            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
+                select_query->order_by_all = true;
+        }
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occured = false;
+
+    bool has_offset_clause = false;
+    bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
 
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
@@ -316,6 +339,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!exp_elem.parse(pos, limit_offset, expected))
                 return false;
+
+            has_offset_clause = true;
         }
         else if (s_with_ties.ignore(pos, expected))
         {
@@ -351,60 +376,65 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_offset.ignore(pos, expected))
     {
-        /// OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}
-        bool offset_with_fetch_maybe = false;
+        /// OFFSET without LIMIT
+
+        has_offset_clause = true;
 
         if (!exp_elem.parse(pos, limit_offset, expected))
+            return false;
+
+        /// SQL standard OFFSET N ROW[S] ...
+
+        if (s_row.ignore(pos, expected))
+            offset_clause_has_sql_standard_row_or_rows = true;
+
+        if (s_rows.ignore(pos, expected))
+        {
+            if (offset_clause_has_sql_standard_row_or_rows)
+                throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
+
+            offset_clause_has_sql_standard_row_or_rows = true;
+        }
+    }
+
+    /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
+    if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
+        && s_fetch.ignore(pos, expected))
+    {
+        /// FETCH clause must exist with "ORDER BY"
+        if (!order_expression_list)
+            throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
+
+        if (s_first.ignore(pos, expected))
+        {
+            if (s_next.ignore(pos, expected))
+                throw Exception(ErrorCodes::FIRST_AND_NEXT_TOGETHER, "Can not use FIRST and NEXT together");
+        }
+        else if (!s_next.ignore(pos, expected))
+            return false;
+
+        if (!exp_elem.parse(pos, limit_length, expected))
             return false;
 
         if (s_row.ignore(pos, expected))
         {
             if (s_rows.ignore(pos, expected))
                 throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
-            offset_with_fetch_maybe = true;
         }
-        else if (s_rows.ignore(pos, expected))
+        else if (!s_rows.ignore(pos, expected))
+            return false;
+
+        if (s_with_ties.ignore(pos, expected))
         {
-            offset_with_fetch_maybe = true;
+            select_query->limit_with_ties = true;
         }
-
-        if (offset_with_fetch_maybe && s_fetch.ignore(pos, expected))
+        else if (s_only.ignore(pos, expected))
         {
-            /// OFFSET FETCH clause must exists with "ORDER BY"
-            if (!order_expression_list)
-                throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
-
-            if (s_first.ignore(pos, expected))
-            {
-                if (s_next.ignore(pos, expected))
-                    throw Exception(ErrorCodes::FIRST_AND_NEXT_TOGETHER, "Can not use FIRST and NEXT together");
-            }
-            else if (!s_next.ignore(pos, expected))
-                return false;
-
-            if (!exp_elem.parse(pos, limit_length, expected))
-                return false;
-
-            if (s_row.ignore(pos, expected))
-            {
-                if (s_rows.ignore(pos, expected))
-                    throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
-            }
-            else if (!s_rows.ignore(pos, expected))
-                return false;
-
-            if (s_with_ties.ignore(pos, expected))
-            {
-                select_query->limit_with_ties = true;
-            }
-            else if (s_only.ignore(pos, expected))
-            {
-                select_query->limit_with_ties = false;
-            }
-            else
-            {
-                return false;
-            }
+            select_query->limit_with_ties = false;
+        }
+        else
+        {
+            return false;
         }
     }
 
@@ -471,6 +501,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::HAVING, std::move(having_expression));
     select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
+    select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, std::move(qualify_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));

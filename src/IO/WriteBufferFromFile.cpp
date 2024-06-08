@@ -29,10 +29,11 @@ WriteBufferFromFile::WriteBufferFromFile(
     const std::string & file_name_,
     size_t buf_size,
     int flags,
+    ThrottlerPtr throttler_,
     mode_t mode,
     char * existing_memory,
     size_t alignment)
-    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_name_)
+    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, throttler_, alignment, file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -45,14 +46,14 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 
 #ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
     }
 #endif
 }
@@ -63,9 +64,10 @@ WriteBufferFromFile::WriteBufferFromFile(
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
+    ThrottlerPtr throttler_,
     char * existing_memory,
     size_t alignment)
-    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, original_file_name)
+    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, throttler_, alignment, original_file_name)
 {
     fd_ = -1;
 }
@@ -101,7 +103,7 @@ void WriteBufferFromFile::close()
     if (fd < 0)
         return;
 
-    next();
+    finalize();
 
     if (0 != ::close(fd))
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");

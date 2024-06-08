@@ -5,7 +5,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 
 namespace zkutil
@@ -21,7 +21,7 @@ class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
 /// Returns true if provided ALTER type can be executed ON CLUSTER
-bool isSupportedAlterType(int type);
+bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
 
 struct DDLQueryOnClusterParams
 {

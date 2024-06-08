@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/data-types/boolean
-sidebar_position: 43
-sidebar_label: Boolean
+sidebar_position: 22
+sidebar_label: Bool
 ---
 
 # Bool

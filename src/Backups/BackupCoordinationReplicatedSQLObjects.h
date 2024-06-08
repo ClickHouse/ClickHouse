@@ -7,7 +7,7 @@
 
 namespace DB
 {
-enum class UserDefinedSQLObjectType;
+enum class UserDefinedSQLObjectType : uint8_t;
 
 /// This class is used by hosts to coordinate the user-defined SQL objects they're going to write to a backup.
 /// It's designed to make all hosts save the same objects to the backup even in case some objects change while
@@ -28,8 +28,16 @@ public:
     BackupCoordinationReplicatedSQLObjects();
     ~BackupCoordinationReplicatedSQLObjects();
 
+    struct DirectoryPathForSQLObject
+    {
+        String loader_zk_path;
+        UserDefinedSQLObjectType object_type;
+        String host_id;
+        String dir_path;
+    };
+
     /// Adds a path to directory keeping user defined SQL objects.
-    void addDirectory(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path);
+    void addDirectory(DirectoryPathForSQLObject && directory_path_for_sql_object);
 
     /// Returns all added paths to directories if `host_id` is a host chosen to store user-defined SQL objects.
     Strings getDirectories(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const;

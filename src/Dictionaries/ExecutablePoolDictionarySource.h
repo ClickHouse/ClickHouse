@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
@@ -73,7 +72,7 @@ private:
     Block sample_block;
     std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ContextPtr context;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

@@ -16,6 +16,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <optional>
+#include <vector>
+#include <memory>
+#include <string>
 
 namespace DB
 {
@@ -34,9 +38,11 @@ struct Packet
     ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
 
-    InitialAllRangesAnnouncement announcement;
-    ParallelReadRequest request;
-    ParallelReadResponse response;
+    /// The part of parallel replicas protocol
+    std::optional<InitialAllRangesAnnouncement> announcement;
+    std::optional<ParallelReadRequest> request;
+
+    std::string server_timezone;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -62,7 +68,7 @@ class IServerConnection : boost::noncopyable
 public:
     virtual ~IServerConnection() = default;
 
-    enum class Type
+    enum class Type : uint8_t
     {
         SERVER,
         LOCAL
@@ -82,7 +88,7 @@ public:
     virtual const String & getServerTimezone(const ConnectionTimeouts & timeouts) = 0;
     virtual const String & getServerDisplayName(const ConnectionTimeouts & timeouts) = 0;
 
-    virtual const String & getDescription() const = 0;
+    virtual const String & getDescription(bool with_extra = false) const = 0;  /// NOLINT
 
     virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
 

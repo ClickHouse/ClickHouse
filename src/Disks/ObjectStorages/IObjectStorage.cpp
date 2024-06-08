@@ -1,8 +1,12 @@
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -14,24 +18,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
+const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
-}
-void IObjectStorage::getDirectoryContents(const std::string &,
-    RelativePathsWithSize &,
-    std::vector<std::string> &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
 }
 
-IAsynchronousReader & IObjectStorage::getThreadPoolReader()
+bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
-    auto context = Context::getGlobalContextInstance();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+    RelativePathsWithMetadata files;
+    listObjects(path, files, 1);
+    return !files.empty();
+}
 
-    return context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
+}
+
+
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+{
+    RelativePathsWithMetadata files;
+    listObjects(path_prefix, files, max_keys);
+
+    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
+}
+
+std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
+{
+    try
+    {
+        return getObjectMetadata(path);
+    }
+    catch (...)
+    {
+        return {};
+    }
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
@@ -46,46 +68,33 @@ ThreadPool & IObjectStorage::getThreadPoolWriter()
 void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     IObjectStorage & object_storage_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
-        copyObject(object_from, object_to, object_to_attributes);
+        copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 
-    auto in = readObject(object_from);
-    auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite);
+    auto in = readObject(object_from, read_settings);
+    auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
 }
 
-const std::string & IObjectStorage::getCacheBasePath() const
+const std::string & IObjectStorage::getCacheName() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
-}
-
-void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
-{
-    std::unique_lock lock{throttlers_mutex};
-    remote_read_throttler = context->getRemoteReadThrottler();
-    remote_write_throttler = context->getRemoteWriteThrottler();
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    std::unique_lock lock{throttlers_mutex};
-    ReadSettings settings{read_settings};
-    settings.remote_throttler = remote_read_throttler;
-    settings.for_object_storage = true;
-    return settings;
+    return read_settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    std::unique_lock lock{throttlers_mutex};
-    WriteSettings settings{write_settings};
-    settings.remote_throttler = remote_write_throttler;
-    settings.for_object_storage = true;
-    return settings;
+    return write_settings;
 }
 
 }

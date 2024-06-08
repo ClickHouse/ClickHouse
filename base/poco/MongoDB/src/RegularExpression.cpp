@@ -25,8 +25,8 @@ RegularExpression::RegularExpression()
 }
 
 
-RegularExpression::RegularExpression(const std::string& pattern, const std::string& options): 
-	_pattern(pattern), 
+RegularExpression::RegularExpression(const std::string& pattern, const std::string& options):
+	_pattern(pattern),
 	_options(options)
 {
 }

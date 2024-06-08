@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
@@ -23,6 +24,15 @@ namespace po = boost::program_options;
 
 namespace DB
 {
+
+static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
+
+static const NameSet exit_strings
+{
+    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
+    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
+    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
 
 namespace ErrorCodes
 {
@@ -48,12 +58,10 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
+class ClientBase : public Poco::Util::Application, public IHints<2>
 {
 
 public:
@@ -65,10 +73,14 @@ public:
     void init(int argc, char ** argv);
 
     std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
+    static ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error);
 
 protected:
     void runInteractive();
     void runNonInteractive();
+
+    char * argv0 = nullptr;
+    void runLibFuzzer();
 
     virtual bool processWithFuzzing(const String &)
     {
@@ -86,8 +98,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     static void setupSignalHandler();
 
     bool executeMultiQuery(const String & all_queries_text);
@@ -110,7 +121,7 @@ protected:
     };
 
     virtual void updateLoggerLevel(const String &) {}
-    virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
+    virtual void printHelpMessage(const OptionsDescription & options_description, bool verbose) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
@@ -129,6 +140,7 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
+    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
@@ -139,6 +151,7 @@ private:
     void cancelQuery();
 
     void onProgress(const Progress & value);
+    void onTimezoneUpdate(const String & tz);
     void onData(Block & block, ASTPtr parsed_query);
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);
@@ -172,7 +185,14 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    void initTtyBuffer(ProgressOption progress);
+    static bool isRegularFile(int fd);
+
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
+    void setDefaultFormatsAndCompressionFromConfiguration();
+
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -189,7 +209,9 @@ protected:
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
+    bool wait_for_suggestions_to_load = false;
 
+    std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<String> cmd_options;
@@ -199,12 +221,16 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    String format; /// Query results output format.
+    String pager;
+
+    String default_output_format; /// Query results output format.
+    CompressionMethod default_output_compression_method = CompressionMethod::None;
+    String default_input_format; /// Tables' format for clickhouse-local.
+
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
-    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
@@ -291,8 +317,6 @@ protected:
     QueryProcessingStage::Enum query_processing_stage;
     ClientInfo::QueryKind query_kind;
 
-    bool fake_drop = false;
-
     struct HostAndPort
     {
         String host;
@@ -306,7 +330,8 @@ protected:
 
     bool cancelled = false;
 
-    bool logging_initialized = false;
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -138,17 +138,15 @@ struct FunctionPortRFC : public FunctionPortImpl<true>
 
 REGISTER_FUNCTION(Port)
 {
-    factory.registerFunction<FunctionPort>(
+    factory.registerFunction<FunctionPort>(FunctionDocumentation
     {
-        R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
-        Documentation::Examples{},
-        Documentation::Categories{"URL"}
+        .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
+        .categories{"URL"}
     });
-    factory.registerFunction<FunctionPortRFC>(
+    factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
     {
-        R"(Similar to `port`, but conforms to RFC 3986.)",
-        Documentation::Examples{},
-        Documentation::Categories{"URL"}
+        .description=R"(Similar to `port`, but conforms to RFC 3986.)",
+        .categories{"URL"}
     });
 }
 

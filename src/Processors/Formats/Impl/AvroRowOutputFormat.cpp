@@ -27,12 +27,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 
+#include <Common/re2.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
 
-#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 
 namespace DB
@@ -51,7 +52,7 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }
@@ -329,9 +330,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
-                std::array<UInt8, 36> s;
-                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), s.data());
-                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
+                const auto serialized_uuid = formatUUID(uuid);
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
             }};
         }
         case TypeIndex::Array:
@@ -520,8 +520,11 @@ static avro::Codec getCodec(const std::string & codec_name)
 
     if (codec_name == "null")    return avro::Codec::NULL_CODEC;
     if (codec_name == "deflate") return avro::Codec::DEFLATE_CODEC;
+    if (codec_name == "zstd")
+        return avro::Codec::ZSTD_CODEC;
 #ifdef SNAPPY_CODEC_AVAILABLE
-    if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
+    if (codec_name == "snappy")
+        return avro::Codec::SNAPPY_CODEC;
 #endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);

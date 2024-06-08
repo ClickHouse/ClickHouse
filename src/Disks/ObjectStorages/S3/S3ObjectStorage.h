@@ -9,7 +9,7 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/logger_useful.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -21,48 +21,49 @@ struct S3ObjectStorageSettings
 
     S3ObjectStorageSettings(
         const S3Settings::RequestSettings & request_settings_,
+        const S3::AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
-        int32_t objects_chunk_size_to_delete_)
+        int32_t objects_chunk_size_to_delete_,
+        bool read_only_)
         : request_settings(request_settings_)
+        , auth_settings(auth_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , read_only(read_only_)
     {}
 
     S3Settings::RequestSettings request_settings;
+    S3::AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
+    bool read_only;
 };
-
 
 class S3ObjectStorage : public IObjectStorage
 {
 private:
-    friend class S3PlainObjectStorage;
-
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
-        String version_id_,
+        S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
-        String bucket_,
-        String connection_string)
-        : bucket(bucket_)
+        ObjectStorageKeysGeneratorPtr key_generator_,
+        const String & disk_name_,
+        bool for_disk_s3_ = true)
+        : uri(uri_)
+        , disk_name(disk_name_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
-        , version_id(std::move(version_id_))
+        , key_generator(std::move(key_generator_))
+        , log(getLogger(logger_name))
+        , for_disk_s3(for_disk_s3_)
     {
-        data_source_description.type = DataSourceType::S3;
-        data_source_description.description = connection_string;
-        data_source_description.is_cached = false;
-        data_source_description.is_encrypted = false;
-
-        log = &Poco::Logger::get(logger_name);
     }
 
 public:
@@ -72,12 +73,13 @@ public:
     {
     }
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return data_source_description;
-    }
-
     std::string getName() const override { return "S3ObjectStorage"; }
+
+    std::string getCommonKeyPrefix() const override { return uri.key; }
+
+    std::string getDescription() const override { return uri.endpoint; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::S3; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -98,14 +100,12 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
-    void getDirectoryContents(const std::string & path,
-        RelativePathsWithSize & files,
-        std::vector<std::string> & directories) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
@@ -123,14 +123,20 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
@@ -141,11 +147,10 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
-    std::string getObjectsNamespace() const override { return bucket; }
-
-    std::string generateBlobNameForPath(const std::string & path) override;
+    std::string getObjectsNamespace() const override { return uri.bucket; }
 
     bool isRemote() const override { return true; }
 
@@ -159,47 +164,30 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+
+    bool isReadOnly() const override { return s3_settings.get()->read_only; }
+
+    std::shared_ptr<const S3::Client> getS3StorageClient() override;
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
-
-    void setNewClient(std::unique_ptr<S3::Client> && client_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-    std::string bucket;
+    const S3::URI uri;
+
+    std::string disk_name;
 
     MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    const String version_id;
+    ObjectStorageKeysGeneratorPtr key_generator;
 
-    Poco::Logger * log;
-    DataSourceDescription data_source_description;
-};
+    LoggerPtr log;
 
-/// Do not encode keys, store as-is, and do not require separate disk for metadata.
-/// But because of this does not support renames/hardlinks/attrs/...
-///
-/// NOTE: This disk has excessive API calls.
-class S3PlainObjectStorage : public S3ObjectStorage
-{
-public:
-    std::string generateBlobNameForPath(const std::string & path) override { return path; }
-    std::string getName() const override { return "S3PlainObjectStorage"; }
-
-    template <class ...Args>
-    explicit S3PlainObjectStorage(Args && ...args)
-        : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...)
-    {
-        data_source_description.type = DataSourceType::S3_Plain;
-    }
-
-    /// Notes:
-    /// - supports BACKUP to this disk
-    /// - does not support INSERT into MergeTree table on this disk
-    bool isWriteOnce() const override { return true; }
+    const bool for_disk_s3;
 };
 
 }

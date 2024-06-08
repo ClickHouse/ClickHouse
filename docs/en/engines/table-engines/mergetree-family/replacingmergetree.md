@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = ReplacingMergeTree([ver])
+) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
 [PARTITION BY expr]
 [ORDER BY expr]
 [PRIMARY KEY expr]
@@ -45,7 +45,7 @@ When merging, `ReplacingMergeTree` from all the rows with the same sorting key l
    - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
    - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
-Example: 
+Example:
 
 ```sql
 -- without ver - the last inserted 'wins'
@@ -88,6 +88,54 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
+### is_deleted
+
+`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
+
+  Column data type — `UInt8`.
+
+:::note
+`is_deleted` can only be enabled when `ver` is used.
+
+The row is deleted only when `OPTIMIZE ... FINAL CLEANUP`. This `CLEANUP` special keyword is not allowed by default unless `allow_experimental_replacing_merge_with_cleanup` MergeTree setting is enabled.
+
+No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
+
+:::
+
+Example:
+```sql
+-- with ver and is_deleted
+CREATE OR REPLACE TABLE myThirdReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime,
+    `is_deleted` UInt8
+)
+ENGINE = ReplacingMergeTree(eventTime, is_deleted)
+ORDER BY key
+SETTINGS allow_experimental_replacing_merge_with_cleanup = 1;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1);
+
+select * from myThirdReplacingMT final;
+
+0 rows in set. Elapsed: 0.003 sec.
+
+-- delete rows with is_deleted
+OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
+
+select * from myThirdReplacingMT final;
+
+┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
+│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
+└─────┴─────────┴─────────────────────┴────────────┘
+```
+
 ## Query clauses
 
 When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
@@ -111,6 +159,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
--   `ver` - column with the version. Optional parameter. For a description, see the text above.
+- `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>

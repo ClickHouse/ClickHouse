@@ -11,12 +11,8 @@
 
 
 #if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
-#pragma GCC diagnostic pop
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -88,47 +84,47 @@ struct AndImpl
 {
     using ResultType = UInt8;
 
-    static inline constexpr bool isSaturable() { return true; }
+    static constexpr bool isSaturable() { return true; }
 
     /// Final value in two-valued logic (no further operations with True, False will change this value)
-    static inline constexpr bool isSaturatedValue(bool a) { return !a; }
+    static constexpr bool isSaturatedValue(bool a) { return !a; }
 
     /// Final value in three-valued logic (no further operations with True, False, Null will change this value)
-    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::False; }
+    static constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::False; }
 
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
+    static constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
 
-    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::min(a, b); }
+    static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::min(a, b); }
 
     /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
-    static inline constexpr bool specialImplementationForNulls() { return true; }
+    static constexpr bool specialImplementationForNulls() { return true; }
 };
 
 struct OrImpl
 {
     using ResultType = UInt8;
 
-    static inline constexpr bool isSaturable() { return true; }
-    static inline constexpr bool isSaturatedValue(bool a) { return a; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
-    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::max(a, b); }
-    static inline constexpr bool specialImplementationForNulls() { return true; }
+    static constexpr bool isSaturable() { return true; }
+    static constexpr bool isSaturatedValue(bool a) { return a; }
+    static constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
+    static constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
+    static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::max(a, b); }
+    static constexpr bool specialImplementationForNulls() { return true; }
 };
 
 struct XorImpl
 {
     using ResultType = UInt8;
 
-    static inline constexpr bool isSaturable() { return false; }
-    static inline constexpr bool isSaturatedValue(bool) { return false; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8) { return false; }
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
-    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return a != b; }
-    static inline constexpr bool specialImplementationForNulls() { return false; }
+    static constexpr bool isSaturable() { return false; }
+    static constexpr bool isSaturatedValue(bool) { return false; }
+    static constexpr bool isSaturatedValueTernary(UInt8) { return false; }
+    static constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
+    static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return a != b; }
+    static constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER
-    static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         return builder.CreateXor(a, b);
     }
@@ -140,13 +136,13 @@ struct NotImpl
 {
     using ResultType = UInt8;
 
-    static inline ResultType apply(A a)
+    static ResultType apply(A a)
     {
         return !static_cast<bool>(a);
     }
 
 #if USE_EMBEDDED_COMPILER
-    static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a)
+    static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a)
     {
         return builder.CreateNot(a);
     }
@@ -168,7 +164,7 @@ public:
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
         return name == NameAnd::name || name == NameOr::name;
@@ -188,41 +184,46 @@ public:
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
+    bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return useDefaultImplementationForNulls(); }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr &) const override
     {
-        assert(!types.empty() && !values.empty());
+        assert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {
-            auto * result = nativeBoolCast(b, types[0], values[0]);
-            for (size_t i = 1; i < types.size(); ++i)
-                result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]));
+            auto * result = nativeBoolCast(b, values[0]);
+            for (size_t i = 1; i < values.size(); ++i)
+                result = Impl::apply(b, result, nativeBoolCast(b, values[i]));
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
+
         constexpr bool break_on_true = Impl::isSaturatedValue(true);
         auto * next = b.GetInsertBlock();
         auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
         b.SetInsertPoint(stop);
+
         auto * phi = b.CreatePHI(b.getInt8Ty(), static_cast<unsigned>(values.size()));
-        for (size_t i = 0; i < types.size(); ++i)
+
+        for (size_t i = 0; i < values.size(); ++i)
         {
             b.SetInsertPoint(next);
-            auto * value = values[i];
-            auto * truth = nativeBoolCast(b, types[i], value);
-            if (!types[i]->equals(DataTypeUInt8{}))
+            auto * value = values[i].value;
+            auto * truth = nativeBoolCast(b, values[i]);
+            if (!values[i].type->equals(DataTypeUInt8{}))
                 value = b.CreateSelect(truth, b.getInt8(1), b.getInt8(0));
             phi->addIncoming(value, b.GetInsertBlock());
-            if (i + 1 < types.size())
+            if (i + 1 < values.size())
             {
                 next = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
                 b.CreateCondBr(truth, break_on_true ? stop : next, break_on_true ? next : stop);
             }
         }
+
         b.CreateBr(stop);
         b.SetInsertPoint(stop);
+
         return phi;
     }
 #endif
@@ -252,12 +253,12 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &) const override { return true; }
+    bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return true; }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr &) const override
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, types[0], values[0])), b.getInt8(1), b.getInt8(0));
+        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, values[0])), b.getInt8(1), b.getInt8(0));
     }
 #endif
 };

@@ -45,13 +45,13 @@ public:
         return promise.get_future();
     }
 
-    const MergeTreeData::HardlinkedFiles & getHardlinkedFiles() const;
+    const HardlinkedFiles & getHardlinkedFiles() const;
 
 private:
 
     bool prepare();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE

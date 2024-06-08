@@ -19,7 +19,6 @@
 
 
 #include "Poco/BufferedStreamBuf.h"
-#include "Poco/Net/HTTPBufferAllocator.h"
 #include "Poco/Net/Net.h"
 
 
@@ -27,9 +26,9 @@ namespace Poco
 {
 namespace Net
 {
+    constexpr size_t HTTP_DEFAULT_BUFFER_SIZE = 8 * 1024;
 
-
-    typedef Poco::BasicBufferedStreamBuf<char, std::char_traits<char>, HTTPBufferAllocator> HTTPBasicStreamBuf;
+    typedef Poco::BasicBufferedStreamBuf<char, std::char_traits<char>> HTTPBasicStreamBuf;
 
 
 }

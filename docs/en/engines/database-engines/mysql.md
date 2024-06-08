@@ -4,7 +4,11 @@ sidebar_position: 50
 sidebar_label: MySQL
 ---
 
-# MySQL
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# MySQL Database Engine
+
+<CloudNotSupportedBadge />
 
 Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
 
@@ -12,9 +16,9 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
--   `RENAME`
--   `CREATE TABLE`
--   `ALTER`
+- `RENAME`
+- `CREATE TABLE`
+- `ALTER`
 
 ## Creating a Database {#creating-a-database}
 
@@ -25,10 +29,10 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
--   `host:port` — MySQL server address.
--   `database` — Remote database name.
--   `user` — MySQL user.
--   `password` — User password.
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Data Types Support {#data_types-support}
 

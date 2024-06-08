@@ -17,7 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionGenerateULID : public IFunction
@@ -45,7 +45,7 @@ public:
     {
         if (arguments.size() > 1)
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
                 getName(), arguments.size());
 
@@ -74,17 +74,17 @@ public:
 
 REGISTER_FUNCTION(GenerateULID)
 {
-    factory.registerFunction<FunctionGenerateULID>(
+    factory.registerFunction<FunctionGenerateULID>(FunctionDocumentation
     {
-        R"(
+        .description=R"(
 Generates a Universally Unique Lexicographically Sortable Identifier (ULID).
 This function takes an optional argument, the value of which is discarded to generate different values in case the function is called multiple times.
 The function returns a value of type FixedString(26).
 )",
-        Documentation::Examples{
-            {"ulid", "SELECT generateULID()"},
-            {"multiple", "SELECT generateULID(1), generateULID(2)"}},
-        Documentation::Categories{"ULID"}
+        .examples{
+            {"ulid", "SELECT generateULID()", ""},
+            {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
+        .categories{"ULID"}
     },
     FunctionFactory::CaseSensitive);
 }

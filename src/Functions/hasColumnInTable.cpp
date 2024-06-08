@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/getStructureOfRemoteTable.h>
 
 
@@ -87,8 +88,8 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 {
     auto get_string_from_columns = [&](const ColumnWithTypeAndName & column) -> String
     {
-        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.column.get());
-        return const_column->getValue<String>();
+        const ColumnConst & const_column = checkAndGetColumnConst<ColumnString>(*column.column);
+        return const_column.getValue<String>();
     };
 
     size_t arg = 0;
@@ -130,14 +131,18 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-        auto cluster = std::make_shared<Cluster>(
-            getContext()->getSettings(),
-            host_names,
+        ClusterConnectionParameters params{
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),
             treat_local_as_remote,
-            treat_local_port_as_remote);
+            treat_local_port_as_remote,
+            /* secure= */ false,
+            /* priority= */ Priority{1},
+            /* cluster_name= */ "",
+            /* password= */ ""
+        };
+        auto cluster = std::make_shared<Cluster>(getContext()->getSettings(), host_names, params);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required

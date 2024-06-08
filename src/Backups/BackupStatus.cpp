@@ -21,12 +21,16 @@ std::string_view toString(BackupStatus backup_status)
             return "BACKUP_CREATED";
         case BackupStatus::BACKUP_FAILED:
             return "BACKUP_FAILED";
+        case BackupStatus::BACKUP_CANCELLED:
+            return "BACKUP_CANCELLED";
         case BackupStatus::RESTORING:
             return "RESTORING";
         case BackupStatus::RESTORED:
             return "RESTORED";
         case BackupStatus::RESTORE_FAILED:
             return "RESTORE_FAILED";
+        case BackupStatus::RESTORE_CANCELLED:
+            return "RESTORE_CANCELLED";
         default:
             break;
     }

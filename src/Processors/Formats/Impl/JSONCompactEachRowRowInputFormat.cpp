@@ -60,19 +60,22 @@ void JSONCompactEachRowFormatReader::skipFieldDelimiter()
 
 void JSONCompactEachRowFormatReader::skipRowEndDelimiter()
 {
+    skipWhitespaceIfAny(*in);
     JSONUtils::skipArrayEnd(*in);
+}
 
+void JSONCompactEachRowFormatReader::skipRowBetweenDelimiter()
+{
     skipWhitespaceIfAny(*in);
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
         ++in->position();
-
     skipWhitespaceIfAny(*in);
 }
 
 void JSONCompactEachRowFormatReader::skipField()
 {
     skipWhitespaceIfAny(*in);
-    skipJSONField(*in, "skipped_field");
+    skipJSONField(*in, "skipped_field", format_settings.json);
 }
 
 void JSONCompactEachRowFormatReader::skipHeaderRow()
@@ -88,6 +91,21 @@ void JSONCompactEachRowFormatReader::skipHeaderRow()
     skipRowEndDelimiter();
 }
 
+bool JSONCompactEachRowFormatReader::checkForSuffix()
+{
+    skipWhitespaceIfAny(*in);
+    /// Allow ',' and ';' after the last row.
+    if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
+        ++in->position();
+    skipWhitespaceIfAny(*in);
+    return in->eof();
+}
+
+void JSONCompactEachRowFormatReader::skipRow()
+{
+    JSONUtils::skipRowForJSONCompactEachRow(*in);
+}
+
 std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
 {
     skipRowStartDelimiter();
@@ -96,7 +114,7 @@ std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
     do
     {
         skipWhitespaceIfAny(*in);
-        readJSONString(field, *in);
+        readJSONString(field, *in, format_settings.json);
         fields.push_back(field);
         skipWhitespaceIfAny(*in);
     }
@@ -110,6 +128,12 @@ bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypeP
 {
     skipWhitespaceIfAny(*in);
     return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
+}
+
+bool JSONCompactEachRowFormatReader::checkForEndOfRow()
+{
+    skipWhitespaceIfAny(*in);
+    return !in->eof() && *in->position() == ']';
 }
 
 bool JSONCompactEachRowFormatReader::parseRowStartWithDiagnosticInfo(WriteBuffer & out)
@@ -187,7 +211,7 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
 {
 }
 
-DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
+std::optional<DataTypes> JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
 {
     if (first_row)
         first_row = false;
@@ -211,9 +235,14 @@ void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & typ
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
+void JSONCompactEachRowRowSchemaReader::transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
+}
+
 void JSONCompactEachRowRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)

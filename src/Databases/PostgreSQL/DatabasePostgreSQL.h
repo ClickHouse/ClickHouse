@@ -44,9 +44,9 @@ public:
 
     bool empty() const override;
 
-    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
@@ -73,6 +73,7 @@ private:
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePool::TaskHolder cleaner_task;
+    LoggerPtr log;
 
     String getTableNameForLogs(const String & table_name) const;
 

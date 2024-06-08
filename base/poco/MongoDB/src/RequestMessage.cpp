@@ -21,7 +21,7 @@ namespace Poco {
 namespace MongoDB {
 
 
-RequestMessage::RequestMessage(MessageHeader::OpCode opcode): 
+RequestMessage::RequestMessage(MessageHeader::OpCode opcode):
 	Message(opcode)
 {
 }
@@ -35,7 +35,7 @@ RequestMessage::~RequestMessage()
 void RequestMessage::send(std::ostream& ostr)
 {
 	std::stringstream ss;
-	BinaryWriter requestWriter(ss);
+	BinaryWriter requestWriter(ss, BinaryWriter::LITTLE_ENDIAN_BYTE_ORDER);
 	buildRequest(requestWriter);
 	requestWriter.flush();
 

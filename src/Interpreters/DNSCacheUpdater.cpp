@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ void DNSCacheUpdater::run()
     /// Reload cluster config if IP of any host has been changed since last update.
     if (resolver.updateCache(max_consecutive_failures))
     {
-        LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "IPs of some hosts have been changed. Will reload cluster config.");
+        LOG_INFO(getLogger("DNSCacheUpdater"), "IPs of some hosts have been changed. Will reload cluster config.");
         try
         {
             getContext()->reloadClusterConfig();
@@ -44,7 +45,7 @@ void DNSCacheUpdater::run()
 
 void DNSCacheUpdater::start()
 {
-    LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "Update period {} seconds", update_period_seconds);
+    LOG_INFO(getLogger("DNSCacheUpdater"), "Update period {} seconds", update_period_seconds);
     task_handle->activateAndSchedule();
 }
 

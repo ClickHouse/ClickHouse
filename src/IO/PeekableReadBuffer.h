@@ -20,7 +20,7 @@ public:
 
     ~PeekableReadBuffer() override;
 
-    void prefetch(int64_t priority) override { sub_buf->prefetch(priority); }
+    void prefetch(Priority priority) override { sub_buf->prefetch(priority); }
 
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
@@ -74,12 +74,6 @@ public:
     /// This data will be lost after destruction of peekable buffer.
     bool hasUnreadData() const;
 
-    // for streaming reading (like in Kafka) we need to restore initial state of the buffer
-    // without recreating the buffer.
-    void reset();
-
-    void setSubBuffer(ReadBuffer & sub_buf_);
-
     const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
 private:
@@ -89,9 +83,9 @@ private:
 
     bool peekNext();
 
-    inline bool useSubbufferOnly() const { return !peeked_size; }
-    inline bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
-    inline bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
+    bool useSubbufferOnly() const { return !peeked_size; }
+    bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
+    bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
 
     void checkStateCorrect() const;
 

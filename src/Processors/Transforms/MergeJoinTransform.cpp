@@ -16,6 +16,7 @@
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -43,21 +44,21 @@ FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns)
 }
 
 template <bool has_left_nulls, bool has_right_nulls>
-int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos, int null_direction_hint = 1)
+int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos, int null_direction_hint)
 {
     if constexpr (has_left_nulls && has_right_nulls)
     {
-        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
-        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column);
 
         if (left_nullable && right_nullable)
         {
-            int res = left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+            int res = left_nullable->compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
             if (res)
                 return res;
 
             /// NULL != NULL case
-            if (left_column.isNullAt(lhs_pos))
+            if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
 
             return 0;
@@ -66,9 +67,9 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls)
     {
-        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
         {
-            if (left_column.isNullAt(lhs_pos))
+            if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
             return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
         }
@@ -76,9 +77,9 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_right_nulls)
     {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
         {
-            if (right_column.isNullAt(rhs_pos))
+            if (right_nullable->isNullAt(rhs_pos))
                 return -null_direction_hint;
             return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
         }
@@ -88,35 +89,36 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 }
 
 int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, size_t lpos,
-                                 const SortCursorImpl & rhs, size_t rpos)
+                                 const SortCursorImpl & rhs, size_t rpos,
+                                 int null_direction_hint)
 {
     for (size_t i = 0; i < lhs.sort_columns_size; ++i)
     {
         /// TODO(@vdimir): use nullableCompareAt only if there's nullable columns
-        int cmp = nullableCompareAt<true, true>(*lhs.sort_columns[i], *rhs.sort_columns[i], lpos, rpos);
+        int cmp = nullableCompareAt<true, true>(*lhs.sort_columns[i], *rhs.sort_columns[i], lpos, rpos, null_direction_hint);
         if (cmp != 0)
             return cmp;
     }
     return 0;
 }
 
-int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImpl & rhs)
+int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImpl & rhs, int null_direction_hint)
 {
-    return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow());
+    return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow(), null_direction_hint);
 }
 
-bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs)
+bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs, int null_direction_hint)
 {
     /// The last row of left cursor is less than the current row of the right cursor.
-    int cmp = compareCursors(lhs, lhs.rows - 1, rhs, rhs.getRow());
+    int cmp = compareCursors(lhs, lhs.rows - 1, rhs, rhs.getRow(), null_direction_hint);
     return cmp < 0;
 }
 
-int ALWAYS_INLINE totallyCompare(SortCursorImpl & lhs, SortCursorImpl & rhs)
+int ALWAYS_INLINE totallyCompare(SortCursorImpl & lhs, SortCursorImpl & rhs, int null_direction_hint)
 {
-    if (totallyLess(lhs, rhs))
+    if (totallyLess(lhs, rhs, null_direction_hint))
         return -1;
-    if (totallyLess(rhs, lhs))
+    if (totallyLess(rhs, lhs, null_direction_hint))
         return 1;
     return 0;
 }
@@ -227,10 +229,10 @@ void inline addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end
         left_map.push_back(i);
 }
 
-void inline addMany(PaddedPODArray<UInt64> & left_map, size_t idx, size_t num)
+void inline addMany(PaddedPODArray<UInt64> & left_or_right_map, size_t idx, size_t num)
 {
     for (size_t i = 0; i < num; ++i)
-        left_map.push_back(idx);
+        left_or_right_map.push_back(idx);
 }
 
 }
@@ -273,7 +275,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     size_t max_block_size_)
     : table_join(table_join_)
     , max_block_size(max_block_size_)
-    , log(&Poco::Logger::get("MergeJoinAlgorithm"))
+    , log(getLogger("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
@@ -291,8 +293,10 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
-    cursors.push_back(createCursor(input_headers[0], join_on.key_names_left));
-    cursors.push_back(createCursor(input_headers[1], join_on.key_names_right));
+    cursors = {
+        createCursor(input_headers[0], join_on.key_names_left),
+        createCursor(input_headers[1], join_on.key_names_right)
+    };
 
     for (const auto & [left_key, right_key] : table_join->getTableJoin().leftToRightKeyRemap())
     {
@@ -300,6 +304,23 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
+
+    const auto *smjPtr = typeid_cast<const FullSortingMergeJoin *>(table_join.get());
+    if (smjPtr)
+    {
+        null_direction_hint = smjPtr->getNullDirection();
+    }
+
+}
+
+void MergeJoinAlgorithm::logElapsed(double seconds)
+{
+    LOG_TRACE(log,
+        "Finished pocessing in {} seconds"
+        ", left: {} blocks, {} rows; right: {} blocks, {} rows"
+        ", max blocks loaded to memory: {}",
+        seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
+        stat.max_blocks_loaded);
 }
 
 static void prepareChunk(Chunk & chunk)
@@ -354,7 +375,8 @@ struct AllJoinImpl
                      size_t max_block_size,
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
-                     std::unique_ptr<AllJoinState> & state)
+                     std::unique_ptr<AllJoinState> & state,
+                     int null_direction_hint)
     {
         right_map.clear();
         right_map.reserve(max_block_size);
@@ -370,7 +392,7 @@ struct AllJoinImpl
             lpos = left_cursor->getRow();
             rpos = right_cursor->getRow();
 
-            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor);
+            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor, null_direction_hint);
             if (cmp == 0)
             {
                 size_t lnum = nextDistinct(left_cursor.cursor);
@@ -444,8 +466,9 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
 
     if (all_join_state)
     {
+        assert(cursors.size() == 2);
         /// Accumulate blocks with same key in all_join_state
-        for (size_t i = 0; i < cursors.size(); ++i)
+        for (size_t i = 0; i < 2; ++i)
         {
             if (cursors[i]->cursor.isValid() && all_join_state->keys[i].equals(cursors[i]->cursor))
             {
@@ -504,7 +527,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
 {
     PaddedPODArray<UInt64> idx_map[2];
 
-    dispatchKind<AllJoinImpl>(kind, *cursors[0], *cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state);
+    dispatchKind<AllJoinImpl>(kind, *cursors[0], *cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
     assert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
@@ -563,7 +586,8 @@ struct AnyJoinImpl
                      FullMergeJoinCursor & right_cursor,
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
-                     AnyJoinState & state)
+                     AnyJoinState & state,
+                     int null_direction_hint)
     {
         assert(enabled);
 
@@ -586,7 +610,7 @@ struct AnyJoinImpl
             lpos = left_cursor->getRow();
             rpos = right_cursor->getRow();
 
-            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor);
+            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor, null_direction_hint);
             if (cmp == 0)
             {
                 if constexpr (isLeftOrFull(kind))
@@ -710,7 +734,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, *cursors[0], *cursors[1], idx_map[0], idx_map[1], any_join_state);
+    dispatchKind<AnyJoinImpl>(kind, *cursors[0], *cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
 
     assert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -788,8 +812,11 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     if (!cursors[1]->cursor.isValid() && !cursors[1]->fullyCompleted())
         return Status(1);
 
+
     if (auto result = handleAllJoinState())
+    {
         return std::move(*result);
+    }
 
     if (cursors[0]->fullyCompleted() || cursors[1]->fullyCompleted())
     {
@@ -803,7 +830,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     }
 
     /// check if blocks are not intersecting at all
-    if (int cmp = totallyCompare(cursors[0]->cursor, cursors[1]->cursor); cmp != 0)
+    if (int cmp = totallyCompare(cursors[0]->cursor, cursors[1]->cursor, null_direction_hint); cmp != 0)
     {
         if (cmp < 0)
         {
@@ -847,7 +874,7 @@ MergeJoinTransform::MergeJoinTransform(
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
-    , log(&Poco::Logger::get("MergeJoinTransform"))
+    , log(getLogger("MergeJoinTransform"))
 {
     LOG_TRACE(log, "Use MergeJoinTransform");
 }

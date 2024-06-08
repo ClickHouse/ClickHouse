@@ -19,7 +19,7 @@ public:
 
     size_t getCompiledExpressionSize() const { return compiled_expression_size; }
 
-    virtual ~CompiledExpressionCacheEntry() {}
+    virtual ~CompiledExpressionCacheEntry() = default;
 
 private:
 

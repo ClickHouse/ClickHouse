@@ -19,12 +19,14 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/storage_conf.xml"],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
         )
         cluster.add_instance(
             "node2",
             main_configs=["configs/storage_conf.xml"],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
         )
@@ -45,7 +47,7 @@ CREATE TABLE test1 (EventDate Date, CounterID UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse-tables/test1', 'r1')
 PARTITION BY toMonday(EventDate)
 ORDER BY (CounterID, EventDate)
-SETTINGS index_granularity = 8192, storage_policy = 's3'"""
+SETTINGS index_granularity = 8192, storage_policy = 's3', temporary_directories_lifetime=1"""
     )
 
     node1.query(

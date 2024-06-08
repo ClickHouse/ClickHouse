@@ -28,7 +28,7 @@ void CachedCompressedReadBuffer::initInput()
 }
 
 
-void CachedCompressedReadBuffer::prefetch(int64_t priority)
+void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
     initInput();
     file_in->prefetch(priority);
@@ -38,7 +38,7 @@ void CachedCompressedReadBuffer::prefetch(int64_t priority)
 bool CachedCompressedReadBuffer::nextImpl()
 {
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
-    UInt128 key = cache->hash(path, file_pos);
+    UInt128 key = UncompressedCache::hash(path, file_pos);
 
     owned_cell = cache->getOrSet(key, [&]()
     {

@@ -5,13 +5,11 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 
-#include <Common/HashTable/HashMap.h>
-
 #include <initializer_list>
 #include <list>
-#include <map>
 #include <set>
 #include <vector>
+#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -97,7 +95,7 @@ public:
     Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
     NameMap getNamesToIndexesMap() const;
 
     Serializations getSerializations() const;
@@ -151,6 +149,13 @@ public:
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
+    /** See IColumn::shrinkToFit() */
+    Block shrinkToFit() const;
+
+    Block compress() const;
+
+    Block decompress() const;
+
     void clear();
     void swap(Block & other) noexcept;
 
@@ -176,7 +181,6 @@ using BlockPtr = std::shared_ptr<Block>;
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;
-using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 
 /// Extends block with extra data in derived classes
 struct ExtraBlock

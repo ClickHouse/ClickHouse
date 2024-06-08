@@ -2,7 +2,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,13 +33,14 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     const ASTPtr & table_func_ptr)
 {
     String query;
+    const Settings & settings = context->getSettingsRef();
 
     if (table_func_ptr)
     {
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructure(context);
+            return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -59,6 +60,15 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ColumnsDescription res;
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
+
+    /// Ignore limit for result number of rows (that could be set during handling CSE/CTE),
+    /// since this is a service query and should not lead to query failure.
+    {
+        Settings new_settings = new_context->getSettings();
+        new_settings.max_result_rows = 0;
+        new_settings.max_result_bytes = 0;
+        new_context->setSettings(new_settings);
+    }
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -102,7 +112,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
                 column.default_desc.expression = parseQuery(
-                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context->getSettingsRef().max_parser_depth);
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression",
+                    0, settings.max_parser_depth, settings.max_parser_backtracks);
             }
 
             res.add(column);
@@ -199,7 +210,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
                 auto type_name = type_col[i].get<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && storage_column->type->hasDynamicSubcolumns())
+                if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }

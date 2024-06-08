@@ -28,12 +28,6 @@
 #include <cstring>
 
 /// For the expansion of gtest macros.
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wdeprecated"
-#elif defined (__GNUC__) && __GNUC__ >= 9
-    #pragma GCC diagnostic ignored "-Wdeprecated-copy"
-#endif
-
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -42,9 +36,7 @@ using namespace DB;
 namespace
 {
 
-template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
-template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
-
+template <class T> inline constexpr bool is_pod_v = std::is_trivial_v<std::is_standard_layout<T>>;
 
 template <typename T>
 struct AsHexStringHelper
@@ -178,7 +170,7 @@ private:
             throw std::runtime_error("No more data to read");
         }
 
-        current_value = unalignedLoadLE<T>(data);
+        current_value = unalignedLoadLittleEndian<T>(data);
         data = reinterpret_cast<const char *>(data) + sizeof(T);
     }
 };
@@ -374,7 +366,7 @@ CodecTestSequence makeSeq(Args && ... args)
     char * write_pos = data.data();
     for (const auto & v : vals)
     {
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -396,7 +388,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = static_cast<T>(gen(i));
 
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -450,7 +442,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0);
+    IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
     ASTPtr codec_ast;
@@ -491,7 +483,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
 
-    const auto header_size = codec.getHeaderSize();
+    const auto header_size = ICompressionCodec::getHeaderSize();
     const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
 
     if (expected_compression_ratio)
@@ -802,7 +794,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequences.push_back(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
+        sequences.push_back(generateSeq<T>(generator, name.c_str(), 0, i));
     }
 
     return sequences;
@@ -1303,9 +1295,9 @@ TEST(LZ4Test, DecompressMalformedInput)
 
     DB::Memory<> memory;
     memory.resize(ICompressionCodec::getHeaderSize() + uncompressed_size + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-    unalignedStoreLE<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
-    unalignedStoreLE<uint32_t>(&memory[1], source_size);
-    unalignedStoreLE<uint32_t>(&memory[5], uncompressed_size);
+    unalignedStoreLittleEndian<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
+    unalignedStoreLittleEndian<uint32_t>(&memory[1], source_size);
+    unalignedStoreLittleEndian<uint32_t>(&memory[5], uncompressed_size);
 
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);

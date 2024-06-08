@@ -21,7 +21,7 @@ namespace MongoDB {
 
 
 GetMoreRequest::GetMoreRequest(const std::string& collectionName, Int64 cursorID):
-	RequestMessage(MessageHeader::OP_GET_MORE), 
+	RequestMessage(MessageHeader::OP_GET_MORE),
 	_fullCollectionName(collectionName),
 	_numberToReturn(100),
 	_cursorID(cursorID)

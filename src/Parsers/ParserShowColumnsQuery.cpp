@@ -7,51 +7,68 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <boost/algorithm/string.hpp>
+
 namespace DB
 {
 
 bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr like;
-    ASTPtr from_database;
-    ASTPtr from_table;
+    ASTPtr from1;
+    ASTPtr from2;
+
+    String from1_str;
+    String from2_str;
 
     auto query = std::make_shared<ASTShowColumnsQuery>();
 
-    if (!ParserKeyword("SHOW").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::SHOW).ignore(pos, expected))
         return false;
 
-    if (ParserKeyword("EXTENDED").ignore(pos, expected))
+    if (ParserKeyword(Keyword::EXTENDED).ignore(pos, expected))
         query->extended = true;
 
-    if (ParserKeyword("FULL").ignore(pos, expected))
+    if (ParserKeyword(Keyword::FULL).ignore(pos, expected))
         query->full = true;
 
-    if (!ParserKeyword("COLUMNS").ignore(pos, expected) || ParserKeyword("FIELDS").ignore(pos, expected))
+    if (!(ParserKeyword(Keyword::COLUMNS).ignore(pos, expected) || ParserKeyword(Keyword::FIELDS).ignore(pos, expected)))
         return false;
 
-    if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
+    if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
     {
-        if (!ParserCompoundIdentifier().parse(pos, from_table, expected))
+        if (!ParserCompoundIdentifier().parse(pos, from1, expected))
             return false;
     }
     else
         return false;
 
-    tryGetIdentifierNameInto(from_table, query->from_table);
-    bool abbreviated_form = query->from_table.contains("."); /// FROM <db>.<table>
+    tryGetIdentifierNameInto(from1, from1_str);
 
-    if (!abbreviated_form)
-        if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from_database, expected))
+    bool abbreviated_form = from1_str.contains("."); // FROM database.table
+    if (abbreviated_form)
+    {
+        std::vector<String> split;
+        boost::split(split, from1_str, boost::is_any_of("."));
+        query->database = split[0];
+        query->table = split[1];
+    }
+    else
+    {
+        if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
+            if (!ParserIdentifier().parse(pos, from2, expected))
                 return false;
 
-    tryGetIdentifierNameInto(from_database, query->from_database);
+        tryGetIdentifierNameInto(from2, from2_str);
 
-    if (ParserKeyword("NOT").ignore(pos, expected))
+        query->table = from1_str;
+        query->database = from2_str;
+    }
+
+    if (ParserKeyword(Keyword::NOT).ignore(pos, expected))
         query->not_like = true;
 
-    if (bool insensitive = ParserKeyword("ILIKE").ignore(pos, expected); insensitive || ParserKeyword("LIKE").ignore(pos, expected))
+    if (bool insensitive = ParserKeyword(Keyword::ILIKE).ignore(pos, expected); insensitive || ParserKeyword(Keyword::LIKE).ignore(pos, expected))
     {
         if (insensitive)
             query->case_insensitive_like = true;
@@ -61,11 +78,11 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     else if (query->not_like)
         return false;
-    else if (ParserKeyword("WHERE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::WHERE).ignore(pos, expected))
         if (!ParserExpressionWithOptionalAlias(false).parse(pos, query->where_expression, expected))
             return false;
 
-    if (ParserKeyword("LIMIT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::LIMIT).ignore(pos, expected))
         if (!ParserExpressionWithOptionalAlias(false).parse(pos, query->limit_length, expected))
             return false;
 

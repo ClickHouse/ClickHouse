@@ -15,15 +15,16 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
-enum class JoinTableSide;
+enum class JoinTableSide : uint8_t;
 
 class MergeJoin : public IJoin
 {
 public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
+    std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 
@@ -116,7 +117,7 @@ private:
 
     Names lowcard_right_keys;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

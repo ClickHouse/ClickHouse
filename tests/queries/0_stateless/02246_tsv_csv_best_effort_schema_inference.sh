@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 FILE_NAME=test_02149.data
 DATA_FILE=${USER_FILES_PATH:?}/$FILE_NAME
 
@@ -218,5 +218,3 @@ echo -e "\"[(1, 2, 3)]\""> $DATA_FILE
 
 $CLIENT_CMD -q "desc file('$FILE_NAME', 'CSV')"
 $CLIENT_CMD -q "select * from file('$FILE_NAME', 'CSV')"
-
-

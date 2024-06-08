@@ -1,10 +1,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Functions/FunctionSpaceFillingCurve.h>
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
@@ -19,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 #define EXTRACT_VECTOR(INDEX) \
@@ -144,7 +142,7 @@ constexpr auto MortonND_5D_Enc = mortonnd::MortonNDLutEncoder<5, 12, 8>();
 constexpr auto MortonND_6D_Enc = mortonnd::MortonNDLutEncoder<6, 10, 8>();
 constexpr auto MortonND_7D_Enc = mortonnd::MortonNDLutEncoder<7, 9, 8>();
 constexpr auto MortonND_8D_Enc = mortonnd::MortonNDLutEncoder<8, 8, 8>();
-class FunctionMortonEncode : public IFunction
+class FunctionMortonEncode : public FunctionSpaceFillingCurveEncode
 {
 public:
     static constexpr auto name = "mortonEncode";
@@ -158,59 +156,9 @@ public:
         return name;
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
-    {
-        size_t vectorStartIndex = 0;
-        if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                            "At least one UInt argument is required for function {}",
-                            getName());
-        if (WhichDataType(arguments[0]).isTuple())
-        {
-            vectorStartIndex = 1;
-            const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get());
-            auto tuple_size = type_tuple->getElements().size();
-            if (tuple_size != (arguments.size() - 1))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
-                                arguments[0]->getName(), getName());
-            for (size_t i = 0; i < tuple_size; i++)
-            {
-                if (!WhichDataType(type_tuple->getElement(i)).isNativeUInt())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal type {} of argument in tuple for function {}, should be a native UInt",
-                                    type_tuple->getElement(i)->getName(), getName());
-            }
-        }
-
-        for (size_t i = vectorStartIndex; i < arguments.size(); i++)
-        {
-            const auto & arg = arguments[i];
-            if (!WhichDataType(arg).isNativeUInt())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument of function {}, should be a native UInt",
-                                arg->getName(), getName());
-        }
-        return std::make_shared<DataTypeUInt64>();
-    }
-
     static UInt64 expand(UInt64 ratio, UInt64 value)
     {
-        switch (ratio)
+        switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 1:
                 return value;
@@ -321,6 +269,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
@@ -335,8 +286,8 @@ private:
 
 REGISTER_FUNCTION(MortonEncode)
 {
-    factory.registerFunction<FunctionMortonEncode>({
-    R"(
+    factory.registerFunction<FunctionMortonEncode>(FunctionDocumentation{
+    .description=R"(
 Calculates Morton encoding (ZCurve) for a list of unsigned integers
 
 The function has two modes of operation:
@@ -378,15 +329,15 @@ Two arguments will have a range of maximum 2^32 (64/2) each
 Three arguments: range of max 2^21 (64/3) each
 And so on, all overflow will be clamped to zero
 )",
-        Documentation::Examples{
-            {"simple", "SELECT mortonEncode(1, 2, 3)"},
-            {"range_expanded", "SELECT mortonEncode((1,2), 1024, 16)"},
-            {"identity", "SELECT mortonEncode(1)"},
-            {"identity_expanded", "SELECT mortonEncode(tuple(2), 128)"},
-            {"from_table", "SELECT mortonEncode(n1, n2) FROM table"},
-            {"from_table_range", "SELECT mortonEncode((1,2), n1, n2) FROM table"},
+        .examples{
+            {"simple", "SELECT mortonEncode(1, 2, 3)", ""},
+            {"range_expanded", "SELECT mortonEncode((1,2), 1024, 16)", ""},
+            {"identity", "SELECT mortonEncode(1)", ""},
+            {"identity_expanded", "SELECT mortonEncode(tuple(2), 128)", ""},
+            {"from_table", "SELECT mortonEncode(n1, n2) FROM table", ""},
+            {"from_table_range", "SELECT mortonEncode((1,2), n1, n2) FROM table", ""},
             },
-        Documentation::Categories {"ZCurve", "Morton coding"}
+        .categories {"ZCurve", "Morton coding"}
     });
 }
 

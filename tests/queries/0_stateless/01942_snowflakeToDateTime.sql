@@ -1,12 +1,12 @@
 -- -- Error cases
-SELECT snowflakeToDateTime();  -- {serverError 42}
-SELECT snowflakeToDateTime64();  -- {serverError 42}
+SELECT snowflakeToDateTime();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT snowflakeToDateTime64();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 
-SELECT snowflakeToDateTime('abc');  -- {serverError 43}
-SELECT snowflakeToDateTime64('abc');  -- {serverError 43}
+SELECT snowflakeToDateTime('abc');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT snowflakeToDateTime64('abc');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
-SELECT snowflakeToDateTime('abc', 123);  -- {serverError 43}
-SELECT snowflakeToDateTime64('abc', 123);  -- {serverError 43}
+SELECT snowflakeToDateTime('abc', 123);  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT snowflakeToDateTime64('abc', 123);  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 SELECT 'const column';
 WITH
@@ -30,3 +30,13 @@ SELECT
 	toTypeName(dt),
 	snowflakeToDateTime64(i64, tz) as dt64,
 	toTypeName(dt64);
+
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab(val Int64, tz String) engine=Log;
+INSERT INTO tab VALUES (42, 'Asia/Singapore');
+
+SELECT 1 FROM tab WHERE snowflakeToDateTime(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT 1 FROM tab WHERE snowflakeToDateTime64(42::Int64, tz) != now() SETTINGS allow_nonconst_timezone_arguments = 1;
+
+DROP TABLE tab;

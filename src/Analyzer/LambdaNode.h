@@ -35,7 +35,7 @@ class LambdaNode final : public IQueryTreeNode
 {
 public:
     /// Initialize lambda with argument names and lambda body expression
-    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_);
+    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_ = {});
 
     /// Get argument names
     const Names & getArgumentNames() const
@@ -86,15 +86,20 @@ public:
 
     DataTypePtr getResultType() const override
     {
-        return getExpression()->getResultType();
+        return result_type;
+    }
+
+    void resolve(DataTypePtr lambda_type)
+    {
+        result_type = std::move(lambda_type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & state) const override;
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -102,6 +107,7 @@ protected:
 
 private:
     Names argument_names;
+    DataTypePtr result_type;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t expression_child_index = 1;
