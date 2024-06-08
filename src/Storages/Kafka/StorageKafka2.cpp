@@ -72,7 +72,6 @@ extern const Metric KafkaWrites;
 
 namespace ProfileEvents
 {
-extern const Event KafkaDirectReads;
 extern const Event KafkaBackgroundReads;
 extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
