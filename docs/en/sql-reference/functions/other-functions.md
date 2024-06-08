@@ -228,29 +228,24 @@ Query:
 ```sql
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (n UInt8) ENGINE = Memory;
--- Insert 3 blocks:
-INSERT INTO test VALUES (1);
-INSERT INTO test VALUES (1),(2);
-INSERT INTO test VALUES (1),(2),(3);
 
-SELECT blockSize(), n FROM (SELECT * FROM test);
+INSERT INTO test
+SELECT * FROM system.numbers LIMIT 5;
+
+SELECT blockSize()
+FROM test;
 ```
 
 Result:
 
 ```response
-   ┌─blockSize()─┬─n─┐
-1. │           1 │ 1 │
-   └─────────────┴───┘
-   ┌─blockSize()─┬─n─┐
-2. │           3 │ 1 │
-3. │           3 │ 2 │
-4. │           3 │ 3 │
-   └─────────────┴───┘
-   ┌─blockSize()─┬─n─┐
-5. │           2 │ 1 │
-6. │           2 │ 2 │
-   └─────────────┴───┘
+   ┌─blockSize()─┐
+1. │           5 │
+2. │           5 │
+3. │           5 │
+4. │           5 │
+5. │           5 │
+   └─────────────┘ 
 ```
 
 ## byteSize
@@ -3723,11 +3718,7 @@ Result:
 
 ## lowCardinalityIndices
 
-For each row in the current [block](../../development/architecture.md/#block-block), returns the index of the value in the dictionary of unique values for columns of [LowCardinality](../data-types/lowcardinality.md) type. 
-
-:::note
-The first unique value encountered in the block is enumerated from 1.
-:::
+Returns the position of a value in the dictionary of a [LowCardinality](../data-types/lowcardinality.md) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
 
 **Syntax**
 
@@ -3741,7 +3732,7 @@ lowCardinalityIndices(col)
 
 **Returned value**
 
-- returns the index of the value in the dictionary of unique values, for each row in the current block. [UInt64](../data-types/int-uint.md).
+- The position of the value in the dictionary of the current part. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -3751,10 +3742,10 @@ Query:
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- insert two blocks of data:
+-- create two parts:
 
-INSERT INTO test VALUES ('one'),('two'),('one'),('one'),('two');
-INSERT INTO test VALUES ('three'),('two'),('one'),('two'),('two'),('three');
+INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
+INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
 
 SELECT s, lowCardinalityIndices(s) FROM test;
 ```
@@ -3762,29 +3753,24 @@ SELECT s, lowCardinalityIndices(s) FROM test;
 Result:
 
 ```response
-   ┌─s───┬─lowCardinalityIndices(s)─┐
-1. │ one │                        1 │
-2. │ two │                        2 │
-3. │ one │                        1 │
-4. │ one │                        1 │
-5. │ two │                        2 │
-   └─────┴──────────────────────────┘
-    ┌─s─────┬─lowCardinalityIndices(s)─┐
- 6. │ three │                        1 │
- 7. │ two   │                        2 │
- 8. │ one   │                        3 │
- 9. │ two   │                        2 │
-10. │ two   │                        2 │
-11. │ three │                        1 │
-    └───────┴──────────────────────────┘
+   ┌─s──┬─lowCardinalityIndices(s)─┐
+1. │ ab │                        1 │
+2. │ cd │                        2 │
+3. │ ab │                        1 │
+4. │ ab │                        1 │
+5. │ df │                        3 │
+   └────┴──────────────────────────┘
+    ┌─s──┬─lowCardinalityIndices(s)─┐
+ 6. │ ef │                        1 │
+ 7. │ cd │                        2 │
+ 8. │ ab │                        3 │
+ 9. │ cd │                        2 │
+10. │ ef │                        1 │
+    └────┴──────────────────────────┘
 ```
 ## lowCardinalityKeys
 
-For each row in the current [block](../../development/architecture.md/#block-block), returns the keys (unique values) in the dictionary of unique values for columns of [LowCardinality](../data-types/lowcardinality.md) type.
-
-:::note
-If the column size is less than the dictionary size, then values will be cut. If it is greater, then defaults will be added.
-:::
+Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality.md) column. If the block is smaller or larger than the dictionary size, the result will be truncated or extended with default values. Since LowCardinality have per-part dictionaries, this function may return different dictionary values in different parts.
 
 **Syntax**
 
@@ -3798,7 +3784,7 @@ lowCardinalityIndices(col)
 
 **Returned value**
 
-- returns the keys of the dictionary, for each row in the current block. [UInt64](../data-types/int-uint.md).
+- The dictionary keys. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -3808,10 +3794,10 @@ Query:
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- insert two blocks of data:
+-- create two parts:
 
-INSERT INTO test VALUES ('one'),('two'),('one'),('one'),('two');
-INSERT INTO test VALUES ('three'),('two'),('one'),('two'),('two'),('three');
+INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
+INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
 
 SELECT s, lowCardinalityKeys(s) FROM test;
 ```
@@ -3819,19 +3805,18 @@ SELECT s, lowCardinalityKeys(s) FROM test;
 Result:
 
 ```response
-   ┌─s───┬─lowCardinalityKeys(s)─┐
-1. │ one │                       │
-2. │ two │ one                   │
-3. │ one │ two                   │
-4. │ one │                       │
-5. │ two │                       │
-   └─────┴───────────────────────┘
-    ┌─s─────┬─lowCardinalityKeys(s)─┐
- 6. │ three │                       │
- 7. │ two   │ three                 │
- 8. │ one   │ two                   │
- 9. │ two   │ one                   │
-10. │ two   │                       │
-11. │ three │                       │
-    └───────┴───────────────────────┘
+   ┌─s──┬─lowCardinalityKeys(s)─┐
+1. │ ef │                       │
+2. │ cd │ ef                    │
+3. │ ab │ cd                    │
+4. │ cd │ ab                    │
+5. │ ef │                       │
+   └────┴───────────────────────┘
+    ┌─s──┬─lowCardinalityKeys(s)─┐
+ 6. │ ab │                       │
+ 7. │ cd │ ab                    │
+ 8. │ ab │ cd                    │
+ 9. │ ab │ df                    │
+10. │ df │                       │
+    └────┴───────────────────────┘
 ```
