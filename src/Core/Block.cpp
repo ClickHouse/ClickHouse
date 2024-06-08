@@ -852,7 +852,7 @@ Block concatenateBlocks(std::vector<Block> && blocks)
         return {};
 
     size_t num_rows = 0;
-    for (const auto & block : blocks)
+    for (auto && block : blocks)
         num_rows += block.rows();
 
     Block out = blocks[0].cloneEmpty();

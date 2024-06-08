@@ -35,6 +35,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
+#include "Core/Block.h"
 #include "Core/Joins.h"
 #include "Interpreters/TemporaryDataOnDisk.h"
 
@@ -805,6 +806,8 @@ bool HashJoin::tryMergeBlocks(Block & source_block)
     bool limit_exceeded = !table_join->sizeLimits().softCheck(getTotalRowCount(), getTotalByteCount());
     if (force_flush || buffer_full || limit_exceeded)
     {
+        for (auto & block : added_blocks_buffer.blocks)
+            materializeBlockInplace(block);
         Block merged_block = concatenateBlocks(std::move(added_blocks_buffer.blocks));
         added_blocks_buffer.blocks.clear();
         added_blocks_buffer.total_rows = 0;
