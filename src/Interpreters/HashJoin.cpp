@@ -708,7 +708,6 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
-        UNREACHABLE();
     }
 }
 
@@ -2713,8 +2712,6 @@ private:
             default:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type);
         }
-
-        UNREACHABLE();
     }
 
     template <typename Map>

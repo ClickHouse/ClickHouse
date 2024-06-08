@@ -82,17 +82,17 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledMessages() const
+    bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
     }
 
-    inline bool polledDataUnusable() const
+    bool polledDataUnusable() const
     {
         return  (stalled_status != NOT_STALLED) && (stalled_status != NO_MESSAGES_RETURNED);
     }
 
-    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
+    bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
