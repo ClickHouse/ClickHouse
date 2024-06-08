@@ -877,6 +877,18 @@ static MarkRanges splitRangesInOrder(const MarkRanges & ranges, int direction, s
     return new_ranges;
 }
 
+static SortDescription getSortDescriptionForMerging(const KeyDescription & sorting_key, const ContextPtr & context, int direction)
+{
+    SortDescription sort_description;
+    sort_description.compile_sort_description = context->getSettingsRef().compile_sort_description;
+    sort_description.min_count_to_compile_sort_description = context->getSettingsRef().min_count_to_compile_sort_description;
+
+    for (const auto & column_name : sorting_key.column_names)
+        sort_description.emplace_back(column_name, direction);
+
+    return sort_description;
+}
+
 template <typename PipeCreator>
 Pipes ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderCommon(
     RangesInDataParts && parts_with_ranges,
@@ -971,6 +983,7 @@ Pipes ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderUseLayers(
     const auto & sorting_key = metadata_for_reading->getSortingKey();
     auto sorting_key_prefix = sorting_key.getKeyPrefix(prefix_size, metadata_for_reading->getColumns(), context);
     auto sorting_prefix_expr = std::make_shared<ExpressionActions>(sorting_key_prefix.expression->getActionsDAG().clone());
+    auto sort_description = getSortDescriptionForMerging(sorting_key_prefix, context, input_order_info.direction);
 
     auto split_ranges_result = splitPartsWithRangesByPrimaryKey(
         sorting_key_prefix,
@@ -982,7 +995,22 @@ Pipes ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderUseLayers(
         /*split_parts_ranges_into_intersecting_and_non_intersecting=*/ false,
         /*split_intersecting_parts_ranges_into_layers=*/ true);
 
-    return std::move(split_ranges_result.merging_pipes);
+    auto pipes = std::move(split_ranges_result.merging_pipes);
+
+    for (auto & pipe : pipes)
+    {
+        auto transform = std::make_shared<MergingSortedTransform>(
+            pipe.getHeader(),
+            pipe.numOutputPorts(),
+            sort_description,
+            block_size.max_block_size_rows,
+            /*max_block_size_bytes=*/0,
+            SortingQueueStrategy::Batch);
+
+        pipe.addTransform(std::move(transform));
+    }
+
+    return pipes;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
@@ -1016,7 +1044,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         have_input_columns_removed_after_prewhere = restorePrewhereInputs(*prewhere_info, sorting_columns);
     }
 
-    bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
+    bool need_preliminary_merge = false;
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
     PoolSettings pool_settings
@@ -1053,6 +1081,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     else
     {
         pipes = spreadMarkRangesAmongStreamsWithOrderCommon(std::move(parts_with_ranges), std::move(pipe_creator), std::move(info), num_streams, *input_order_info);
+        need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
     }
 
     Block pipe_header;
@@ -1062,26 +1091,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (need_preliminary_merge || output_each_partition_through_separate_port)
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
-        auto order_key_prefix_ast = metadata_for_reading->getSortingKey().expression_list_ast->clone();
-        order_key_prefix_ast->children.resize(prefix_size);
-
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_for_reading->getColumns().getAllPhysical());
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
-        const auto & sorting_columns = metadata_for_reading->getSortingKey().column_names;
-
-        SortDescription sort_description;
-        sort_description.compile_sort_description = settings.compile_sort_description;
-        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
-
-        for (size_t j = 0; j < prefix_size; ++j)
-            sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
-
-        auto sorting_key_expr = std::make_shared<ExpressionActions>(sorting_key_prefix_expr);
+        const auto & sorting_key = metadata_for_reading->getSortingKey();
+        auto sorting_key_prefix = sorting_key.getKeyPrefix(prefix_size, metadata_for_reading->getColumns(), context);
+        auto sorting_prefix_expr = std::make_shared<ExpressionActions>(sorting_key_prefix.expression->getActionsDAG().clone());
+        auto sort_description = getSortDescriptionForMerging(sorting_key_prefix, context, input_order_info->direction);
 
         auto merge_streams = [&](Pipe & pipe)
         {
-            pipe.addSimpleTransform([sorting_key_expr](const Block & header)
-                                    { return std::make_shared<ExpressionTransform>(header, sorting_key_expr); });
+            pipe.addSimpleTransform([sorting_prefix_expr](const Block & header)
+            {
+                 return std::make_shared<ExpressionTransform>(header, sorting_prefix_expr);
+            });
 
             if (pipe.numOutputPorts() > 1)
             {
