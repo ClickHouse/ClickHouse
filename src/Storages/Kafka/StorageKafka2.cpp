@@ -10,6 +10,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -29,18 +30,18 @@
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include "Common/config_version.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/formatReadable.h>
@@ -49,7 +50,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "Storages/Kafka/KafkaConsumer2.h"
-#include "Common/config_version.h"
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -65,8 +65,8 @@
 
 namespace CurrentMetrics
 {
+// TODO: Add proper metrics, similar to old StorageKafka
 extern const Metric KafkaBackgroundReads;
-extern const Metric KafkaConsumersInUse;
 extern const Metric KafkaWrites;
 }
 
@@ -77,7 +77,6 @@ extern const Event KafkaBackgroundReads;
 extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
-extern const Event KafkaRowsRejected;
 extern const Event KafkaWrites;
 }
 
@@ -91,7 +90,6 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
-extern const int QUERY_NOT_ALLOWED;
 extern const int REPLICA_ALREADY_EXISTS;
 extern const int TABLE_IS_DROPPED;
 extern const int TABLE_WAS_NOT_DROPPED;
@@ -324,12 +322,7 @@ KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
     }
 
     return std::make_shared<KafkaConsumer2>(
-        consumer_impl,
-        log,
-        getPollMaxBatchSize(),
-        getPollTimeoutMillisecond(),
-        tasks.back()->stream_cancelled,
-        topics);
+        consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), tasks.back()->stream_cancelled, topics);
 }
 
 
@@ -833,14 +826,14 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
 }
 
 
-void StorageKafka2::saveCommittedOffset(
-    zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
+void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
 {
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
     keeper_to_use.createOrUpdate(partition_prefix / commit_file_name, toString(topic_partition.offset), zkutil::CreateMode::Persistent);
     // This is best effort, if it fails we will try to remove in the next round
     keeper_to_use.tryRemove(partition_prefix / intent_file_name, -1);
-    LOG_TEST(log, "Saved offset {} for topic-partition [{}:{}]", topic_partition.offset, topic_partition.topic, topic_partition.partition_id);
+    LOG_TEST(
+        log, "Saved offset {} for topic-partition [{}:{}]", topic_partition.offset, topic_partition.topic, topic_partition.partition_id);
 }
 
 void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent)
@@ -1026,8 +1019,8 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         }
 
         if (!consumer.hasMorePolledMessages()
-            && (total_rows >= getMaxBlockSize() || !check_time_limit()
-                || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS || consumer.needsOffsetUpdate()))
+            && (total_rows >= getMaxBlockSize() || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS
+                || consumer.needsOffsetUpdate()))
         {
             LOG_TRACE(
                 log,
@@ -1201,7 +1194,8 @@ bool StorageKafka2::streamToViews(size_t idx)
         if (maybe_rows.has_value())
         {
             const auto milliseconds = consumer_info.watch.elapsedMilliseconds();
-            LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*maybe_rows), table_id.getNameForLogs(), milliseconds);
+            LOG_DEBUG(
+                log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*maybe_rows), table_id.getNameForLogs(), milliseconds);
         }
         else
         {

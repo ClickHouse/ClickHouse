@@ -38,11 +38,6 @@ extern const Event KafkaConsumerErrors;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMMIT_OFFSET;
-}
-
 using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
@@ -201,7 +196,7 @@ void KafkaConsumer2::pollEvents()
 {
     static constexpr int64_t max_tries = 5;
     auto consumer_has_subscription = !consumer->get_subscription().empty();
-    for(auto i = 0; i < max_tries && !consumer_has_subscription; ++i)
+    for (auto i = 0; i < max_tries && !consumer_has_subscription; ++i)
     {
         consumer->subscribe(topics);
         consumer_has_subscription = !consumer->get_subscription().empty();
@@ -394,9 +389,7 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     {
         // The failure is not the biggest issue, it only counts when a table is dropped and recreated, otherwise the offsets are taken from keeper.
         ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
-        LOG_INFO(
-            log,
-            "All commit attempts failed");
+        LOG_INFO(log, "All commit attempts failed");
     }
     else
     {

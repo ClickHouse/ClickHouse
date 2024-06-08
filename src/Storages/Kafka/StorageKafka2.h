@@ -1,21 +1,21 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Block.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/Block.h>
 
 #include <Poco/Semaphore.h>
 
 #include <atomic>
-#include <list>
 #include <filesystem>
+#include <list>
 #include <mutex>
 #include <rdkafka.h>
 
@@ -201,9 +201,9 @@ private:
     void dropReplica();
 
     // Takes lock over topic partitions and set's the committed offset in topic_partitions
-    std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper& keeper_to_use, const TopicPartitions & topic_partitions);
-    void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition);
-    void saveIntent(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t intent);
+    std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
+    void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
+    void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
 
     PolledBatchInfo pollConsumer(
         KafkaConsumer2 & consumer,
