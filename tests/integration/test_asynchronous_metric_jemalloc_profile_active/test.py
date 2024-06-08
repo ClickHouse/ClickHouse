@@ -21,7 +21,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-
 # asynchronous metrics are updated once every 60s by default. To make the test run faster, the setting
 # asynchronous_metric_update_period_s is being set to 1s so that the metrics are populated faster and
 # are available for querying during the test.
