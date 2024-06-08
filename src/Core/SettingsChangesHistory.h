@@ -96,6 +96,7 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
               {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
               {"s3_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"},
+              {"min_untracked_memory", 4_MiB, 4_KiB, "A new setting to enable more accurate memory tracking."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
               {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
               {"allow_experimental_statistic", false, false, "Old setting which popped up here being renamed."},
