@@ -533,8 +533,8 @@ class Backport:
             br.process(self.dry_run)
 
         for br in branches:
-            assert br.backported, f"BUG! backport to branch [{br}] failed"
-        self.mark_pr_backported(pr)
+            if br.backported:
+                self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
