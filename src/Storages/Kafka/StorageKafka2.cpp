@@ -917,7 +917,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         ? kafka_settings->kafka_flush_interval_ms
         : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-    const auto check_time_limit = [&max_execution_time, &total_stopwatch, this]()
+    const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
     {
         if (max_execution_time != 0)
         {
