@@ -25,7 +25,7 @@ def started_cluster():
 # asynchronous_metric_update_period_s is being set to 1s so that the metrics are populated faster and
 # are available for querying during the test.
 def test_asynchronous_metric_jemalloc_profile_active(started_cluster):
-    # prof:true -> default open
+    # default open
     if node1.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
