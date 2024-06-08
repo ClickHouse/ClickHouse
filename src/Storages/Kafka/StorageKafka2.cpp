@@ -100,6 +100,7 @@ extern const int TABLE_WAS_NOT_DROPPED;
 namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
+constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 }
 
 StorageKafka2::StorageKafka2(
@@ -163,21 +164,6 @@ StorageKafka2::StorageKafka2(
             tryLogCurrentException(log);
         }
     }
-    // for (auto try_count = 0; try_count < 5; ++try_count)
-    // {
-    //     bool all_had_assignment = true;
-    //     for (auto & consumer_info : consumers)
-    //     {
-    //         if (nullptr == consumer_info.consumer->getKafkaAssignment())
-    //         {
-    //             all_had_assignment = false;
-    //             consumer_info.consumer->pollEvents();
-    //         }
-    //     }
-
-    //     if (all_had_assignment)
-    //         break;
-    // }
 
     const auto first_replica = createTableIfNotExists();
 
@@ -875,8 +861,10 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     KafkaConsumer2 & consumer,
     const TopicPartition & topic_partition,
     std::optional<int64_t> message_count,
+    Stopwatch & total_stopwatch,
     const ContextPtr & modified_context)
 {
+    LOG_TEST(log, "Polling consumer");
     PolledBatchInfo batch_info;
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
@@ -936,9 +924,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         ? kafka_settings->kafka_flush_interval_ms
         : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-    Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};
-
-    const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
+    const auto check_time_limit = [&max_execution_time, &total_stopwatch, this]()
     {
         if (max_execution_time != 0)
         {
@@ -1139,8 +1125,6 @@ bool StorageKafka2::streamToViews(size_t idx)
     // 7. Execute the pipeline
     // 8. Write the offset to Keeper
 
-    Stopwatch watch;
-
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -1150,11 +1134,19 @@ bool StorageKafka2::streamToViews(size_t idx)
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
     auto & consumer_info = consumers[idx];
+    consumer_info.watch.restart();
     auto & consumer = consumer_info.consumer;
 
     // To keep the consumer alive
+    const auto wait_for_assignment = consumer_info.locks.empty();
     LOG_TRACE(log, "Polling consumer for events");
     consumer->pollEvents();
+
+    if (wait_for_assignment)
+    {
+        while (nullptr == consumer->getKafkaAssignment() && consumer_info.watch.elapsedMilliseconds() < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
+            consumer->pollEvents();
+    }
 
     try
     {
@@ -1168,6 +1160,7 @@ bool StorageKafka2::streamToViews(size_t idx)
             {
                 // The consumer lost its assignment and haven't received a new one.
                 // By returning true this function reports the current consumer as a "stalled" stream, which
+                LOG_TRACE(log, "No assignment");
                 return true;
             }
             LOG_TRACE(log, "Consumer needs update offset");
@@ -1181,6 +1174,7 @@ bool StorageKafka2::streamToViews(size_t idx)
             if (!maybe_locks.has_value())
             {
                 // We couldn't acquire locks, probably some other consumers are still holding them.
+                LOG_TRACE(log, "Couldn't acquire locks");
                 return true;
             }
 
@@ -1206,7 +1200,7 @@ bool StorageKafka2::streamToViews(size_t idx)
         const auto maybe_rows = streamFromConsumer(consumer_info);
         if (maybe_rows.has_value())
         {
-            const auto milliseconds = watch.elapsedMilliseconds();
+            const auto milliseconds = consumer_info.watch.elapsedMilliseconds();
             LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*maybe_rows), table_id.getNameForLogs(), milliseconds);
         }
         else
@@ -1262,8 +1256,8 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
             return;
         consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
     });
-    auto [blocks, last_read_offset]
-        = pollConsumer(*consumer_info.consumer, topic_partition, consumer_info.locks[topic_partition].intent_size, kafka_context);
+    auto [blocks, last_read_offset] = pollConsumer(
+        *consumer_info.consumer, topic_partition, consumer_info.locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
 
     if (blocks.empty())
     {

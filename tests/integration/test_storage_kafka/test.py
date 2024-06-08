@@ -2860,13 +2860,10 @@ def test_kafka_produce_consume_avro(kafka_cluster, create_query_generator):
         assert int(expected_max_key) == (num_rows - 1) * 10
 
 
+
 @pytest.mark.parametrize(
     "create_query_generator",
-    [
-        generate_old_create_table_query,
-        # TODO(antaljanosbenjamin):  Something is off with timing
-        # generate_new_create_table_query
-    ],
+    [generate_old_create_table_query, generate_new_create_table_query],
 )
 def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
     admin_client = KafkaAdminClient(

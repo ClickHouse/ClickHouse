@@ -141,8 +141,6 @@ private:
 
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
-    size_t waited_for_assignment = 0;
-
     const std::atomic<bool> & stopped;
 
     // order is important, need to be destructed before consumer

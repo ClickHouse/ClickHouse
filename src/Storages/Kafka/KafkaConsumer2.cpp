@@ -17,7 +17,6 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include "base/scope_guard.h"
 
 namespace CurrentMetrics
 {
@@ -45,7 +44,6 @@ namespace ErrorCodes
 }
 
 using namespace std::chrono_literals;
-static constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 
@@ -122,7 +120,6 @@ KafkaConsumer2::KafkaConsumer2(
             assignment.reset();
             queues.clear();
             needs_offset_update = true;
-            waited_for_assignment = 0;
         });
 
     consumer->set_rebalance_error_callback(
@@ -210,13 +207,8 @@ void KafkaConsumer2::pollEvents()
         consumer_has_subscription = !consumer->get_subscription().empty();
     }
     auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
-    LOG_TRACE(log, "Consumer has subscription: {}", consumer_has_subscription);
     // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
     chassert(!msg && "Consumer returned a message when it was not expected");
-
-    auto consumer_queue = consumer->get_consumer_queue();
-    for(auto i = 0; i < max_tries && consumer_queue.get_length() > 0; ++i)
-        consumer->poll(EVENT_POLL_TIMEOUT);
 };
 
 KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
@@ -322,32 +314,8 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
 
         if (new_messages.empty())
         {
-            // While we wait for an assignment after subscription, we'll poll zero messages anyway.
-            // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-            if (!assignment.has_value())
-            {
-                waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
-                if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
-                {
-                    continue;
-                }
-                else
-                {
-                    LOG_WARNING(log, "Can't get assignment. Will keep trying.");
-                    stalled_status = StalledStatus::NO_ASSIGNMENT;
-                    return nullptr;
-                }
-            }
-            else if (assignment->empty())
-            {
-                LOG_TRACE(log, "Empty assignment.");
-                return nullptr;
-            }
-            else
-            {
-                LOG_TRACE(log, "Stalled");
-                return nullptr;
-            }
+            LOG_TRACE(log, "Stalled");
+            return nullptr;
         }
         else
         {

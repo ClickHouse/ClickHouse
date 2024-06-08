@@ -102,6 +102,7 @@ private:
         TopicPartitions topic_partitions;
         zkutil::ZooKeeperPtr keeper;
         TopicPartitionLocks locks;
+        Stopwatch watch{CLOCK_MONOTONIC_COARSE};
     };
 
     struct PolledBatchInfo
@@ -208,6 +209,7 @@ private:
         KafkaConsumer2 & consumer,
         const TopicPartition & topic_partition,
         std::optional<int64_t> message_count,
+        Stopwatch & watch,
         const ContextPtr & context);
 
     zkutil::ZooKeeperPtr getZooKeeper();
