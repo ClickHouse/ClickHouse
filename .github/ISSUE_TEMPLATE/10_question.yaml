@@ -1,0 +1,20 @@
+name: Question
+description: Ask a question about ClickHouse
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > Make sure to check documentation https://clickhouse.com/docs/en/ first. If the question is concise and probably has a short answer, asking it in [community Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-1gh9ds7f4-PgDhJAaF8ad5RbWBAAjzFg) is probably the fastest way to find the answer. For more complicated questions, consider asking them on StackOverflow with "clickhouse" tag https://stackoverflow.com/questions/tagged/clickhouse
+  - type: textarea
+    attributes:
+      label: Company or project name
+      description: Put your company name or project description here.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Question
+      description: Please put your question here.
+    validations:
+      required: true

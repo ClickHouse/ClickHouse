@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -85,7 +86,7 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     String zookeeper_path = context->getMacros()->expand(replica_path, info);
     if (context->getZooKeeper()->exists(zookeeper_path))
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );

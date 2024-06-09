@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 /** tuple(x, y, ...) is a function that allows you to group several columns
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
@@ -45,14 +40,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (arguments.empty())
+            return ColumnTuple::create(input_rows_count);
+
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)

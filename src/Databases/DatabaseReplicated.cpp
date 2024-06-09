@@ -921,6 +921,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         query_context->setSetting("allow_experimental_inverted_index", 1);
+        query_context->setSetting("allow_experimental_full_text_index", 1);
         query_context->setSetting("allow_experimental_codecs", 1);
         query_context->setSetting("allow_experimental_live_view", 1);
         query_context->setSetting("allow_experimental_window_view", 1);
@@ -929,13 +930,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
+        query_context->setSetting("allow_experimental_dynamic_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
         query_context->setSetting("allow_experimental_map_type", 1);
-        query_context->setSetting("allow_deprecated_functions", 1);
+        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
         query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
         query_context->setSetting("allow_suspicious_fixed_string_types", 1);

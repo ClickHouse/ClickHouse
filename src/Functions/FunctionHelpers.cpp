@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -298,4 +299,27 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
+/// Note that, for historical reasons, most of the functions use the first argument size to determine which is the
+/// size of all the columns. When short circuit optimization was introduced, `input_rows_count` was also added for
+/// all functions, but many have not been adjusted
+void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+{
+    for (size_t i = 0; i < arguments.size(); i++)
+    {
+        if (isColumnConst(*arguments[i].column))
+            continue;
+
+        size_t current_size = arguments[i].column->size();
+
+        if (current_size != input_rows_count)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected the argument №{} ('{}' of type {}) to have {} rows, but it has {}",
+                i + 1,
+                arguments[i].name,
+                arguments[i].type->getName(),
+                input_rows_count,
+                current_size);
+    }
+}
 }
