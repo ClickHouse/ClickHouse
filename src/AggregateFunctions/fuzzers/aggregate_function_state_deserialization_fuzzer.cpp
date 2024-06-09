@@ -14,6 +14,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
 #include <base/scope_guard.h>
