@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+
 #include <Common/Arena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
