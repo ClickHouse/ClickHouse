@@ -1583,7 +1583,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
     }
 
-    if (all_columns.empty())
+    /// Parameterized views do not have 'columns' in their metadata
+    bool is_parameterized_view = table->as<StorageView>() && table->as<StorageView>()->isParameterizedView();
+
+    if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
