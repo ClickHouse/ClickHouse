@@ -749,16 +749,17 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 void KeyCondition::getAllSpaceFillingCurves()
 {
+    /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
+
     for (const auto & action : key_expr->getActions())
     {
-        auto space_filling_curve_type_iter = space_filling_curve_name_to_type.find(action.node->function_base->getName());
         if (action.node->type == ActionsDAG::ActionType::FUNCTION
             && action.node->children.size() >= 2
-            && space_filling_curve_type_iter != space_filling_curve_name_to_type.end())
+            && space_filling_curve_name_to_type.count(action.node->function_base->getName()) > 0)
         {
             SpaceFillingCurveDescription curve;
-            curve.type = space_filling_curve_type_iter->second;
             curve.function_name = action.node->function_base->getName();
+            curve.type = space_filling_curve_name_to_type.at(curve.function_name);
             curve.key_column_pos = key_columns.at(action.node->result_name);
             for (const auto & child : action.node->children)
             {
