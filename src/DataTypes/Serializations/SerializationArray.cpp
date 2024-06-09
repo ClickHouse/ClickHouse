@@ -206,7 +206,7 @@ namespace
     }
 }
 
-void SerializationArray::SubcolumnCreator::create(SubstreamData & data, const String &) const
+void SerializationArray::SubcolumnCreator::create(SubstreamData & data, std::string_view) const
 {
     if (data.serialization)
         data.serialization = std::make_shared<SerializationArray>(data.serialization);

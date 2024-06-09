@@ -86,7 +86,7 @@ private:
         {
         }
 
-        void create(SubstreamData & data, const String & name) const override;
+        void create(SubstreamData & data, std::string_view name) const override;
     };
 
     template <typename KeyWriter, typename ValueWriter>

@@ -33,7 +33,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<MapElementConstKeyToShardVisitor>;
     using Base::Base;
 
-    static void visitImpl(QueryTreeNodePtr & node)
+    static void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "arrayElement")
@@ -76,7 +76,7 @@ public:
 
 }
 
-void MapElementConstKeyToShardPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void MapElementConstKeyToShardPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     MapElementConstKeyToShardVisitor visitor(context);
     visitor.visit(query_tree_node);

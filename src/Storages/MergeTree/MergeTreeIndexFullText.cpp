@@ -474,15 +474,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
     bool key_exists = header.has(key_ast.getColumnName());
     bool map_key_exists = header.has(fmt::format("mapKeys({})", key_ast.getColumnName()));
 
-<<<<<<< HEAD
-    const auto column_name = key_node.getColumnName();
-    auto key_index = getKeyIndex(column_name);
-    const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", Nested::splitName(column_name).first));
-
-    if (key_node.isFunction())
-=======
     if (key_ast.isFunction())
->>>>>>> upstream/master
     {
         const auto function = key_ast.toFunctionNode();
         if (function.getFunctionName() == "arrayElement")
@@ -497,18 +489,12 @@ bool MergeTreeConditionFullText::traverseASTEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
-<<<<<<< HEAD
-            auto first_argument = key_function_node.getArgumentAt(0);
-            const auto map_column_name = Nested::splitName(first_argument.getColumnName()).first;
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
-=======
             auto first_argument = function.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
             auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
             auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
 
             if (header.has(map_keys_index_column_name))
->>>>>>> upstream/master
             {
                 auto argument = function.getArgumentAt(1);
                 DataTypePtr const_type;

@@ -149,7 +149,7 @@ public:
 
     struct ISubcolumnCreator
     {
-        virtual void create(SubstreamData & data, const String &) const = 0;
+        virtual void create(SubstreamData & data, std::string_view name) const = 0;
         virtual ~ISubcolumnCreator() = default;
     };
 
@@ -432,7 +432,7 @@ public:
 
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
-    static SubstreamData createFromPath(const SubstreamPath & path, const String & name, size_t prefix_len);
+    static SubstreamData createFromPath(const SubstreamPath & path, std::string_view subcolumn_name, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>

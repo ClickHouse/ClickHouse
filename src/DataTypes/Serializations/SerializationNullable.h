@@ -120,7 +120,7 @@ private:
         const ColumnPtr null_map;
 
         explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
-        void create(SubstreamData & data, const String & name) const override;
+        void create(SubstreamData & data, std::string_view name) const override;
     };
 };
 

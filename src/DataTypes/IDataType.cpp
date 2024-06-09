@@ -119,26 +119,24 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                 /// Create data from path only if it's requested subcolumn.
                 if (name == subcolumn_name)
                 {
-                    res = std::make_unique<SubstreamData>(ISerialization::createFromPath(subpath, prefix_len));
+                    res = std::make_unique<SubstreamData>(ISerialization::createFromPath(subpath, subcolumn_name, prefix_len));
                 }
                 /// Check if this subcolumn is a prefix of requested subcolumn and it can create dynamic subcolumns.
                 else if (subcolumn_name.starts_with(name + ".") && subpath[i].data.type && subpath[i].data.type->hasDynamicSubcolumnsData())
                 {
                     auto dynamic_subcolumn_name = subcolumn_name.substr(name.size() + 1);
                     auto dynamic_subcolumn_data = subpath[i].data.type->getDynamicSubcolumnData(dynamic_subcolumn_name, subpath[i].data, false);
+
                     if (dynamic_subcolumn_data)
                     {
                         /// Create requested subcolumn using dynamic subcolumn data.
                         auto tmp_subpath = subpath;
-                        if (tmp_subpath[i].creator)
-                        {
-                            dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
-                            dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization);
-                        }
-
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
-                        res = std::make_unique<SubstreamData>(ISerialization::createFromPath(tmp_subpath, prefix_len));
+
+                        if (tmp_subpath[i].creator)
+                            tmp_subpath[i].creator->create(tmp_subpath[i].data, subcolumn_name);
+
+                        res = std::make_unique<SubstreamData>(ISerialization::createFromPath(tmp_subpath, subcolumn_name, prefix_len));
                     }
                 }
             }

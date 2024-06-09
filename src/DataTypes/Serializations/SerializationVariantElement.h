@@ -74,7 +74,7 @@ public:
             ColumnVariant::Discriminator global_variant_discriminator_,
             ColumnVariant::Discriminator local_variant_discriminator_);
 
-        void create(SubstreamData & data, const String & name) const override;
+        void create(SubstreamData & data, std::string_view name) const override;
         ColumnPtr createColumn(const ColumnPtr & prev) const;
     };
 private:

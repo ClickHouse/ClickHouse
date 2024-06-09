@@ -16,6 +16,8 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/BitHelpers.h>
+#include "DataTypes/Serializations/ISerialization.h"
+#include "DataTypes/Serializations/SerializationNumber.h"
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -572,14 +574,14 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
     return shards;
 }
 
-void SerializationMap::SubcolumnCreator::create(SubstreamData & data, const String &, name) const
+void SerializationMap::SubcolumnCreator::create(SubstreamData & data, std::string_view name) const
 {
     if (data.serialization)
     {
         if (!shard_name.empty() && name.starts_with(shard_name))
-            data.serialization = std::make_shared<SerializationNamed>(data.serialization, shard_name, false);
+            data.serialization = std::make_shared<SerializationNamed>(data.serialization, shard_name, SubstreamType::MapShard);
         else if (name.starts_with("size"))
-            data.serialization = std::make_shared<SerializationMapSize>(num_shards, name);
+            data.serialization = std::make_shared<SerializationMapSize>(num_shards, String(name));
         else if (name.starts_with("keys") || name.starts_with("values"))
             data.serialization = std::make_shared<SerializationMapKeysValues>(data.serialization, num_shards);
     }
@@ -636,7 +638,7 @@ void SerializationMap::enumerateStreams(
         for (size_t i = 0; i < num_shards; ++i)
         {
             auto shard_name = "shard" + toString(i);
-            auto shard_named = std::make_shared<SerializationNamed>(shard_serialization, shard_name, false);
+            auto shard_named = std::make_shared<SerializationNamed>(shard_serialization, shard_name, SubstreamType::MapShard);
             auto shard_data = SubstreamData(shard_named)
                 .withType(shard_type)
                 .withColumn(data.column ? ColumnMap::create(shard_columns[i]) : nullptr)
@@ -973,7 +975,8 @@ void SerializationMapSubcolumn::serializeBinaryBulkStateSuffix(
 
 void SerializationMapSubcolumn::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     auto map_state = std::make_shared<DeserializeBinaryBulkStateMap>();
     map_state->states.resize(num_shards);
@@ -981,7 +984,7 @@ void SerializationMapSubcolumn::deserializeBinaryBulkStatePrefix(
 
     applyForShards(num_shards, settings, [&](size_t i)
     {
-        nested_serialization->deserializeBinaryBulkStatePrefix(settings, map_state->states[i]);
+        nested_serialization->deserializeBinaryBulkStatePrefix(settings, map_state->states[i], cache);
     });
 
     state = std::move(map_state);
@@ -1026,9 +1029,7 @@ void SerializationMapKeysValues::deserializeBinaryBulkWithMultipleStreams(
 }
 
 SerializationMapSize::SerializationMapSize(size_t num_shards_, const String & subcolumn_name_)
-    : SerializationMapSubcolumn(
-        std::make_shared<SerializationNamed>(
-            std::make_shared<SerializationNumber<UInt64>>(), subcolumn_name_, false), num_shards_)
+    : SerializationMapSubcolumn(std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt64>>(), subcolumn_name_, SubstreamType::ArraySizes), num_shards_)
 {
 }
 

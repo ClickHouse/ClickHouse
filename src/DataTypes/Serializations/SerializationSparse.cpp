@@ -137,7 +137,7 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
-void SerializationSparse::SubcolumnCreator::create(SubstreamData & data, const String &) const
+void SerializationSparse::SubcolumnCreator::create(SubstreamData & data, std::string_view) const
 {
     if (data.serialization)
         data.serialization = std::make_shared<SerializationSparse>(data.serialization);

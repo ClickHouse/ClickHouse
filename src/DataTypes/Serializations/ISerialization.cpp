@@ -396,26 +396,22 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
-<<<<<<< HEAD
-            || path[last_elem].type == Substream::MapShard;
-=======
+            || path[last_elem].type == Substream::MapShard
             || path[last_elem].type == Substream::VariantElement;
->>>>>>> upstream/master
 }
 
-ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, const String & name,size_t prefix_len)
+ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, std::string_view subcolumn_name, size_t prefix_len)
 {
-    assert(prefix_len <= path.size());
+    chassert(prefix_len <= path.size());
     if (prefix_len == 0)
         return {};
 
     ssize_t last_elem = prefix_len - 1;
     auto res = path[last_elem].data;
+
     for (ssize_t i = last_elem - 1; i >= 0; --i)
-    {
         if (path[i].creator)
-            path[i].creator->create(res, name);
-    }
+            path[i].creator->create(res, subcolumn_name);
 
     return res;
 }

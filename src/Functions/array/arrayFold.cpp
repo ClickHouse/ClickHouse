@@ -190,7 +190,7 @@ public:
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
             for (size_t i = 0; i < num_array_cols; ++i)
-                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatter(max_array_size, selector);
+                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatter(static_cast<UInt32>(max_array_size), selector);
 
         ColumnPtr accumulator_col = arguments.back().column->convertToFullColumnIfConst();
         MutableColumnPtr result_col = accumulator_col->cloneEmpty();

@@ -222,7 +222,7 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
 {
 }
 
-void SerializationVariantElement::VariantSubcolumnCreator::create(SubstreamData & data, const String &) const
+void SerializationVariantElement::VariantSubcolumnCreator::create(SubstreamData & data, std::string_view) const
 {
     if (data.type)
         data.type = makeNullableOrLowCardinalityNullableSafe(data.type);

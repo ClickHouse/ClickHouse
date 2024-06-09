@@ -64,7 +64,7 @@ private:
         {
         }
 
-        void create(SubstreamData & data, const String &) const override
+        void create(SubstreamData & data, std::string_view) const override
         {
             if (data.serialization)
                 data.serialization = std::make_shared<SerializationNamed>(data.serialization, name, substream_type);

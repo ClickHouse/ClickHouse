@@ -77,7 +77,7 @@ public:
         const ColumnPtr offsets;
 
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
-        void create(SubstreamData & prev_data, std::string_view) const override;
+        void create(SubstreamData & data, std::string_view name) const override;
     };
 };
 

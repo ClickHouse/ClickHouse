@@ -106,6 +106,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         {
             auto & cache = caches[columns_to_read[pos].getNameInStorage()];
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+
             prefetchForColumn(
                 priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
                 current_task_last_mark, cache, deserialize_states_cache);
@@ -171,7 +172,11 @@ size_t MergeTreeReaderWide::readRows(
                 e.addMessage("(while reading column " + column_to_read.name + ")");
                 throw;
             }
+
+            if (column->empty())
+                res_columns[pos] = nullptr;
         }
+
         prefetched_streams.clear();
         caches.clear();
 
@@ -204,11 +209,11 @@ void MergeTreeReaderWide::addStreams(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization)
 {
-    std::unordered_map<String, std::vector<size_t>> column_indexes_by_stream_name;
+    bool has_any_stream = false;
+    bool has_all_streams = true;
 
-    for (size_t i = 0; i < columns_to_read.size(); ++i)
+    ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
         /** If data file is missing then we will not try to open it.
@@ -216,8 +221,8 @@ void MergeTreeReaderWide::addStreams(
           */
         if (!stream_name)
         {
-            for (const auto & idx : indexes)
-                has_shared_streams[idx] = true;
+            has_all_streams = false;
+            return;
         }
 
         if (streams.contains(*stream_name))
@@ -280,10 +285,10 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     size_t from_mark,
     bool seek_to_mark,
     size_t current_task_last_mark,
-    ISerialization::SubstreamsCache * cache)
+    ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
-    if (cache && cache->contains(ISerialization::getSubcolumnNameForStream(substream_path)))
+    if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
         return nullptr;
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, checksums);
@@ -394,7 +399,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 

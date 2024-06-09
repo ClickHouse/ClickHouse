@@ -626,7 +626,6 @@ Pipe MergeTask::VerticalMergeStage::createPipeForReadingOneColumn(const String &
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
-            Names{ctx->it_name_and_type->name},
             Names{column_name},
             /*mark_ranges=*/ {},
             global_ctx->input_rows_filtered,

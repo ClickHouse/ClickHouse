@@ -244,7 +244,7 @@ private:
         {
             auto key = keys_extractor.extractCurrentKey();
             size_t shard = dictionary.getShard(key);
-            selector[i] = slots[shard];
+            selector[i] = static_cast<UInt32>(slots[shard]);
             keys_extractor.rollbackCurrentKey();
         }
 
