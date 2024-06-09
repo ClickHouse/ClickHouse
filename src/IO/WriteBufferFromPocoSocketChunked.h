@@ -85,7 +85,10 @@ protected:
     void nextImpl() override
     {
         if (!chunked)
-            return WriteBufferFromPocoSocket::nextImpl();
+        {
+            WriteBufferFromPocoSocket::nextImpl();
+            return;
+        }
 
         /// next() after finishChunk ar the end of the buffer
         if (finishing < sizeof(*chunk_size_ptr))
