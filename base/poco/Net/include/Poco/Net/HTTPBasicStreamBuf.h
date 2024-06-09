@@ -26,7 +26,7 @@ namespace Poco
 {
 namespace Net
 {
-    constexpr size_t HTTP_DEFAULT_BUFFER_SIZE = 8 * 1024;
+    constexpr size_t HTTP_DEFAULT_BUFFER_SIZE = 1024 * 1024;
 
     typedef Poco::BasicBufferedStreamBuf<char, std::char_traits<char>> HTTPBasicStreamBuf;
 
