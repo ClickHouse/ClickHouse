@@ -974,7 +974,7 @@ Default value: false
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
-### allow_experimental_optimized_row_order
+### optimize_row_order
 
 Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
 
