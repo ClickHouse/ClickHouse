@@ -978,6 +978,8 @@ Default value: false
 
 Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
 
+Only has an effect for ordinary MergeTree-engine tables. Does nothing for specialized MergeTree engine tables (e.g. CollapsingMergeTree).
+
 MergeTree tables are (optionally) compressed using [compression codecs](../../sql-reference/statements/create/table.md#column_compression_codec).
 Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.
 Long runs of the same value typically compress very well.
