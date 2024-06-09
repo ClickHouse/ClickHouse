@@ -1,5 +1,3 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
-
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
@@ -7,6 +5,10 @@ endif ()
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
+
+if (WITH_COVERAGE)
+    add_compile_options(${COVERAGE_FLAGS})
+endif()
 
 if(COMPILER_PIPE)
     set(MAX_COMPILER_MEMORY 2500)
@@ -611,7 +613,7 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
-if (ENABLE_TESTS)
+if (ENABLE_TESTS AND NOT WITH_COVERAGE)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
         file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest*.cpp")

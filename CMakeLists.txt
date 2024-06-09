@@ -121,7 +121,7 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
-
+include (cmake/coverage.cmake)
 include (cmake/xray_instrumentation.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
@@ -500,6 +500,11 @@ macro (clickhouse_add_executable target)
         if (ENABLE_JEMALLOC AND OS_DARWIN)
             set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
+    endif()
+
+    if (WITH_COVERAGE)
+        # https://stackoverflow.com/a/53600121/22422288
+        target_link_libraries(${target} PRIVATE -fprofile-instr-generate -fcoverage-mapping)
     endif()
 endmacro()
 

@@ -1,8 +1,10 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
-
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
+
+if (WITH_COVERAGE)
+    add_compile_options(${COVERAGE_FLAGS})
+endif()
 
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
@@ -19,13 +21,13 @@ option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
 # https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
-if (ENABLE_ODBC AND NOT USE_MUSL)
+if (ENABLE_ODBC AND NOT USE_MUSL AND NOT WITH_COVERAGE)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" ${ENABLE_CLICKHOUSE_ALL})
 else ()
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
 endif ()
 
-if (NOT USE_MUSL)
+if (NOT USE_MUSL AND NOT WITH_COVERAGE)
     option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to external dynamically loaded libraries" ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
@@ -262,7 +264,7 @@ add_custom_target(clickhouse-stripped ALL
     DEPENDS clickhouse
     COMMENT "Stripping clickhouse binary" VERBATIM)
 
-if (ENABLE_TESTS)
+if (ENABLE_TESTS AND NOT_WITH_COVERAGE)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
