@@ -255,7 +255,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             }
             catch (...)
             {
-                // Skip disk than do not have s3 throttlers
+                // Skip disk that do not have s3 throttlers
             }
 #endif
         }

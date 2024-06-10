@@ -104,8 +104,8 @@ bool Throttler::isThrottling() const
 Int64 Throttler::getAvailable()
 {
     // To update bucket state and receive current number of token in a thread-safe way
-    size_t count_value;
-    double tokens_value;
+    size_t count_value = 0;
+    double tokens_value = 0.0;
     addImpl(0, count_value, tokens_value);
 
     return static_cast<Int64>(tokens_value);
