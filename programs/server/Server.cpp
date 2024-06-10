@@ -773,7 +773,27 @@ try
     LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
-    bool will_have_trace_collector = hasPHDRCache() && config().has("trace_log");
+    bool has_trace_collector = false;
+    /// Disable it if we collect test coverage information, because it will work extremely slow.
+#if !WITH_COVERAGE
+    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
+    has_trace_collector = hasPHDRCache() && config().has("trace_log");
+#endif
+
+    /// Describe multiple reasons when query profiler cannot work.
+
+#if WITH_COVERAGE
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
+#endif
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
+#endif
+
+    if (!hasPHDRCache())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
+            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
@@ -782,8 +802,27 @@ try
         server_settings.max_thread_pool_size,
         server_settings.max_thread_pool_free_size,
         server_settings.thread_pool_queue_size,
-        will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
-        will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+        has_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+        has_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+
+    if (has_trace_collector)
+    {
+        global_context->createTraceCollector();
+
+        /// Set up server-wide memory profiler (for total memory tracker).
+        if (server_settings.total_memory_profiler_step)
+            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
+
+        if (server_settings.total_memory_tracker_sample_probability > 0.0)
+            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
+
+        if (server_settings.total_memory_profiler_sample_min_allocation_size)
+            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
+
+        if (server_settings.total_memory_profiler_sample_max_allocation_size)
+            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
+    }
+
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
         Stopwatch watch;
@@ -1950,51 +1989,8 @@ try
 
     LOG_DEBUG(log, "Loaded metadata.");
 
-    /// Init trace collector only after trace_log system table was created
-    /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if !WITH_COVERAGE
-    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
-    if (hasPHDRCache())
-    {
+    if (has_trace_collector)
         global_context->initializeTraceCollector();
-
-        /// Set up server-wide memory profiler (for total memory tracker).
-        if (server_settings.total_memory_profiler_step)
-        {
-            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
-        }
-
-        if (server_settings.total_memory_tracker_sample_probability > 0.0)
-        {
-            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
-        }
-
-        if (server_settings.total_memory_profiler_sample_min_allocation_size)
-        {
-            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
-        }
-
-        if (server_settings.total_memory_profiler_sample_max_allocation_size)
-        {
-            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
-        }
-    }
-#endif
-
-    /// Describe multiple reasons when query profiler cannot work.
-
-#if WITH_COVERAGE
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
-#endif
-
-#if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
-        " when two different stack unwinding methods will interfere with each other.");
-#endif
-
-    if (!hasPHDRCache())
-        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
-            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
