@@ -40,7 +40,7 @@ parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_
     }
 }
 
-ColumnPtr hash(const ColumnPtr & data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
+ColumnPtr hash(const IColumn * data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
 {
     static constexpr uint32_t buffer_size = 32;
     uint8_t buffer[buffer_size] = {0};
@@ -257,7 +257,7 @@ bool BloomFilterRPNBuilder::traverseTreeIn(
             return false;
         }
 
-        out.predicate.emplace_back(std::make_pair(position, hash(column, index_to_column_hasher.at(position))));
+        out.predicate.emplace_back(std::make_pair(position, hash(column.get(), index_to_column_hasher.at(position))));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
@@ -404,7 +404,7 @@ bool BloomFilterRPNBuilder::traverseTreeEquals(
             return false;
         }
 
-        out.predicate.emplace_back(position, hash(column, index_to_column_hasher.at(position)));
+        out.predicate.emplace_back(position, hash(column.get(), index_to_column_hasher.at(position)));
     }
     else if (function_name == "hasAny" || function_name == "hasAll")
     {
@@ -445,7 +445,7 @@ bool BloomFilterRPNBuilder::traverseTreeEquals(
             return false;
         }
 
-        out.predicate.emplace_back(std::make_pair(position, hash(column, index_to_column_hasher.at(position))));
+        out.predicate.emplace_back(std::make_pair(position, hash(column.get(), index_to_column_hasher.at(position))));
     }
     else
     {
@@ -467,7 +467,7 @@ bool BloomFilterRPNBuilder::traverseTreeEquals(
             return false;
         }
 
-        out.predicate.emplace_back(position, hash(column, index_to_column_hasher.at(position)));
+        out.predicate.emplace_back(position, hash(column.get(), index_to_column_hasher.at(position)));
     }
 
     return true;
