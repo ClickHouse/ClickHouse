@@ -567,6 +567,10 @@ Chain buildPushingToViewsChain(
 
         result_chain.addSource(std::move(sink));
     }
+    else
+    {
+            result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(storage_header));
+    }
 
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
