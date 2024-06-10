@@ -11,10 +11,10 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         aspell \
         curl \
         git \
+        gh \
         file \
         libxml2-utils \
         moreutils \
-        python3-fuzzywuzzy \
         python3-pip \
         yamllint \
         locales \
@@ -22,8 +22,19 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # python-magic is the same version as in Ubuntu 22.04
-RUN pip3 install black==23.12.0 boto3 codespell==2.2.1 mypy==1.8.0 PyGithub unidiff pylint==3.1.0 \
-        python-magic==0.4.24 requests types-requests \
+RUN pip3 install \
+        PyGithub \
+        black==23.12.0 \
+        boto3 \
+        codespell==2.2.1 \
+        mypy==1.8.0 \
+        pylint==3.1.0 \
+        python-magic==0.4.24 \
+        flake8==4.0.1 \
+        requests \
+        thefuzz \
+        types-requests \
+        unidiff \
     && rm -rf /root/.cache/pip
 
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8

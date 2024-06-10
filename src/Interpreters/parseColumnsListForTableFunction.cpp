@@ -40,7 +40,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 
         if (!settings.allow_experimental_object_type)
         {
-            if (data_type.hasDynamicSubcolumns())
+            if (data_type.hasDynamicSubcolumnsDeprecated())
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -105,6 +105,18 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         }
                     }
                 }
+            }
+        }
+
+        if (!settings.allow_experimental_dynamic_type)
+        {
+            if (data_type.hasDynamicSubcolumns())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental Dynamic type is not allowed. "
+                    "Set setting allow_experimental_dynamic_type = 1 in order to allow it",
+                    data_type.getName());
             }
         }
     };

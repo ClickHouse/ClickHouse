@@ -47,26 +47,36 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
 
-IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
+MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
+    const String & data_part_name_,
+    const String & logger_name_,
+    const SerializationByName & serializations_,
+    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list,
+    const ColumnPositions & column_positions,
     const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
+    const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity)
 {
     NamesAndTypesList ordered_columns_list;
     std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
-        [this](const auto & column) { return getColumnPosition(column.name) != std::nullopt; });
+        [&column_positions](const auto & column) { return column_positions.contains(column.name); });
 
     /// Order of writing is important in compact format
-    ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
-        { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
+    ordered_columns_list.sort([&column_positions](const auto & lhs, const auto & rhs)
+        { return column_positions.at(lhs.name) < column_positions.at(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        shared_from_this(), ordered_columns_list, metadata_snapshot,
-        indices_to_recalc, stats_to_recalc_, getMarksFileExtension(),
+        data_part_name_, logger_name_, serializations_, data_part_storage_,
+        index_granularity_info_, storage_settings_, ordered_columns_list, metadata_snapshot, virtual_columns,
+        indices_to_recalc, stats_to_recalc_, marks_file_extension_,
         default_codec_, writer_settings, computed_index_granularity);
 }
 

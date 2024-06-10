@@ -36,11 +36,11 @@ INSERT INTO TABLE table_with_version VALUES(3, '3', 65555, -1);
 
 SELECT * FROM table_with_version FINAL ORDER BY key;
 
-ALTER TABLE table_with_version MODIFY COLUMN version String; --{serverError 524}
-ALTER TABLE table_with_version MODIFY COLUMN version Int64; --{serverError 524}
-ALTER TABLE table_with_version MODIFY COLUMN version UInt16; --{serverError 524}
-ALTER TABLE table_with_version MODIFY COLUMN version Float64; --{serverError 524}
-ALTER TABLE table_with_version MODIFY COLUMN version Date; --{serverError 524}
-ALTER TABLE table_with_version MODIFY COLUMN version DateTime; --{serverError 524}
+ALTER TABLE table_with_version MODIFY COLUMN version String; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
+ALTER TABLE table_with_version MODIFY COLUMN version Int64; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
+ALTER TABLE table_with_version MODIFY COLUMN version UInt16; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
+ALTER TABLE table_with_version MODIFY COLUMN version Float64; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
+ALTER TABLE table_with_version MODIFY COLUMN version Date; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
+ALTER TABLE table_with_version MODIFY COLUMN version DateTime; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 DROP TABLE IF EXISTS table_with_version;
