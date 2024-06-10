@@ -189,7 +189,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         {
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
-            .block_dedup_token = std::move(block_dedup_token),
+            .block_dedup_token = block_dedup_token,
             .part_counters = std::move(part_counters),
         });
     }
