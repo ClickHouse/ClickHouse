@@ -1833,8 +1833,10 @@ private:
 
     void cancelBuffers()
     {
-        writer->cancel();
-        write_buf->cancel();
+        if (writer)
+            writer->cancel();
+        if (write_buf)
+            write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;

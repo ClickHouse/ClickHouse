@@ -571,8 +571,8 @@ void StorageURLSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
     cancelBuffers();
-    cancelled = true;
     releaseBuffers();
+    cancelled = true;
 }
 
 void StorageURLSink::onException(std::exception_ptr)
@@ -610,13 +610,15 @@ void StorageURLSink::finalizeBuffers()
 void StorageURLSink::releaseBuffers()
 {
     writer.reset();
-    write_buf->finalize();
+    write_buf.reset();
 }
 
 void StorageURLSink::cancelBuffers()
 {
-    writer->cancel();
-    write_buf->cancel();
+    if (writer)
+        writer->cancel();
+    if (write_buf)
+        write_buf->cancel();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink

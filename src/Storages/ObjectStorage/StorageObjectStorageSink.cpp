@@ -75,8 +75,8 @@ void StorageObjectStorageSink::finalizeBuffers()
 
     try
     {
-        writer->finalize();
         writer->flush();
+        writer->finalize();
         write_buf->finalize();
     }
     catch (...)
@@ -95,8 +95,10 @@ void StorageObjectStorageSink::releaseBuffers()
 
 void StorageObjectStorageSink::cancelBuffers()
 {
-    writer->cancel();
-    write_buf->cancel();
+    if (writer)
+        writer->cancel();
+    if (write_buf)
+        write_buf->cancel();
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
