@@ -1515,6 +1515,15 @@ static void buildIndexes(
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
+    /// Sometimes a really dumb problem may happen.
+    /// For ReadFromMerge for example we may recursively call `applyFilters` for child reading steps (with no filters added so far).
+    /// Then later `optimizePrimaryKeyCondition` will try to apply filters to those child reading steps, but with no luck,
+    /// because we already made an `applyFilters` call that could lead to indexes initialization few lines below.
+    /// So effectively the right set of filters will be just ignored.
+    /// This is not an ultimate solution, of course, we're better to have more structured way of applying filters.
+    if (added_filter_nodes.nodes.empty())
+        return;
+
     if (!indexes)
     {
         filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
