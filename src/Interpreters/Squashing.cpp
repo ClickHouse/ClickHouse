@@ -28,9 +28,7 @@ Chunk Squashing::squash(Chunk && input_chunk)
         return Chunk();
 
     const auto *info = getInfoFromChunk(input_chunk);
-    squash(info->chunks);
-
-    return std::move(accumulated_chunk);
+    return squash(info->chunks);
 }
 
 Chunk Squashing::add(Chunk && input_chunk)
@@ -97,9 +95,9 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
     return Chunk(header.cloneEmptyColumns(), 0, info);
 }
 
-void Squashing::squash(std::vector<Chunk> & input_chunks)
+Chunk Squashing::squash(std::vector<Chunk> & input_chunks)
 {
-    accumulated_chunk = {};
+    Chunk accumulated_chunk;
     std::vector<IColumn::MutablePtr> mutable_columns = {};
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
@@ -126,6 +124,7 @@ void Squashing::squash(std::vector<Chunk> & input_chunks)
         }
     }
     accumulated_chunk.setColumns(std::move(mutable_columns), rows);
+    return accumulated_chunk;
 }
 
 const ChunksToSquash* Squashing::getInfoFromChunk(const Chunk & chunk)

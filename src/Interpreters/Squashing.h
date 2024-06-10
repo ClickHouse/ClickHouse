@@ -55,11 +55,10 @@ private:
     size_t min_block_size_bytes;
 
     CurrentSize accumulated_size;
-    Chunk accumulated_chunk;
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    void squash(std::vector<Chunk> & input_chunks);
+    Chunk squash(std::vector<Chunk> & input_chunks);
 
     void expandCurrentSize(size_t rows, size_t bytes);
     void changeCurrentSize(size_t rows, size_t bytes);

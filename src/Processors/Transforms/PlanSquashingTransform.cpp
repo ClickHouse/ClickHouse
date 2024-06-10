@@ -27,8 +27,7 @@ IProcessor::Status PlanSquashingTransform::prepare()
                 init();
                 break;
             case READ_IF_CAN:
-                status = prepareConsume();
-                break;
+                return prepareConsume();
             case PUSH:
                 return sendOrFlush();
             case FLUSH:
@@ -90,7 +89,7 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
         if (squashing.isDataLeft()) /// If we have data in balancing, we process this data
         {
             planning_status = PlanningStatus::FLUSH;
-            flushChunk();
+            chunk = flushChunk();
             return Status::Ready;
         }
         planning_status = PlanningStatus::FINISH;
