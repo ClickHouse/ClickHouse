@@ -56,7 +56,7 @@ public:
             return;
 
         const auto * type_map = typeid_cast<const DataTypeMap *>(column_node->getColumnType().get());
-        if (!type_map || type_map->getNumShards() == 1)
+        if (!type_map)
             return;
 
         auto * const_node = function_arguments_nodes[1]->as<ConstantNode>();
@@ -64,10 +64,9 @@ public:
             return;
 
         UInt32 key_hash = getWeakHash(const_node->getValue(), const_node->getResultType());
-        UInt32 shard_num = key_hash % type_map->getNumShards();
 
-        auto subcolumn_name = ".shard" + toString(shard_num);
-        auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType(), 1);
+        auto subcolumn_name = ".shard_" + toString(key_hash);
+        auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType());
 
         column_node->setColumnName(column_node->getColumnName() + subcolumn_name);
         column_node->setColumnType(std::move(new_type));

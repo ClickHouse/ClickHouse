@@ -54,6 +54,7 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedOffsets,
     NamedNullMap,
     NamedVariantDiscriminators,
+    MapShard,
 };
 
 String ISerialization::Substream::toString() const
@@ -175,8 +176,6 @@ String getNameForSubstreamPath(
             stream_name += ".dict";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
-        else if (it->type == Substream::MapShard)
-            stream_name += ".shard" + toString(it->map_shard_num);
         else if (Substream::named_types.contains(it->type))
         {
             auto substream_name = "." + it->name_of_substream;

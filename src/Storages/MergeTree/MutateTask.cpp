@@ -400,9 +400,11 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
+        const auto storage_settings = source_part->storage.getSettings();
         SerializationInfo::Settings settings
         {
-            .ratio_of_defaults_for_sparse = source_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
+            .type_map_num_shards = storage_settings->type_map_num_shards_on_merge,
             .choose_kind = false
         };
 

@@ -59,13 +59,6 @@ SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings 
 {
 }
 
-SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_, const Data & data_)
-    : settings(settings_)
-    , kind(kind_)
-    , data(data_)
-{
-}
-
 void SerializationInfo::add(const IColumn & column)
 {
     data.add(column);
@@ -94,7 +87,9 @@ void SerializationInfo::replaceData(const SerializationInfo & other)
 
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind, settings, data);
+    auto new_info = std::make_shared<SerializationInfo>(kind, settings);
+    new_info->data = data;
+    return new_info;
 }
 
 /// Returns true if all rows with default values of type 'lhs'
@@ -183,7 +178,7 @@ SerializationInfoByName::SerializationInfoByName(
         return;
 
     for (const auto & column : columns)
-        if (column.type->supportsSparseSerialization())
+        if (column.type->supportsSparseSerialization() || isMap(column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
 }
 

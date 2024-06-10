@@ -546,8 +546,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->uuid = UUIDHelpers::generateV4();
 
     const auto & data_settings = data.getSettings();
+    SerializationInfo::Settings settings
+    {
+        .ratio_of_defaults_for_sparse = data_settings->ratio_of_defaults_for_sparse_serialization,
+        .type_map_num_shards = data_settings->type_map_num_shards_on_insert,
+        .choose_kind = true,
+    };
 
-    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 

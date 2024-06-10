@@ -8,10 +8,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationInfoMap.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -21,10 +24,10 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
-DataTypeMap::DataTypeMap(const DataTypePtr & nested_, size_t num_shards_)
-    : nested(nested_), num_shards(num_shards_)
+DataTypeMap::DataTypeMap(const DataTypePtr & nested_) : nested(nested_)
 {
     const auto * type_array = typeid_cast<const DataTypeArray *>(nested.get());
     if (!type_array)
@@ -45,8 +48,7 @@ DataTypeMap::DataTypeMap(const DataTypePtr & nested_, size_t num_shards_)
     assertKeyType();
 }
 
-DataTypeMap::DataTypeMap(const DataTypes & elems_, size_t num_shards_)
-    : num_shards(num_shards_)
+DataTypeMap::DataTypeMap(const DataTypes & elems_)
 {
     assert(elems_.size() == 2);
     key_type = elems_[0];
@@ -58,11 +60,11 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_, size_t num_shards_)
         std::make_shared<DataTypeTuple>(DataTypes{key_type, value_type}, Names{"keys", "values"}));
 }
 
-DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_, size_t num_shards_)
-    : key_type(key_type_), value_type(value_type_)
+DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_)
+    : key_type(key_type_)
+    , value_type(value_type_)
     , nested(std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(DataTypes{key_type_, value_type_}, Names{"keys", "values"})))
-    , num_shards(num_shards_)
 {
     assertKeyType();
 }
@@ -73,15 +75,10 @@ void DataTypeMap::assertKeyType() const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Map cannot have a key of type {}", key_type->getName());
 }
 
-
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getName() << ", " << value_type->getName();
-    if (num_shards != DEFAULT_NUMBER_OF_SHARDS)
-        s << ", " << num_shards;
-    s << ")";
-
+    s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
     return s.str();
 }
 
@@ -102,13 +99,29 @@ Field DataTypeMap::getDefault() const
     return Map();
 }
 
+SerializationPtr DataTypeMap::getSerializationWithShards(size_t num_shards) const
+{
+    return std::make_shared<SerializationMap>(key_type->getDefaultSerialization(), value_type->getDefaultSerialization(), nested->getDefaultSerialization(), num_shards);
+}
+
 SerializationPtr DataTypeMap::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationMap>(
-        key_type->getDefaultSerialization(),
-        value_type->getDefaultSerialization(),
-        nested->getDefaultSerialization(),
-        num_shards);
+    return getSerializationWithShards(1);
+}
+
+MutableSerializationInfoPtr DataTypeMap::createSerializationInfo(const SerializationInfoSettings & settings) const
+{
+    return std::make_shared<SerializationInfoMap>(settings.type_map_num_shards, ISerialization::Kind::DEFAULT, settings);
+}
+
+SerializationInfoPtr DataTypeMap::getSerializationInfo(const IColumn &) const
+{
+    return std::make_shared<SerializationInfoMap>(/*num_shards=*/ 1, ISerialization::Kind::DEFAULT, SerializationInfo::Settings{});
+}
+
+SerializationPtr DataTypeMap::getSerialization(const SerializationInfo & info) const
+{
+    return getSerializationWithShards(assert_cast<const SerializationInfoMap &>(info).getNumShards());
 }
 
 bool DataTypeMap::equals(const IDataType & rhs) const
@@ -140,11 +153,55 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
     value_type->forEachChild(callback);
 }
 
+std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(
+    std::string_view subcolumn_name,
+    const SubstreamData & data,
+    bool throw_if_null) const
+{
+    auto throw_or_return = [&]
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+        return nullptr;
+    };
+
+    static constexpr std::string_view shard_prefix = "shard_";
+
+    if (data.serialization && subcolumn_name.starts_with(shard_prefix))
+    {
+        size_t num_shards = assert_cast<const SerializationMap &>(*data.serialization).getNumShards();
+
+        std::string_view shard_str = subcolumn_name.substr(shard_prefix.size());
+        ReadBufferFromMemory buf(shard_str.data(), shard_str.size());
+
+        UInt32 shard_hash;
+        if (!tryReadIntText(shard_hash, buf) || !buf.eof())
+            return throw_or_return();
+
+        if (num_shards == 1)
+            return std::make_unique<SubstreamData>(data);
+
+        UInt32 shard = shard_hash % num_shards;
+        String shard_subcolumn = String(shard_prefix) + toString(shard);
+
+        SubstreamData shard_data = data;
+
+        shard_data.serialization = std::make_shared<SerializationNamed>(
+            getSerializationWithShards(1),
+            shard_subcolumn,
+            ISerialization::Substream::MapShard);
+
+        return std::make_unique<SubstreamData>(std::move(shard_data));
+    }
+
+    return throw_or_return();
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() < 2 || arguments->children.size() > 3)
+    if (!arguments || arguments->children.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Map data type family must have 2-3 arguments: key type, value type and optional number of shards");
+            "Map data type family must have 2 arguments: key and value types");
 
     const auto & children = arguments->children;
     DataTypes nested_types
@@ -153,17 +210,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         DataTypeFactory::instance().get(children[1]),
     };
 
-    size_t num_shards = DataTypeMap::DEFAULT_NUMBER_OF_SHARDS;
-    if (arguments->children.size() == 3)
-    {
-        const auto * literal = arguments->children[2]->as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument for data type Map must be positive integer literal");
-
-        num_shards = literal->value.get<UInt64>();
-    }
-
-    return std::make_shared<DataTypeMap>(nested_types, num_shards);
+    return std::make_shared<DataTypeMap>(nested_types);
 }
 
 

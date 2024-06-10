@@ -19,15 +19,13 @@ private:
 
     /// 'nested' is an Array(Tuple(key_type, value_type))
     DataTypePtr nested;
-    const size_t num_shards;
 
 public:
-    static constexpr auto DEFAULT_NUMBER_OF_SHARDS = 8;
     static constexpr bool is_parametric = true;
 
-    explicit DataTypeMap(const DataTypePtr & nested_, size_t num_shards_ = 1);
-    explicit DataTypeMap(const DataTypes & elems, size_t num_shards_ = 1);
-    DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_, size_t num_shards_ = 1);
+    explicit DataTypeMap(const DataTypePtr & nested_);
+    explicit DataTypeMap(const DataTypes & elems);
+    DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
@@ -45,8 +43,8 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
+    bool hasDynamicSubcolumnsData() const override { return true; }
 
-    size_t getNumShards() const { return num_shards; }
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
@@ -54,12 +52,16 @@ public:
     DataTypePtr getNestedTypeWithUnnamedTuple() const;
 
     SerializationPtr doGetDefaultSerialization() const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn &) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
 
     static bool isValidKeyType(DataTypePtr key_type);
-
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    SerializationPtr getSerializationWithShards(size_t num_shards) const;
     void assertKeyType() const;
 };
 

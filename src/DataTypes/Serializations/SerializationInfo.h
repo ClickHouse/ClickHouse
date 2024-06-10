@@ -43,7 +43,6 @@ public:
     };
 
     SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_);
-    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 

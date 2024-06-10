@@ -94,6 +94,8 @@ struct Settings;
     M(Bool, async_insert, false, "If true, data from INSERT query is stored in queue and later flushed to table in background.", 0) \
     M(Bool, add_implicit_sign_column_constraint_for_collapsing_engine, false, "If true, add implicit constraint for sign column for CollapsingMergeTree engine.", 0) \
     M(Milliseconds, sleep_before_commit_local_part_in_replicated_table_ms, 0, "For testing. Do not change it.", 0) \
+    M(UInt64, type_map_num_shards_on_insert, 8, "KEK", 0) \
+    M(UInt64, type_map_num_shards_on_merge, 8, "KEK", 0) \
     \
     /* Part removal settings. */ \
     M(UInt64, simultaneous_parts_removal_limit, 0, "Maximum number of parts to remove during one CleanupThread iteration (0 means unlimited).", 0) \

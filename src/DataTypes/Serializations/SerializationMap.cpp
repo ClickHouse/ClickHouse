@@ -80,6 +80,7 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
             "format_binary_max_array_size",
             size,
             settings.max_binary_array_size);
+
     field = Map();
     Map & map = field.get<Map &>();
     map.reserve(size);
@@ -508,15 +509,15 @@ static MutableColumns scatterColumn(
     return column.scatter(static_cast<UInt32>(column_sizes.size()), selector);
 }
 
-static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num_shards)
+static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num_shards, size_t offset, size_t limit)
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
     const auto & column_keys = column_map.getNestedData().getColumn(0);
     const auto & column_values = column_map.getNestedData().getColumn(1);
     const auto & map_offsets = column_map.getNestedColumn().getOffsets();
 
-    WeakHash32 hash(column_keys.size());
-    column_keys.updateWeakHash32(hash);
+    WeakHash32 hash(limit);
+    column_keys.updateWeakHash32(hash, offset, limit);
 
     std::vector<MutableColumnPtr> shards_offsets_columns;
     std::vector<IColumn::Offsets *> shards_offsets;
@@ -539,7 +540,7 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
     auto fill_selector = [&](auto && sharder)
     {
         UInt64 prev_offset = 0;
-        for (size_t i = 0; i < map_offsets.size(); ++i)
+        for (size_t i = offset; i < offset + limit; ++i)
         {
             UInt64 map_size = map_offsets[i] - prev_offset;
 
@@ -624,32 +625,29 @@ void SerializationMap::enumerateStreams(
 
     if (settings.type_map_enumerate_shards)
     {
-        auto shard_serialization = std::make_shared<SerializationMap>(key, value, nested, 1);
+        auto shard_serialization = std::make_shared<SerializationMap>(key, value, nested, /*num_shards=*/ 1);
 
-        DataTypePtr shard_type;
-        if (data.type)
-            shard_type = std::make_shared<DataTypeMap>(assert_cast<const DataTypeMap &>(*data.type).getNestedType(), 1);
-
-        std::vector<ColumnPtr> shard_columns;
-        if (data.column)
-            shard_columns = scatterToShards(*data.column, num_shards);
+        // std::vector<ColumnPtr> shard_columns;
+        // if (data.column)
+        //     shard_columns = scatterToShards(*data.column, num_shards);
 
         settings.path.push_back(ISerialization::Substream::MapShard);
         for (size_t i = 0; i < num_shards; ++i)
         {
-            auto shard_name = "shard" + toString(i);
+            auto shard_name = "shard_" + toString(i);
             auto shard_named = std::make_shared<SerializationNamed>(shard_serialization, shard_name, SubstreamType::MapShard);
             auto shard_data = SubstreamData(shard_named)
-                .withType(shard_type)
-                .withColumn(data.column ? ColumnMap::create(shard_columns[i]) : nullptr)
-                .withSerializationInfo(data.serialization_info);
+                .withType(data.type)
+                .withColumn(data.column)
+                .withSerializationInfo(data.serialization_info)
+                .withDeserializeState(data.deserialize_state);
 
             settings.path.back().visited = false;
-            settings.path.back().map_shard_num = i;
+            settings.path.back().name_of_substream = shard_name;
             settings.path.back().data = std::move(shard_data);
 
-            if (data.column)
-                next_data.withColumn(shard_columns[i]);
+            // if (data.column)
+            //     next_data.withColumn(shard_columns[i]);
 
             settings.path.back().creator = std::make_shared<SubcolumnCreator>(shard_name, num_shards);
             nested->enumerateStreams(settings, callback, next_data);
@@ -684,7 +682,7 @@ void applyForShards(size_t num_shards, Settings & settings, Func && func)
     settings.path.push_back(ISerialization::Substream::MapShard);
     for (size_t i = 0; i < num_shards; ++i)
     {
-        settings.path.back().map_shard_num = i;
+        settings.path.back().name_of_substream = "shard_" + toString(i);
         func(i);
     }
     settings.path.pop_back();
@@ -836,6 +834,8 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
         nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
         return;
     }
+
+    LOG_DEBUG(getLogger("KEK"), "serialize offset: {}, limit: {}", offset, limit);
 
     auto shards = scatterToShards(column, num_shards);
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMap>(state);
@@ -1029,7 +1029,7 @@ void SerializationMapKeysValues::deserializeBinaryBulkWithMultipleStreams(
 }
 
 SerializationMapSize::SerializationMapSize(size_t num_shards_, const String & subcolumn_name_)
-    : SerializationMapSubcolumn(std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt64>>(), subcolumn_name_, SubstreamType::ArraySizes), num_shards_)
+    : SerializationMapSubcolumn(std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt64>>(), subcolumn_name_, SubstreamType::NamedOffsets), num_shards_)
 {
 }
 

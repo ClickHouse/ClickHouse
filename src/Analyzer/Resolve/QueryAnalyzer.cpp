@@ -4358,9 +4358,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-        if (storage_snapshot->storage.supportsSubcolumns())
-            get_column_options.withSubcolumns();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+            .withExtendedObjects()
+            .withVirtuals()
+            .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
 
         auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
         table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());

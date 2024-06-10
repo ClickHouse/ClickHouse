@@ -51,34 +51,36 @@ namespace ErrorCodes
 
 static void splitToSubcolumns(NamesAndTypesList & columns_list, const NameSet & columns_not_to_split)
 {
-    for (auto it = columns_list.begin(); it != columns_list.end();)
-    {
-        if (columns_not_to_split.contains(it->name))
-        {
-            ++it;
-            continue;
-        }
+    // for (auto it = columns_list.begin(); it != columns_list.end();)
+    // {
+    //     if (columns_not_to_split.contains(it->name))
+    //     {
+    //         ++it;
+    //         continue;
+    //     }
 
-        const auto * type_map = typeid_cast<const DataTypeMap *>(it->type.get());
-        if (type_map && type_map->getNumShards() > 1)
-        {
-            auto old_column = std::move(*it);
-            it = columns_list.erase(it);
+    //     const auto * type_map = typeid_cast<const DataTypeMap *>(it->type.get());
+    //     if (type_map && type_map->getNumShards() > 1)
+    //     {
+    //         auto old_column = std::move(*it);
+    //         it = columns_list.erase(it);
 
-            auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType(), 1);
-            for (size_t i = 0; i < type_map->getNumShards(); ++i)
-            {
-                auto subcolumn_name = "shard" + toString(i);
-                auto new_column = NameAndTypePair{old_column.name, subcolumn_name, old_column.type, new_type};
-                it = columns_list.insert(it, std::move(new_column));
-                ++it;
-            }
-        }
-        else
-        {
-            ++it;
-        }
-    }
+    //         auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType(), 1);
+    //         for (size_t i = 0; i < type_map->getNumShards(); ++i)
+    //         {
+    //             auto subcolumn_name = "shard" + toString(i);
+    //             auto new_column = NameAndTypePair{old_column.name, subcolumn_name, old_column.type, new_type};
+    //             it = columns_list.insert(it, std::move(new_column));
+    //             ++it;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         ++it;
+    //     }
+    // }
+
+    UNUSED(columns_list, columns_not_to_split);
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -264,9 +266,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
+    auto storage_settings = global_ctx->data->getSettings();
     SerializationInfo::Settings info_settings =
     {
-        .ratio_of_defaults_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
+        .type_map_num_shards = storage_settings->type_map_num_shards_on_merge,
         .choose_kind = true,
     };
 

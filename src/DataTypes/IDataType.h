@@ -325,6 +325,16 @@ public:
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
 
+    virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
+        std::string_view /*subcolumn_name*/,
+        const SubstreamData & /*data*/,
+        bool throw_if_null) const
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
+        return nullptr;
+    }
+
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
@@ -349,16 +359,6 @@ protected:
         std::string_view subcolumn_name,
         const SubstreamData & data,
         bool throw_if_null);
-
-    virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
-        std::string_view /*subcolumn_name*/,
-        const SubstreamData & /*data*/,
-        bool throw_if_null) const
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
-        return nullptr;
-    }
 };
 
 
