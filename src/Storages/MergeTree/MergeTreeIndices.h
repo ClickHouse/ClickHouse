@@ -243,6 +243,9 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
+MergeTreeIndexPtr legacyVectorSimilarityIndexCreator(const IndexDescription & index);
+void legacyVectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
+
 MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription & index);
 void fullTextIndexValidator(const IndexDescription & index, bool attach);
 
