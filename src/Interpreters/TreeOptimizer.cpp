@@ -23,7 +23,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
-#include <Interpreters/RewriteMapElementConstKeyToShardVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
@@ -566,12 +565,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void RewriteMapElementConstKeyToShard(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot)
-{
-    RewriteMapElementConstKeyToShardVisitor::Data data{storage_snapshot};
-    RewriteMapElementConstKeyToShardVisitor(data).visit(query);
-}
-
 void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
 {
     RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
@@ -641,8 +634,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
-
-    RewriteMapElementConstKeyToShard(query, result.storage_snapshot);
 
     if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
         optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
