@@ -12,16 +12,15 @@ extern const int LOGICAL_ERROR;
 SquashingTransform::SquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , planSquashing(header, min_block_size_rows, min_block_size_bytes)
-    , applySquashing(header)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    Chunk planned_chunk = planSquashing.add(std::move(chunk));
+    Chunk planned_chunk = squashing.add(std::move(chunk));
     if (planned_chunk.hasChunkInfo())
-        cur_chunk = applySquashing.add(std::move(planned_chunk));
+        cur_chunk = squashing.squash(std::move(planned_chunk));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -34,9 +33,9 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 void SquashingTransform::onFinish()
 {
-    Chunk chunk = planSquashing.flush();
+    Chunk chunk = squashing.flush();
     if (chunk.hasChunkInfo())
-        chunk = applySquashing.add(std::move(chunk));
+        chunk = squashing.squash(std::move(chunk));
     finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
 }
 
@@ -60,8 +59,7 @@ void SquashingTransform::work()
 SimpleSquashingTransform::SimpleSquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ISimpleTransform(header, header, false)
-    , planSquashing(header, min_block_size_rows, min_block_size_bytes)
-    , applySquashing(header)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
@@ -69,18 +67,18 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        Chunk planned_chunk = planSquashing.add(std::move(chunk));
+        Chunk planned_chunk = squashing.add(std::move(chunk));
         if (planned_chunk.hasChunkInfo())
-            chunk = applySquashing.add(std::move(planned_chunk));
+            chunk = squashing.squash(std::move(planned_chunk));
     }
     else
     {
         if (chunk.hasRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
 
-        chunk = planSquashing.flush();
+        chunk = squashing.flush();
         if (chunk.hasChunkInfo())
-            chunk = applySquashing.add(std::move(chunk));
+            chunk = squashing.squash(std::move(chunk));
     }
 }
 

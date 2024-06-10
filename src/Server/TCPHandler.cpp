@@ -885,22 +885,21 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    PlanSquashing plan_squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
-    ApplySquashing apply_squashing(state.input_header);
+    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
-        apply_squashing.header = state.block_for_insert;
-        auto planned_chunk = plan_squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        squashing.header = state.block_for_insert;
+        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
         if (planned_chunk.hasChunkInfo())
         {
-            Chunk result_chunk = apply_squashing.add(std::move(planned_chunk));
+            Chunk result_chunk = squashing.squash(std::move(planned_chunk));
             ColumnsWithTypeAndName cols;
             if (result_chunk.hasColumns() && state.block_for_insert)
                 for (size_t j = 0; j < result_chunk.getNumColumns(); ++j)
                     cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], state.block_for_insert.getDataTypes()[j], state.block_for_insert.getNames()[j]));
             auto result = Block(cols);
-            apply_squashing.header = Block(state.block_for_insert);
+            squashing.header = Block(state.block_for_insert);
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -909,14 +908,14 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    auto planned_chunk = plan_squashing.flush();
+    auto planned_chunk = squashing.flush();
     Chunk result_chunk;
     if (planned_chunk.hasChunkInfo())
-        result_chunk = apply_squashing.add(std::move(planned_chunk));
+        result_chunk = squashing.squash(std::move(planned_chunk));
     ColumnsWithTypeAndName cols;
     if (result_chunk.hasColumns())
         for (size_t j = 0; j < result_chunk.getNumColumns(); ++ j)
-            cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], apply_squashing.header.getDataTypes()[j], apply_squashing.header.getNames()[j]));
+            cols.push_back(ColumnWithTypeAndName(result_chunk.getColumns()[j], squashing.header.getDataTypes()[j], squashing.header.getNames()[j]));
 
     auto result = Block(cols);
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);

@@ -9,9 +9,9 @@ namespace DB
 class ApplySquashingTransform : public ExceptionKeepingTransform
 {
 public:
-    explicit ApplySquashingTransform(const Block & header)
+    explicit ApplySquashingTransform(const Block & header, const size_t min_block_size_rows, const size_t min_block_size_bytes)
         : ExceptionKeepingTransform(header, header, false)
-        , squashing(header)
+        , squashing(header, min_block_size_rows, min_block_size_bytes)
     {
     }
 
@@ -37,7 +37,7 @@ public:
 protected:
     void onConsume(Chunk chunk) override
     {
-        if (auto res_chunk = squashing.add(std::move(chunk)))
+        if (auto res_chunk = squashing.squash(std::move(chunk)))
             cur_chunk.setColumns(res_chunk.getColumns(), res_chunk.getNumRows());
     }
 
@@ -50,12 +50,12 @@ protected:
     }
     void onFinish() override
     {
-        auto chunk = squashing.add({});
+        auto chunk = squashing.squash({});
         finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
     }
 
 private:
-    ApplySquashing squashing;
+    Squashing squashing;
     Chunk cur_chunk;
     Chunk finish_chunk;
 };

@@ -26,38 +26,22 @@ struct ChunksToSquash : public ChunkInfo
   * Order of data is kept.
   */
 
-class ApplySquashing
+class Squashing
 {
 public:
-    explicit ApplySquashing(Block header_);
+    explicit Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    Squashing(Squashing && other) = default;
 
     Chunk add(Chunk && input_chunk);
-
-    Block header;
-
-private:
-    Chunk accumulated_chunk;
-
-    const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
-
-    void append(std::vector<Chunk> & input_chunks);
-
-    bool isEnoughSize(const Block & block);
-    bool isEnoughSize(size_t rows, size_t bytes) const;
-};
-
-class PlanSquashing
-{
-public:
-    explicit PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
-    PlanSquashing(PlanSquashing && other) = default;
-
-    Chunk add(Chunk && input_chunk);
+    Chunk squash(Chunk && input_chunk);
     Chunk flush();
+
     bool isDataLeft()
     {
         return !chunks_to_merge_vec.empty();
     }
+
+    Block header;
 
 private:
     struct CurrentSize
@@ -70,14 +54,18 @@ private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
 
-    const Block header;
     CurrentSize accumulated_size;
+    Chunk accumulated_chunk;
+
+    const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
+
+    void squash(std::vector<Chunk> & input_chunks);
 
     void expandCurrentSize(size_t rows, size_t bytes);
     void changeCurrentSize(size_t rows, size_t bytes);
     bool isEnoughSize(size_t rows, size_t bytes) const;
 
-    Chunk convertToChunk(std::vector<Chunk> && chunks);
+    Chunk convertToChunk(std::vector<Chunk> && chunks) const;
 };
 
 }

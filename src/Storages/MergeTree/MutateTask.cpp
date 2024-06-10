@@ -1267,8 +1267,7 @@ private:
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
-    std::vector<PlanSquashing> projection_squash_plannings;
-    std::vector<ApplySquashing> projection_squashes;
+    std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
     ExecutableTaskPtr merge_projection_parts_task_ptr;
@@ -1286,10 +1285,9 @@ void PartMergerWriter::prepare()
 
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        PlanSquashing plan_squashing(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        Squashing squashing(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squash_plannings.emplace_back(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
-        projection_squashes.emplace_back(ctx->updated_header);
+        projection_squashes.emplace_back(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 
     existing_rows_count = 0;
@@ -1317,11 +1315,11 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
             Block block_to_squash = projection.calculate(cur_block, ctx->context);
             projection_squashes[i].header = block_to_squash;
-            Chunk planned_chunk = projection_squash_plannings[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
+            Chunk planned_chunk = projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
 
             if (planned_chunk.hasChunkInfo())
             {
-                Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
+                Chunk projection_chunk = projection_squashes[i].squash(std::move(planned_chunk));
                 ColumnsWithTypeAndName cols;
                 if (projection_chunk.hasColumns())
                     for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
@@ -1345,11 +1343,11 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         const auto & projection = *ctx->projections_to_build[i];
-        auto & projection_squash_plan = projection_squash_plannings[i];
+        auto & projection_squash_plan = projection_squashes[i];
         auto planned_chunk = projection_squash_plan.flush();
         if (planned_chunk.hasChunkInfo())
         {
-            Chunk projection_chunk = projection_squashes[i].add(std::move(planned_chunk));
+            Chunk projection_chunk = projection_squashes[i].squash(std::move(planned_chunk));
             ColumnsWithTypeAndName cols;
             if (projection_chunk.hasColumns())
                 for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)

@@ -8,7 +8,6 @@ enum PlanningStatus
 {
     INIT,
     READ_IF_CAN,
-    WAIT_IN,
     PUSH,
     FLUSH,
     FINISH
@@ -36,12 +35,12 @@ public:
     Status waitForDataIn();
     Status finish();
 
-    void transform(Chunk & chunk);
-    void flushChunk();
+    Chunk transform(Chunk && chunk);
+    Chunk flushChunk();
 
 private:
     Chunk chunk;
-    PlanSquashing balance;
+    Squashing squashing;
     PlanningStatus planning_status = PlanningStatus::INIT;
 };
 }

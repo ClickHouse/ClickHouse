@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::PlanSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports)
-    : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header)), balance(header, min_block_size_rows, min_block_size_bytes)
+    : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header)), squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
@@ -29,9 +29,6 @@ IProcessor::Status PlanSquashingTransform::prepare()
             case READ_IF_CAN:
                 status = prepareConsume();
                 break;
-            case WAIT_IN:
-                planning_status = PlanningStatus::READ_IF_CAN;
-                return Status::NeedData;
             case PUSH:
                 return sendOrFlush();
             case FLUSH:
@@ -64,17 +61,21 @@ void PlanSquashingTransform::init()
 
 IProcessor::Status PlanSquashingTransform::prepareConsume()
 {
-    bool inputs_have_no_data = true, all_finished = true;
+    bool all_finished = true;
     for (auto & input : inputs)
     {
         if (!input.isFinished())
             all_finished = false;
+        else
+        {
+            input.setNeeded();
+            continue;
+        }
 
         if (input.hasData())
         {
-            inputs_have_no_data = false;
             chunk = input.pull();
-            transform(chunk);
+            chunk = transform(std::move(chunk));
 
             if (chunk.hasChunkInfo())
             {
@@ -86,62 +87,27 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
 
     if (all_finished) /// If all inputs are closed, we check if we have data in balancing
     {
-        if (balance.isDataLeft()) /// If we have data in balancing, we process this data
+        if (squashing.isDataLeft()) /// If we have data in balancing, we process this data
         {
             planning_status = PlanningStatus::FLUSH;
             flushChunk();
             return Status::Ready;
         }
-        planning_status = PlanningStatus::PUSH;
-        return Status::Ready;
-    }
-
-    if (inputs_have_no_data)
-        planning_status = PlanningStatus::WAIT_IN;
-
-    return Status::Ready;
-}
-
-IProcessor::Status PlanSquashingTransform::waitForDataIn()
-{
-    bool all_finished = true;
-    bool inputs_have_no_data = true;
-    for (auto & input : inputs)
-    {
-        if (input.isFinished())
-            continue;
-
-        all_finished = false;
-
-        if (input.hasData())
-            inputs_have_no_data = false;
-
-    }
-    if (all_finished)
-    {
-        planning_status = PlanningStatus::READ_IF_CAN;
-        return Status::Ready;
-    }
-
-    if (!inputs_have_no_data)
-    {
-        planning_status = PlanningStatus::READ_IF_CAN;
+        planning_status = PlanningStatus::FINISH;
         return Status::Ready;
     }
 
     return Status::NeedData;
 }
 
-void PlanSquashingTransform::transform(Chunk & chunk_)
+Chunk PlanSquashingTransform::transform(Chunk && chunk_)
 {
-    Chunk res_chunk = balance.add(std::move(chunk_));
-    std::swap(res_chunk, chunk_);
+    return squashing.add(std::move(chunk_));
 }
 
-void PlanSquashingTransform::flushChunk()
+Chunk PlanSquashingTransform::flushChunk()
 {
-    Chunk res_chunk = balance.flush();
-    std::swap(res_chunk, chunk);
+    return squashing.flush();
 }
 
 IProcessor::Status PlanSquashingTransform::sendOrFlush()

@@ -24,8 +24,7 @@ protected:
     void onFinish() override;
 
 private:
-    PlanSquashing planSquashing;
-    ApplySquashing applySquashing;
+    Squashing squashing;
     Chunk cur_chunk;
     Chunk finish_chunk;
 };
@@ -44,8 +43,7 @@ protected:
     IProcessor::Status prepare() override;
 
 private:
-    PlanSquashing planSquashing;
-    ApplySquashing applySquashing;
+    Squashing squashing;
 
     bool finished = false;
 };
