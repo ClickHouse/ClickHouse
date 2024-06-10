@@ -20,6 +20,8 @@ void S3SettingsByEndpoint::loadFromConfig(
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
+    auto default_auth_settings = S3::AuthSettings(config, settings, config_prefix);
+    auto default_request_settings = S3::RequestSettings(config, settings, config_prefix);
 
     for (const String & key : config_keys)
     {
@@ -27,8 +29,11 @@ void S3SettingsByEndpoint::loadFromConfig(
         const auto endpoint_path = key_path + ".endpoint";
         if (config.has(endpoint_path))
         {
-            auto auth_settings = S3::AuthSettings(config, settings, key_path);
-            auto request_settings = S3::RequestSettings(config, settings, key_path, "", settings.s3_validate_request_settings);
+            auto auth_settings{default_auth_settings};
+            auth_settings.updateIfChanged(S3::AuthSettings(config, settings, key_path));
+
+            auto request_settings{default_request_settings};
+            request_settings.updateIfChanged(S3::RequestSettings(config, settings, key_path, "", settings.s3_validate_request_settings));
 
             s3_settings.emplace(
                 config.getString(endpoint_path),
