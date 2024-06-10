@@ -84,7 +84,7 @@ Chunk Squashing::add(Chunk && input_chunk)
     return {};
 }
 
-Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const 
+Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
 {
     if (chunks.empty())
         return {};
