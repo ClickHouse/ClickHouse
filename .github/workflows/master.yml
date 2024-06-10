@@ -115,23 +115,14 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
-  # Reports should be run even if Builds_1/2 failed - put them separately in wf (not in Tests_1/2)
-  Builds_1_Report:
+  # Reports should run even if Builds_1/2 fail - run them separately, not in Tests_1/2/3
+  Builds_Report:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
     needs: [RunConfig, Builds_1]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
-  Builds_2_Report:
-    # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse special build check') }}
-    needs: [RunConfig, Builds_2]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse special build check
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 
@@ -165,7 +156,7 @@ jobs:
 
   FinishCheck:
     if: ${{ !cancelled() }}
-    needs: [RunConfig, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2, Tests_3]
+    needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code

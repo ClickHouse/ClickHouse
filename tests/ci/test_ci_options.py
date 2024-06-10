@@ -4,7 +4,7 @@
 
 import unittest
 from ci_settings import CiSettings
-from ci_config import JobConfig
+from ci_config import CI
 
 _TEST_BODY_1 = """
 #### Run only:
@@ -166,15 +166,14 @@ class TestCIOptions(unittest.TestCase):
             ["tsan", "foobar", "aarch64", "analyzer", "s3_storage", "coverage"],
         )
 
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST}
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = (
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST
+        }
+        jobs_configs["fuzzers"].run_by_label = (
             "TEST_LABEL"  # check "fuzzers" appears in the result due to the label
         )
-        jobs_configs[
-            "Integration tests (asan)"
-        ].release_only = (
+        jobs_configs["Integration tests (asan)"].release_only = (
             True  # still must be included as it's set with include keywords
         )
         filtered_jobs = list(
@@ -210,7 +209,10 @@ class TestCIOptions(unittest.TestCase):
         )
 
     def test_options_applied_2(self):
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST_2}
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST_2
+        }
         jobs_configs["Style check"].release_only = True
         jobs_configs["Fast test"].pr_only = True
         jobs_configs["fuzzers"].run_by_label = "TEST_LABEL"
@@ -252,7 +254,10 @@ class TestCIOptions(unittest.TestCase):
     def test_options_applied_3(self):
         ci_settings = CiSettings()
         ci_settings.include_keywords = ["Style"]
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST_2}
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST_2
+        }
         jobs_configs["Style check"].release_only = True
         jobs_configs["Fast test"].pr_only = True
         # no settings are set
@@ -296,10 +301,13 @@ class TestCIOptions(unittest.TestCase):
         )
         self.assertCountEqual(ci_options.include_keywords, ["analyzer"])
         self.assertIsNone(ci_options.exclude_keywords)
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST}
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST
+        }
+        jobs_configs["fuzzers"].run_by_label = (
+            "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        )
         jobs_configs["Integration tests (asan)"].release_only = True
         filtered_jobs = list(
             ci_options.apply(

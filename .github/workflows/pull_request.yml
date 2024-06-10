@@ -143,29 +143,20 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
-  # Reports should by run even if Builds_1/2 fail, so put them separately in wf (not in Tests_1/2)
-  Builds_1_Report:
+  # Reports should run even if Builds_1/2 fail - run them separately (not in Tests_1/2/3)
+  Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
+    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
     needs: [RunConfig, StyleCheck, Builds_1]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-  Builds_2_Report:
-    # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse special build check') }}
-    needs: [RunConfig, StyleCheck, Builds_2]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse special build check
-      runner_type: style-checker-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
 
   CheckReadyForMerge:
     if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -181,7 +172,7 @@ jobs:
   #
   FinishCheck:
     if: ${{ !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2, Tests_3]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
