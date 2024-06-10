@@ -28,8 +28,67 @@ enum class Base64Variant : uint8_t
     Url
 };
 
-extern std::vector<UInt8> preprocessBase64Url(const std::span<const UInt8> src);
-extern size_t postprocessBase64Url(UInt8 * dst, size_t out_len);
+inline std::string preprocessBase64Url(std::span<const UInt8> src)
+{
+    std::string padded_src;
+    // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
+    for (size_t i = 0; i < src.size(); ++i)
+    {
+        switch (src[i])
+        {
+        case '_':
+            padded_src += '/';
+            break;
+        case '-':
+            padded_src += '+';
+            break;
+        default:
+            padded_src += src[i];
+            break;
+        }
+    }
+
+    // insert padding to please aklomp library
+    size_t remainder = src.size() % 4;
+    switch (remainder)
+    {
+        case 0:
+            break; // no padding needed
+        case 1:
+            padded_src.append("==="); // this case is impossible to occur, however, we'll insert padding anyway
+            break;
+        case 2:
+            padded_src.append("=="); // two bytes padding
+            break;
+        default: // remainder == 3
+            padded_src.append("="); // one byte padding
+            break;
+    }
+
+    return padded_src;
+}
+
+inline size_t postprocessBase64Url(UInt8 * dst, size_t out_len)
+{
+    // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
+    for (size_t i = 0; i < out_len; ++i)
+    {
+        switch (dst[i])
+        {
+        case '/':
+            dst[i] = '_';
+            break;
+        case '+':
+            dst[i] = '-';
+            break;
+        case '=': // stop when padding is detected
+            return i;
+        default:
+            break;
+        }
+    }
+    return out_len;
+}
 
 template <Base64Variant variant>
 struct Base64Encode
@@ -41,15 +100,15 @@ struct Base64Encode
         return ((string_length - string_count) / 3 + string_count) * 4 + string_count;
     }
 
-    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(std::span<const UInt8> src, UInt8 * dst)
     {
         size_t outlen = 0;
         base64_encode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
 
         if constexpr (variant == Base64Variant::Url)
-            return postprocessBase64Url(dst, outlen);
-        else
-            return outlen;
+            outlen = postprocessBase64Url(dst, outlen);
+
+        return outlen;
     }
 };
 
@@ -63,14 +122,14 @@ struct Base64Decode
         return ((string_length - string_count) / 4 + string_count) * 3 + string_count;
     }
 
-    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(std::span<const UInt8> src, UInt8 * dst)
     {
         int rc;
         size_t outlen = 0;
         if constexpr (variant == Base64Variant::Url)
         {
-            auto src_padded = preprocessBase64Url(src);
-            rc = base64_decode(reinterpret_cast<const char *>(src_padded.data()), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+            std::string src_padded = preprocessBase64Url(src);
+            rc = base64_decode(src_padded.data(), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
         }
         else
         {
@@ -98,14 +157,14 @@ struct TryBase64Decode
         return Base64Decode<variant>::getBufferSize(string_length, string_count);
     }
 
-    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(std::span<const UInt8> src, UInt8 * dst)
     {
         int rc;
         size_t outlen = 0;
         if constexpr (variant == Base64Variant::Url)
         {
-            auto src_padded = preprocessBase64Url(src);
-            rc = base64_decode(reinterpret_cast<const char *>(src_padded.data()), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+            std::string src_padded = preprocessBase64Url(src);
+            rc = base64_decode(src_padded.data(), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
         }
         else
         {
