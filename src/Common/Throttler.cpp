@@ -41,8 +41,8 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
 UInt64 Throttler::add(size_t amount)
 {
     // Values obtained under lock to be checked after release
-    size_t count_value;
-    double tokens_value;
+    size_t count_value = 0;
+    double tokens_value = 0.0;
     addImpl(amount, count_value, tokens_value);
 
     if (limit && count_value > limit)
