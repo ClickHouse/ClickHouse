@@ -1,5 +1,5 @@
 #include "filesystemHelpers.h"
-#include <bits/types/struct_timeval.h>
+#include <utime.h>
 #include <sys/select.h>
 
 #if defined(OS_LINUX)
@@ -371,11 +371,10 @@ Poco::Timestamp getModificationTimestamp(const std::string & path)
 
 void setModificationTime(const std::string & path, time_t time)
 {
-    struct timeval times[2];
-    times[0].tv_usec = times[1].tv_usec = 0;
-    times[0].tv_sec = ::time(nullptr);
-    times[1].tv_sec = time;
-    if (utimes(path.c_str(), times) != 0)
+    struct utimbuf tb;
+    tb.actime  = time;
+    tb.modtime = time;
+    if (utime(path.c_str(), &tb) != 0)
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot set modification time to file: {}", path);
 }
 
