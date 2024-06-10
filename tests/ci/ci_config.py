@@ -53,6 +53,8 @@ class CILabels(metaclass=WithIter):
     CI_SET_SYNC = "ci_set_sync"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
+    CI_SET_NORMAL_BUILDS = "ci_set_normal_builds"
+    CI_SET_SPECIAL_BUILDS = "ci_set_special_builds"
     CI_SET_NON_REQUIRED = "ci_set_non_required"
     CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
 
@@ -683,12 +685,13 @@ class CIConfig:
         return result
 
     def get_job_parents(self, check_name: str) -> List[str]:
+        if check_name in self.builds_report_config:
+            return self.builds_report_config[check_name].builds
+
         res = []
         check_name = normalize_string(check_name)
-
         for config in (
             self.build_config,
-            self.builds_report_config,
             self.test_configs,
             self.other_jobs_configs,
         ):
@@ -899,6 +902,12 @@ CI_CONFIG = CIConfig(
             ]
         ),
         CILabels.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
+        CILabels.CI_SET_NORMAL_BUILDS: LabelConfig(
+            run_jobs=[JobNames.STYLE_CHECK, JobNames.BUILD_CHECK]
+        ),
+        CILabels.CI_SET_SPECIAL_BUILDS: LabelConfig(
+            run_jobs=[JobNames.STYLE_CHECK, JobNames.BUILD_CHECK_SPECIAL]
+        ),
         CILabels.CI_SET_NON_REQUIRED: LabelConfig(
             run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
         ),
