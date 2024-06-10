@@ -721,11 +721,6 @@ try
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
-    auto server_pool = std::make_unique<Poco::ThreadPool>(3, server_settings.max_connections);
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -822,6 +817,11 @@ try
         if (server_settings.total_memory_profiler_sample_max_allocation_size)
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
+
+    auto server_pool = std::make_unique<Poco::ThreadPool>(3, server_settings.max_connections);
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
