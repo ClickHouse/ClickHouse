@@ -81,12 +81,6 @@ struct ScopedEndOfReportDecorator
     Poco::LoggerPtr log;
 };
 
-constexpr std::string_view unknown_crash_text =
-    "GWP-ASan cannot provide any more information about this error. This may "
-    "occur due to a wild memory access into the GWP-ASan pool, or an "
-    "overflow/underflow that is > 512B in length.\n";
-
-
 // Prints the provided error and metadata information.
 void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan::AllocationMetadata * allocation_meta, Poco::LoggerPtr log)
 {
@@ -163,6 +157,11 @@ void printReport([[maybe_unused]] uintptr_t fault_address)
         fault_address = internal_error_ptr;
 
     const gwp_asan::AllocationMetadata * allocation_meta = __gwp_asan_get_metadata(state, GuardedAlloc.getMetadataRegion(), fault_address);
+
+    static constexpr std::string_view unknown_crash_text =
+        "GWP-ASan cannot provide any more information about this error. This may "
+        "occur due to a wild memory access into the GWP-ASan pool, or an "
+        "overflow/underflow that is > 512B in length.\n";
 
     if (allocation_meta == nullptr)
     {
