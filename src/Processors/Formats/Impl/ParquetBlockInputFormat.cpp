@@ -241,9 +241,9 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
     return field;
 }
 
-static auto getHeaderIndexByColumnName(const std::string & column_name, const Block & header)
+static std::size_t getHeaderIndexByColumnName(const std::string & column_name, const Block & header)
 {
-    for (auto i = 0u; i < header.columns(); ++i)
+    for (std::size_t i = 0; i < header.columns(); ++i)
     {
         if (header.getByPosition(i).name == column_name)
         {
@@ -254,21 +254,21 @@ static auto getHeaderIndexByColumnName(const std::string & column_name, const Bl
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} not found in Parquet file", column_name);
 }
 
-static auto buildColumnIndexToBF(
+static ParquetBloomFilterCondition::IndexToColumnBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
     const Block & header,
-    const auto & column_name_to_index
+    const std::vector<std::pair<std::string, int>> & column_name_to_index
 )
 {
     auto rg_bf = bf_reader.RowGroup(row_group);
 
-    ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
-
     if (!rg_bf)
     {
-        return index_to_column_bf;
+        return {};
     }
+
+    ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
 
     for (const auto & [column_name, index] : column_name_to_index)
     {
@@ -442,15 +442,22 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
 }
 
 auto make_bloom_filter_condition(
-    auto & bf_reader,
-    const auto & header,
-    const auto & column_name_to_index,
-    const auto & filter_dag,
+    parquet::BloomFilterReader & bf_reader,
+    const Block & header,
+    const std::vector<std::pair<std::string, int>> & column_name_to_index,
+    const ActionsDAGPtr & filter_dag,
     ContextPtr ctx)
 {
-    auto temp = buildColumnIndexToBF(bf_reader, 0, header, column_name_to_index);
+    /*
+     * ParquetBloomFilterCondition needs a mapping from column index to bloom filter to hash the where predicates.
+     * In order to build the mapping, a row group is necessary, but it can be any since it is only used for hashing.
+     *
+     * Later on, the mapping is recreated for each specific row group.
+     * */
+    auto row_group = 0u;
+    auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, header, column_name_to_index);
 
-    return std::make_unique<ParquetBloomFilterCondition>(BloomFilterRPNBuilder::build(filter_dag, temp, ctx, header));
+    return std::make_unique<ParquetBloomFilterCondition>(BloomFilterRPNBuilder::build(filter_dag, column_index_to_bf, ctx, header));
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
@@ -474,6 +481,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
+
     auto column_name_to_index = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 
     for (auto & [column_name, index] : column_name_to_index)
