@@ -40,7 +40,7 @@ parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_
     }
 }
 
-ColumnPtr hash(const auto & data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
+ColumnPtr hash(const ColumnPtr & data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
 {
     static constexpr uint32_t buffer_size = 32;
     uint8_t buffer[buffer_size] = {0};
