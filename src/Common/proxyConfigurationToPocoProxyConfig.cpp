@@ -53,6 +53,11 @@ std::string buildPocoRegexpEntryWithoutLeadingDot(const std::string & host)
  * */
 std::string buildPocoNonProxyHosts(const std::string & no_proxy_hosts_string)
 {
+    if (no_proxy_hosts_string.empty())
+    {
+        return "";
+    }
+
     static constexpr auto OR_SEPARATOR = "|";
     static constexpr auto MATCH_ANYTHING = R"(.*)";
     static constexpr auto MATCH_SUBDOMAINS_REGEX = R"((?:.*\.)?)";

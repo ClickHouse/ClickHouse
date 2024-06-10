@@ -37,16 +37,9 @@ namespace
         }
     }
 
-    std::string getNoProxyHostsString()
+    const char * getNoProxyHosts()
     {
-        const char * no_proxy = std::getenv(NO_PROXY_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
-
-        if (!no_proxy)
-        {
-            return "";
-        }
-
-        return no_proxy;
+        return std::getenv(NO_PROXY_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
     }
 
     ProxyConfiguration buildProxyConfiguration(
@@ -86,7 +79,8 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
 {
     static const auto * http_proxy_host = getProxyHost(Protocol::HTTP);
     static const auto * https_proxy_host = getProxyHost(Protocol::HTTPS);
-    static const auto no_proxy_hosts_string = buildPocoNonProxyHosts(getNoProxyHostsString());
+    static const auto * no_proxy = getNoProxyHosts();
+    static const auto poco_no_proxy_hosts = no_proxy ? buildPocoNonProxyHosts(no_proxy) : "";
 
     static const Poco::URI http_proxy_uri(http_proxy_host ? http_proxy_host : "");
     static const Poco::URI https_proxy_uri(https_proxy_host ? https_proxy_host : "");
@@ -94,9 +88,8 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
     return buildProxyConfiguration(
         request_protocol,
         request_protocol == Protocol::HTTP ? http_proxy_uri : https_proxy_uri,
-        no_proxy_hosts_string,
+        poco_no_proxy_hosts,
         disable_tunneling_for_https_requests_over_http_proxy);
-
 }
 
 }
