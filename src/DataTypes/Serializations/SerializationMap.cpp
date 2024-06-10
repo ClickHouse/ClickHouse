@@ -509,15 +509,15 @@ static MutableColumns scatterColumn(
     return column.scatter(static_cast<UInt32>(column_sizes.size()), selector);
 }
 
-static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num_shards, size_t offset, size_t limit)
+static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num_shards)
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
     const auto & column_keys = column_map.getNestedData().getColumn(0);
     const auto & column_values = column_map.getNestedData().getColumn(1);
     const auto & map_offsets = column_map.getNestedColumn().getOffsets();
 
-    WeakHash32 hash(limit);
-    column_keys.updateWeakHash32(hash, offset, limit);
+    WeakHash32 hash(column_keys.size());
+    column_keys.updateWeakHash32(hash);
 
     std::vector<MutableColumnPtr> shards_offsets_columns;
     std::vector<IColumn::Offsets *> shards_offsets;
@@ -540,7 +540,7 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
     auto fill_selector = [&](auto && sharder)
     {
         UInt64 prev_offset = 0;
-        for (size_t i = offset; i < offset + limit; ++i)
+        for (size_t i = 0; i < column.size(); ++i)
         {
             UInt64 map_size = map_offsets[i] - prev_offset;
 
@@ -662,6 +662,7 @@ namespace
 struct SerializeBinaryBulkStateMap : public ISerialization::SerializeBinaryBulkState
 {
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
+    std::vector<ColumnPtr> cached_shards;
 };
 
 struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryBulkState
@@ -797,6 +798,8 @@ void SerializationMap::serializeBinaryBulkStateSuffix(
     {
         nested->serializeBinaryBulkStateSuffix(settings, map_state->states[i]);
     });
+
+    map_state->cached_shards.clear();
 }
 
 void SerializationMap::deserializeBinaryBulkStatePrefix(
@@ -835,14 +838,13 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    LOG_DEBUG(getLogger("KEK"), "serialize offset: {}, limit: {}", offset, limit);
-
-    auto shards = scatterToShards(column, num_shards);
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMap>(state);
+    if (offset == 0)
+        map_state->cached_shards = scatterToShards(column, num_shards);
 
     applyForShards(num_shards, settings, [&](size_t i)
     {
-        nested->serializeBinaryBulkWithMultipleStreams(*shards[i], offset, limit, settings, map_state->states[i]);
+        nested->serializeBinaryBulkWithMultipleStreams(*map_state->cached_shards[i], offset, limit, settings, map_state->states[i]);
     });
 }
 
@@ -874,10 +876,10 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     applyForShards(num_shards, settings, [&](size_t i)
     {
         ColumnPtr shard_column = column_nested.cloneEmpty();
-        auto shard_cache = getSubstreamCacheForShards(nested, map_state->cached_shards[i], settings.path, cache);
+        // auto shard_cache = getSubstreamCacheForShards(nested, map_state->cached_shards[i], settings.path, cache);
 
-        nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, map_state->states[i], &shard_cache);
-        addShardToSubstreamsCache(nested, shard_column, settings.path, map_state->cached_shards[i], cache);
+        nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, map_state->states[i], nullptr);
+        // addShardToSubstreamsCache(nested, shard_column, settings.path, map_state->cached_shards[i], cache);
 
         const auto & shard_array = assert_cast<const ColumnArray &>(*shard_column);
         const auto & shard_tuple = assert_cast<const ColumnTuple &>(shard_array.getData());
