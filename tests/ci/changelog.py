@@ -266,7 +266,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
 
     # Filter out the PR categories that are not for changelog.
     if re.match(
-        r"(?i)((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
+        r"(?i)((non|in|not|un)[-\s]*significant)|"
+        r"(not[ ]*for[ ]*changelog)|"
+        r"(changelog[ ]*entry[ ]*is[ ]*not[ ]*required)",
         category,
     ):
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
