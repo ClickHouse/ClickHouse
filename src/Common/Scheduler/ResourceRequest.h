@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/intrusive/list.hpp>
 #include <base/types.h>
 #include <limits>
 
@@ -41,7 +42,7 @@ constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
  * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen
  * and step (6) MUST be omitted.
  */
-class ResourceRequest
+class ResourceRequest : public boost::intrusive::list_base_hook<>
 {
 public:
     /// Cost of request execution; should be filled before request enqueueing.
@@ -62,6 +63,7 @@ public:
     {
         cost = cost_;
         constraint = nullptr;
+        // Note that list_base_hook should be reset independently (by intrusive list)
     }
 
     virtual ~ResourceRequest() = default;

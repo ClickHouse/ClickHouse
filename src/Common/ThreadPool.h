@@ -242,6 +242,11 @@ public:
                 if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
                     thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
             }
+            else
+            {
+                UNUSED(global_profiler_real_time_period);
+                UNUSED(global_profiler_cpu_time_period);
+            }
 
             std::apply(function, arguments);
         },
@@ -275,6 +280,10 @@ public:
         if (!initialized())
             abort();
 
+        /// Thread cannot join itself.
+        if (state->thread_id == std::this_thread::get_id())
+            abort();
+
         state->event.wait();
         state.reset();
     }
@@ -288,12 +297,7 @@ public:
 
     bool joinable() const
     {
-        if (!state)
-            return false;
-        /// Thread cannot join itself.
-        if (state->thread_id == std::this_thread::get_id())
-            return false;
-        return true;
+        return initialized();
     }
 
     std::thread::id get_id() const

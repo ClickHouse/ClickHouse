@@ -42,11 +42,11 @@ SELECT first, second, result FROM (
     ORDER BY s2_index
  );
 
-SELECT s2ToGeo(toUInt64(-1)); -- { serverError 36 }
-SELECT s2ToGeo(nan); -- { serverError 43 }
+SELECT s2ToGeo(toUInt64(-1)); -- { serverError BAD_ARGUMENTS }
+SELECT s2ToGeo(nan); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT geoToS2(toFloat64(toUInt64(-1)), toFloat64(toUInt64(-1))); -- { serverError BAD_ARGUMENTS }
-SELECT geoToS2(nan, nan); -- { serverError 43 }
-SELECT geoToS2(-inf, 1.1754943508222875e-38); -- { serverError 43 }
+SELECT geoToS2(nan, nan); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT geoToS2(-inf, 1.1754943508222875e-38); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 
 

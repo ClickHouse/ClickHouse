@@ -28,3 +28,10 @@ runs:
       run: |
           # to remove every leftovers
           sudo rm -fr "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
+    - name: Tune vm.mmap_rnd_bits for sanitizers
+      shell: bash
+      run: |
+          sudo sysctl vm.mmap_rnd_bits
+          # https://github.com/google/sanitizers/issues/856
+          echo "Tune vm.mmap_rnd_bits for sanitizers"
+          sudo sysctl vm.mmap_rnd_bits=28

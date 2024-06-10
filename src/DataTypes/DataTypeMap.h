@@ -42,7 +42,7 @@ public:
     bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
-    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
+    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
@@ -52,7 +52,7 @@ public:
 
     SerializationPtr doGetDefaultSerialization() const override;
 
-    static bool checkKeyType(DataTypePtr key_type);
+    static bool isValidKeyType(DataTypePtr key_type);
 
     void forEachChild(const ChildCallback & callback) const override;
 

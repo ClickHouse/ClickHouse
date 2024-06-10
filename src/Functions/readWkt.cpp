@@ -51,14 +51,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto * column_string = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         Serializer serializer;
         Geometry geometry;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string->getDataAt(i).toString();
+            const auto & str = column_string.getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);
             serializer.add(geometry);
         }
@@ -82,6 +82,11 @@ struct ReadWKTPointNameHolder
     static constexpr const char * name = "readWKTPoint";
 };
 
+struct ReadWKTLineStringNameHolder
+{
+    static constexpr const char * name = "readWKTLineString";
+};
+
 struct ReadWKTRingNameHolder
 {
     static constexpr const char * name = "readWKTRing";
@@ -102,6 +107,30 @@ struct ReadWKTMultiPolygonNameHolder
 REGISTER_FUNCTION(ReadWKT)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>(FunctionDocumentation
+    {
+        .description=R"(
+Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
+)",
+        .syntax = "readWKTLineString(wkt_string)",
+        .arguments{
+            {"wkt_string", "The input WKT string representing a LineString geometry."}
+        },
+        .returned_value = "The function returns a ClickHouse internal representation of the linestring geometry.",
+        .examples{
+            {"first call", "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
+┌─readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
+│ [(1,1),(2,2),(3,3),(1,1)]                            │
+└──────────────────────────────────────────────────────┘
+            )"},
+            {"second call", "SELECT toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'));", R"(
+┌─toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'))─┐
+│ LineString                                                       │
+└──────────────────────────────────────────────────────────────────┘
+            )"},
+        },
+        .categories{"Unique identifiers"}
+    });
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWKTMultiPolygonNameHolder>>();

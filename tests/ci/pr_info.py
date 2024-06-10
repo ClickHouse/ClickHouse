@@ -2,7 +2,6 @@
 import json
 import logging
 import os
-import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
@@ -158,7 +157,7 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
@@ -213,7 +212,7 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -227,7 +226,7 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -296,7 +295,7 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
@@ -312,12 +311,6 @@ class PRInfo:
 
     @property
     def is_release(self) -> bool:
-        return self.number == 0 and bool(
-            re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
-        )
-
-    @property
-    def is_release_branch(self) -> bool:
         return self.number == 0 and not self.is_merge_queue
 
     @property

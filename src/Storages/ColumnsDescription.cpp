@@ -60,6 +60,46 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr cod
 {
 }
 
+ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other)
+{
+    if (this == &other)
+        return *this;
+
+    name = other.name;
+    type = other.type;
+    default_desc = other.default_desc;
+    comment = other.comment;
+    codec = other.codec ? other.codec->clone() : nullptr;
+    settings = other.settings;
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
+    statistics = other.statistics;
+
+    return *this;
+}
+
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    name = std::move(other.name);
+    type = std::move(other.type);
+    default_desc = std::move(other.default_desc);
+    comment = std::move(other.comment);
+
+    codec = other.codec ? other.codec->clone() : nullptr;
+    other.codec.reset();
+
+    settings = std::move(other.settings);
+
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
+    other.ttl.reset();
+
+    statistics = std::move(other.statistics);
+
+    return *this;
+}
+
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
@@ -67,7 +107,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && stat == other.stat
+        && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
@@ -114,10 +154,10 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         DB::writeText(")", buf);
     }
 
-    if (stat)
+    if (!statistics.empty())
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(stat->ast), buf);
+        writeEscapedString(queryToString(statistics.getAST()), buf);
     }
 
     if (ttl)
@@ -547,7 +587,19 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 
 bool ColumnsDescription::hasSubcolumn(const String & column_name) const
 {
-    return subcolumns.get<0>().count(column_name);
+    if (subcolumns.get<0>().count(column_name))
+        return true;
+
+    /// Check for dynamic subcolumns
+    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+    auto it = columns.get<1>().find(ordinary_column_name);
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    {
+        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+            return true;
+    }
+
+    return false;
 }
 
 const ColumnDescription & ColumnsDescription::get(const String & column_name) const
@@ -644,6 +696,15 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
             return *jt;
     }
 
+    /// Check for dynamic subcolumns.
+    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+    it = columns.get<1>().find(ordinary_column_name);
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    {
+        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+            return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
+    }
+
     return {};
 }
 
@@ -730,9 +791,19 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return (it != columns.get<1>().end()
-        && (defaultKindToGetKind(it->default_desc.kind) & kind))
-            || hasSubcolumn(column_name);
+    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
+        return true;
+
+    /// Check for dynamic subcolumns.
+    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+    it = columns.get<1>().find(ordinary_column_name);
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    {
+        if (auto dynamic_subcolumn_type = it->type->hasSubcolumn(dynamic_subcolumn_name))
+            return true;
+    }
+
+    return false;
 }
 
 bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
