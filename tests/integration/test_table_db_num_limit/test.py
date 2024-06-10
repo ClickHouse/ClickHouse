@@ -8,6 +8,7 @@ node1 = cluster.add_instance(
     "node1", main_configs=["config/config.xml"], with_zookeeper=True
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -17,6 +18,7 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
 
 def test_table_db_limit(started_cluster):
     for i in range(6):
