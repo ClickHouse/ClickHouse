@@ -19,7 +19,7 @@ TEMP_DIR=$(mktemp -d "$CUR_DIR/$(basename "$BASE").XXXXXX")
 # Generate config.xml
 CONFIG_FILE="$TEMP_DIR/config.xml"
 cat > "$CONFIG_FILE" <<EOL
-<yandex>
+<clickhouse>
     <logger>
         <level>information</level>
         <log>$TEMP_DIR/clickhouse-server.log</log>
@@ -35,7 +35,7 @@ cat > "$CONFIG_FILE" <<EOL
         </users_xml>
     </user_directories>
 
-</yandex>
+</clickhouse>
 EOL
 
 echo        "<clickhouse>

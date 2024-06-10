@@ -149,7 +149,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
         // there's an invisible system database _temporary_and_external_tables, so we need to subtract 1
-        if (db_count > 0)
+        if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(DatabaseCatalog::TEMPORARY_DATABASE))
             db_count--;
         if (db_count >= max_db)
             throw Exception(ErrorCodes::TOO_MANY_DATABASES,
