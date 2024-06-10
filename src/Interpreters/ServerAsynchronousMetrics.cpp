@@ -210,27 +210,27 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             auto total = disk->getTotalSpace();
 
             /// Some disks don't support information about the space.
-            if (!total)
-                continue;
-
-            auto available = disk->getAvailableSpace();
-            auto unreserved = disk->getUnreservedSpace();
-
-            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
-
-            if (available)
+            if (total)
             {
-                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                auto available = disk->getAvailableSpace();
+                auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+                if (available)
+                {
+                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                }
+
+                if (unreserved)
+                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
-
-            if (unreserved)
-                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
 
             try
             {
