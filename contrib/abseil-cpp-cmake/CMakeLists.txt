@@ -1058,8 +1058,10 @@ absl_cc_library(
     demangle_internal
   HDRS
     "${DIR}/internal/demangle.h"
+    "${DIR}/internal/demangle_rust.h"
   SRCS
     "${DIR}/internal/demangle.cc"
+    "${DIR}/internal/demangle_rust.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
