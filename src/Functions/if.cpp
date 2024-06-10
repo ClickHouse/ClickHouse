@@ -7,7 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
 #include <DataTypes/DataTypeArray.h>
@@ -949,12 +948,12 @@ private:
         bool cond_is_const = false;
         bool cond_is_true = false;
         bool cond_is_false = false;
-        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(&*arg_cond.column))
+        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(*arg_cond.column))
         {
             cond_is_const = true;
             not_const_condition = const_arg->getDataColumnPtr();
             ColumnPtr data_column = const_arg->getDataColumnPtr();
-            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(&*data_column))
+            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
@@ -963,7 +962,7 @@ private:
 
             if (!data_column->empty())
             {
-                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
+                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column)->getBool(0);
                 cond_is_false = !cond_is_null && !cond_is_true;
             }
         }
@@ -976,12 +975,12 @@ private:
         else if (cond_is_false || cond_is_null)
             return castColumn(column2, result_type);
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*not_const_condition))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))
         {
             ColumnPtr new_cond_column = nullable->getNestedColumnPtr();
             size_t column_size = arg_cond.column->size();
 
-            if (checkAndGetColumn<ColumnUInt8>(&*new_cond_column))
+            if (checkAndGetColumn<ColumnUInt8>(*new_cond_column))
             {
                 auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
                 typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(nullable->getNullMapData());
@@ -1028,12 +1027,12 @@ private:
     /// Const(size = 0, Int32(size = 1))
     static ColumnPtr recursiveGetNestedColumnWithoutNullable(const ColumnPtr & column)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
         {
             /// Nullable cannot contain Nullable
             return nullable->getNestedColumnPtr();
         }
-        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*column))
+        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
         {
             /// Save Constant, but remove Nullable
             return ColumnConst::create(recursiveGetNestedColumnWithoutNullable(column_const->getDataColumnPtr()), column->size());
@@ -1052,8 +1051,8 @@ private:
         const ColumnWithTypeAndName & arg_then = arguments[1];
         const ColumnWithTypeAndName & arg_else = arguments[2];
 
-        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_then.column);
-        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_else.column);
+        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_then.column);
+        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_else.column);
 
         if (!then_is_nullable && !else_is_nullable)
             return nullptr;
@@ -1158,11 +1157,6 @@ private:
                     variant_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
-                else if (auto * dynamic_column = typeid_cast<ColumnDynamic *>(result_column.get()))
-                {
-                    dynamic_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
-                    return result_column;
-                }
                 else
                     return ColumnNullable::create(materializeColumnIfConst(result_column), arg_cond.column);
             }
@@ -1204,11 +1198,6 @@ private:
                 else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
                 {
                     variant_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
-                    return result_column;
-                }
-                else if (auto * dynamic_column = typeid_cast<ColumnDynamic *>(result_column.get()))
-                {
-                    dynamic_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1289,16 +1278,16 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->onlyNull())
-        {
-            if (arguments[0]->isNullable())
-                return getReturnTypeImpl({
-                    removeNullable(arguments[0]), arguments[1], arguments[2]});
+        if (arguments[0]->onlyNull())
+            return arguments[2];
 
-            if (!WhichDataType(arguments[0]).isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
-                    "Must be UInt8.", arguments[0]->getName());
-        }
+        if (arguments[0]->isNullable())
+            return getReturnTypeImpl({
+                removeNullable(arguments[0]), arguments[1], arguments[2]});
+
+        if (!WhichDataType(arguments[0]).isUInt8())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
+                "Must be UInt8.", arguments[0]->getName());
 
         if (use_variant_when_no_common_type)
             return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});

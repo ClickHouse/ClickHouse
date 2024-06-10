@@ -23,7 +23,7 @@ namespace DB
 class HadoopSnappyDecoder
 {
 public:
-    enum class Status : uint8_t
+    enum class Status : int
     {
         OK = 0,
         INVALID_INPUT = 1,
@@ -37,7 +37,7 @@ public:
 
     Status readBlock(size_t * avail_in, const char ** next_in, size_t * avail_out, char ** next_out);
 
-    void reset()
+    inline void reset()
     {
         buffer_length = 0;
         block_length = -1;
@@ -73,7 +73,7 @@ class HadoopSnappyReadBuffer : public CompressedReadBufferWrapper
 public:
     using Status = HadoopSnappyDecoder::Status;
 
-    static String statusToString(Status status)
+    inline static String statusToString(Status status)
     {
         switch (status)
         {
@@ -88,6 +88,7 @@ public:
             case Status::TOO_LARGE_COMPRESSED_BLOCK:
                 return "TOO_LARGE_COMPRESSED_BLOCK";
         }
+        UNREACHABLE();
     }
 
     explicit HadoopSnappyReadBuffer(

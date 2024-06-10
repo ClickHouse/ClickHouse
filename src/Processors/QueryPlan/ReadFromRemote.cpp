@@ -360,7 +360,6 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
     ClusterPtr cluster_,
-    const StorageID & storage_id_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
     Block header_,
     QueryProcessingStage::Enum stage_,
@@ -373,7 +372,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
-    , storage_id(storage_id_)
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , context(context_)
@@ -386,8 +384,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     chassert(cluster->getShardCount() == 1);
 
     std::vector<String> description;
-    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
-
     for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
         description.push_back(fmt::format("Replica: {}", pool->getHost()));
 
@@ -423,6 +419,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = shard.getAllNodeCount();
     }
 
+
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
     if (all_replicas_count < shard.getAllNodeCount())
     {
@@ -455,6 +452,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         processor->setStorageLimits(storage_limits);
 
     pipeline.init(std::move(pipe));
+
 }
 
 
@@ -490,7 +488,6 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
 
     remote_query_executor->setLogger(log);
-    remote_query_executor->setMainTable(storage_id);
 
     pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);

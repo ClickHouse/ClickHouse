@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import logging
-import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -26,7 +25,6 @@ class CIStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     TESTS_1 = "Tests_1"
     TESTS_2 = "Tests_2"
-    TESTS_3 = "Tests_3"
 
 
 class Runners(metaclass=WithIter):
@@ -47,13 +45,15 @@ class CILabels(metaclass=WithIter):
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
-    # to upload all binaries from build jobs
-    UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
-    CI_SET_REQUIRED = "ci_set_required"
-    CI_SET_NON_REQUIRED = "ci_set_non_required"
+    CI_SET_INTEGRATION = "ci_set_integration"
     CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
+    CI_SET_STATLESS = "ci_set_stateless"
+    CI_SET_STATEFUL = "ci_set_stateful"
+    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
+    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
 
@@ -78,8 +78,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
-    BINARY_S390X = "binary_s390x"
-    BINARY_LOONGARCH64 = "binary_loongarch64"
+    # BINARY_S390X = "binary_s390x" # disabled because s390x refused to build in the migration to OpenSSL
     FUZZERS = "fuzzers"
 
 
@@ -132,7 +131,6 @@ class JobNames(metaclass=WithIter):
     STRESS_TEST_MSAN = "Stress test (msan)"
     STRESS_TEST_DEBUG = "Stress test (debug)"
     STRESS_TEST_AZURE_TSAN = "Stress test (azure, tsan)"
-    STRESS_TEST_AZURE_MSAN = "Stress test (azure, msan)"
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
@@ -173,8 +171,8 @@ class JobNames(metaclass=WithIter):
     COMPATIBILITY_TEST = "Compatibility check (amd64)"
     COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
-    CLICKBENCH_TEST = "ClickBench (amd64)"
-    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
+    CLCIKBENCH_TEST = "ClickBench (amd64)"
+    CLCIKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -204,7 +202,7 @@ class DigestConfig:
     include_paths: List[Union[str, Path]] = field(default_factory=list)
     # file suffixes to exclude from digest
     exclude_files: List[str] = field(default_factory=list)
-    # directories to exclude from digest
+    # directories to exlude from digest
     exclude_dirs: List[Union[str, Path]] = field(default_factory=list)
     # docker names to include into digest
     docker: List[str] = field(default_factory=list)
@@ -215,7 +213,7 @@ class DigestConfig:
 @dataclass
 class LabelConfig:
     """
-    configures different CI scenarios per GH label
+    configures different CI scenarious per GH label
     """
 
     run_jobs: Iterable[str] = frozenset()
@@ -229,7 +227,7 @@ class JobConfig:
 
     # configures digest calculation for the job
     digest: DigestConfig = field(default_factory=DigestConfig)
-    # will be triggered for the job if omitted in CI workflow yml
+    # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
     # job timeout, seconds
     timeout: Optional[int] = None
@@ -240,14 +238,12 @@ class JobConfig:
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
-    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skip-able.
+    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
     required_on_release_branch: bool = False
     # job is for pr workflow only
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
-    # job will run if it's enabled in CI option
-    run_by_ci_option: bool = False
     # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
     random_bucket: str = ""
 
@@ -468,20 +464,19 @@ compatibility_test_common_params = {
     "digest": compatibility_check_digest,
     "run_command": "compatibility_check.py",
 }
-stateless_test_common_params = {
+statless_test_common_params = {
     "digest": stateless_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME"',
+    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
 }
 stateful_test_common_params = {
     "digest": stateful_check_digest,
-    "run_command": 'functional_test_check.py "$CHECK_NAME"',
+    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 3600,
 }
 stress_test_common_params = {
     "digest": stress_check_digest,
     "run_command": "stress_check.py",
-    "timeout": 9000,
 }
 upgrade_test_common_params = {
     "digest": upgrade_check_digest,
@@ -530,7 +525,6 @@ clickbench_test_params = {
         docker=["clickhouse/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
-    "timeout": 900,
 }
 install_test_params = JobConfig(
     digest=install_check_digest,
@@ -582,6 +576,7 @@ class CIConfig:
         elif job_name == JobNames.BUILD_CHECK_SPECIAL:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
+            stage_type = CIStages.TESTS_1
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
                 assert required_build
@@ -593,8 +588,6 @@ class CIConfig:
                     stage_type = CIStages.TESTS_2
             else:
                 stage_type = CIStages.TESTS_1
-            if job_name not in REQUIRED_CHECKS:
-                stage_type = CIStages.TESTS_3
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -665,7 +658,7 @@ class CIConfig:
                 # crosscompile - no arm required
                 pass
             else:
-                # switch to aarch64 runner
+                # switch to aarch64 runnner
                 result += "-aarch64"
 
         return result
@@ -701,7 +694,10 @@ class CIConfig:
                     elif isinstance(config[job_name], BuildConfig):  # type: ignore
                         pass
                     elif isinstance(config[job_name], BuildReportConfig):  # type: ignore
-                        pass
+                        # add all build jobs as parents for build report check
+                        res.extend(
+                            [job for job in JobNames if job in self.build_config]
+                        )
                     else:
                         assert (
                             False
@@ -709,7 +705,7 @@ class CIConfig:
                     break
         assert (
             res
-        ), f"Error: Experimental feature... Invalid request or not supported job [{check_name}]"
+        ), f"Error: Experimantal feature... Invlid request or not supported job [{check_name}]"
         return res
 
     def get_digest_config(self, check_name: str) -> DigestConfig:
@@ -812,16 +808,16 @@ class CIConfig:
                     f"The following names of the build report '{build_report_name}' "
                     f"are missed in build_config: {missed_names}",
                 )
-        # And finally, all tests' requirements must be in the builds
+        # And finally, all of tests' requirements must be in the builds
         for test_name, test_config in self.test_configs.items():
             if test_config.required_build not in self.build_config.keys():
                 logging.error(
-                    "The requirement '%s' for '%s' is not found in builds",
+                    "The requierment '%s' for '%s' is not found in builds",
                     test_config,
                     test_name,
                 )
                 errors.append(
-                    f"The requirement '{test_config}' for "
+                    f"The requierment '{test_config}' for "
                     f"'{test_name}' is not found in builds"
                 )
 
@@ -829,34 +825,15 @@ class CIConfig:
             raise KeyError("config contains errors", errors)
 
 
-# checks required by Mergeable Check
-REQUIRED_CHECKS = [
-    "PR Check",
-    StatusNames.SYNC,
-    JobNames.BUILD_CHECK,
-    JobNames.BUILD_CHECK_SPECIAL,
-    JobNames.DOCS_CHECK,
-    JobNames.FAST_TEST,
-    JobNames.STATEFUL_TEST_RELEASE,
-    JobNames.STATELESS_TEST_RELEASE,
-    JobNames.STATELESS_TEST_ASAN,
-    JobNames.STATELESS_TEST_FLAKY_ASAN,
-    JobNames.STATEFUL_TEST_ASAN,
-    JobNames.STYLE_CHECK,
-    JobNames.UNIT_TEST_ASAN,
-    JobNames.UNIT_TEST_MSAN,
-    JobNames.UNIT_TEST,
-    JobNames.UNIT_TEST_TSAN,
-    JobNames.UNIT_TEST_UBSAN,
-    JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-    JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-]
-
-BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
-
 CI_CONFIG = CIConfig(
     label_configs={
         CILabels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        CILabels.CI_SET_FAST: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+            ]
+        ),
         CILabels.CI_SET_ARM: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
@@ -864,9 +841,12 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        CILabels.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
-        CILabels.CI_SET_NON_REQUIRED: LabelConfig(
-            run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
+        CILabels.CI_SET_INTEGRATION: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                Build.PACKAGE_RELEASE,
+                JobNames.INTEGRATION_TEST,
+            ]
         ),
         CILabels.CI_SET_OLD_ANALYZER: LabelConfig(
             run_jobs=[
@@ -876,6 +856,38 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_ASAN,
                 JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
                 JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+            ]
+        ),
+        CILabels.CI_SET_STATLESS: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATELESS_TEST_RELEASE,
+            ]
+        ),
+        CILabels.CI_SET_STATLESS_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ASAN,
+            ]
+        ),
+        CILabels.CI_SET_STATEFUL: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATEFUL_TEST_RELEASE,
+            ]
+        ),
+        CILabels.CI_SET_STATEFUL_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
         CILabels.CI_SET_REDUCED: LabelConfig(
@@ -900,63 +912,63 @@ CI_CONFIG = CIConfig(
     build_config={
         Build.PACKAGE_RELEASE: BuildConfig(
             name=Build.PACKAGE_RELEASE,
-            compiler="clang-18",
+            compiler="clang-17",
             package_type="deb",
             static_binary_name="amd64",
             additional_pkgs=True,
         ),
         Build.PACKAGE_AARCH64: BuildConfig(
             name=Build.PACKAGE_AARCH64,
-            compiler="clang-18-aarch64",
+            compiler="clang-17-aarch64",
             package_type="deb",
             static_binary_name="aarch64",
             additional_pkgs=True,
         ),
         Build.PACKAGE_ASAN: BuildConfig(
             name=Build.PACKAGE_ASAN,
-            compiler="clang-18",
+            compiler="clang-17",
             sanitizer="address",
             package_type="deb",
         ),
         Build.PACKAGE_UBSAN: BuildConfig(
             name=Build.PACKAGE_UBSAN,
-            compiler="clang-18",
+            compiler="clang-17",
             sanitizer="undefined",
             package_type="deb",
         ),
         Build.PACKAGE_TSAN: BuildConfig(
             name=Build.PACKAGE_TSAN,
-            compiler="clang-18",
+            compiler="clang-17",
             sanitizer="thread",
             package_type="deb",
         ),
         Build.PACKAGE_MSAN: BuildConfig(
             name=Build.PACKAGE_MSAN,
-            compiler="clang-18",
+            compiler="clang-17",
             sanitizer="memory",
             package_type="deb",
         ),
         Build.PACKAGE_DEBUG: BuildConfig(
             name=Build.PACKAGE_DEBUG,
-            compiler="clang-18",
+            compiler="clang-17",
             debug_build=True,
             package_type="deb",
             sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         Build.PACKAGE_RELEASE_COVERAGE: BuildConfig(
             name=Build.PACKAGE_RELEASE_COVERAGE,
-            compiler="clang-18",
+            compiler="clang-17",
             coverage=True,
             package_type="deb",
         ),
         Build.BINARY_RELEASE: BuildConfig(
             name=Build.BINARY_RELEASE,
-            compiler="clang-18",
+            compiler="clang-17",
             package_type="binary",
         ),
         Build.BINARY_TIDY: BuildConfig(
             name=Build.BINARY_TIDY,
-            compiler="clang-18",
+            compiler="clang-17",
             debug_build=True,
             package_type="binary",
             static_binary_name="debug-amd64",
@@ -965,75 +977,70 @@ CI_CONFIG = CIConfig(
         ),
         Build.BINARY_DARWIN: BuildConfig(
             name=Build.BINARY_DARWIN,
-            compiler="clang-18-darwin",
+            compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
         ),
         Build.BINARY_AARCH64: BuildConfig(
             name=Build.BINARY_AARCH64,
-            compiler="clang-18-aarch64",
+            compiler="clang-17-aarch64",
             package_type="binary",
         ),
         Build.BINARY_AARCH64_V80COMPAT: BuildConfig(
             name=Build.BINARY_AARCH64_V80COMPAT,
-            compiler="clang-18-aarch64-v80compat",
+            compiler="clang-17-aarch64-v80compat",
             package_type="binary",
             static_binary_name="aarch64v80compat",
             comment="For ARMv8.1 and older",
         ),
         Build.BINARY_FREEBSD: BuildConfig(
             name=Build.BINARY_FREEBSD,
-            compiler="clang-18-freebsd",
+            compiler="clang-17-freebsd",
             package_type="binary",
             static_binary_name="freebsd",
         ),
         Build.BINARY_DARWIN_AARCH64: BuildConfig(
             name=Build.BINARY_DARWIN_AARCH64,
-            compiler="clang-18-darwin-aarch64",
+            compiler="clang-17-darwin-aarch64",
             package_type="binary",
             static_binary_name="macos-aarch64",
         ),
         Build.BINARY_PPC64LE: BuildConfig(
             name=Build.BINARY_PPC64LE,
-            compiler="clang-18-ppc64le",
+            compiler="clang-17-ppc64le",
             package_type="binary",
             static_binary_name="powerpc64le",
         ),
         Build.BINARY_AMD64_COMPAT: BuildConfig(
             name=Build.BINARY_AMD64_COMPAT,
-            compiler="clang-18-amd64-compat",
+            compiler="clang-17-amd64-compat",
             package_type="binary",
             static_binary_name="amd64compat",
             comment="SSE2-only build",
         ),
         Build.BINARY_AMD64_MUSL: BuildConfig(
             name=Build.BINARY_AMD64_MUSL,
-            compiler="clang-18-amd64-musl",
+            compiler="clang-17-amd64-musl",
             package_type="binary",
             static_binary_name="amd64musl",
             comment="Build with Musl",
         ),
         Build.BINARY_RISCV64: BuildConfig(
             name=Build.BINARY_RISCV64,
-            compiler="clang-18-riscv64",
+            compiler="clang-17-riscv64",
             package_type="binary",
             static_binary_name="riscv64",
         ),
-        Build.BINARY_S390X: BuildConfig(
-            name=Build.BINARY_S390X,
-            compiler="clang-18-s390x",
-            package_type="binary",
-            static_binary_name="s390x",
-        ),
-        Build.BINARY_LOONGARCH64: BuildConfig(
-            name=Build.BINARY_LOONGARCH64,
-            compiler="clang-18-loongarch64",
-            package_type="binary",
-            static_binary_name="loongarch64",
-        ),
+        # disabled because s390x refused to build in the migration to OpenSSL
+        # Build.BINARY_S390X: BuildConfig(
+        #     name=Build.BINARY_S390X,
+        #     compiler="clang-17-s390x",
+        #     package_type="binary",
+        #     static_binary_name="s390x",
+        # ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
-            compiler="clang-18",
+            compiler="clang-17",
             package_type="fuzzers",
             job_config=fuzzer_build_job_config,
         ),
@@ -1048,7 +1055,6 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
-                Build.BINARY_RELEASE,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -1061,11 +1067,11 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_DARWIN_AARCH64,
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
-                Build.BINARY_S390X,
-                Build.BINARY_LOONGARCH64,
+                # Build.BINARY_S390X, # disabled because s390x refused to build in the migration to OpenSSL
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
+                Build.BINARY_RELEASE,
                 Build.FUZZERS,
             ]
         ),
@@ -1092,7 +1098,6 @@ CI_CONFIG = CIConfig(
                     exclude_files=[".md"],
                     docker=["clickhouse/fasttest"],
                 ),
-                timeout=2400,
             ),
         ),
         JobNames.STYLE_CHECK: TestConfig(
@@ -1105,9 +1110,7 @@ CI_CONFIG = CIConfig(
             "",
             # we run this check by label - no digest required
             job_config=JobConfig(
-                run_by_label="pr-bugfix",
-                run_command="bugfix_validate_check.py",
-                timeout=900,
+                run_by_label="pr-bugfix", run_command="bugfix_validate_check.py"
             ),
         ),
     },
@@ -1164,49 +1167,49 @@ CI_CONFIG = CIConfig(
         # End stateful tests for parallel replicas
         JobNames.STATELESS_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
-            job_config=JobConfig(num_batches=5, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_MSAN: TestConfig(
             Build.PACKAGE_MSAN,
-            job_config=JobConfig(num_batches=6, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_UBSAN: TestConfig(
             Build.PACKAGE_UBSAN,
-            job_config=JobConfig(num_batches=2, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=2, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
-            job_config=JobConfig(num_batches=5, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**stateless_test_common_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         JobNames.STATELESS_TEST_RELEASE_COVERAGE: TestConfig(
             Build.PACKAGE_RELEASE_COVERAGE,
-            job_config=JobConfig(num_batches=6, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=JobConfig(**stateless_test_common_params)  # type: ignore
+            Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=4, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
-            job_config=JobConfig(num_batches=6, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **stateless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
-            job_config=JobConfig(num_batches=5, **stateless_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STRESS_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
@@ -1227,10 +1230,7 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
-        ),
-        JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
@@ -1255,7 +1255,8 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
-            job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
+            # add [run_by_label="test arm"] to not run in regular pr workflow by default
+            job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
@@ -1309,7 +1310,7 @@ CI_CONFIG = CIConfig(
         JobNames.STATELESS_TEST_FLAKY_ASAN: TestConfig(
             # replace to non-default
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(pr_only=True, **{**stateless_test_common_params, "timeout": 3600}),  # type: ignore
+            job_config=JobConfig(pr_only=True, **{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
         JobNames.JEPSEN_KEEPER: TestConfig(
             Build.BINARY_RELEASE,
@@ -1341,10 +1342,10 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_RELEASE, job_config=sqllogic_test_params
         ),
         JobNames.SQLTEST: TestConfig(Build.PACKAGE_RELEASE, job_config=sql_test_params),
-        JobNames.CLICKBENCH_TEST: TestConfig(
+        JobNames.CLCIKBENCH_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
-        JobNames.CLICKBENCH_TEST_ARM: TestConfig(
+        JobNames.CLCIKBENCH_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
         JobNames.LIBFUZZER_TEST: TestConfig(
@@ -1352,7 +1353,7 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(
                 run_by_label=CILabels.libFuzzer,
                 timeout=10800,
-                run_command='libfuzzer_test_check.py "$CHECK_NAME"',
+                run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
             ),
         ),  # type: ignore
     },
@@ -1360,13 +1361,25 @@ CI_CONFIG = CIConfig(
 CI_CONFIG.validate()
 
 
-def is_required(check_name: str) -> bool:
-    """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
-    if check_name in REQUIRED_CHECKS:
-        return True
-    if batch := BATCH_REGEXP.search(check_name):
-        return check_name[: batch.start()] in REQUIRED_CHECKS
-    return False
+# checks required by Mergeable Check
+REQUIRED_CHECKS = [
+    "PR Check",
+    StatusNames.SYNC,
+    JobNames.BUILD_CHECK,
+    JobNames.BUILD_CHECK_SPECIAL,
+    JobNames.DOCS_CHECK,
+    JobNames.FAST_TEST,
+    JobNames.STATEFUL_TEST_RELEASE,
+    JobNames.STATELESS_TEST_RELEASE,
+    JobNames.STYLE_CHECK,
+    JobNames.UNIT_TEST_ASAN,
+    JobNames.UNIT_TEST_MSAN,
+    JobNames.UNIT_TEST,
+    JobNames.UNIT_TEST_TSAN,
+    JobNames.UNIT_TEST_UBSAN,
+    JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+    JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
+]
 
 
 @dataclass
@@ -1380,11 +1393,6 @@ class CheckDescription:
 
 
 CHECK_DESCRIPTIONS = [
-    CheckDescription(
-        StatusNames.SYNC,
-        "If it fails, ask a maintainer for help",
-        lambda x: x == StatusNames.SYNC,
-    ),
     CheckDescription(
         "AST fuzzer",
         "Runs randomly generated queries to catch program errors. "
@@ -1451,7 +1459,7 @@ CHECK_DESCRIPTIONS = [
         "Checks if new added or modified tests are flaky by running them repeatedly, "
         "in parallel, with more randomization. Functional tests are run 100 times "
         "with address sanitizer, and additional randomization of thread scheduling. "
-        "Integration tests are run up to 10 times. If at least once a new test has "
+        "Integrational tests are run up to 10 times. If at least once a new test has "
         "failed, or was too long, this check will be red. We don't allow flaky tests, "
         'read <a href="https://clickhouse.com/blog/decorating-a-christmas-tree-with-'
         'the-help-of-flaky-tests/">the doc</a>',
@@ -1541,7 +1549,7 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(
-        "Fallback for unknown",
+        "Falback for unknown",
         "There's no description for the check yet, please add it to "
         "tests/ci/ci_config.py:CHECK_DESCRIPTIONS",
         lambda x: True,

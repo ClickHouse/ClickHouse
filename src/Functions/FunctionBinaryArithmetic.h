@@ -236,12 +236,7 @@ namespace impl_
   * Etc.
   */
 
-enum class OpCase : uint8_t
-{
-    Vector,
-    LeftConstant,
-    RightConstant
-};
+enum class OpCase { Vector, LeftConstant, RightConstant };
 
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
@@ -284,7 +279,7 @@ struct BinaryOperation
 
 private:
     template <OpCase op_case>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
         if constexpr (op_case == OpCase::Vector)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
@@ -432,7 +427,7 @@ template <typename Op>
 struct FixedStringReduceOperationImpl
 {
     template <OpCase op_case>
-    static void process(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
+    static void inline process(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt16 * __restrict result, size_t size, size_t N)
     {
         if constexpr (op_case == OpCase::Vector)
             vectorVector(a, b, result, size, N);
@@ -503,7 +498,7 @@ struct StringReduceOperationImpl
         }
     }
 
-    static UInt64 constConst(std::string_view a, std::string_view b)
+    static inline UInt64 constConst(std::string_view a, std::string_view b)
     {
         return process(
             reinterpret_cast<const UInt8 *>(a.data()),
@@ -643,7 +638,7 @@ public:
 
 private:
     template <OpCase op_case, typename ApplyFunc>
-    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
+    static inline void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
     {
         if (right_nullmap)
         {
@@ -1772,8 +1767,8 @@ public:
         {
             if (const auto * col_right_const = checkAndGetColumnConst<ColumnFixedString>(col_right_raw))
             {
-                const auto * col_left = &checkAndGetColumn<ColumnFixedString>(col_left_const->getDataColumn());
-                const auto * col_right = &checkAndGetColumn<ColumnFixedString>(col_right_const->getDataColumn());
+                const auto * col_left = checkAndGetColumn<ColumnFixedString>(col_left_const->getDataColumn());
+                const auto * col_right = checkAndGetColumn<ColumnFixedString>(col_right_const->getDataColumn());
 
                 if (col_left->getN() != col_right->getN())
                     return nullptr;
@@ -1810,11 +1805,11 @@ public:
 
         const auto * col_left = is_left_column_const
                         ? checkAndGetColumn<ColumnFixedString>(
-                            &checkAndGetColumnConst<ColumnFixedString>(col_left_raw)->getDataColumn())
+                            checkAndGetColumnConst<ColumnFixedString>(col_left_raw)->getDataColumn())
                         : checkAndGetColumn<ColumnFixedString>(col_left_raw);
         const auto * col_right = is_right_column_const
                         ? checkAndGetColumn<ColumnFixedString>(
-                            &checkAndGetColumnConst<ColumnFixedString>(col_right_raw)->getDataColumn())
+                            checkAndGetColumnConst<ColumnFixedString>(col_right_raw)->getDataColumn())
                         : checkAndGetColumn<ColumnFixedString>(col_right_raw);
 
         if (col_left && col_right)
@@ -1886,8 +1881,8 @@ public:
         {
             if (const auto * col_right_const = checkAndGetColumnConst<ColumnString>(col_right_raw))
             {
-                const auto * col_left = &checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
-                const auto * col_right = &checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
+                const auto * col_left = checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
+                const auto * col_right = checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
 
                 std::string_view a = col_left->getDataAt(0).toView();
                 std::string_view b = col_right->getDataAt(0).toView();
@@ -1902,10 +1897,10 @@ public:
         const bool is_right_column_const = checkAndGetColumnConst<ColumnString>(col_right_raw) != nullptr;
 
         const auto * col_left = is_left_column_const
-            ? &checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_left_raw)->getDataColumn())
+            ? checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_left_raw)->getDataColumn())
             : checkAndGetColumn<ColumnString>(col_left_raw);
         const auto * col_right = is_right_column_const
-            ? &checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_right_raw)->getDataColumn())
+            ? checkAndGetColumn<ColumnString>(checkAndGetColumnConst<ColumnString>(col_right_raw)->getDataColumn())
             : checkAndGetColumn<ColumnString>(col_right_raw);
 
         if (col_left && col_right)
@@ -1953,7 +1948,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         const ColumnConst * const col_left_const = checkAndGetColumnConst<LeftColumnType>(col_left_raw);
 
-        const auto * col_left = col_left_const ? &checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
+        const auto * col_left = col_left_const ? checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
                                                : checkAndGetColumn<LeftColumnType>(col_left_raw);
 
         if (!col_left)
@@ -2236,7 +2231,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
-                                                              : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
+                                                              : checkAndGetColumn<ColumnNullable>(*right_argument.column);
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);

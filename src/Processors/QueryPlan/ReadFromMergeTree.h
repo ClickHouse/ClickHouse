@@ -60,7 +60,8 @@ struct UsefulSkipIndexes
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-    enum class IndexType : uint8_t
+
+    enum class IndexType
     {
         None,
         MinMax,
@@ -166,8 +167,6 @@ public:
     AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
-
-    AnalysisResultPtr selectRangesToRead() const;
 
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 

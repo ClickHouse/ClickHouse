@@ -115,15 +115,15 @@ namespace
         {
             UNKNOWN = -2,
             GROUP = -1,
-            GLOBAL = 0,
-            DATABASE = 1,
-            TABLE = 2,
+            GLOBAL,
+            DATABASE,
+            TABLE,
             VIEW = TABLE,
-            COLUMN = 3,
-            DICTIONARY = 4,
-            NAMED_COLLECTION = 5,
-            USER_NAME = 6,
-            TABLE_ENGINE = 7,
+            COLUMN,
+            DICTIONARY,
+            NAMED_COLLECTION,
+            USER_NAME,
+            TABLE_ENGINE,
         };
 
         struct Node;

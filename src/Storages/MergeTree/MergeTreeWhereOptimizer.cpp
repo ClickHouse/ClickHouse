@@ -261,9 +261,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         cond.columns_size = getColumnsSize(cond.table_columns);
 
         cond.viable =
-            !has_invalid_column
+            !has_invalid_column &&
             /// Condition depend on some column. Constant expressions are not moved.
-            && !cond.table_columns.empty()
+            !cond.table_columns.empty()
             && !cannotBeMoved(node, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
@@ -273,15 +273,17 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Do not move conditions involving all queried columns.
             && cond.table_columns.size() < queried_columns.size();
 
+        if (cond.viable)
+            cond.good = isConditionGood(node, table_columns);
+
         if (where_optimizer_context.use_statistic)
         {
             cond.good = cond.viable;
+
             cond.selectivity = estimator.estimateSelectivity(node);
-            LOG_TEST(log, "Condition {} has selectivity {}", node.getColumnName(), cond.selectivity);
-        }
-        else if (cond.viable)
-        {
-            cond.good = isConditionGood(node, table_columns);
+
+            if (node.getASTNode() != nullptr)
+                LOG_TEST(log, "Condition {} has selectivity {}", node.getASTNode()->dumpTree(), cond.selectivity);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
@@ -361,7 +363,6 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
-        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
         prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
@@ -370,14 +371,9 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
         {
             if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
-            {
-                LOG_TRACE(log, "Condition {} moved to PREWHERE", jt->node.getColumnName());
                 prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
-            }
             else
-            {
                 ++jt;
-            }
         }
     };
 

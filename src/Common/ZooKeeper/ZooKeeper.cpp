@@ -19,7 +19,7 @@
 #include <Core/ServerUUID.h>
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/DNSResolver.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/NetException.h>

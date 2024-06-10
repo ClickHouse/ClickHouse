@@ -110,11 +110,14 @@ void WriteBufferToFileSegment::nextImpl()
 
 std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
-    /** Finalize here and we don't need to finalize in the destructor,
-      * because in case destructor called without `getReadBufferImpl` called, data won't be read.
-      */
     finalize();
     return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
+}
+
+WriteBufferToFileSegment::~WriteBufferToFileSegment()
+{
+    /// To be sure that file exists before destructor of segment_holder is called
+    WriteBufferFromFileDecorator::finalize();
 }
 
 }

@@ -42,7 +42,7 @@ public:
     bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
-    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
+    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }

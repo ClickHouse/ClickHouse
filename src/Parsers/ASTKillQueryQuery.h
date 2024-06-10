@@ -9,7 +9,7 @@ namespace DB
 class ASTKillQueryQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class Type : uint8_t
+    enum class Type
     {
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION

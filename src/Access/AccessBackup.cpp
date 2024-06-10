@@ -93,6 +93,8 @@ namespace
                         break;
                     }
 
+                    size_t id_endpos = line.find('\t');
+                    String id_as_string = line.substr(0, id_endpos);
                     UUID id = parse<UUID>(line);
                     line.clear();
 

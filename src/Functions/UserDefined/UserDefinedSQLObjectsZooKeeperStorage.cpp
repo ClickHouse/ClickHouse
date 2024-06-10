@@ -35,6 +35,7 @@ namespace
             case UserDefinedSQLObjectType::Function:
                 return "function_";
         }
+        UNREACHABLE();
     }
 
     constexpr std::string_view sql_extension = ".sql";
@@ -297,6 +298,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     };
 
     Coordination::Stat entity_stat;
+    String object_create_query;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 

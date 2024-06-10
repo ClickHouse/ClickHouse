@@ -1100,11 +1100,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == FULL_TEXT_INDEX_NAME)
+        if (index.type == INVERTED_INDEX_NAME)
             return true;
     }
     return false;
@@ -1224,7 +1224,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
             if (has_column)
             {
-                const auto & column_from_table = columns.get(command.column_name);
+                auto column_from_table = columns.get(command.column_name);
                 if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
@@ -1288,7 +1288,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
             /// So we don't allow to do it for now.
-            if (command.data_type->hasDynamicSubcolumnsDeprecated())
+            if (command.data_type->hasDynamicSubcolumns())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
             if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
@@ -1366,8 +1366,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_has_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-                bool old_type_has_object = old_data_type->hasDynamicSubcolumnsDeprecated();
+                bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
+                bool old_type_has_object = old_data_type->hasDynamicSubcolumns();
 
                 if (new_type_has_object || old_type_has_object)
                     throw Exception(
@@ -1566,7 +1566,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
-                const auto & column_in_table = all_columns.get(column_name);
+                auto column_in_table = all_columns.get(column_name);
                 /// Column doesn't have a default, nothing to check
                 if (!column_in_table.default_desc.expression)
                     continue;
