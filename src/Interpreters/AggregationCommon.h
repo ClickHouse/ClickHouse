@@ -90,10 +90,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             /// Note: here we violate strict aliasing.
             /// It should be ok as log as we do not reffer to any value from `out` before filling.
             const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
-            size_t offset_to = offset;
-            if constexpr (std::endian::native == std::endian::big)
-                offset_to = sizeof(Key) - sizeof(T) - offset;
-            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset_to);
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
         }
