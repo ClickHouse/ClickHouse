@@ -73,9 +73,10 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
+static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
-    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
+    UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
+    return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -369,13 +370,23 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 return;
             }
 
-            String host_id = getHostID(getContext(), db_uuid);
-            if (is_create_query || replica_host_id != host_id)
+            String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+            String host_id_default = getHostID(getContext(), db_uuid, false);
+
+            if (is_create_query || (replica_host_id != host_id && replica_host_id != host_id_default))
             {
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+            }
+
+            /// Before 24.6 we always created host_id with unsecure port, even if cluster_auth_info.cluster_secure_connection was true.
+            /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
+            if (host_id != host_id_default && replica_host_id == host_id_default)
+            {
+                current_zookeeper->set(replica_path, host_id, -1);
+                createEmptyLogEntry(current_zookeeper);
             }
 
             /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
@@ -504,7 +515,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
                         "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(getContext(), db_uuid);
+    auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
 
     for (int attempts = 10; attempts > 0; --attempts)
     {
