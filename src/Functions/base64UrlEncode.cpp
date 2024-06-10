@@ -7,7 +7,7 @@ namespace DB
 {
 REGISTER_FUNCTION(Base64UrlEncode)
 {
-    factory.registerFunction<FunctionBase64Conversion<Base64UrlEncode>>();
+    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::Url>>>();
 }
 }
 

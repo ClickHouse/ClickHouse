@@ -5,9 +5,9 @@
 
 namespace DB
 {
-REGISTER_FUNCTION(Base64UrlDecode)
+REGISTER_FUNCTION(TryBase64UrlDecode)
 {
-    factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::Url>>>();
+    factory.registerFunction<FunctionBase64Conversion<TryBase64Decode<Base64Variant::Url>>>();
 }
 }
 

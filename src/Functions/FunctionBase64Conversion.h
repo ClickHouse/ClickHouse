@@ -22,9 +22,19 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+enum class Base64Variant : uint8_t
+{
+    Normal,
+    Url
+};
+
+extern std::vector<UInt8> preprocessBase64Url(const std::span<const UInt8> src);
+extern size_t postprocessBase64Url(UInt8 * dst, size_t out_len);
+
+template <Base64Variant variant>
 struct Base64Encode
 {
-    static constexpr auto name = "base64Encode";
+    static constexpr auto name = (variant == Base64Variant::Normal) ? "base64Encode" : "base64UrlEncode";
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
@@ -35,13 +45,18 @@ struct Base64Encode
     {
         size_t outlen = 0;
         base64_encode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
-        return outlen;
+
+        if constexpr (variant == Base64Variant::Url)
+            return postprocessBase64Url(dst, outlen);
+        else
+            return outlen;
     }
 };
 
+template <Base64Variant variant>
 struct Base64Decode
 {
-    static constexpr auto name = "base64Decode";
+    static constexpr auto name = (variant == Base64Variant::Normal) ? "base64Decode" : "base64UrlDecode";
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
@@ -50,8 +65,17 @@ struct Base64Decode
 
     static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
     {
+        int rc;
         size_t outlen = 0;
-        int rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        if constexpr (variant == Base64Variant::Url)
+        {
+            auto src_padded = preprocessBase64Url(src);
+            rc = base64_decode(reinterpret_cast<const char *>(src_padded.data()), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        }
+        else
+        {
+            rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        }
 
         if (rc != 1)
             throw Exception(
@@ -64,19 +88,29 @@ struct Base64Decode
     }
 };
 
+template <Base64Variant variant>
 struct TryBase64Decode
 {
-    static constexpr auto name = "tryBase64Decode";
+    static constexpr auto name = (variant == Base64Variant::Normal) ? "tryBase64Decode" : "tryBase64UrlDecode";
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
-        return Base64Decode::getBufferSize(string_length, string_count);
+        return Base64Decode<variant>::getBufferSize(string_length, string_count);
     }
 
     static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
     {
+        int rc;
         size_t outlen = 0;
-        int rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        if constexpr (variant == Base64Variant::Url)
+        {
+            auto src_padded = preprocessBase64Url(src);
+            rc = base64_decode(reinterpret_cast<const char *>(src_padded.data()), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        }
+        else
+        {
+            rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        }
 
         if (rc != 1)
             outlen = 0;
@@ -84,85 +118,6 @@ struct TryBase64Decode
         return outlen;
     }
 };
-
-struct Base64UrlEncode : Base64Encode
-{
-    static constexpr auto name = "base64UrlEncode";
-
-    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
-    {
-        auto out_len = Base64Encode::perform(src, dst);
-
-        // Do postprocessing as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
-        for (size_t i = 0; i < out_len; ++i)
-        {
-            switch (dst[i])
-            {
-            case '/':
-                dst[i] = '_';
-                break;
-            case '+':
-                dst[i] = '-';
-                break;
-            case '=': // stop when padding is detected
-                return i;
-            default:
-                break;
-            }
-        }
-        return out_len;
-    }
-};
-
-struct Base64UrlDecode : Base64Decode
-{
-    static constexpr auto name = "base64UrlDecode";
-
-    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
-    {
-        std::vector<UInt8> tmp{};
-        // insert padding to please alcomp library
-        auto size = src.size();
-        auto remainder = size % 4;
-        switch (remainder)
-        {
-            case 0:
-                break; // no padding needed
-            case 1:
-                break; // invalid input, let it be detected by alcomp library
-            case 2:
-                size += 2; // two bytes padding
-                break;
-            default: // remainder == 3
-                ++size; // one byte padding
-        }
-        tmp.resize(size);
-
-        size_t i = 0;
-        for (; i < src.size(); ++i)
-        {
-            switch (src[i])
-            {
-            case '_':
-                tmp[i] = '/';
-                break;
-            case '-':
-                tmp[i] = '+';
-                break;
-            default:
-                tmp[i] = src[i];
-                break;
-            }
-        }
-        if (remainder == 2 || remainder == 3)
-            tmp[i++] = '=';
-        if (remainder == 2)
-            tmp[i++] = '=';
-
-        return Base64Decode::perform(tmp, dst);
-    }
-};
-
 
 template <typename Func>
 class FunctionBase64Conversion : public IFunction

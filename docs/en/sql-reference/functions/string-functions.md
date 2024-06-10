@@ -1158,6 +1158,10 @@ Decodes a base64-encoded URL (String or FixedString) according to [RFC 4648](htt
 
 Like `base64Decode` but returns an empty string in case of error.
 
+## tryBase64UrlDecode
+
+Like `base64UrlDecode` but returns an empty string in case of error.
+
 **Syntax**
 
 ```sql

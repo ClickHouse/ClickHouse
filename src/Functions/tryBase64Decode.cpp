@@ -7,7 +7,7 @@ namespace DB
 {
 REGISTER_FUNCTION(TryBase64Decode)
 {
-    factory.registerFunction<FunctionBase64Conversion<TryBase64Decode>>();
+    factory.registerFunction<FunctionBase64Conversion<TryBase64Decode<Base64Variant::Normal>>>();
 }
 }
 
