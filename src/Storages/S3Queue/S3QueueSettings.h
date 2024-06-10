@@ -13,7 +13,7 @@ class ASTStorage;
 #define S3QUEUE_RELATED_SETTINGS(M, ALIAS) \
     M(S3QueueMode, \
       mode, \
-      S3QueueMode::UNORDERED, \
+      S3QueueMode::ORDERED, \
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \
       0) \

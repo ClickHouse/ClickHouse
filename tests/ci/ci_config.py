@@ -53,6 +53,8 @@ class CILabels(metaclass=WithIter):
     CI_SET_SYNC = "ci_set_sync"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
+    CI_SET_NORMAL_BUILDS = "ci_set_normal_builds"
+    CI_SET_SPECIAL_BUILDS = "ci_set_special_builds"
     CI_SET_NON_REQUIRED = "ci_set_non_required"
     CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
 
@@ -593,8 +595,6 @@ class CIConfig:
                 stage_type = CIStages.BUILDS_2
         elif self.is_docs_job(job_name):
             stage_type = CIStages.TESTS_1
-        elif job_name == JobNames.BUILD_CHECK_SPECIAL:
-            stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
@@ -687,10 +687,8 @@ class CIConfig:
     def get_job_parents(self, check_name: str) -> List[str]:
         res = []
         check_name = normalize_string(check_name)
-
         for config in (
             self.build_config,
-            self.builds_report_config,
             self.test_configs,
             self.other_jobs_configs,
         ):
@@ -854,6 +852,14 @@ class CIConfig:
                     f"The requirement '{test_config}' for "
                     f"'{test_name}' is not found in builds"
                 )
+            if (
+                test_config.required_build
+                and test_config.required_build
+                not in self.builds_report_config[JobNames.BUILD_CHECK].builds
+            ):
+                errors.append(
+                    f"Test job' required build must be from [{JobNames.BUILD_CHECK}] list"
+                )
 
         if errors:
             raise KeyError("config contains errors", errors)
@@ -893,6 +899,40 @@ CI_CONFIG = CIConfig(
             ]
         ),
         CILabels.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
+        CILabels.CI_SET_NORMAL_BUILDS: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.BUILD_CHECK,
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_AARCH64,
+                Build.PACKAGE_ASAN,
+                Build.PACKAGE_UBSAN,
+                Build.PACKAGE_TSAN,
+                Build.PACKAGE_MSAN,
+                Build.PACKAGE_DEBUG,
+                Build.BINARY_RELEASE,
+                Build.PACKAGE_RELEASE_COVERAGE,
+                Build.FUZZERS,
+            ]
+        ),
+        CILabels.CI_SET_SPECIAL_BUILDS: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.BUILD_CHECK_SPECIAL,
+                Build.BINARY_TIDY,
+                Build.BINARY_DARWIN,
+                Build.BINARY_AARCH64,
+                Build.BINARY_AARCH64_V80COMPAT,
+                Build.BINARY_FREEBSD,
+                Build.BINARY_DARWIN_AARCH64,
+                Build.BINARY_PPC64LE,
+                Build.BINARY_RISCV64,
+                Build.BINARY_S390X,
+                Build.BINARY_LOONGARCH64,
+                Build.BINARY_AMD64_COMPAT,
+                Build.BINARY_AMD64_MUSL,
+            ]
+        ),
         CILabels.CI_SET_NON_REQUIRED: LabelConfig(
             run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
         ),
@@ -1068,6 +1108,8 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
                 Build.BINARY_RELEASE,
+                Build.PACKAGE_RELEASE_COVERAGE,
+                Build.FUZZERS,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -1084,8 +1126,6 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_LOONGARCH64,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
-                Build.PACKAGE_RELEASE_COVERAGE,
-                Build.FUZZERS,
             ]
         ),
     },

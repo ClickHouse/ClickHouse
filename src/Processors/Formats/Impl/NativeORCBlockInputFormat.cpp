@@ -269,7 +269,12 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
             case orc::SHORT:
             case orc::INT:
             case orc::LONG: {
-                /// May throw exception
+                /// May throw exception.
+                ///
+                /// In particular, it'll throw if we request the column as unsigned, like this:
+                ///   SELECT * FROM file('t.orc', ORC, 'x UInt8') WHERE x > 10
+                /// We have to reject this, otherwise it would miss values > 127 (because
+                /// they're treated as negative by ORC).
                 auto val = field.get<Int64>();
                 return orc::Literal(val);
             }
