@@ -381,7 +381,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
             }
 
-            /// Before 24.6 we always created host_id with unsecure port, even if cluster_auth_info.cluster_secure_connection was true.
+            /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
             /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
             if (host_id != host_id_default && replica_host_id == host_id_default)
             {
