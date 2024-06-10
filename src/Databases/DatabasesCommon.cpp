@@ -8,6 +8,7 @@
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
@@ -44,11 +45,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
                                                      " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
-    if (!has_structure && !ast_create_query.is_dictionary)
+    if (!has_structure && !ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure",
                         backQuote(ast_create_query.getTable()));
 
-    if (!ast_create_query.is_dictionary)
+    if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
