@@ -139,7 +139,8 @@ public:
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
-        ResponseCallback callback);
+        ResponseCallback callback,
+        WatchCallbackPtr watch = nullptr);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
