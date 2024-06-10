@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- incorrect number of arguments
 SELECT base64UrlEncode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT base64UrlDecode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
