@@ -264,15 +264,22 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         # Fall through, so that it shows up in output and the user can fix it.
         category = "NO CL CATEGORY"
 
-    # Filter out the PR categories that are not for changelog.
+    # Filter out documentations changelog before not-for-changelog
     if re.match(
+        r"(?i)doc",
+        category,
+    ):
+        return None
+
+    # Filter out the PR categories that are not for changelog.
+    if re.search(
         r"(?i)((non|in|not|un)[-\s]*significant)|"
         r"(not[ ]*for[ ]*changelog)|"
         r"(changelog[ ]*entry[ ]*is[ ]*not[ ]*required)",
         category,
     ):
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
-        return Description(item.number, item.user, item.html_url, item.title, category)
+        entry = item.title
 
     # Normalize bug fixes
     if re.match(
@@ -280,13 +287,6 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         category,
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
-
-    # Filter out documentations changelog
-    if re.match(
-        r"(?i)doc",
-        category,
-    ):
-        return None
 
     if backport_number != item.number:
         entry = f"Backported in #{backport_number}: {entry}"
