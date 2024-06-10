@@ -731,7 +731,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->optimize_row_order)
+    if (data.getSettings()->optimize_row_order
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if it the optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
