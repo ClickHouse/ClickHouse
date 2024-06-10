@@ -54,13 +54,14 @@ public:
 
     bool setProcessing();
     void setProcessed();
-    void setFailed(const std::string & exception);
+    void setFailed(const std::string & exception, bool reduce_retry_count = true);
 
     virtual void setProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) = 0;
 
     FileStatusPtr getFileStatus() { return file_status; }
+    const std::string & getPath() { return path; }
 
     struct NodeMetadata
     {

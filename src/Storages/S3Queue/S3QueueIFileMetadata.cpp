@@ -120,7 +120,14 @@ S3QueueIFileMetadata::~S3QueueIFileMetadata()
 {
     if (processing_id_version.has_value())
     {
-        file_status->onFailed("Uncaught exception");
+        if (file_status->getException().empty())
+        {
+            if (std::current_exception())
+                file_status->onFailed(getCurrentExceptionMessage(true));
+            else
+                file_status->onFailed("Unprocessed exception");
+        }
+
         LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
         try
         {
@@ -227,7 +234,16 @@ void S3QueueIFileMetadata::setProcessed()
 
     ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
     file_status->onProcessed();
-    setProcessedImpl();
+
+    try
+    {
+        setProcessedImpl();
+    }
+    catch (...)
+    {
+        file_status->onFailed(getCurrentExceptionMessage(true));
+        throw;
+    }
 
     processing_id.reset();
     processing_id_version.reset();
@@ -235,7 +251,7 @@ void S3QueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
-void S3QueueIFileMetadata::setFailed(const std::string & exception)
+void S3QueueIFileMetadata::setFailed(const std::string & exception, bool reduce_retry_count)
 {
     LOG_TRACE(log, "Setting file {} as failed (exception: {}, path: {})", path, exception, failed_node_path);
 
@@ -243,10 +259,25 @@ void S3QueueIFileMetadata::setFailed(const std::string & exception)
     file_status->onFailed(exception);
     node_metadata.last_exception = exception;
 
-    if (max_loading_retries == 0)
-        setFailedNonRetriable();
-    else
-        setFailedRetriable();
+    if (reduce_retry_count)
+    {
+        try
+        {
+            if (max_loading_retries == 0)
+                setFailedNonRetriable();
+            else
+                setFailedRetriable();
+        }
+        catch (...)
+        {
+            auto full_exception = fmt::format(
+                "First exception: {}, exception while setting file as failed: {}",
+                exception, getCurrentExceptionMessage(true));
+
+            file_status->onFailed(full_exception);
+            throw;
+        }
+    }
 
     processing_id.reset();
     processing_id_version.reset();
@@ -296,6 +327,7 @@ void S3QueueIFileMetadata::setFailedRetriable()
     auto zk_client = getZooKeeper();
 
     /// Extract the number of already done retries from node_hash.retriable node if it exists.
+    Coordination::Requests requests;
     Coordination::Stat stat;
     std::string res;
     if (zk_client->tryGet(retrieable_failed_node_path, res, &stat))
@@ -308,7 +340,6 @@ void S3QueueIFileMetadata::setFailedRetriable()
     LOG_TRACE(log, "File `{}` failed to process, try {}/{}",
               path, node_metadata.retries, max_loading_retries);
 
-    Coordination::Requests requests;
     if (node_metadata.retries >= max_loading_retries)
     {
         /// File is no longer retriable.

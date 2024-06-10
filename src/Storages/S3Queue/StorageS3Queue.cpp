@@ -26,6 +26,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -47,6 +48,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int TOO_MANY_PARTS;
 }
 
 namespace
@@ -94,6 +97,11 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `s3queue_cleanup_interval_min_ms` ({}) must be less or equal to `s3queue_cleanup_interval_max_ms` ({})",
                             s3queue_settings.s3queue_cleanup_interval_min_ms, s3queue_settings.s3queue_cleanup_interval_max_ms);
+        }
+
+        if (!s3queue_settings.s3queue_processing_threads_num.changed)
+        {
+            s3queue_settings.s3queue_processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
         }
     }
 }
@@ -456,11 +464,16 @@ bool StorageS3Queue::streamToViews()
     auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context));
 
     Pipes pipes;
+    std::vector<std::shared_ptr<StorageS3QueueSource>> sources;
+
     pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
+    sources.reserve(s3queue_settings->s3queue_processing_threads_num);
+
     for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
     {
         auto source = createSource(i, read_from_format_info, file_iterator, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
-        pipes.emplace_back(std::move(source));
+        pipes.emplace_back(source);
+        sources.emplace_back(source);
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -471,8 +484,32 @@ bool StorageS3Queue::streamToViews()
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    CompletedPipelineExecutor executor(block_io.pipeline);
-    executor.execute();
+    try
+    {
+        CompletedPipelineExecutor executor(block_io.pipeline);
+        executor.execute();
+    }
+    catch (const Exception & e)
+    {
+        bool always_retriable_exception = e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+            || e.code() == ErrorCodes::TOO_MANY_PARTS;
+
+        /// May be we should just split errors into retriable and non-retriable,
+        /// and always retry retriable for any number of tried needed? (so deprecating s3queue_loading_retries setting)
+
+        for (auto & source : sources)
+            source->setFailed(getCurrentExceptionMessage(true), /* reduce_retry_count */!always_retriable_exception);
+        throw;
+    }
+    catch (...)
+    {
+        for (auto & source : sources)
+            source->setFailed(getCurrentExceptionMessage(true), /* reduce_retry_count */true);
+        throw;
+    }
+
+    for (auto & source : sources)
+        source->setProcessed();
 
     return rows > 0;
 }

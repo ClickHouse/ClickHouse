@@ -19,7 +19,7 @@ class ASTStorage;
       0) \
     M(S3QueueAction, after_processing, S3QueueAction::KEEP, "Delete or keep file in S3 after successful processing", 0) \
     M(String, keeper_path, "", "Zookeeper node path", 0) \
-    M(UInt32, s3queue_loading_retries, 0, "Retry loading up to specified number of times", 0) \
+    M(UInt32, s3queue_loading_retries, 10, "Retry loading up to specified number of times", 0) \
     M(UInt32, s3queue_processing_threads_num, 1, "Number of processing threads", 0) \
     M(UInt32, s3queue_enable_logging_to_s3queue_log, 1, "Enable logging to system table system.s3queue_log", 0) \
     M(String, s3queue_last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \

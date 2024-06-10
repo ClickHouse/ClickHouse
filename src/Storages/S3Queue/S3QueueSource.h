@@ -35,9 +35,9 @@ public:
     {
         S3QueueObjectInfo(
             const ObjectInfo & object_info,
-            Metadata::FileMetadataPtr processing_holder_);
+            Metadata::FileMetadataPtr file_metadata_);
 
-        Metadata::FileMetadataPtr processing_holder;
+        Metadata::FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -102,6 +102,10 @@ public:
 
     Chunk generate() override;
 
+    void setProcessed();
+
+    void setFailed(const std::string & exception, bool reduce_retry_count);
+
 private:
     const String name;
     const size_t processor_id;
@@ -116,6 +120,8 @@ private:
 
     RemoveFileFunc remove_file_func;
     LoggerPtr log;
+
+    std::vector<Metadata::FileMetadataPtr> started_files;
 
     ReaderHolder reader;
     std::future<ReaderHolder> reader_future;

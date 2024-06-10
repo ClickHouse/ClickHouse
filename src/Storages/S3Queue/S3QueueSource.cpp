@@ -33,9 +33,9 @@ namespace ErrorCodes
 
 StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
         const ObjectInfo & object_info,
-        Metadata::FileMetadataPtr processing_holder_)
+        Metadata::FileMetadataPtr file_metadata_)
     : ObjectInfo(object_info.relative_path, object_info.metadata)
-    , processing_holder(processing_holder_)
+    , file_metadata(file_metadata_)
 {
 }
 
@@ -346,7 +346,7 @@ Chunk StorageS3QueueSource::generate()
             break;
 
         const auto * object_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
-        auto file_metadata = object_info->processing_holder;
+        auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
 
         if (isCancelled())
@@ -409,6 +409,8 @@ Chunk StorageS3QueueSource::generate()
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
         /// FIXME:  if files are compressed, profile counters update does not work fully (s3 related counters are not saved). Why?
 
+        started_files.push_back(file_metadata);
+
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueuePullMicroseconds);
@@ -430,15 +432,9 @@ Chunk StorageS3QueueSource::generate()
         {
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
-
-            file_metadata->setFailed(message);
-
             appendLogElement(path, *file_status, processed_rows_from_file, false);
             throw;
         }
-
-        file_metadata->setProcessed();
-        applyActionAfterProcessing(reader.getObjectInfo().relative_path);
 
         appendLogElement(path, *file_status, processed_rows_from_file, true);
         file_status.reset();
@@ -465,6 +461,23 @@ Chunk StorageS3QueueSource::generate()
     }
 
     return {};
+}
+
+void StorageS3QueueSource::setProcessed()
+{
+    for (const auto & file_metadata : started_files)
+    {
+        file_metadata->setProcessed();
+        applyActionAfterProcessing(file_metadata->getPath());
+    }
+}
+
+void StorageS3QueueSource::setFailed(const std::string & exception, bool reduce_retry_count)
+{
+    for (const auto & file_metadata : started_files)
+    {
+        file_metadata->setFailed(exception, reduce_retry_count);
+    }
 }
 
 void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
