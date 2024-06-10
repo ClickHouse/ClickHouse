@@ -12,7 +12,7 @@
 #    include <Common/MemorySanitizer.h>
 
 #    include <cstddef>
-#    include <span>
+#    include <string_view>
 
 namespace DB
 {
@@ -28,13 +28,15 @@ enum class Base64Variant : uint8_t
     Url
 };
 
-inline std::string preprocessBase64Url(std::span<const UInt8> src)
+inline std::string preprocessBase64Url(std::string_view src)
 {
     std::string padded_src;
+    padded_src.reserve(src.size() + 3);
+
     // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
-    for (size_t i = 0; i < src.size(); ++i)
+    for (auto s : src)
     {
-        switch (src[i])
+        switch (s)
         {
         case '_':
             padded_src += '/';
@@ -43,12 +45,12 @@ inline std::string preprocessBase64Url(std::span<const UInt8> src)
             padded_src += '+';
             break;
         default:
-            padded_src += src[i];
+            padded_src += s;
             break;
         }
     }
 
-    // insert padding to please aklomp library
+    /// Insert padding to please aklomp library
     size_t remainder = src.size() % 4;
     switch (remainder)
     {
@@ -100,10 +102,10 @@ struct Base64Encode
         return ((string_length - string_count) / 3 + string_count) * 4 + string_count;
     }
 
-    static size_t perform(std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(std::string_view src, UInt8 * dst)
     {
         size_t outlen = 0;
-        base64_encode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        base64_encode(src.data(), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
 
         if constexpr (variant == Base64Variant::Url)
             outlen = postprocessBase64Url(dst, outlen);
@@ -122,7 +124,7 @@ struct Base64Decode
         return ((string_length - string_count) / 4 + string_count) * 3 + string_count;
     }
 
-    static size_t perform(std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(std::string_view src, UInt8 * dst)
     {
         int rc;
         size_t outlen = 0;
@@ -133,7 +135,7 @@ struct Base64Decode
         }
         else
         {
-            rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+            rc = base64_decode(src.data(), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
         }
 
         if (rc != 1)
@@ -157,7 +159,7 @@ struct TryBase64Decode
         return Base64Decode<variant>::getBufferSize(string_length, string_count);
     }
 
-    static size_t perform(std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(std::string_view src, UInt8 * dst)
     {
         int rc;
         size_t outlen = 0;
@@ -168,7 +170,7 @@ struct TryBase64Decode
         }
         else
         {
-            rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+            rc = base64_decode(src.data(), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
         }
 
         if (rc != 1)
@@ -232,7 +234,7 @@ private:
 
         auto * dst = dst_chars.data();
         auto * dst_pos = dst;
-        const auto * src = src_chars.data();
+        const auto * src = reinterpret_cast<const char *>(src_chars.data());
 
         size_t src_offset_prev = 0;
         for (size_t row = 0; row < src_row_count; ++row)
@@ -272,7 +274,7 @@ private:
 
         auto * dst = dst_chars.data();
         auto * dst_pos = dst;
-        const auto * src = src_chars.data();
+        const auto * src = reinterpret_cast<const char *>(src_chars.data());
 
         for (size_t row = 0; row < src_row_count; ++row)
         {
