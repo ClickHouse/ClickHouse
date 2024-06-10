@@ -500,12 +500,14 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
 
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-            settings.parallel_replicas_count,
-            settings.parallel_replica_offset,
-            std::move(custom_key_ast),
-            settings.parallel_replicas_custom_key_filter_type,
-            storage->getInMemoryMetadataPtr()->columns,
-            query_context);
+        settings.parallel_replicas_count,
+        settings.parallel_replica_offset,
+        std::move(custom_key_ast),
+        {settings.parallel_replicas_custom_key_filter_type,
+         settings.parallel_replicas_custom_key_range_lower,
+         settings.parallel_replicas_custom_key_range_upper},
+        storage->getInMemoryMetadataPtr()->columns,
+        query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }

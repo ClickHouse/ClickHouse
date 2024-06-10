@@ -15,6 +15,6 @@ log = None
 with client(name="client1>", log=log) as client1:
     client1.expect(prompt)
     client1.send("SELECT number FROM numbers(1000) FORMAT Null")
-    client1.expect("Progress: 1\.00 thousand rows, 8\.00 KB .*" + end_of_block)
-    client1.expect("0 rows in set. Elapsed: [\\w]{1}\.[\\w]{3} sec.")
+    client1.expect("Progress: 1\\.00 thousand rows, 8\\.00 KB .*" + end_of_block)
+    client1.expect("0 rows in set. Elapsed: [\\w]{1}\\.[\\w]{3} sec.")
     client1.expect("Peak memory usage: .*B" + end_of_block)
