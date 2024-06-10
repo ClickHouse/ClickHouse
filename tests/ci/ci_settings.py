@@ -103,8 +103,6 @@ class CiSettings:
             elif match == CILabels.UPLOAD_ALL_ARTIFACTS:
                 res.upload_all = True
                 print("NOTE: All binary artifacts will be uploaded")
-            elif match == CILabels.DO_NOT_TEST_LABEL:
-                res.do_not_test = True
             elif match == CILabels.NO_MERGE_COMMIT:
                 res.no_merge_commit = True
                 print("NOTE: Merge Commit will be disabled")

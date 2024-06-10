@@ -60,7 +60,6 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
 - [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
 ---
-- [ ] <!---do_not_test--> Do not test
 - [ ] <!---upload_all--> Upload binaries for special builds
 - [ ] <!---no_merge_commit--> Disable merge-commit
 - [ ] <!---no_ci_cache--> Disable CI cache
