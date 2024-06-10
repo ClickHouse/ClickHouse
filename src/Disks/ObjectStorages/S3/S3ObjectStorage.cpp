@@ -382,7 +382,6 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         {
             std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
             String keys;
-            size_t first_position = current_position;
             for (; current_position < objects.size() && current_chunk.size() < chunk_size_limit; ++current_position)
             {
                 Aws::S3::Model::ObjectIdentifier obj;
@@ -408,9 +407,9 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             {
                 const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
                 auto time_now = std::chrono::system_clock::now();
-                for (size_t i = first_position; i < current_position; ++i)
+                for (const auto & object : objects)
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
-                                               uri.bucket, objects[i].remote_path, objects[i].local_path, objects[i].bytes_size,
+                                               uri.bucket, object.remote_path, object.local_path, object.bytes_size,
                                                outcome_error, time_now);
             }
 
