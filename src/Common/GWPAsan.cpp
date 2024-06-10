@@ -57,7 +57,7 @@ static bool guarded_alloc_initialized = []
         opts.MaxSimultaneousAllocations = 1024;
 
     if (!env_options_raw || !std::string_view{env_options_raw}.contains("SampleRate"))
-        opts.SampleRate = 10000;
+        opts.SampleRate = 50000;
 
     opts.Backtrace = getBackTrace;
     GuardedAlloc.init(opts);
