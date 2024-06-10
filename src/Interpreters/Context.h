@@ -1077,6 +1077,8 @@ public:
     void initializeSystemLogs();
 
     /// Call after initialization before using trace collector.
+    void createTraceCollector();
+
     void initializeTraceCollector();
 
     /// Call after unexpected crash happen.

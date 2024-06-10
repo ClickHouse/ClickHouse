@@ -740,12 +740,18 @@ struct ContextSharedPart : boost::noncopyable
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (!trace_log)
-            return;
+        if (!trace_collector.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector needs to be first created before initialization");
+
+        trace_collector->initialize(trace_log);
+    }
+
+    void createTraceCollector()
+    {
         if (hasTraceCollector())
             return;
 
-        trace_collector.emplace(std::move(trace_log));
+        trace_collector.emplace();
     }
 
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
@@ -3889,6 +3895,11 @@ void Context::initializeSystemLogs()
         std::lock_guard lock(shared->mutex);
         shared->system_logs = std::move(system_logs);
     });
+}
+
+void Context::createTraceCollector()
+{
+    shared->createTraceCollector();
 }
 
 void Context::initializeTraceCollector()
