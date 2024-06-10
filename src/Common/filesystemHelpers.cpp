@@ -1,5 +1,5 @@
 #include "filesystemHelpers.h"
-#include <bits/types/struct_timeval.h>
+#include <sys/time.h>
 #include <sys/select.h>
 
 #if defined(OS_LINUX)

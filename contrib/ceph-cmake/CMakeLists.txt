@@ -1,8 +1,14 @@
+option(ENABLE_CEPH "Enable Ceph" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CEPH)
+    message(STATUS "Not using ceph")
+    return()
+endif()
+
 set(Ceph_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph")
 set(Ceph_BUILD_DIR "${ClickHouse_BINARY_DIR}/contrib/ceph-cmake")
 set(Ceph_INCLUDE_DIR "${Ceph_BUILD_DIR}/include")
-# for regex
-set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
+set (CMAKE_CXX_STANDARD 20)
 
 ### common ceph infrastructure
 
@@ -29,10 +35,10 @@ configure_file(
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-#execute_process(
-#    COMMAND ${Python3_EXECUTABLE} -m pip show pyyaml
-#    COMMAND_ECHO STDOUT
-#)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -m pip install pyyaml
+    COMMAND_ECHO STDOUT
+)
 
 set(OPTIONS_DIR "${Ceph_LIBRARY_DIR}/src/common/options")
 function(add_options name)
@@ -66,8 +72,6 @@ add_options(ceph-exporter)
 add_options(rgw)
 
 set(SRCS
-    # regex
-    "${LIBCXX_SOURCE_DIR}/src/regex.cpp"
 
     ### build options
     "${Ceph_BUILD_DIR}/rgw_options.cc"
@@ -201,6 +205,7 @@ set(SRCS
     "${Ceph_LIBRARY_DIR}/src/common/armor.c"
     "${Ceph_LIBRARY_DIR}/src/common/addr_parsing.c"
     "${Ceph_LIBRARY_DIR}/src/common/TextTable.cc"
+    "${Ceph_LIBRARY_DIR}/src/common/ceph_regex.cc"
 
     "${Ceph_LIBRARY_DIR}/src/common/sctp_crc32.c"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c.cc"
@@ -214,7 +219,6 @@ set(SRCS
 
     "${Ceph_LIBRARY_DIR}/src/arch/intel.c"
     "${Ceph_LIBRARY_DIR}/src/arch/probe.cc"
-
 
     "${Ceph_LIBRARY_DIR}/src/xxHash/xxhash.c"
     "${Ceph_LIBRARY_DIR}/src/ceph_ver.c"
@@ -325,16 +329,42 @@ add_library(ch_contrib::librados ALIAS _librados)
 
 ### ceph origin
 target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_INCLUDE_DIR}")
-target_include_directories(_librados SYSTEM BEFORE PUBLIC "${Ceph_LIBRARY_DIR}/src/include")
-target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ ENABLE_STD_REGEX)
+target_include_directories(_librados SYSTEM BEFORE INTERFACE "${Ceph_LIBRARY_DIR}/src/include")
+target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2)
 
-### boost
+### test if current libcxx has spaceship operator
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#include <string>
+int main() {
+    std::string a, b;
+    return a <=> b;
+}
+" LIBCXX_HAS_STRING_SPACESHIP)
+
+if (NOT LIBCXX_HAS_STRING_SPACESHIP)
+    target_compile_definitions(_librados PRIVATE LIBCXX_NO_STRING_SPACESHIP)
+endif()
+
 target_link_libraries(_librados
     PRIVATE
         boost::headers_only
         boost::iostreams
         boost::thread
         ch_contrib::fmt
+        ### re2 and its dependency (absl)
+        ch_contrib::re2
+        absl::base
+        absl::core_headers
+        absl::fixed_array
+        absl::flat_hash_map
+        absl::flat_hash_set
+        absl::inlined_vector
+        absl::strings
+        absl::str_format
+        absl::synchronization
+        absl::optional
+        absl::span
         OpenSSL::Crypto
         OpenSSL::SSL
         isal_asm

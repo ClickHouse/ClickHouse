@@ -141,6 +141,7 @@ if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Disks/ObjectStorages/S3)
 endif()
 
+
 if (TARGET ch_contrib::azure_sdk)
     add_headers_and_sources(dbms Disks/ObjectStorages/AzureBlobStorage)
     add_headers_and_sources(dbms IO/AzureBlobStorage)
@@ -148,6 +149,11 @@ endif()
 
 if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
+endif()
+
+if (TARGET ch_contrib::aws_s3)
+    add_headers_and_sources(dbms Common/Ceph)
+    add_headers_and_sources(dbms Disks/ObjectStorages/Ceph)
 endif()
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
@@ -499,6 +505,11 @@ endif()
 if (TARGET ch_contrib::azure_sdk)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::azure_sdk)
     dbms_target_link_libraries (PRIVATE ch_contrib::azure_sdk)
+endif()
+
+if (TARGET ch_contrib::ceph)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::ceph)
+    dbms_target_link_libraries (PRIVATE ch_contrib::ceph)
 endif()
 
 if (TARGET ch_contrib::s2)
