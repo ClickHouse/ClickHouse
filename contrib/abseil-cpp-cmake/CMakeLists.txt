@@ -3015,7 +3015,7 @@ absl_cc_library(
   NAME
     str_format
   HDRS
-    "str_format.h"
+    "${DIR}/str_format.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -3429,7 +3429,7 @@ absl_cc_library(
   NAME
     any
   HDRS
-    "any.h"
+    "${DIR}/any.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
