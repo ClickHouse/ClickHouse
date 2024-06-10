@@ -219,6 +219,9 @@ public:
         return client_configuration.for_disk_s3;
     }
 
+    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
+    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
+
 private:
     friend struct ::MockS3::Client;
 
