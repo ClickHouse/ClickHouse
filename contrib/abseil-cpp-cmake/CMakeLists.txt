@@ -1283,12 +1283,9 @@ absl_cc_library(
 absl_cc_library(
   NAME
     flags
-  SRCS
-    "${DIR}/flag.cc"
   HDRS
     "${DIR}/declare.h"
     "${DIR}/flag.h"
-    "${DIR}/internal/flag_msvc.inc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
