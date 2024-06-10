@@ -999,6 +999,20 @@ def test_read_subcolumns(started_cluster):
     assert res == "42\ttest_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
 
+def test_read_subcolumn_time(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_subcolumn_time.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)"
+    )
+
+    res = node.query(
+        f"select a.b.d, _path, a.b, _file, dateDiff('minute', _time, now()) < 59, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumn_time.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+    )
+
+    assert res == "2\ttest_subcolumn_time.tsv\t(1,2)\ttest_subcolumn_time.tsv\t1\t3\n"
+
+
 def test_union_schema_inference_mode(started_cluster):
     node = started_cluster.instances["node1"]
 

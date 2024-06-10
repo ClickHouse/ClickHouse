@@ -2149,6 +2149,23 @@ def test_read_subcolumns(started_cluster):
     )
 
 
+def test_read_subcolumn_time(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)"
+    )
+
+    res = instance.query(
+        f"select a.b.d, _path, a.b, _file, dateDiff('minute', _time, now()) < 59, a.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+    )
+
+    assert (
+        res == "2\troot/test_subcolumn_time.tsv\t(1,2)\ttest_subcolumn_time.tsv\t1\t3\n"
+    )
+
+
 def test_filtering_by_file_or_path(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
