@@ -237,7 +237,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     if (metadata_storage->supportsPeriodicUpdate())
     {
-        update_task = context->getMessageBrokerSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
+        update_task = context->getSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }
@@ -363,38 +363,35 @@ void NamedCollectionFactory::updateFunc()
 
     while (!shutdown_called.load())
     {
-        NamedCollectionsMap collections;
-        try
+        if (metadata_storage->waitUpdate())
         {
-            reloadFromSQL();
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (Coordination::isHardwareError(e.code))
+            try
             {
-                LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
-                         DB::getCurrentExceptionMessage(true));
-
-                sleepForSeconds(1);
+                reloadFromSQL();
             }
-            else
+            catch (const Coordination::Exception & e)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                if (Coordination::isHardwareError(e.code))
+                {
+                    LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
+                            DB::getCurrentExceptionMessage(true));
+
+                    sleepForSeconds(1);
+                }
+                else
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
+                }
+                continue;
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
                 chassert(false);
+                continue;
             }
-            continue;
         }
-        catch (...)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-            chassert(false);
-            continue;
-        }
-
-        if (shutdown_called.load())
-            break;
-
-        metadata_storage->waitUpdate();
     }
 
     LOG_TRACE(log, "Named collections background updating thread finished");

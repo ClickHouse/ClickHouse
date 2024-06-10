@@ -69,7 +69,7 @@ public:
 
     virtual bool supportsPeriodicUpdate() const = 0;
 
-    virtual void waitUpdate(size_t /* timeout */) {}
+    virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
 
 
@@ -196,6 +196,7 @@ private:
     std::string root_path;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
     mutable zkutil::EventPtr wait_event;
+    mutable Int32 collections_node_cversion = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -222,17 +223,44 @@ public:
 
     bool supportsPeriodicUpdate() const override { return true; }
 
-    void waitUpdate(size_t timeout) override
+    /// Return true if children changed.
+    bool waitUpdate(size_t timeout) override
     {
-        if (wait_event)
-            wait_event->tryWait(timeout);
+        if (!wait_event)
+        {
+            /// We did not yet made any list() attempt, so do that.
+            return true;
+        }
+
+        if (wait_event->tryWait(timeout))
+        {
+            /// Children changed before timeout.
+            return true;
+        }
+
+        std::string res;
+        Coordination::Stat stat;
+
+        if (!getClient()->tryGet(root_path, res, &stat))
+        {
+            /// We do create root_path in constructor of this class,
+            /// so this case is not really possible.
+            chassert(false);
+            return false;
+        }
+
+        return stat.cversion != collections_node_cversion;
     }
 
     std::vector<std::string> list() const override
     {
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
-        return getClient()->getChildren(root_path, nullptr, wait_event);
+
+        Coordination::Stat stat;
+        auto children = getClient()->getChildren(root_path, &stat, wait_event);
+        collections_node_cversion = stat.cversion;
+        return children;
     }
 
     bool exists(const std::string & path) const override
@@ -442,7 +470,7 @@ bool NamedCollectionsMetadataStorage::supportsPeriodicUpdate() const
     return storage->supportsPeriodicUpdate();
 }
 
-void NamedCollectionsMetadataStorage::waitUpdate()
+bool NamedCollectionsMetadataStorage::waitUpdate()
 {
     if (!storage->supportsPeriodicUpdate())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Periodic updates are not supported");
@@ -450,7 +478,7 @@ void NamedCollectionsMetadataStorage::waitUpdate()
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();
     const size_t timeout = config.getUInt(named_collections_storage_config_path + ".update_timeout_ms", 5000);
 
-    storage->waitUpdate(timeout);
+    return storage->waitUpdate(timeout);
 }
 
 std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage::create(const ContextPtr & context_)

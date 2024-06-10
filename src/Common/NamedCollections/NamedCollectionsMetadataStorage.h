@@ -7,8 +7,6 @@
 
 namespace DB
 {
-class NamedCollectionsMetadataStorage;
-std::unique_ptr<NamedCollectionsMetadataStorage> checkKek(const ContextPtr & context);
 
 class NamedCollectionsMetadataStorage : private WithContext
 {
@@ -29,7 +27,8 @@ public:
 
     void shutdown();
 
-    void waitUpdate();
+    /// Return true if update was made
+    bool waitUpdate();
 
     bool supportsPeriodicUpdate() const;
 
