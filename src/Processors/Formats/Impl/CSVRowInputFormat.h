@@ -75,7 +75,6 @@ public:
     void skipPrefixBeforeHeader() override;
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override;
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }

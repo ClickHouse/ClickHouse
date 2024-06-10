@@ -23,8 +23,42 @@ BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, cons
         with_names_,
         with_types_,
         format_settings_,
-        std::make_unique<BinaryFormatReader<with_defaults>>(in_, format_settings_))
+        std::make_unique<BinaryFormatReader<with_defaults>>(in_, format_settings_)), binary_reader(assert_cast<BinaryFormatReader<with_defaults> *>(format_reader.get()))
 {
+}
+
+template <bool with_defaults>
+bool BinaryRowInputFormat<with_defaults>::readRow(DB::MutableColumns & columns, DB::RowReadExtension & ext)
+{
+    if (in->eof())
+        return false;
+
+    ext.read_columns.resize(columns.size());
+
+    if (with_names)
+    {
+        for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
+        {
+            const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
+            if (column_index)
+                ext.read_columns[*column_index] = binary_reader->readFieldImpl(*columns[*column_index], serializations[*column_index]);
+            else
+                binary_reader->skipField(file_column);
+        }
+
+        column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+    }
+    else
+    {
+        for (size_t file_column = 0; file_column < columns.size(); ++file_column)
+            ext.read_columns[file_column] = binary_reader->readFieldImpl(*columns[file_column], serializations[file_column]);
+    }
+
+    /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
+    if (!format_settings.defaults_for_omitted_fields)
+        ext.read_columns.assign(ext.read_columns.size(), true);
+
+    return true;
 }
 
 template <bool with_defaults>
@@ -63,6 +97,12 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 
 template <bool with_defaults>
 bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
+{
+    return readFieldImpl(column, serialization);
+}
+
+template <bool with_defaults>
+bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const SerializationPtr & serialization)
 {
     if constexpr (with_defaults)
     {
