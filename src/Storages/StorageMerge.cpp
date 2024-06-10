@@ -1618,6 +1618,9 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
+    for (const auto & filter_info : pushed_down_filters)
+        added_filter_nodes.nodes.push_back(&filter_info.actions->findInOutputs(filter_info.column_name));
+
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 
     filterTablesAndCreateChildrenPlans();
