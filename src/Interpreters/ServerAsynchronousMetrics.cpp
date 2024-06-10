@@ -232,6 +232,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
 
+#if USE_AWS_S3
             try
             {
                 if (auto s3_client = disk->getS3StorageClient())
@@ -256,6 +257,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             {
                 // Skip disk than do not have s3 throttlers
             }
+#endif
         }
     }
 
