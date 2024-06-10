@@ -1823,7 +1823,6 @@ private:
         {
             writer->finalize();
             writer->flush();
-            write_buf->finalize();
         }
         catch (...)
         {
@@ -1831,6 +1830,8 @@ private:
             release();
             throw;
         }
+
+        write_buf->finalize();
     }
 
     void release()

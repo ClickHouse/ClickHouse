@@ -609,7 +609,6 @@ void StorageURLSink::finalize()
     {
         writer->finalize();
         writer->flush();
-        write_buf->finalize();
     }
     catch (...)
     {
@@ -617,6 +616,8 @@ void StorageURLSink::finalize()
         release();
         throw;
     }
+
+    write_buf->finalize();
 }
 
 void StorageURLSink::release()
