@@ -2544,9 +2544,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
-            && typeid_cast<const StorageMerge *>(storage.get()))
-            collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
+        // if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
+        //     && typeid_cast<const StorageMerge *>(storage.get()))
+        //     collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
 
         /// Table.
         if (max_streams == 0)
