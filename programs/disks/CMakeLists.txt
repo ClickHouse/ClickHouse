@@ -12,7 +12,8 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandRead.cpp
     CommandRemove.cpp
     CommandSwitchDisk.cpp
-    CommandWrite.cpp)
+    CommandWrite.cpp
+    CommandHelp.cpp)
 
 if (CLICKHOUSE_CLOUD)
   set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)

@@ -6,6 +6,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include "DisksClient.h"
 #include "ICommand.h"
+#include "ICommand_fwd.h"
 
 #include <cstring>
 #include <filesystem>
@@ -45,11 +46,12 @@ CommandPtr DisksApp::getCommandByName(const String & command) const
     }
 }
 
-std::vector<String> DisksApp::getEmptyCompletion(CommandPtr command_) const
+std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
 {
+    auto command_ptr = command_descriptions.at(command_name);
     auto answer = [&]() -> std::vector<String>
     {
-        if (multidisk_commands.contains(command_->command_name))
+        if (multidisk_commands.contains(command_ptr->command_name))
         {
             return client->getAllFilesByPatternFromAllDisks("");
         }
@@ -62,12 +64,47 @@ std::vector<String> DisksApp::getEmptyCompletion(CommandPtr command_) const
     {
         answer.push_back(disk_name);
     }
-    for (const auto & option : command_->options_description.options())
+    for (const auto & option : command_ptr->options_description.options())
     {
         answer.push_back("--" + option->long_name());
     }
+    if (command_name == "help")
+    {
+        for (const auto & [current_command_name, description] : command_descriptions)
+        {
+            answer.push_back(current_command_name);
+        }
+    }
     std::sort(answer.begin(), answer.end());
     return answer;
+}
+
+std::vector<String> DisksApp::getCommandsToComplete(const String & command_prefix) const
+{
+    std::vector<String> answer{};
+    for (const auto & [word, _] : command_descriptions)
+    {
+        if (word.starts_with(command_prefix))
+        {
+            answer.push_back(word);
+        }
+    }
+    if (!answer.empty())
+    {
+        return answer;
+    }
+    for (const auto & [word, _] : aliases)
+    {
+        if (word.starts_with(command_prefix))
+        {
+            answer.push_back(word);
+        }
+    }
+    if (!answer.empty())
+    {
+        return answer;
+    }
+    return {command_prefix};
 }
 
 std::vector<String> DisksApp::getCompletions(const String & prefix) const
@@ -88,35 +125,12 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             return {arguments.back()};
         }
-        return getEmptyCompletion(command);
+        return getEmptyCompletion(command->command_name);
     }
     else if (arguments.size() == 1)
     {
         String command_prefix = arguments[0];
-        std::vector<String> answer{};
-        for (const auto & [word, _] : command_descriptions)
-        {
-            if (word.starts_with(command_prefix))
-            {
-                answer.push_back(word);
-            }
-        }
-        if (!answer.empty())
-        {
-            return answer;
-        }
-        for (const auto & [word, _] : aliases)
-        {
-            if (word.starts_with(command_prefix))
-            {
-                answer.push_back(word);
-            }
-        }
-        if (!answer.empty())
-        {
-            return answer;
-        }
-        return {command_prefix};
+        return getCommandsToComplete(command_prefix);
     }
     else
     {
@@ -130,31 +144,39 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             return {last_token};
         }
-        auto answer = [&]() -> std::vector<String>
+        std::vector<String> answer = {};
+        if (command->command_name == "help")
         {
-            if (multidisk_commands.contains(command->command_name))
-            {
-                return client->getAllFilesByPatternFromAllDisks(last_token);
-            }
-            else
-            {
-                return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
-            }
-        }();
-
-        for (const auto & disk_name : client->getAllDiskNames())
-        {
-            if (disk_name.starts_with(last_token))
-            {
-                answer.push_back(disk_name);
-            }
+            return getCommandsToComplete(last_token);
         }
-        for (const auto & option : command->options_description.options())
+        else
         {
-            String option_sign = "--" + option->long_name();
-            if (option_sign.starts_with(last_token))
+            answer = [&]() -> std::vector<String>
             {
-                answer.push_back(option_sign);
+                if (multidisk_commands.contains(command->command_name))
+                {
+                    return client->getAllFilesByPatternFromAllDisks(last_token);
+                }
+                else
+                {
+                    return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
+                }
+            }();
+
+            for (const auto & disk_name : client->getAllDiskNames())
+            {
+                if (disk_name.starts_with(last_token))
+                {
+                    answer.push_back(disk_name);
+                }
+            }
+            for (const auto & option : command->options_description.options())
+            {
+                String option_sign = "--" + option->long_name();
+                if (option_sign.starts_with(last_token))
+                {
+                    answer.push_back(option_sign);
+                }
             }
         }
         if (!answer.empty())
@@ -266,6 +288,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("read", makeCommandRead());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
+    command_descriptions.emplace("help", makeCommandHelp(*this));
 #ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
@@ -293,42 +316,62 @@ void DisksApp::processOptions()
 }
 
 
-void DisksApp::printEntryHelpMessage()
+void DisksApp::printEntryHelpMessage() const
 {
-    std::cout << "ClickHouse disk management tool\n";
+    std::cout << "\x1b[1;33m ClickHouse disk management tool \x1b[0m \n";
     std::cout << options_description << '\n';
 }
 
 
-void DisksApp::printAvailableCommandsHelpMessage()
+void DisksApp::printAvailableCommandsHelpMessage() const
 {
-    std::cout << "\x1b[1;33mAvailable commands:\x1b[0m\n";
-    std::vector<std::pair<String, String>> commands_with_aliases_and_descrtiptions{};
+    std::cout << "\x1b[1;32mAvailable commands:\x1b[0m\n";
+    std::vector<std::pair<String, CommandPtr>> commands_with_aliases_and_descrtiptions{};
     size_t maximal_command_length = 0;
-    for (const auto & [current_command, _] : command_descriptions)
+    for (const auto & [command_name, command_ptr] : command_descriptions)
     {
-        std::string command_string = command_descriptions[current_command]->command_name;
-        bool need_comma = false;
-        for (const auto & [alias_name, alias_command_name] : aliases)
-        {
-            if (alias_command_name == current_command)
-            {
-                if (std::exchange(need_comma, true))
-                    command_string += ",";
-                else
-                    command_string += "(";
-                command_string += alias_name;
-            }
-        }
-        command_string += (need_comma ? ")" : "");
+        std::string command_string = getCommandLineWithAliases(command_ptr);
         maximal_command_length = std::max(maximal_command_length, command_string.size());
-        commands_with_aliases_and_descrtiptions.push_back({std::move(command_string), command_descriptions[current_command]->command_name});
+        commands_with_aliases_and_descrtiptions.push_back({std::move(command_string), command_descriptions.at(command_name)});
     }
-    for (const auto & [command_with_aliases, description] : commands_with_aliases_and_descrtiptions)
+    for (const auto & [command_with_aliases, command_ptr] : commands_with_aliases_and_descrtiptions)
     {
-        std::cout << "\x1b[1;32m" << command_with_aliases << "\x1b[0m"
-                  << std::string(maximal_command_length + 2 - command_with_aliases.size(), ' ') << description << "\n";
+        std::cout << "\x1b[1;33m" << command_with_aliases << "\x1b[0m" << std::string(5, ' ') << "\x1b[1;33m" << command_ptr->description
+                  << "\x1b[0m \n";
+        std::cout << command_ptr->options_description;
+        std::cout << std::endl;
     }
+}
+
+void DisksApp::printCommandHelpMessage(CommandPtr command) const
+{
+    String command_name_with_aliases = getCommandLineWithAliases(command);
+    std::cout << "\x1b[1;32m" << command_name_with_aliases << "\x1b[0m" << std::string(2, ' ') << command->description << "\n";
+    std::cout << command->options_description;
+}
+
+void DisksApp::printCommandHelpMessage(String command_name) const
+{
+    printCommandHelpMessage(getCommandByName(command_name));
+}
+
+String DisksApp::getCommandLineWithAliases(CommandPtr command) const
+{
+    String command_string = command->command_name;
+    bool need_comma = false;
+    for (const auto & [alias_name, alias_command_name] : aliases)
+    {
+        if (alias_command_name == command->command_name)
+        {
+            if (std::exchange(need_comma, true))
+                command_string += ",";
+            else
+                command_string += "(";
+            command_string += alias_name;
+        }
+    }
+    command_string += (need_comma ? ")" : "");
+    return command_string;
 }
 
 void DisksApp::initializeHistoryFile()
@@ -423,6 +466,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
     String path = config().getString("path", DBMS_DEFAULT_PATH);
+
     global_context->setPath(path);
 
     String main_disk = config().getString("disk", "default");

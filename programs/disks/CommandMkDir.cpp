@@ -12,7 +12,7 @@ public:
     CommandMkDir()
     {
         command_name = "mkdir";
-        description = "Create a directory";
+        description = "Creates a directory";
         options_description.add_options()("recursive", "recursively create directories")(
             "path", po::value<String>(), "the path of listing (mandatory, positional)");
         positional_options_description.add("path", 1);

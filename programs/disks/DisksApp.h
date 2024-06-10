@@ -38,12 +38,16 @@ public:
     static void parseAndCheckOptions(
         const std::vector<String> & arguments, const ProgramOptionsDescription & options_description, CommandLineOptions & options);
 
-    void printEntryHelpMessage();
-    void printAvailableCommandsHelpMessage();
+    void printEntryHelpMessage() const;
+    void printAvailableCommandsHelpMessage() const;
+    void printCommandHelpMessage(String command_name) const;
+    void printCommandHelpMessage(CommandPtr command) const;
+    String getCommandLineWithAliases(CommandPtr command) const;
+
 
     std::vector<String> getCompletions(const String & prefix) const;
 
-    std::vector<String> getEmptyCompletion(CommandPtr command_) const;
+    std::vector<String> getEmptyCompletion(String command_name) const;
 
     ~DisksApp() override;
 
@@ -51,6 +55,8 @@ private:
     void runInteractiveReplxx();
 
     String getDefaultConfigFileName();
+
+    std::vector<String> getCommandsToComplete(const String & command_prefix) const;
 
     // Fields responsible for the REPL work
     String history_file;
@@ -79,7 +85,10 @@ private:
            {"delete", "remove"},
            {"ls-disks", "list-disks"},
            {"ls_disks", "list-disks"},
-           {"packed_io", "packed-io"}};
+           {"packed_io", "packed-io"},
+           {"change-dir", "cd"},
+           {"change_dir", "cd"},
+           {"switch_disk", "switch-disk"}};
 
     std::set<String> multidisk_commands = {"copy", "packed-io", "switch-disk", "cd"};
 

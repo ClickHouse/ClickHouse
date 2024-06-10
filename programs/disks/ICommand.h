@@ -121,6 +121,7 @@ DB::CommandPtr makeCommandRemove();
 DB::CommandPtr makeCommandWrite();
 DB::CommandPtr makeCommandMkDir();
 DB::CommandPtr makeCommandSwitchDisk();
+DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 #ifdef CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
 #endif
