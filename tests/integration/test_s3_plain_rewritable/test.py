@@ -9,9 +9,19 @@ cluster = ClickHouseCluster(__file__)
 
 NUM_WORKERS = 5
 
-MAX_ROWS = 1000
+nodes = []
+for i in range(NUM_WORKERS):
+    name = "node{}".format(i + 1)
+    node = cluster.add_instance(
+        name,
+        main_configs=["configs/storage_conf.xml"],
+        env_variables={"ENDPOINT_SUBPATH": name},
+        with_minio=True,
+        stay_alive=True,
+    )
+    nodes.append(node)
 
-dirs_created = []
+MAX_ROWS = 1000
 
 
 def gen_insert_values(size):
@@ -28,17 +38,6 @@ insert_values = ",".join(
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
-    for i in range(NUM_WORKERS):
-        cluster.add_instance(
-            f"node{i + 1}",
-            main_configs=["configs/storage_conf.xml"],
-            with_minio=True,
-            env_variables={"ENDPOINT_SUBPATH": f"node{i + 1}"},
-            stay_alive=True,
-            # Override ENDPOINT_SUBPATH.
-            instance_env_variables=i > 0,
-        )
-
     try:
         cluster.start()
         yield cluster
@@ -65,10 +64,10 @@ def test_insert():
         gen_insert_values(random.randint(1, MAX_ROWS)) for _ in range(0, NUM_WORKERS)
     ]
     threads = []
-    assert len(cluster.instances) == NUM_WORKERS
     for i in range(NUM_WORKERS):
-        node = cluster.instances[f"node{i + 1}"]
-        t = threading.Thread(target=create_insert, args=(node, insert_values_arr[i]))
+        t = threading.Thread(
+            target=create_insert, args=(nodes[i], insert_values_arr[i])
+        )
         threads.append(t)
         t.start()
 
@@ -76,51 +75,39 @@ def test_insert():
         t.join()
 
     for i in range(NUM_WORKERS):
-        node = cluster.instances[f"node{i + 1}"]
         assert (
-            node.query("SELECT * FROM test ORDER BY id FORMAT Values")
+            nodes[i].query("SELECT * FROM test ORDER BY id FORMAT Values")
             == insert_values_arr[i]
         )
 
     for i in range(NUM_WORKERS):
-        node = cluster.instances[f"node{i + 1}"]
-        node.query("ALTER TABLE test MODIFY SETTING old_parts_lifetime = 59")
+        nodes[i].query("ALTER TABLE test MODIFY SETTING old_parts_lifetime = 59")
         assert (
-            node.query(
+            nodes[i]
+            .query(
                 "SELECT engine_full from system.tables WHERE database = currentDatabase() AND name = 'test'"
-            ).find("old_parts_lifetime = 59")
+            )
+            .find("old_parts_lifetime = 59")
             != -1
         )
 
-        node.query("ALTER TABLE test RESET SETTING old_parts_lifetime")
+        nodes[i].query("ALTER TABLE test RESET SETTING old_parts_lifetime")
         assert (
-            node.query(
+            nodes[i]
+            .query(
                 "SELECT engine_full from system.tables WHERE database = currentDatabase() AND name = 'test'"
-            ).find("old_parts_lifetime")
+            )
+            .find("old_parts_lifetime")
             == -1
         )
-        node.query("ALTER TABLE test MODIFY COMMENT 'new description'")
+        nodes[i].query("ALTER TABLE test MODIFY COMMENT 'new description'")
         assert (
-            node.query(
+            nodes[i]
+            .query(
                 "SELECT comment from system.tables WHERE database = currentDatabase() AND name = 'test'"
-            ).find("new description")
+            )
+            .find("new description")
             != -1
-        )
-
-        created = int(
-            node.query(
-                "SELECT value FROM system.events WHERE event = 'DiskPlainRewritableS3DirectoryCreated'"
-            )
-        )
-        assert created > 0
-        dirs_created.append(created)
-        assert (
-            int(
-                node.query(
-                    "SELECT value FROM system.metrics WHERE metric = 'DiskPlainRewritableS3DirectoryMapSize'"
-                )
-            )
-            == created
         )
 
 
@@ -128,9 +115,8 @@ def test_insert():
 def test_restart():
     insert_values_arr = []
     for i in range(NUM_WORKERS):
-        node = cluster.instances[f"node{i + 1}"]
         insert_values_arr.append(
-            node.query("SELECT * FROM test ORDER BY id FORMAT Values")
+            nodes[i].query("SELECT * FROM test ORDER BY id FORMAT Values")
         )
 
     def restart(node):
@@ -138,7 +124,7 @@ def test_restart():
 
     threads = []
     for i in range(NUM_WORKERS):
-        t = threading.Thread(target=restart, args=(node,))
+        t = threading.Thread(target=restart, args=(nodes[i],))
         threads.append(t)
         t.start()
 
@@ -146,9 +132,8 @@ def test_restart():
         t.join()
 
     for i in range(NUM_WORKERS):
-        node = cluster.instances[f"node{i + 1}"]
         assert (
-            node.query("SELECT * FROM test ORDER BY id FORMAT Values")
+            nodes[i].query("SELECT * FROM test ORDER BY id FORMAT Values")
             == insert_values_arr[i]
         )
 
@@ -156,16 +141,7 @@ def test_restart():
 @pytest.mark.order(2)
 def test_drop():
     for i in range(NUM_WORKERS):
-        node = cluster.instances[f"node{i + 1}"]
-        node.query("DROP TABLE IF EXISTS test SYNC")
-
-        removed = int(
-            node.query(
-                "SELECT value FROM system.events WHERE event = 'DiskPlainRewritableS3DirectoryRemoved'"
-            )
-        )
-
-        assert dirs_created[i] == removed
+        nodes[i].query("DROP TABLE IF EXISTS test SYNC")
 
     it = cluster.minio_client.list_objects(
         cluster.minio_bucket, "data/", recursive=True

@@ -474,7 +474,7 @@ public:
     }
 
     // Checks if no more values can be added for a given attribute
-    bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
+    inline bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
     {
         if (collect_values_limit)
         {
@@ -490,7 +490,7 @@ public:
     }
 
     // Returns the number of full attributes
-    size_t attributesFull() const { return n_full_attributes; }
+    inline size_t attributesFull() const { return n_full_attributes; }
 };
 
 std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const std::vector<StringPiece> & pieces)

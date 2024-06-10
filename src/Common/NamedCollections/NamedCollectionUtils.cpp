@@ -16,7 +16,6 @@
 #include <Interpreters/Context.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 #include <filesystem>
 

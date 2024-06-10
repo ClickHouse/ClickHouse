@@ -35,6 +35,7 @@ namespace
             case UserDefinedSQLObjectType::Function:
                 return "function_";
         }
+        UNREACHABLE();
     }
 
     constexpr std::string_view sql_extension = ".sql";
