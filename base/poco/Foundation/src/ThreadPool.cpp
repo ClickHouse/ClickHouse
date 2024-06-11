@@ -192,7 +192,10 @@ void PooledThread::release()
 
 #if USE_CLICKHOUSE_THREADS
 	if (_thread.joinable())
+	{
 		_thread.join();
+		delete this;
+	}
 #else
 	const long JOIN_TIMEOUT = 10000;
 	if (_thread.tryJoin(JOIN_TIMEOUT))
