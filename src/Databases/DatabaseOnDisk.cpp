@@ -5,6 +5,7 @@
 #include <span>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -26,6 +27,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+
 
 namespace fs = std::filesystem;
 
@@ -103,7 +106,7 @@ std::pair<String, StoragePtr> createTableFromAST(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
                                                            "it's a bug or result of manual intervention in metadata files");
 
-            if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(ast_create_query.storage->engine->name))
+            if (!StorageFactory::instance().getStorageFeatures(ast_create_query.storage->engine->name).supports_schema_inference)
                 throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
             /// Leave columns empty.
         }
@@ -324,31 +327,36 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
     StoragePtr table = detachTable(local_context, table_name);
 
-    /// This is possible for Lazy database.
-    if (!table)
-        return;
-
     bool renamed = false;
     try
     {
         fs::rename(table_metadata_path, table_metadata_path_drop);
         renamed = true;
-        table->drop();
-        table->is_dropped = true;
-
-        fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
-        if (fs::exists(table_data_dir))
-            (void)fs::remove_all(table_data_dir);
+        // The table might be not loaded for Lazy database engine.
+        if (table)
+        {
+            table->drop();
+            table->is_dropped = true;
+        }
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
-        attachTable(local_context, table_name, table, table_data_path_relative);
+        if (table)
+            attachTable(local_context, table_name, table, table_data_path_relative);
         if (renamed)
             fs::rename(table_metadata_path_drop, table_metadata_path);
         throw;
     }
 
+    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+    {
+        if (disk->isReadOnly() || !disk->exists(table_data_path_relative))
+            continue;
+
+        LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
+        disk->removeRecursive(table_data_path_relative);
+    }
     (void)fs::remove(table_metadata_path_drop);
 }
 
@@ -662,15 +670,16 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        pool.scheduleOrThrowOnError(
+        pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
+                setThreadName("DatabaseOnDisk");
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);
                     else
                         process_tmp_drop_metadata_file(file.first);
-            });
+            }, Priority{}, getContext()->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
     }
     pool.wait();
 }
@@ -785,7 +794,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+                            std::make_shared<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }

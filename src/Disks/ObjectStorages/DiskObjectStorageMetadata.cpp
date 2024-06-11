@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
+    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -205,6 +206,18 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
 
     total_size += size;
     keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}});
+}
+
+ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
+{
+    if (keys_with_meta.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop last object from metadata {}. Metadata already empty", metadata_file_path);
+
+    ObjectKeyWithMetadata object = std::move(keys_with_meta.back());
+    keys_with_meta.pop_back();
+    total_size -= object.metadata.size_bytes;
+
+    return object;
 }
 
 bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()
