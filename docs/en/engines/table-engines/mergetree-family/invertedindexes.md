@@ -37,7 +37,7 @@ ways, for example with respect to their DDL/DQL syntax or performance/compressio
 To use full-text indexes, first enable them in the configuration:
 
 ```sql
-SET allow_experimental_inverted_index = true;
+SET allow_experimental_full_text_index = true;
 ```
 
 An full-text index can be defined on a string column using the following syntax

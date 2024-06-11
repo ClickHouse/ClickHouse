@@ -1,7 +1,7 @@
 -- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug
 
 SET allow_introspection_functions = 0;
-SELECT addressToLineWithInlines(1); -- { serverError 446 }
+SELECT addressToLineWithInlines(1); -- { serverError FUNCTION_NOT_ALLOWED }
 
 SET allow_introspection_functions = 1;
 SET query_profiler_real_time_period_ns = 0;

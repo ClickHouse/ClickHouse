@@ -31,6 +31,18 @@ public:
         return name;
     }
 
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull())
+            return result_type->createColumnConst(1, UInt8(1));
+
+        if (canContainNull(*elem.type))
+            return nullptr;
+
+        return result_type->createColumnConst(1, UInt8(0));
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }

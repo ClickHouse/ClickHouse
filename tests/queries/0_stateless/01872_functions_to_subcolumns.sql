@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS t_func_to_subcolumns;
 
-SET allow_experimental_map_type = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 CREATE TABLE t_func_to_subcolumns (id UInt64, arr Array(UInt64), n Nullable(String), m Map(String, UInt64))
