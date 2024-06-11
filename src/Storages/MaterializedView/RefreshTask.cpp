@@ -477,7 +477,6 @@ void RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::ti
         delay_ms = refresh_settings.refresh_retry_max_backoff_ms;
 
     next_refresh_actual = now + std::chrono::milliseconds(delay_ms);
-    return;
 }
 
 bool RefreshTask::arriveDependency(const StorageID & parent)
