@@ -1,25 +1,21 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
 #include <Common/checkStackSize.h>
-#include "Storages/MergeTree/RequestResponse.h"
-#include <Interpreters/Context.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Interpreters/StorageID.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <Parsers/ASTFunction.h>
-
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/RequestResponse.h>
-
-#include <memory>
 
 namespace ProfileEvents
 {
