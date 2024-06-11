@@ -1480,7 +1480,7 @@ static void buildIndexes(
                     if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
                         condition = vector_similarity_index->createIndexCondition(query_info, context);
 #endif
-                    else if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
+                    if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
                         condition = legacy_vector_similarity_index->createIndexCondition(query_info, context);
                     if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
