@@ -53,6 +53,9 @@ ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto result = std::make_shared<ASTInterpolateElement>();
 
+    /// Interpolate parser supports only identifier node.
+    /// In case of alias, identifier is replaced to expression, which can't be parsed.
+    /// In this case, keep original alias name.
     if (const auto * identifier = getExpression()->as<IdentifierNode>())
         result->column = identifier->toAST(options)->getColumnName();
     else
