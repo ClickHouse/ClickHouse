@@ -314,7 +314,7 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
         if (current_size != input_rows_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Expected the argument nº#{} ('{}' of type {}) to have {} rows, but it has {}",
+                "Expected the argument №{} ('{}' of type {}) to have {} rows, but it has {}",
                 i + 1,
                 arguments[i].name,
                 arguments[i].type->getName(),

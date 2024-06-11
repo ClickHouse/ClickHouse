@@ -289,10 +289,14 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
     if (!column_function)
         return;
 
+    size_t original_size = column.column->size();
+
     if (!empty)
         column = column_function->reduce();
     else
-        column.column = column_function->getResultType()->createColumn();
+        column.column = column_function->getResultType()->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+
+    chassert(column.column->size() == original_size);
 }
 
 int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)

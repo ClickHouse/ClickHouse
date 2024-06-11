@@ -90,7 +90,7 @@ def wait_until_fully_merged(node, table):
         except:
             return
 
-    raise Exception(f"There are still merges on-going after {retry} assignments")
+    raise Exception(f"There are still merges on-going after {i} assignments")
 
 
 def test_jbod_balanced_merge(start_cluster):

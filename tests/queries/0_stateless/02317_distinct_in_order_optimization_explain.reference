@@ -87,7 +87,7 @@ Sorting (Stream): a ASC, b ASC
 Sorting (Stream): __table1.a ASC, __table1.b ASC
 Sorting (Stream): __table1.a ASC, __table1.b ASC
 Sorting (Stream): __table1.a ASC, __table1.b ASC
-Sorting (Stream): __table1.a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
 Sorting (Stream): __table1.a ASC
 Sorting (Stream): __table1.a ASC

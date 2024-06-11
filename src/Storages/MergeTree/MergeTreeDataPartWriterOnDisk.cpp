@@ -150,7 +150,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -265,7 +265,7 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
         stats_streams.emplace_back(std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<true>>(
                                        stats_name,
                                        data_part_storage,
-                                       stats_name, STAT_FILE_SUFFIX,
+                                       stats_name, STATS_FILE_SUFFIX,
                                        default_codec, settings.max_compress_block_size,
                                        settings.query_write_settings));
     }

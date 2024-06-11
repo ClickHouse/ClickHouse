@@ -157,6 +157,7 @@ public:
             file_info.emplace();
             file_info->uncompressed_size = archive_entry_size(current_entry);
             file_info->compressed_size = archive_entry_size(current_entry);
+            file_info->last_modified = archive_entry_mtime(current_entry);
             file_info->is_encrypted = false;
         }
 

@@ -179,9 +179,7 @@ def test_different_data_types(started_cluster):
     for i in range(10):
         col = random.choice(["a", "b", "c"])
         cursor.execute("UPDATE test_data_types SET {} = {};".format(col, i))
-        cursor.execute(
-            """UPDATE test_data_types SET i = '2020-12-12';""".format(col, i)
-        )
+        cursor.execute("UPDATE test_data_types SET i = '2020-12-12';")
 
     check_tables_are_synchronized(instance, "test_data_types", "id")
 
@@ -452,7 +450,7 @@ def test_many_concurrent_queries(started_cluster):
                     # also change primary key value
                     print("try update primary key {}".format(thread_id))
                     cursor.execute(
-                        "UPDATE {table}_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(
+                        "UPDATE {} SET key=key%100000+100000*{} WHERE key%{}=0".format(
                             table_name, i + 1, i + 1
                         )
                     )

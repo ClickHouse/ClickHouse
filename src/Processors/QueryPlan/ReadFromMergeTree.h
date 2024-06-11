@@ -261,7 +261,7 @@ private:
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
-    AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
     bool is_parallel_reading_from_replicas;

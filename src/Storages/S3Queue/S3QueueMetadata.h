@@ -82,7 +82,6 @@ private:
     const fs::path zookeeper_path;
     const size_t buckets_num;
 
-    bool initialized = false;
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;

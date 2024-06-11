@@ -411,7 +411,12 @@ Chunk StorageURLSource::generate()
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath(), current_file_size);
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, requested_virtual_columns,
+                {
+                    .path = curr_uri.getPath(),
+                    .size = current_file_size
+                });
             return chunk;
         }
 

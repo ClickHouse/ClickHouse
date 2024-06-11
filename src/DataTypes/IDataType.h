@@ -543,6 +543,7 @@ template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
+template <typename DataType> constexpr bool IsDataTypeStringOrFixedString = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -556,6 +557,8 @@ class DataTypeDate;
 class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
+class DataTypeString;
+class DataTypeFixedString;
 
 template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 
@@ -571,6 +574,9 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeString> = true;
+template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeFixedString> = true;
 
 template <typename T>
 class DataTypeEnum;

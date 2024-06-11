@@ -179,7 +179,11 @@ class TestCIOptions(unittest.TestCase):
         )
         filtered_jobs = list(
             ci_options.apply(
-                jobs_configs, is_release=False, is_pr=True, labels=["TEST_LABEL"]
+                jobs_configs,
+                is_release=False,
+                is_pr=True,
+                is_mq=False,
+                labels=["TEST_LABEL"],
             )
         )
         self.assertCountEqual(
@@ -212,7 +216,9 @@ class TestCIOptions(unittest.TestCase):
         jobs_configs["fuzzers"].run_by_label = "TEST_LABEL"
         # no settings are set
         filtered_jobs = list(
-            CiSettings().apply(jobs_configs, is_release=False, is_pr=True, labels=[])
+            CiSettings().apply(
+                jobs_configs, is_release=False, is_pr=False, is_mq=True, labels=[]
+            )
         )
         self.assertCountEqual(
             filtered_jobs,
@@ -220,9 +226,21 @@ class TestCIOptions(unittest.TestCase):
                 "Fast test",
             ],
         )
-
         filtered_jobs = list(
-            CiSettings().apply(jobs_configs, is_release=True, is_pr=False, labels=[])
+            CiSettings().apply(
+                jobs_configs, is_release=False, is_pr=True, is_mq=False, labels=[]
+            )
+        )
+        self.assertCountEqual(
+            filtered_jobs,
+            [
+                "Fast test",
+            ],
+        )
+        filtered_jobs = list(
+            CiSettings().apply(
+                jobs_configs, is_release=True, is_pr=False, is_mq=False, labels=[]
+            )
         )
         self.assertCountEqual(
             filtered_jobs,
@@ -240,7 +258,11 @@ class TestCIOptions(unittest.TestCase):
         # no settings are set
         filtered_jobs = list(
             ci_settings.apply(
-                jobs_configs, is_release=False, is_pr=True, labels=["TEST_LABEL"]
+                jobs_configs,
+                is_release=False,
+                is_pr=True,
+                is_mq=False,
+                labels=["TEST_LABEL"],
             )
         )
         self.assertCountEqual(
@@ -253,7 +275,11 @@ class TestCIOptions(unittest.TestCase):
         ci_settings.include_keywords = ["Fast"]
         filtered_jobs = list(
             ci_settings.apply(
-                jobs_configs, is_release=True, is_pr=False, labels=["TEST_LABEL"]
+                jobs_configs,
+                is_release=True,
+                is_pr=False,
+                is_mq=False,
+                labels=["TEST_LABEL"],
             )
         )
         self.assertCountEqual(
@@ -277,7 +303,11 @@ class TestCIOptions(unittest.TestCase):
         jobs_configs["Integration tests (asan)"].release_only = True
         filtered_jobs = list(
             ci_options.apply(
-                jobs_configs, is_release=False, is_pr=True, labels=["TEST_LABEL"]
+                jobs_configs,
+                is_release=False,
+                is_pr=True,
+                is_mq=False,
+                labels=["TEST_LABEL"],
             )
         )
         self.assertCountEqual(

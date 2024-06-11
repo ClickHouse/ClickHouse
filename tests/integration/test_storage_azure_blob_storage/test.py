@@ -758,12 +758,12 @@ def test_read_subcolumns(cluster):
     )
 
     res = node.query(
-        f"select a.b.d, _path, a.b, _file, a.e from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumns.tsv',"
+        f"select a.b.d, _path, a.b, _file, dateDiff('minute', _time, now()), a.e from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumns.tsv',"
         f" 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
         f" 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "2\tcont/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
+    assert res == "2\tcont/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t0\t3\n"
 
     res = node.query(
         f"select a.b.d, _path, a.b, _file, a.e from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumns.jsonl',"

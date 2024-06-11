@@ -114,17 +114,19 @@ public:
 private:
     SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);
 
+    LoggerPtr log;
+
     MultiVersion<RocksDBSettings> storage_settings;
     const String primary_key;
+
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
+
     mutable SharedMutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
 
     void initDB();
-
-    LoggerPtr log;
 };
 }

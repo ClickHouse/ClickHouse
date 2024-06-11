@@ -229,7 +229,7 @@ bool DataPartStorageOnDiskBase::isBroken() const
 
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
-    return volume->getDisk()->isReadOnly();
+    return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
 }
 
 void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const

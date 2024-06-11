@@ -670,7 +670,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        pool.scheduleOrThrowOnError(
+        pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
                 setThreadName("DatabaseOnDisk");
@@ -679,7 +679,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
                         process_metadata_file(file.first);
                     else
                         process_tmp_drop_metadata_file(file.first);
-            });
+            }, Priority{}, getContext()->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
     }
     pool.wait();
 }
@@ -794,7 +794,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+                            std::make_shared<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }

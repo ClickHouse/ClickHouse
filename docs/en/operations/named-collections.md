@@ -443,3 +443,59 @@ SELECT dictGet('dict', 'b', 1);
 │ a                       │
 └─────────────────────────┘
 ```
+
+## Named collections for accessing Kafka
+
+The description of parameters see [Kafka](../engines/table-engines/integrations/kafka.md).
+
+### DDL example
+
+```sql
+CREATE NAMED COLLECTION my_kafka_cluster AS
+kafka_broker_list = 'localhost:9092',
+kafka_topic_list = 'kafka_topic',
+kafka_group_name = 'consumer_group',
+kafka_format = 'JSONEachRow',
+kafka_max_block_size = '1048576';
+       
+```
+### XML example
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_kafka_cluster>
+            <kafka_broker_list>localhost:9092</kafka_broker_list>
+            <kafka_topic_list>kafka_topic</kafka_topic_list>
+            <kafka_group_name>consumer_group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_max_block_size>1048576</kafka_max_block_size>
+        </my_kafka_cluster>
+    </named_collections>
+</clickhouse>
+```
+
+### Example of using named collections with a Kafka table
+
+Both of the following examples use the same named collection `my_kafka_cluster`:
+
+
+```sql
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+SETTINGS kafka_num_consumers = 4,
+         kafka_thread_per_consumer = 1;
+```

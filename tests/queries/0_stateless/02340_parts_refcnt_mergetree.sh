@@ -24,6 +24,7 @@ function check_refcnt_for_table()
     local log_file
     log_file=$(mktemp "$CUR_DIR/clickhouse-tests.XXXXXX.log")
     local args=(
+        --allow_repeated_settings
         --format Null
         --max_threads 1
         --max_block_size 1
