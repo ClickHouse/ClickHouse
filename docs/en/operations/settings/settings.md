@@ -3878,6 +3878,10 @@ Possible values:
 
 Default value: 30.
 
+:::note
+It's applicable only to the default profile. A server reboot is required for the changes to take effect.
+:::
+
 ## http_receive_timeout {#http_receive_timeout}
 
 HTTP receive timeout (in seconds).
