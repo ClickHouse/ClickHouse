@@ -412,7 +412,7 @@ Overloaded(Ts...) -> Overloaded<Ts...>;
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNodeFromStorage(StringRef path) const
 {
-    std::lock_guard lock(storage.storage_mutex);
+    std::shared_lock lock(storage.storage_mutex);
     if (auto node_it = storage.container.find(path); node_it != storage.container.end())
     {
         const auto & committed_node = node_it->value;
@@ -532,7 +532,7 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, 
 
 void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
 {
-    assert(!delta.path.empty());
+    chassert(!delta.path.empty());
 
     std::visit(
         [&]<typename DeltaType>(const DeltaType & operation)
@@ -541,12 +541,12 @@ void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
 
             if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
             {
-                assert(node);
+                chassert(node);
                 node = nullptr;
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
             {
-                assert(!node);
+                chassert(!node);
                 node = std::make_shared<Node>();
                 node->stats = operation.stat;
                 node->setData(operation.data);
@@ -554,13 +554,13 @@ void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
             {
-                assert(node);
+                chassert(node);
                 node->invalidateDigestCache();
                 node->stats = operation.old_stats;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
-                assert(node);
+                chassert(node);
                 node->invalidateDigestCache();
                 node->setData(operation.old_data);
             }
@@ -569,7 +569,7 @@ void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
                 acls = operation.old_acls;
             }
 
-            if (applied_zxids.back() != delta.zxid)
+            if (applied_zxids.back() == delta.zxid)
                 applied_zxids.pop_back();
         },
         delta.operation);
@@ -645,15 +645,16 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
             rollback_deltas.splice(rollback_deltas.end(), deltas, delta_it.base(), deltas.end());
     }
 
+    rollback(std::move(rollback_deltas));
+}
+
+void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
+{
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
     for (auto & delta : rollback_deltas)
     {
-        if (delta.zxid < rollback_zxid)
-            break;
-
-        chassert(delta.zxid == rollback_zxid);
         if (!delta.path.empty())
         {
             std::visit(
@@ -674,6 +675,8 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                     }
                 },
                 delta.operation);
+
+            rollbackDelta(delta);
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&delta.operation))
         {
@@ -685,8 +688,6 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                     session_and_auth.erase(add_auth->session_id);
             }
         }
-
-        rollbackDelta(delta);
     }
 }
 
@@ -849,13 +850,9 @@ Coordination::Error KeeperStorage::commit(std::list<Delta> deltas)
                     removeDigest(node_it->value, path);
                     auto updated_node = container.updateValue(path, [&](auto & node) {
                         if constexpr (std::same_as<DeltaType, KeeperStorage::UpdateNodeStatDelta>)
-                        {
                             node.stats = operation.new_stats;
-                        }
                         else
-                        {
                             node.setData(std::move(operation.new_data));
-                        }
                     });
                     addDigest(updated_node->value, path);
 
@@ -1044,7 +1041,7 @@ Coordination::ACLs getNodeACLs(KeeperStorage & storage, StringRef path, bool is_
 {
     if (is_local)
     {
-        std::lock_guard lock(storage.storage_mutex);
+        std::shared_lock lock(storage.storage_mutex);
         auto node_it = storage.container.find(path);
         if (node_it == storage.container.end())
             return {};
@@ -1222,6 +1219,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             std::move(path_created),
             zxid,
             KeeperStorage::CreateNodeDelta{stat, std::move(node_acls), request.data});
+
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
         return new_deltas;
@@ -2019,16 +2017,14 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
             if (!new_subdeltas.empty())
             {
-                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation);
+                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_subdeltas.back().operation);
                     error && *operation_type == OperationType::Write)
                 {
-                    storage.uncommitted_state.rollback(zxid);
+                    storage.uncommitted_state.rollback(std::move(new_deltas));
                     response_errors.push_back(error->error);
 
                     for (size_t j = i + 1; j < concrete_requests.size(); ++j)
-                    {
                         response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
-                    }
 
                     return {KeeperStorage::Delta{zxid, KeeperStorage::FailedMultiDelta{std::move(response_errors)}}};
                 }
@@ -2043,9 +2039,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         }
 
         digest = current_digest;
-
         storage.uncommitted_state.addDeltas(std::move(new_deltas));
-
         return {};
     }
 
@@ -2188,19 +2182,12 @@ void KeeperStorage::finalize()
 
     finalized = true;
 
-    {
-        std::lock_guard lock(ephemerals_mutex);
-        ephemerals.clear();
-    }
+    ephemerals.clear();
 
-    {
-        std::lock_guard lock(watches_mutex);
-        watches.clear();
-        list_watches.clear();
-        sessions_and_watchers.clear();
-    }
+    watches.clear();
+    list_watches.clear();
+    sessions_and_watchers.clear();
 
-    std::lock_guard lock(session_mutex);
     session_expiry_queue.clear();
 }
 
@@ -2509,10 +2496,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     KeeperStorage::ResponsesForSessions results;
 
     /// ZooKeeper update sessions expirity for each request, not only for heartbeats
-    {
-        std::lock_guard lock(session_mutex);
-        session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
-    }
+    session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
@@ -2520,7 +2504,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         {
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
             {
-                std::lock_guard lock(watches_mutex);
                 auto responses = processWatchesImpl(delta.path, watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
             }
@@ -2540,11 +2523,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
         response->xid = zk_request->xid;
         response->zxid = commit_zxid;
-        {
-            std::lock_guard lock(session_mutex);
-            session_expiry_queue.remove(session_id);
-            session_and_timeout.erase(session_id);
-        }
+        session_expiry_queue.remove(session_id);
+        session_and_timeout.erase(session_id);
         results.push_back(ResponseForSession{session_id, response});
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
@@ -2589,7 +2569,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         /// Watches for this requests are added to the watches lists
         if (zk_request->has_watch)
         {
-            std::lock_guard lock(watches_mutex);
             if (response->error == Coordination::Error::ZOK)
             {
                 static constexpr std::array list_requests{
@@ -2614,7 +2593,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         /// If this requests processed successfully we need to check watches
         if (response->error == Coordination::Error::ZOK)
         {
-            std::lock_guard lock(watches_mutex);
             auto watch_responses = request_processor->processWatches(watches, list_watches);
             results.insert(results.end(), watch_responses.begin(), watch_responses.end());
         }
@@ -2631,6 +2609,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         std::lock_guard lock(transaction_mutex);
         if (new_last_zxid)
             uncommitted_transactions.pop_front();
+        if (commit_zxid < zxid)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit smaller ZXID, commit ZXID: {}, current ZXID {}", commit_zxid, zxid);
         zxid = commit_zxid;
     }
 
@@ -2639,7 +2619,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
 void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    std::unique_lock transaction_lock(transaction_mutex);
     if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
         return;
 
@@ -2655,7 +2634,6 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing) T
     try
     {
         uncommitted_transactions.pop_back();
-        transaction_lock.unlock();
         uncommitted_state.rollback(rollback_zxid);
     }
     catch (...)
@@ -2672,7 +2650,7 @@ KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed, bool lock_tr
 
     if (committed)
     {
-        std::lock_guard storage_lock(storage_mutex);
+        std::shared_lock storage_lock(storage_mutex);
         return {CURRENT_DIGEST_VERSION, nodes_digest};
     }
 
@@ -2684,7 +2662,7 @@ KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed, bool lock_tr
     {
         if (lock_transaction_mutex)
             transaction_lock.unlock();
-        std::lock_guard storage_lock(storage_mutex);
+        std::shared_lock storage_lock(storage_mutex);
         return {CURRENT_DIGEST_VERSION, nodes_digest};
     }
 
@@ -2709,7 +2687,6 @@ void KeeperStorage::addDigest(const Node & node, const std::string_view path)
 /// Allocate new session id with the specified timeouts
 int64_t KeeperStorage::getSessionID(int64_t session_timeout_ms)
 {
-    std::lock_guard lock(session_mutex);
     auto result = session_id_counter++;
     session_and_timeout.emplace(result, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
@@ -2725,71 +2702,60 @@ void KeeperStorage::addSessionID(int64_t session_id, int64_t session_timeout_ms)
 
 std::vector<int64_t> KeeperStorage::getDeadSessions() const
 {
-    std::lock_guard lock(session_mutex);
     return session_expiry_queue.getExpiredSessions();
 }
 
 SessionAndTimeout KeeperStorage::getActiveSessions() const
 {
-    std::lock_guard lock(session_mutex);
     return session_and_timeout;
 }
 
 /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
 void KeeperStorage::enableSnapshotMode(size_t up_to_version)
 {
-    std::lock_guard lock(storage_mutex);
     container.enableSnapshotMode(up_to_version);
 }
 
 /// Turn off snapshot mode.
 void KeeperStorage::disableSnapshotMode()
 {
-    std::lock_guard lock(storage_mutex);
     container.disableSnapshotMode();
 }
 
 KeeperStorage::Container::const_iterator KeeperStorage::getSnapshotIteratorBegin() const
 {
-    std::lock_guard lock(storage_mutex);
     return container.begin();
 }
 
 /// Clear outdated data from internal container.
 void KeeperStorage::clearGarbageAfterSnapshot()
 {
-    std::lock_guard lock(storage_mutex);
     container.clearOutdatedNodes();
 }
 
 /// Introspection functions mostly used in 4-letter commands
 uint64_t KeeperStorage::getNodesCount() const
 {
-    std::lock_guard lock(storage_mutex);
     return container.size();
 }
 
 uint64_t KeeperStorage::getApproximateDataSize() const
 {
-    std::lock_guard lock(storage_mutex);
     return container.getApproximateDataSize();
 }
 
 uint64_t KeeperStorage::getArenaDataSize() const
 {
-    std::lock_guard lock(storage_mutex);
     return container.keyArenaSize();
 }
 
 uint64_t KeeperStorage::getWatchedPathsCount() const
 {
-    std::lock_guard lock(watches_mutex);
     return watches.size() + list_watches.size();
 }
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)
 {
-    std::lock_guard lock(watches_mutex);
     /// Clear all watches for this session
     auto watches_it = sessions_and_watchers.find(session_id);
     if (watches_it != sessions_and_watchers.end())
@@ -2823,7 +2789,6 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
 
 void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    std::lock_guard lock(watches_mutex);
     for (const auto & [session_id, watches_paths] : sessions_and_watchers)
     {
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
@@ -2842,7 +2807,6 @@ void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
         }
     };
 
-    std::lock_guard lock(watches_mutex);
     for (const auto & [watch_path, sessions] : watches)
     {
         buf << watch_path << "\n";
@@ -2866,17 +2830,13 @@ void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) co
         }
     };
 
-    {
-        std::lock_guard lock(session_mutex);
-        buf << "Sessions dump (" << session_and_timeout.size() << "):\n";
+    buf << "Sessions dump (" << session_and_timeout.size() << "):\n";
 
-        for (const auto & [session_id, _] : session_and_timeout)
-        {
-            buf << "0x" << getHexUIntLowercase(session_id) << "\n";
-        }
+    for (const auto & [session_id, _] : session_and_timeout)
+    {
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
     }
 
-    std::lock_guard ephemerals_lock(ephemerals_mutex);
     buf << "Sessions with Ephemerals (" << getSessionWithEphemeralNodesCountLocked() << "):\n";
     for (const auto & [session_id, ephemeral_paths] : ephemerals)
     {
@@ -2904,7 +2864,6 @@ const KeeperStorage::Stats & KeeperStorage::getStorageStats() const
 
 uint64_t KeeperStorage::getTotalWatchesCount() const
 {
-    std::lock_guard lock(watches_mutex);
     uint64_t ret = 0;
     for (const auto & [session, paths] : sessions_and_watchers)
         ret += paths.size();
@@ -2914,7 +2873,6 @@ uint64_t KeeperStorage::getTotalWatchesCount() const
 
 uint64_t KeeperStorage::getSessionWithEphemeralNodesCount() const
 {
-    std::lock_guard ephemerals_lock(ephemerals_mutex);
     return getSessionWithEphemeralNodesCountLocked();
 }
 
@@ -2925,13 +2883,11 @@ uint64_t KeeperStorage::getSessionWithEphemeralNodesCountLocked() const
 
 uint64_t KeeperStorage::getSessionsWithWatchesCount() const
 {
-    std::lock_guard lock(watches_mutex);
     return sessions_and_watchers.size();
 }
 
 uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
 {
-    std::lock_guard ephemerals_lock(ephemerals_mutex);
     uint64_t ret = 0;
     for (const auto & [session_id, nodes] : ephemerals)
         ret += nodes.size();
@@ -2941,7 +2897,6 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
 
 void KeeperStorage::recalculateStats()
 {
-    std::lock_guard lock(storage_mutex);
     container.recalculateDataSize();
 }
 

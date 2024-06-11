@@ -100,7 +100,7 @@ public:
     ClusterConfigPtr getClusterConfig() const;
 
     /// Process local read request
-    void processReadRequest(const KeeperStorage::RequestsForSessions & request_for_session);
+    void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
 
@@ -132,8 +132,6 @@ public:
     void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
 
 private:
-    mutable SharedMutex storage_mutex;
-
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
@@ -156,6 +154,7 @@ private:
     /// Mutex for snapshots
     mutable std::mutex snapshots_lock;
 
+    mutable SharedMutex storage_mutex;
     /// Lock for storage and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with

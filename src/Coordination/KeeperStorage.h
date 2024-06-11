@@ -370,6 +370,7 @@ public:
         void addDeltas(std::list<Delta> new_deltas);
         void cleanup(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
+        void rollback(std::list<Delta> rollback_deltas);
 
         std::shared_ptr<Node> getNode(StringRef path) const;
         Coordination::ACLs getACLs(StringRef path) const;
@@ -451,14 +452,13 @@ public:
 
     mutable std::mutex ephemerals_mutex;
     /// Mapping session_id -> set of ephemeral nodes paths
-    Ephemerals ephemerals TSA_GUARDED_BY(ephemerals_mutex);
+    Ephemerals ephemerals;
 
-    mutable std::mutex session_mutex;
-    int64_t session_id_counter TSA_GUARDED_BY(session_mutex) = 1;
+    int64_t session_id_counter = 1;
     /// Expiration queue for session, allows to get dead sessions at some point of time
-    SessionExpiryQueue session_expiry_queue TSA_GUARDED_BY(session_mutex);
+    SessionExpiryQueue session_expiry_queue;
     /// All active sessions with timeout
-    SessionAndTimeout session_and_timeout TSA_GUARDED_BY(session_mutex);
+    SessionAndTimeout session_and_timeout;
 
     /// ACLMap for more compact ACLs storage inside nodes.
     ACLMap acl_map;
@@ -490,13 +490,12 @@ public:
     std::atomic<bool> finalized{false};
 
 
-    mutable std::mutex watches_mutex;
     /// Mapping session_id -> set of watched nodes paths
-    SessionAndWatcher sessions_and_watchers TSA_GUARDED_BY(watches_mutex);
+    SessionAndWatcher sessions_and_watchers;
 
     /// Currently active watches (node_path -> subscribed sessions)
-    Watches watches TSA_GUARDED_BY(watches_mutex);
-    Watches list_watches TSA_GUARDED_BY(watches_mutex); /// Watches for 'list' request (watches on children).
+    Watches watches;
+    Watches list_watches; /// Watches for 'list' request (watches on children).
 
     void clearDeadWatches(int64_t session_id);
 
@@ -606,7 +605,7 @@ public:
 
     void recalculateStats();
 private:
-    uint64_t getSessionWithEphemeralNodesCountLocked() const TSA_REQUIRES(ephemerals_mutex);
+    uint64_t getSessionWithEphemeralNodesCountLocked() const;
 
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);

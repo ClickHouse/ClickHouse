@@ -84,7 +84,7 @@ public:
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
-    void putLocalReadRequest(const KeeperStorage::RequestsForSessions & request);
+    void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
