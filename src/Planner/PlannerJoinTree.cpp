@@ -959,6 +959,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             std::move(reading_step));
                         query_plan = std::move(query_plan_parallel_replicas);
                     }
+                    else {
+                        QueryPlan query_plan_no_parallel_replicas;
+                        storage->read(
+                            query_plan_no_parallel_replicas,
+                            columns_names,
+                            storage_snapshot,
+                            table_expression_query_info,
+                            query_context,
+                            from_stage,
+                            max_block_size,
+                            max_streams);
+                        query_plan = std::move(query_plan_no_parallel_replicas);
+                    }
                 }
 
                 const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
