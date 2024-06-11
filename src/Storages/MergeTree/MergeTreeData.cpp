@@ -7085,19 +7085,23 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo &) const
 {
-    if (query_context->getClientInfo().collaborate_with_initiator)
-        return QueryProcessingStage::Enum::FetchColumns;
-
-    /// Parallel replicas
-    if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+    /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
+    if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
-        /// ReplicatedMergeTree
-        if (supportsReplication())
-            return QueryProcessingStage::Enum::WithMergeableState;
+        if (query_context->getClientInfo().collaborate_with_initiator)
+            return QueryProcessingStage::Enum::FetchColumns;
 
-        /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-        if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
-            return QueryProcessingStage::Enum::WithMergeableState;
+        /// Parallel replicas
+        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+        {
+            /// ReplicatedMergeTree
+            if (supportsReplication())
+                return QueryProcessingStage::Enum::WithMergeableState;
+
+            /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
+            if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+                return QueryProcessingStage::Enum::WithMergeableState;
+        }
     }
 
     return QueryProcessingStage::Enum::FetchColumns;

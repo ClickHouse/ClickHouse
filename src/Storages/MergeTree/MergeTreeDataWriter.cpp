@@ -499,7 +499,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_optimized_row_order)
+    if (data.getSettings()->optimize_row_order
+            && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
@@ -726,7 +727,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_optimized_row_order)
+    if (data.getSettings()->optimize_row_order
+            && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;

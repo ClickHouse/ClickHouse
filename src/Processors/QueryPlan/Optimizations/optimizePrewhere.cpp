@@ -119,7 +119,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         outputs.resize(size);
     }
 
-    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true);
+    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.
