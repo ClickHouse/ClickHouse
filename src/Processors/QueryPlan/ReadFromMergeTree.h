@@ -100,7 +100,9 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+        bool has_exact_ranges = false;
 
+        bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
@@ -181,7 +183,7 @@ public:
     AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges = false) const;
 
-    AnalysisResultPtr selectRangesToRead() const;
+    AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
@@ -196,7 +198,7 @@ public:
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
-    bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
+    AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
