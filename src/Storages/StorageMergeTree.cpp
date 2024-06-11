@@ -973,9 +973,6 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
     auto leftIt = current_mutations_by_version.upper_bound(leftDataVersion);
     auto rightIt = current_mutations_by_version.upper_bound(rightDataVersion);
 
-    // auto leftMutationVersion = getCurrentMutationVersion(left, lock);
-    // auto rightMutationVersion = getCurrentMutationVersion(right, lock);
-
     if (leftIt != rightIt)
     {
         assert(left->info.partition_id == right->info.partition_id);
@@ -989,8 +986,8 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
         {
             if (mutations_it->second.affectsPartition(partition_id))
             {
-                LOG_TRACE(log, "In partition {} parts with versions {} and {} cannot be merged because of mutation {}",
-                    partition_id, leftDataVersion, rightDataVersion, mutations_it->first);
+                // LOG_TRACE(log, "In partition {} parts with versions {} and {} cannot be merged because of mutation {}",
+                //     partition_id, leftDataVersion, rightDataVersion, mutations_it->first);
                 return false;
             }
         }
