@@ -13,7 +13,7 @@ namespace DB
 InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_)
     : IQueryTreeNode(children_size)
 {
-    if(expression_)
+    if (expression_)
         expression_name = expression_->getIdentifier().getFullName();
 
     children[expression_child_index] = std::move(expression_);
