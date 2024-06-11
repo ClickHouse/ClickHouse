@@ -553,13 +553,16 @@ def test_multipart(started_cluster, maybe_auth, positive):
         assert csv_data == get_s3_file_content(started_cluster, bucket, filename)
 
     # select uploaded data from many threads
-    select_query = "select sum(column1), sum(column2), sum(column3) " "from s3('http://{host}:{port}/{bucket}/{filename}', {auth}'CSV', '{table_format}')".format(
-        host=started_cluster.minio_redirect_host,
-        port=started_cluster.minio_redirect_port,
-        bucket=bucket,
-        filename=filename,
-        auth=maybe_auth,
-        table_format=table_format,
+    select_query = (
+        "select sum(column1), sum(column2), sum(column3) "
+        "from s3('http://{host}:{port}/{bucket}/{filename}', {auth}'CSV', '{table_format}')".format(
+            host=started_cluster.minio_redirect_host,
+            port=started_cluster.minio_redirect_port,
+            bucket=bucket,
+            filename=filename,
+            auth=maybe_auth,
+            table_format=table_format,
+        )
     )
     try:
         select_result = run_query(
