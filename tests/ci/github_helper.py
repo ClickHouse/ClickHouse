@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
 from time import sleep
-from typing import List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import github
 import requests
@@ -110,12 +110,15 @@ class GitHub(github.Github):
         raise exception
 
     # pylint: enable=signature-differs
-    def get_pulls_from_search(self, *args, **kwargs) -> PullRequests:  # type: ignore
+    def get_pulls_from_search(self, *args: Any, **kwargs: Any) -> PullRequests:
         """The search api returns actually issues, so we need to fetch PullRequests"""
         issues = self.search_issues(*args, **kwargs)
         repos = {}
         prs = []  # type: PullRequests
-        for issue in issues:
+        progress_func = kwargs.pop(
+            "progress_func", lambda x: x
+        )  # type: Callable[[Issues], Issues]
+        for issue in progress_func(issues):
             # See https://github.com/PyGithub/PyGithub/issues/2202,
             # obj._rawData doesn't spend additional API requests
             # pylint: disable=protected-access
