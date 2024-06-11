@@ -1590,6 +1590,22 @@ Possible values:
 
 Default value: `default`.
 
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`. 
+
+When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`. 
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing. 
+
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
+
+When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`. 
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing. 
+
 ## allow_experimental_parallel_reading_from_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
@@ -1925,7 +1941,9 @@ Default value: `16`.
 
 ### wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` as soon it has received the data, but it might still fail to parse or insert it later (You can check in system.asynchronous_insert_log)
+
+If you want to use asynchronous inserts, we need to also enable [`async_insert`](#async-insert).
 
 Possible values:
 
@@ -1954,7 +1972,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `10485760`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -2246,7 +2264,7 @@ Default value: 0.
 
 ## count_distinct_implementation {#count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
 Possible values:
 
@@ -3168,6 +3186,18 @@ Possible values:
 
 Default value: `0`.
 
+## lightweight_deletes_sync {#lightweight_deletes_sync}
+
+The same as 'mutation_sync', but controls only execution of lightweight deletes. 
+
+Possible values:
+
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for the lightweight deletes to complete on the current server.
+- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+
+Default value: `2`.
+
 **See Also**
 
 - [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
@@ -3663,6 +3693,26 @@ Possible values:
 
 Default value: `0`.
 
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## s3_validate_request_settings {#s3_validate_request_settings}
+
+Enables s3 request settings validation.
+
+Possible values:
+- 1 — validate settings.
+- 0 — do not validate settings.
+
+Default value: `1`.
+
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3688,6 +3738,56 @@ Default value: `0`.
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_skip_empty_files {#azure_skip_empty_files}
+
+Enables or disables skipping empty files in S3 engine.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
@@ -3777,6 +3877,10 @@ Possible values:
 - 0 - Disabled (infinite timeout).
 
 Default value: 30.
+
+:::note
+It's applicable only to the default profile. A server reboot is required for the changes to take effect.
+:::
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -5036,7 +5140,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
+## allow_experimental_statistics {#allow_experimental_statistics}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
@@ -5466,3 +5570,15 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+
+## cross_join_min_rows_to_compress
+
+Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `10000000`.
+
+## cross_join_min_bytes_to_compress
+
+Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `1GiB`.

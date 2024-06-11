@@ -255,7 +255,7 @@ namespace
         if (roles_to_revoke.all)
             boost::range::set_difference(all_granted_roles_set, roles_to_revoke.except_ids, std::back_inserter(roles_to_revoke_ids));
         else
-            boost::range::remove_erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
+            std::erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
 
         roles_to_revoke = roles_to_revoke_ids;
         current_user_access.checkAdminOption(roles_to_revoke_ids);
@@ -438,6 +438,12 @@ BlockIO InterpreterGrantQuery::execute()
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
 
+    /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
+    String current_database = getContext()->getCurrentDatabase();
+    elements_to_grant.replaceEmptyDatabase(current_database);
+    elements_to_revoke.replaceEmptyDatabase(current_database);
+    query.access_rights_elements.replaceEmptyDatabase(current_database);
+
     /// Executing on cluster.
     if (!query.cluster.empty())
     {
@@ -453,9 +459,6 @@ BlockIO InterpreterGrantQuery::execute()
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
-    String current_database = getContext()->getCurrentDatabase();
-    elements_to_grant.replaceEmptyDatabase(current_database);
-    elements_to_revoke.replaceEmptyDatabase(current_database);
     bool need_check_grantees_are_allowed = true;
     if (!query.current_grants)
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);

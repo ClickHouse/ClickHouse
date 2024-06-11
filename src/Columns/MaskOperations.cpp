@@ -77,7 +77,7 @@ INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
-template <bool inverted, bool column_is_short, typename Container>
+template <bool inverted, typename Container>
 static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
@@ -85,42 +85,27 @@ static size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if constexpr (!column_is_short)
-    {
-        if (data.size() != mask.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
-    }
+    if (data.size() != mask.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
 
     size_t ones_count = 0;
-    size_t data_index = 0;
-
     size_t mask_size = mask.size();
-    size_t data_size = data.size();
 
-    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
             continue;
 
         UInt8 value;
-        size_t index;
-        if constexpr (column_is_short)
-        {
-            index = data_index;
-            ++data_index;
-        }
-        else
-            index = i;
-
-        if (null_bytemap && (*null_bytemap)[index])
+        if (null_bytemap && (*null_bytemap)[i])
         {
             value = null_value;
             if (nulls)
                 (*nulls)[i] = 1;
         }
         else
-            value = static_cast<bool>(data[index]);
+            value = static_cast<bool>(data[i]);
 
         if constexpr (inverted)
             value = !value;
@@ -129,12 +114,6 @@ static size_t extractMaskNumericImpl(
             ++ones_count;
 
         mask[i] = value;
-    }
-
-    if constexpr (column_is_short)
-    {
-        if (data_index != data_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
     }
 
     return ones_count;
@@ -155,10 +134,7 @@ static bool extractMaskNumeric(
 
     const auto & data = numeric_column->getData();
     size_t ones_count;
-    if (column->size() < mask.size())
-        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, null_value, null_bytemap, nulls);
-    else
-        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
+    ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
@@ -205,10 +181,10 @@ static MaskInfo extractMaskImpl(
     auto column = col->convertToFullColumnIfLowCardinality();
 
     /// Special implementation for Null and Const columns.
-    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
+    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(&*column))
         return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column))
     {
         const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
         return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
@@ -279,25 +255,32 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     if (!column_function)
         return;
 
+    size_t original_size = column.column->size();
+
     ColumnWithTypeAndName result;
-    /// If mask contains only zeros, we can just create
-    /// an empty column with the execution result type.
     if (!mask_info.has_ones)
     {
+        /// If mask contains only zeros, we can just create a column with default values as it will be ignored
         auto result_type = column_function->getResultType();
-        auto empty_column = result_type->createColumn();
-        result = {std::move(empty_column), result_type, ""};
+        auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+        column = {default_column, result_type, ""};
     }
-    /// Filter column only if mask contains zeros.
     else if (mask_info.has_zeros)
     {
+        /// If it contains both zeros and ones, we need to execute the function only on the mask values
+        /// First we filter the column, which creates a new column, then we apply the column, and finally we expand it
+        /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
+        /// since the values won't be used by `if`
         auto filtered = column_function->filter(mask, -1);
-        result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
+        mut_column->expand(mask, false);
+        column.column = std::move(mut_column);
     }
     else
-        result = column_function->reduce();
+        column = column_function->reduce();
 
-    column = std::move(result);
+    chassert(column.column->size() == original_size);
 }
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
@@ -306,10 +289,14 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
     if (!column_function)
         return;
 
+    size_t original_size = column.column->size();
+
     if (!empty)
         column = column_function->reduce();
     else
-        column.column = column_function->getResultType()->createColumn();
+        column.column = column_function->getResultType()->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+
+    chassert(column.column->size() == original_size);
 }
 
 int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)

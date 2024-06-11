@@ -3,6 +3,7 @@
 
 #if USE_PARQUET
 
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -23,6 +24,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 
 namespace CurrentMetrics
 {
@@ -37,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
 }
@@ -45,7 +48,10 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (::arrow::Status _s = (status); !_s.ok())                   \
-            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+        {                                                              \
+            throw Exception::createDeprecated(_s.ToString(),           \
+                _s.IsOutOfMemory() ? ErrorCodes::CANNOT_ALLOCATE_MEMORY : ErrorCodes::INCORRECT_DATA); \
+        }                                                              \
     } while (false)
 
 /// Decode min/max value from column chunk statistics.
@@ -440,9 +446,10 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
 {
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
-    parquet::ArrowReaderProperties properties;
-    properties.set_use_threads(false);
-    properties.set_batch_size(format_settings.parquet.max_block_size);
+    parquet::ArrowReaderProperties arrow_properties;
+    parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
+    arrow_properties.set_use_threads(false);
+    arrow_properties.set_batch_size(format_settings.parquet.max_block_size);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
@@ -460,11 +467,11 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     //
     // This adds one unnecessary copy. We should probably do coalescing and prefetch scheduling on
     // our side instead.
-    properties.set_pre_buffer(true);
+    arrow_properties.set_pre_buffer(true);
     auto cache_options = arrow::io::CacheOptions::LazyDefaults();
     cache_options.hole_size_limit = min_bytes_for_seek;
     cache_options.range_size_limit = 1l << 40; // reading the whole row group at once is fine
-    properties.set_cache_options(cache_options);
+    arrow_properties.set_cache_options(cache_options);
 
     // Workaround for a workaround in the parquet library.
     //
@@ -477,25 +484,45 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // other, failing an assert. So we disable pre-buffering in this case.
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
-        properties.set_pre_buffer(false);
+        arrow_properties.set_pre_buffer(false);
 
-    parquet::arrow::FileReaderBuilder builder;
-    THROW_ARROW_NOT_OK(
-        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
-    builder.properties(properties);
-    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
-    THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
+    if (format_settings.parquet.use_native_reader)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+        if constexpr (std::endian::native != std::endian::little)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "parquet native reader only supports little endian system currently");
+#pragma clang diagnostic pop
 
-    THROW_ARROW_NOT_OK(
-        row_group_batch.file_reader->GetRecordBatchReader(row_group_batch.row_groups_idxs, column_indices, &row_group_batch.record_batch_reader));
+        row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
+            getPort().getHeader(),
+            arrow_properties,
+            reader_properties,
+            arrow_file,
+            format_settings,
+            row_group_batch.row_groups_idxs);
+    }
+    else
+    {
+        parquet::arrow::FileReaderBuilder builder;
+        THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
+        builder.properties(arrow_properties);
+        builder.memory_pool(ArrowMemoryPool::instance());
+        THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
 
-    row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(),
-        "Parquet",
-        format_settings.parquet.allow_missing_columns,
-        format_settings.null_as_default,
-        format_settings.date_time_overflow_behavior,
-        format_settings.parquet.case_insensitive_column_matching);
+        THROW_ARROW_NOT_OK(
+            row_group_batch.file_reader->GetRecordBatchReader(row_group_batch.row_groups_idxs, column_indices, &row_group_batch.record_batch_reader));
+
+        row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
+            getPort().getHeader(),
+            "Parquet",
+            format_settings.parquet.allow_missing_columns,
+            format_settings.null_as_default,
+            format_settings.date_time_overflow_behavior,
+            format_settings.parquet.case_insensitive_column_matching);
+    }
 }
 
 void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
@@ -561,6 +588,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     lock.unlock();
 
     auto end_of_row_group = [&] {
+        row_group_batch.native_record_reader.reset();
         row_group_batch.arrow_column_to_ch_column.reset();
         row_group_batch.record_batch_reader.reset();
         row_group_batch.file_reader.reset();
@@ -573,35 +601,56 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         // reached. Wake up read() instead.
         condvar.notify_all();
     };
-
-    if (!row_group_batch.record_batch_reader)
-        initializeRowGroupBatchReader(row_group_batch_idx);
-
-    auto batch = row_group_batch.record_batch_reader->Next();
-    if (!batch.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
-
-    if (!*batch)
+    auto get_pending_chunk = [&](size_t num_rows, Chunk chunk = {})
     {
-        end_of_row_group();
-        return;
-    }
-
-    auto tmp_table = arrow::Table::FromRecordBatches({*batch});
-
-    size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * (*tmp_table)->num_rows()));
-    PendingChunk res = {
-            .chunk = {},
-            .block_missing_values = {},
-            .chunk_idx = row_group_batch.next_chunk_idx,
-            .row_group_batch_idx = row_group_batch_idx,
-            .approx_original_chunk_size = approx_chunk_original_size
+        size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(
+                static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
+        return PendingChunk{
+                .chunk = std::move(chunk),
+                .block_missing_values = {},
+                .chunk_idx = row_group_batch.next_chunk_idx,
+                .row_group_batch_idx = row_group_batch_idx,
+                .approx_original_chunk_size = approx_chunk_original_size
+        };
     };
 
-    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
-    /// Otherwise fill the missing columns with zero values of its type.
-    BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &res.block_missing_values : nullptr;
-    res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
+    if (!row_group_batch.record_batch_reader && !row_group_batch.native_record_reader)
+        initializeRowGroupBatchReader(row_group_batch_idx);
+
+    PendingChunk res;
+    if (format_settings.parquet.use_native_reader)
+    {
+        auto chunk = row_group_batch.native_record_reader->readChunk();
+        if (!chunk)
+        {
+            end_of_row_group();
+            return;
+        }
+
+        // TODO support defaults_for_omitted_fields feature when supporting nested columns
+        auto num_rows = chunk.getNumRows();
+        res = get_pending_chunk(num_rows, std::move(chunk));
+    }
+    else
+    {
+        auto batch = row_group_batch.record_batch_reader->Next();
+        if (!batch.ok())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+
+        if (!*batch)
+        {
+            end_of_row_group();
+            return;
+        }
+
+        auto tmp_table = arrow::Table::FromRecordBatches({*batch});
+        res = get_pending_chunk((*tmp_table)->num_rows());
+
+        /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+        /// Otherwise fill the missing columns with zero values of its type.
+        BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &res.block_missing_values : nullptr;
+        res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
+    }
 
     lock.lock();
 

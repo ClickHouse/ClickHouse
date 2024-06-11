@@ -18,9 +18,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
@@ -273,7 +274,7 @@ public:
     static void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
 
     /// Set value not greater then 0 to mark the query as stopped.
-    static void stop() { return exit_after_signals.store(0); }
+    static void stop() { exit_after_signals.store(0); }
 
     /// Return true if the query was stopped.
     /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
@@ -643,6 +644,9 @@ try
         bool extras_into_stdout = need_render_progress || logs_into_stdout;
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
 
+        if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
+            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -710,8 +714,8 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// Do not limit pretty format output in case of --pager specified.
-    if (!pager.empty())
+    /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
+    if (!pager.empty() || !stdout_is_a_tty)
     {
         if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
         {
@@ -735,7 +739,7 @@ bool ClientBase::isRegularFile(int fd)
     return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
-void ClientBase::setDefaultFormatsFromConfiguration()
+void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
     if (config().has("output-format"))
     {
@@ -759,6 +763,10 @@ void ClientBase::setDefaultFormatsFromConfiguration()
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
+
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(STDOUT_FILENO);
+        if (file_name)
+            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
     else if (is_interactive)
     {
@@ -2616,7 +2624,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
+            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"), global_context->getClientInfo());
         }
 
         try
@@ -2810,9 +2818,9 @@ public:
      * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
      * Implements boost::program_options::ext_parser logic
      */
-    std::pair<std::string, std::string> operator()(const std::string& token) const
+    std::pair<std::string, std::string> operator()(const std::string & token) const
     {
-        if (token.find("--") != 0)
+        if (!token.starts_with("--"))
             return {};
         std::string arg = token.substr(2);
 

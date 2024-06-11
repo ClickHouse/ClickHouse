@@ -4,9 +4,10 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
+
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
@@ -40,6 +41,7 @@ class ClickHouseHelper:
         query: str,
         file: Path,
         additional_options: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
     ) -> None:
         params = {
             "query": query,
@@ -52,7 +54,7 @@ class ClickHouseHelper:
 
         with open(file, "rb") as data_fd:
             ClickHouseHelper._insert_post(
-                url, params=params, data=data_fd, headers=auth
+                url, params=params, data=data_fd, headers=auth, **kwargs
             )
 
     @staticmethod

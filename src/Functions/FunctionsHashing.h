@@ -49,6 +49,8 @@
 #include <base/bit_cast.h>
 #include <base/unaligned.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -75,17 +77,29 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
+        const ColumnArray::Offsets * offsets{};
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
+            assert(offsets == nullptr || offsets->size() == key0->size());
+            if (offsets != nullptr)
+                return offsets->back();
             return key0->size();
         }
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
+            if (offsets != nullptr)
+            {
+                const auto *const begin = offsets->begin();
+                const auto * upper = std::upper_bound(begin, offsets->end(), i);
+                if (upper == offsets->end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
+                i = upper - begin;
+            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
             return {key0data[i], key1data[i]};
@@ -1112,7 +1126,15 @@ private:
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
             bool nested_is_first = true;
-            executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
+
+            if constexpr (Keyed)
+            {
+                KeyColumnsType key_cols_tmp{key_cols};
+                key_cols_tmp.offsets = &offsets;
+                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
+            }
+            else
+                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 
@@ -1389,14 +1411,15 @@ struct URLHierarchyHashImpl
             ++pos;
 
         /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
-        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
-        *    For the rest, simply return the full URL as the only element of the hierarchy.
-        */
-        if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+          * (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+          * For the rest, simply return the full URL as the only element of the hierarchy.
+          */
+        if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
         {
-            pos = end;
-            return 0 == level ? pos - begin : 0;
+            return 0 == level ? end - begin : 0;
         }
+        else
+            pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1470,7 +1493,6 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -1518,15 +1540,11 @@ private:
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
-        if (!isColumnConst(*level_col))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
-
-        const auto level = level_col->get64(0);
-
         const auto * col_untyped = arguments.front().column.get();
+        size_t size = col_untyped->size();
+
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
-            const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
@@ -1537,11 +1555,29 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 out[i] = URLHierarchyHashImpl::apply(
-                    level,
+                    level_col->getUInt(i),
                     reinterpret_cast<const char *>(&chars[current_offset]),
                     offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
+            }
+
+            return col_to;
+        }
+        else if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
+        {
+            auto col_to = ColumnUInt64::create(size);
+            auto & out = col_to->getData();
+
+            const auto & chars = col_const_from->getChars();
+            const auto & offsets = col_const_from->getOffsets();
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                out[i] = URLHierarchyHashImpl::apply(
+                    level_col->getUInt(i),
+                    reinterpret_cast<const char *>(chars.data()),
+                    offsets[0] - 1);
             }
 
             return col_to;

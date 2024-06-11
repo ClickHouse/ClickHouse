@@ -492,18 +492,20 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
         throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Parallel replicas processing with custom_key has been requested "
-                "(setting 'max_parallel_replcias'), but the table does not have custom_key defined for it "
+                "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
 
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-            settings.parallel_replicas_count,
-            settings.parallel_replica_offset,
-            std::move(custom_key_ast),
-            settings.parallel_replicas_custom_key_filter_type,
-            storage->getInMemoryMetadataPtr()->columns,
-            query_context);
+        settings.parallel_replicas_count,
+        settings.parallel_replica_offset,
+        std::move(custom_key_ast),
+        {settings.parallel_replicas_custom_key_filter_type,
+         settings.parallel_replicas_custom_key_range_lower,
+         settings.parallel_replicas_custom_key_range_upper},
+        storage->getInMemoryMetadataPtr()->columns,
+        query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
@@ -691,6 +693,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
                         table_expression_query_info.limit = max_block_size_limited;
+                    /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                    else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
+                        table_expression_query_info.limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
                 }
                 else
                 {
@@ -708,7 +713,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
-            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
+        {
+            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; canConvertTo<size_t>(streams_with_ratio))
+                max_streams = static_cast<size_t>(streams_with_ratio);
+            else
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. "
+                    "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
+                    streams_with_ratio);
+        }
 
         if (table_node)
             table_expression_query_info.table_expression_modifiers = table_node->getTableExpressionModifiers();
@@ -1196,7 +1209,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         }
     }
 
-    auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume());
+    auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume(), query_context->getTempDataOnDisk());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
 
     if (join_constant)
@@ -1515,6 +1528,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.left_join_expressions_actions));
     if (join_clauses_and_actions.right_join_expressions_actions)
         left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.right_join_expressions_actions));
+    if (join_clauses_and_actions.mixed_join_expressions_actions)
+        left_join_tree_query_plan.actions_dags.push_back(join_clauses_and_actions.mixed_join_expressions_actions);
 
     auto mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
     auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
