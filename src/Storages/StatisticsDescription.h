@@ -55,7 +55,7 @@ struct ColumnStatisticsDescription
     ASTPtr getAST() const;
 
     static std::vector<ColumnStatisticsDescription> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column);
+    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type);
 
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;

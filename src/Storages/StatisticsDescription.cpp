@@ -169,7 +169,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
     return result;
 }
 
-ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(const ASTColumnDeclaration & column)
+ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type)
 {
     const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
@@ -185,7 +185,7 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(c
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", stats.column_name, stat_type);
         stats.types_to_desc.emplace(stat.type, std::move(stat));
     }
-
+    stats.data_type = data_type;
     return stats;
 }
 
