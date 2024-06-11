@@ -7,6 +7,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 
 namespace DB
@@ -43,25 +44,31 @@ public:
         bool replaced_argument = false;
         auto & uniq_function_arguments_nodes = function_node->getArguments().getNodes();
 
-        for (auto & uniq_function_argument_node : uniq_function_arguments_nodes)
+        auto recursively_remove_injective_functions = [&replaced_argument](QueryTreeNodePtr & arg)
         {
-            auto * uniq_function_argument_node_typed = uniq_function_argument_node->as<FunctionNode>();
+            auto * uniq_function_argument_node_typed = arg->as<FunctionNode>();
             if (!uniq_function_argument_node_typed || !uniq_function_argument_node_typed->isOrdinaryFunction())
-                continue;
+                return false;
 
             auto & uniq_function_argument_node_argument_nodes = uniq_function_argument_node_typed->getArguments().getNodes();
 
             /// Do not apply optimization if injective function contains multiple arguments
             if (uniq_function_argument_node_argument_nodes.size() != 1)
-                continue;
+                return false;
 
             const auto & uniq_function_argument_node_function = uniq_function_argument_node_typed->getFunction();
             if (!uniq_function_argument_node_function->isInjective({}))
-                continue;
+                return false;
 
             /// Replace injective function with its single argument
-            uniq_function_argument_node = uniq_function_argument_node_argument_nodes[0];
-            replaced_argument = true;
+            arg = uniq_function_argument_node_argument_nodes[0];
+            return replaced_argument = true;
+        };
+
+        for (auto & uniq_function_argument_node : uniq_function_arguments_nodes)
+        {
+            while (recursively_remove_injective_functions(uniq_function_argument_node))
+                ;
         }
 
         if (!replaced_argument)
