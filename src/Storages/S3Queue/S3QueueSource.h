@@ -94,7 +94,8 @@ public:
         const std::atomic<bool> & table_is_being_dropped_,
         std::shared_ptr<S3QueueLog> s3_queue_log_,
         const StorageID & storage_id_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        bool commit_once_processed_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -117,6 +118,7 @@ private:
     const std::atomic<bool> & table_is_being_dropped;
     const std::shared_ptr<S3QueueLog> s3_queue_log;
     const StorageID storage_id;
+    const bool commit_once_processed;
 
     RemoveFileFunc remove_file_func;
     LoggerPtr log;
@@ -130,6 +132,7 @@ private:
 
     S3QueueOrderedFileMetadata::BucketHolderPtr current_bucket_holder;
 
+    Chunk generateImpl();
     void applyActionAfterProcessing(const String & path);
     void appendLogElement(const std::string & filename, S3QueueMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
     void lazyInitialize(size_t processor);

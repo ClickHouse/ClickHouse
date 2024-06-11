@@ -301,7 +301,8 @@ StorageS3QueueSource::StorageS3QueueSource(
     const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<S3QueueLog> s3_queue_log_,
     const StorageID & storage_id_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    bool commit_once_processed_)
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))
@@ -314,6 +315,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , table_is_being_dropped(table_is_being_dropped_)
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
+    , commit_once_processed(commit_once_processed_)
     , remove_file_func(remove_file_func_)
     , log(log_)
 {
@@ -337,6 +339,28 @@ void StorageS3QueueSource::lazyInitialize(size_t processor)
 }
 
 Chunk StorageS3QueueSource::generate()
+{
+    Chunk chunk;
+    try
+    {
+        chunk = generateImpl();
+    }
+    catch (...)
+    {
+        if (commit_once_processed)
+            setFailed(getCurrentExceptionMessage(true), true);
+
+        throw;
+    }
+
+    if (!chunk && commit_once_processed)
+    {
+        setProcessed();
+    }
+    return chunk;
+}
+
+Chunk StorageS3QueueSource::generateImpl()
 {
     lazyInitialize(processor_id);
 
@@ -409,8 +433,6 @@ Chunk StorageS3QueueSource::generate()
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
         /// FIXME:  if files are compressed, profile counters update does not work fully (s3 related counters are not saved). Why?
 
-        started_files.push_back(file_metadata);
-
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueuePullMicroseconds);
@@ -432,13 +454,16 @@ Chunk StorageS3QueueSource::generate()
         {
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
+            file_status->onFailed(getCurrentExceptionMessage(true));
             appendLogElement(path, *file_status, processed_rows_from_file, false);
+            started_files.push_back(file_metadata);
             throw;
         }
 
         appendLogElement(path, *file_status, processed_rows_from_file, true);
         file_status.reset();
         processed_rows_from_file = 0;
+        started_files.push_back(file_metadata);
 
         if (shutdown_called)
         {
@@ -465,6 +490,8 @@ Chunk StorageS3QueueSource::generate()
 
 void StorageS3QueueSource::setProcessed()
 {
+    LOG_TEST(log, "Having {} files to set as processed", started_files.size());
+
     for (const auto & file_metadata : started_files)
     {
         file_metadata->setProcessed();
@@ -474,6 +501,8 @@ void StorageS3QueueSource::setProcessed()
 
 void StorageS3QueueSource::setFailed(const std::string & exception, bool reduce_retry_count)
 {
+    LOG_TEST(log, "Having {} files to set as failed", started_files.size());
+
     for (const auto & file_metadata : started_files)
     {
         file_metadata->setFailed(exception, reduce_retry_count);

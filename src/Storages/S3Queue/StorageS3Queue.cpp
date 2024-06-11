@@ -74,18 +74,13 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings, bool is_attach)
+    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings, bool is_attach, const LoggerPtr & log)
     {
         if (!is_attach && !s3queue_settings.mode.changed)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered) is not specified, but is required.");
         }
         /// In case !is_attach, we leave Ordered mode as default for compatibility.
-
-        if (!s3queue_settings.s3queue_processing_threads_num)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `s3queue_processing_threads_num` cannot be set to zero");
-        }
 
         if (!s3queue_settings.s3queue_enable_logging_to_s3queue_log.changed)
         {
@@ -99,9 +94,15 @@ namespace
                             s3queue_settings.s3queue_cleanup_interval_min_ms, s3queue_settings.s3queue_cleanup_interval_max_ms);
         }
 
+        if (!s3queue_settings.s3queue_processing_threads_num)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `s3queue_processing_threads_num` cannot be set to zero");
+        }
+
         if (!s3queue_settings.s3queue_processing_threads_num.changed)
         {
             s3queue_settings.s3queue_processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+            LOG_TRACE(log, "Set `processing_threads_num` to {}", s3queue_settings.s3queue_processing_threads_num);
         }
     }
 }
@@ -139,7 +140,7 @@ StorageS3Queue::StorageS3Queue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), mode > LoadingStrictnessLevel::CREATE);
+    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), mode > LoadingStrictnessLevel::CREATE, log);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -313,10 +314,12 @@ void ReadFromS3Queue::initializePipeline(QueryPipelineBuilder & pipeline, const 
     createIterator(nullptr);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
         pipes.emplace_back(storage->createSource(
-                               i,
+                               i/* processor_id */,
                                info,
                                iterator,
-                               max_block_size, context));
+                               max_block_size,
+                               context,
+                               true/* commit_once_processed */));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -333,7 +336,8 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
     size_t max_block_size,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    bool commit_once_processed)
 {
     auto internal_source = std::make_unique<StorageObjectStorageSource>(
         getName(),
@@ -366,7 +370,8 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         table_is_being_dropped,
         s3_queue_log,
         getStorageID(),
-        log);
+        log,
+        commit_once_processed);
 }
 
 bool StorageS3Queue::hasDependencies(const StorageID & table_id)
@@ -471,7 +476,14 @@ bool StorageS3Queue::streamToViews()
 
     for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
     {
-        auto source = createSource(i, read_from_format_info, file_iterator, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
+        auto source = createSource(
+            i/* processor_id */,
+            read_from_format_info,
+            file_iterator,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            s3queue_context,
+            false/* commit_once_processed */);
+
         pipes.emplace_back(source);
         sources.emplace_back(source);
     }
