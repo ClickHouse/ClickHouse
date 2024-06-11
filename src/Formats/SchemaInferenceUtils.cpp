@@ -1539,9 +1539,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
-            auto is_low_cardinality = nested_type->lowCardinality();
-            auto has_sub_types = nested_type->haveSubtypes();
-            if (!is_low_cardinality && has_sub_types)
+            if (!nested_type->lowCardinality() && nested_type->haveSubtypes())
                 nested_types.push_back(makeNullableRecursively(nested_type));
             else
                 nested_types.push_back(nested_type);
