@@ -946,10 +946,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     /// This is not strict validation, just catches common errors that would make the view not work.
     /// It's possible to circumvent these checks by ALTERing the view or target table after creation.
 
-    String table_engine;
-    if (create.storage && create.storage->engine)
-        table_engine = create.storage->engine->name;
-
     NamesAndTypesList all_output_columns;
     bool check_columns = false;
     if (create.to_table_id)
@@ -961,7 +957,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         {
             all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList();
             check_columns = true;
-            table_engine = to_table->getName();
         }
     }
     else if (!properties.columns_inferred_from_select_query)
