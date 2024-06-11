@@ -1,7 +1,6 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
-#include <Storages/StorageMaterializedView.h>
-
+#include <fmt/chrono.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -10,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Storages/StorageMaterializedView.h>
 
 namespace CurrentMetrics
 {
@@ -312,13 +312,7 @@ void RefreshTask::refreshTask()
             catch (...)
             {
                 if (!interrupt_execution.load())
-                {
-                    PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-                    auto text = message.text;
-                    message.text = fmt::format("Refresh failed: {}", message.text);
-                    LOG_ERROR(log, message);
-                    exception = text;
-                }
+                    exception = getCurrentExceptionMessage(true);
             }
 
             lock.lock();
@@ -332,7 +326,10 @@ void RefreshTask::refreshTask()
             {
                 info.last_refresh_result = LastRefreshResult::Error;
                 info.exception_message = *exception;
-                scheduleRetryOrSkipToNextRefresh(now);
+
+                String retry_info = scheduleRetryOrSkipToNextRefresh(now);
+
+                LOG_ERROR(log, "Refresh failed ({}): {}", retry_info, *exception);
             }
             else if (!refreshed)
             {
@@ -445,7 +442,6 @@ void RefreshTask::executeRefreshUnlocked(bool append)
         throw;
     }
 
-    /// Drop the old table (outside the try-catch so we don't try to drop the other table if this fails).
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context);
 }
@@ -463,12 +459,13 @@ void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point n
     info.next_refresh_time = UInt32(secs.time_since_epoch().count());
 }
 
-void RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now)
+String RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now)
 {
+    Int64 attempt_number = num_retries + 1;
     if (refresh_settings.refresh_retries >= 0 && num_retries >= refresh_settings.refresh_retries)
     {
         advanceNextRefreshTime(now);
-        return;
+        return fmt::format("attempt {}/{}, next refresh at {:%Y.%m.%d %T}", attempt_number, refresh_settings.refresh_retries + 1, next_refresh_actual);
     }
 
     num_retries += 1;
@@ -483,6 +480,7 @@ void RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::ti
         delay_ms = refresh_settings.refresh_retry_max_backoff_ms;
 
     next_refresh_actual = now + std::chrono::milliseconds(delay_ms);
+    return fmt::format("attempt {}/{}, retry in {} seconds", attempt_number, refresh_settings.refresh_retries, (delay_ms + 500) / 1000);
 }
 
 bool RefreshTask::arriveDependency(const StorageID & parent)

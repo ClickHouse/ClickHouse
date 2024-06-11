@@ -151,7 +151,8 @@ private:
     void advanceNextRefreshTime(std::chrono::system_clock::time_point now);
 
     /// Either advances next_refresh_actual using exponential backoff or does advanceNextRefreshTime().
-    void scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now);
+    /// Returns human-readable information for logging.
+    String scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now);
 
     /// Returns true if all dependencies are fulfilled now. Refills remaining_dependencies in this case.
     bool arriveDependency(const StorageID & parent);
