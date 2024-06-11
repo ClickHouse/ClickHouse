@@ -29,7 +29,7 @@ private:
 
     StopStatePtr state;
 
-    StopToken(StopStatePtr s) : state(std::move(s)) {}
+    explicit StopToken(StopStatePtr s) : state(std::move(s)) {}
 };
 
 class StopSource

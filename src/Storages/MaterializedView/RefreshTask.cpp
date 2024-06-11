@@ -414,6 +414,7 @@ void RefreshTask::refreshTask()
             int32_t root_znode_version = coordination.coordinated ? coordination.root_znode.version : -1;
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
 
+
             lock.unlock();
 
             bool refreshed = false;
@@ -435,7 +436,7 @@ void RefreshTask::refreshTask()
                 else
                 {
                     error_message = getCurrentExceptionMessage(true);
-                    LOG_ERROR(log, "{}: Refresh failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), znode.attempt_number, refresh_settings.refresh_retries + 1, error_message);
+                    LOG_ERROR(log, "{}: Refresh failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), start_znode.attempt_number, refresh_settings.refresh_retries + 1, error_message);
                 }
             }
 
@@ -519,16 +520,15 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
     }
 
     std::optional<StorageID> table_to_drop;
-    UUID new_table_uuid;
+    auto new_table_id = StorageID::createEmpty();
     try
     {
-        /// Create a table.
-        auto refresh_query = view->prepareRefresh(append, refresh_context, table_to_drop);
-        new_table_uuid = refresh_query->table_id.uuid;
-
-        /// Run the query.
         {
-            CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
+            /// Create a table.
+            auto [refresh_query, query_scope] = view->prepareRefresh(append, refresh_context, table_to_drop);
+            new_table_id = refresh_query->table_id;
+
+            /// Run the query.
 
             BlockIO block_io = InterpreterInsertQuery(
                 refresh_query,
@@ -584,7 +584,7 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
 
         /// Exchange tables.
         if (!append)
-            table_to_drop = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
+            table_to_drop = view->exchangeTargetTable(new_table_id, refresh_context);
     }
     catch (...)
     {
@@ -596,7 +596,7 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context);
 
-    return new_table_uuid;
+    return new_table_id.uuid;
 }
 
 void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock)

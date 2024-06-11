@@ -205,4 +205,10 @@ $CLICKHOUSE_CLIENT -nq "
     drop table o;"
 
 $CLICKHOUSE_CLIENT -nq "
+    create materialized view o refresh every 1 second append (number UInt64) engine Memory as select number from numbers(2);
+    system wait view o;
+    select count(), sum(number) from o;
+    drop table o;"
+
+$CLICKHOUSE_CLIENT -nq "
     drop table refreshes;"

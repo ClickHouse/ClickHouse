@@ -27,3 +27,4 @@ ALTER from APPEND to non-APPEND failed, as expected
 <38: append chain>	100
 <38: append chain>	200
 creating MergeTree without ORDER BY failed, as expected
+2	1

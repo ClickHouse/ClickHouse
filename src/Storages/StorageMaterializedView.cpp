@@ -467,7 +467,8 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext() const
     return refresh_context;
 }
 
-std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
+std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
+StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
@@ -498,6 +499,9 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
         out_temp_table_id = target_table;
     }
 
+    // Create a thread group for the query.
+    auto query_scope = std::make_unique<CurrentThread::QueryScope>(refresh_context);
+
     auto insert_query = std::make_shared<ASTInsertQuery>();
     insert_query->select = getInMemoryMetadataPtr()->getSelectQuery().select_query;
     insert_query->setTable(target_table.table_name);
@@ -515,7 +519,7 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
         columns->children.push_back(std::make_shared<ASTIdentifier>(name));
     insert_query->columns = std::move(columns);
 
-    return insert_query;
+    return {std::move(insert_query), std::move(query_scope)};
 }
 
 std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
