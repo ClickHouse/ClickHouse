@@ -12,7 +12,7 @@ extern const int LOGICAL_ERROR;
 SquashingTransform::SquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
@@ -59,7 +59,7 @@ void SquashingTransform::work()
 SimpleSquashingTransform::SimpleSquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ISimpleTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 

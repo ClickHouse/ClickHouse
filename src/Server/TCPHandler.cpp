@@ -3,7 +3,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <algorithm>
 #include <exception>
-#include <iterator>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -886,12 +885,11 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    Squashing squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
-    Block header;
+    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
-        header = state.block_for_insert.cloneWithoutColumns();
+        squashing.header = state.block_for_insert;
         auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
         if (planned_chunk.hasChunkInfo())
         {
@@ -910,7 +908,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     if (planned_chunk.hasChunkInfo())
         result_chunk = DB::Squashing::squash(std::move(planned_chunk));
 
-    auto result = header.cloneWithColumns(result_chunk.getColumns());
+    auto result = squashing.header.cloneWithColumns(result_chunk.getColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
