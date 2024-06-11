@@ -493,7 +493,8 @@ void executeQueryWithParallelReplicas(
         new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
 
-    if (settings.allow_experimental_analyzer)
+    /// do not build local plan for distributed queries for now (address it later)
+    if (settings.allow_experimental_analyzer && !shard_num)
     {
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
