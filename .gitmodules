@@ -161,6 +161,9 @@
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/xz-mirror/xz
+[submodule "abseil"]
+	path = contrib/abseil-cpp
+	url = https://github.com/ClickHouse/abseil-cpp.git
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox
