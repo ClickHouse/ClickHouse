@@ -171,7 +171,7 @@ public:
 
     void remove();
 
-    Statistics loadStatistics() const;
+    ColumnsStatistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -462,23 +462,23 @@ public:
     /// File with compression codec name which was used to compress part columns
     /// by default. Some columns may have their own compression codecs, but
     /// default will be stored in this file.
-    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+    static constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
-    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
+    static constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
 
-    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
+    static constexpr auto UUID_FILE_NAME = "uuid.txt";
 
     /// File that contains information about kinds of serialization of columns
     /// and information that helps to choose kind of serialization later during merging
     /// (number of rows, number of rows with default values, etc).
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+    static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     /// Version used for transactions.
-    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+    static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
 
-    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
+    static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -490,7 +490,7 @@ public:
     /// it was mutation without any change for source part. In this case we
     /// really don't need to remove data from remote FS and need only decrement
     /// reference counter locally.
-    static inline constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
+    static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after

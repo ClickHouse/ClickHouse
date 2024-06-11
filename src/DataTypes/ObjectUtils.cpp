@@ -229,9 +229,10 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
                 = recursivlyConvertDynamicColumnToTuple(tuple_columns[i], tuple_types[i]);
         }
 
+        auto new_column = tuple_size == 0 ? column : ColumnPtr(ColumnTuple::create(new_tuple_columns));
         return
         {
-            ColumnTuple::create(new_tuple_columns),
+            new_column,
             recreateTupleWithElements(*type_tuple, new_tuple_types)
         };
     }
