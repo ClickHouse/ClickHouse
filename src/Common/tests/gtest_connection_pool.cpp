@@ -157,6 +157,9 @@ protected:
     void TearDown() override {
         // Code here will be called immediately after each test (right
         // before the destructor).
+        server_data.server->stopAll();
+        server_data.server.reset();
+        Poco::ThreadPool::defaultPool().stopAll();
     }
 
     DB::IHTTPConnectionPoolForEndpoint::Ptr getPool()
