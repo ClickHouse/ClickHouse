@@ -721,11 +721,6 @@ try
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
-    Poco::ThreadPool server_pool(3, server_settings.max_connections);
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -823,6 +818,11 @@ try
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
 
+    auto server_pool = std::make_unique<Poco::ThreadPool>(3, server_settings.max_connections);
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
         Stopwatch watch;
@@ -898,7 +898,8 @@ try
         global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
-        server_pool.joinAll();
+        server_pool->joinAll();
+        server_pool.reset();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1629,7 +1630,7 @@ try
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                    updateServers(*config, *server_pool, async_metrics, servers, servers_to_start_before_tables);
                 }
             }
 
@@ -1726,7 +1727,7 @@ try
                                 config_getter, global_context->getKeeperDispatcher(),
                                 global_context->getSettingsRef().receive_timeout.totalSeconds(),
                                 global_context->getSettingsRef().send_timeout.totalSeconds(),
-                                false), server_pool, socket));
+                                false), *server_pool, socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1748,7 +1749,7 @@ try
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
                                 global_context->getSettingsRef().receive_timeout.totalSeconds(),
-                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), *server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -1780,7 +1781,7 @@ try
                         createKeeperHTTPControlMainHandlerFactory(
                             config_getter(),
                             global_context->getKeeperDispatcher(),
-                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
+                            "KeeperHTTPControlHandler-factory"), *server_pool, socket, http_params));
             });
         }
 #else
@@ -1804,7 +1805,7 @@ try
             config(),
             interserver_listen_hosts,
             listen_try,
-            server_pool,
+            *server_pool,
             async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
@@ -1855,7 +1856,7 @@ try
             config(),
             listen_hosts,
             listen_try,
-            server_pool,
+            *server_pool,
             async_metrics,
             servers,
             /* start_servers= */ true,
@@ -2027,7 +2028,7 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
+            createServers(config(), listen_hosts, listen_try, *server_pool, async_metrics, servers);
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "

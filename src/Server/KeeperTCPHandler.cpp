@@ -309,7 +309,6 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 void KeeperTCPHandler::runImpl()
 {
     setThreadName("KeeperHandler");
-    ThreadStatus thread_status;
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
