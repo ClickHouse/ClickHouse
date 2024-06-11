@@ -10,9 +10,9 @@ from datetime import date, timedelta
 from subprocess import DEVNULL, CalledProcessError
 from typing import Dict, List, Optional, TextIO
 
-from fuzzywuzzy.fuzz import ratio  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
+from thefuzz.fuzz import ratio  # type: ignore
 
 from git_helper import git_runner as runner
 from git_helper import is_shallow
@@ -100,17 +100,14 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # obj._rawData doesn't spend additional API requests
         # We'll save some requests
         # pylint: disable=protected-access
-        repo_name = pr._rawData["base"]["repo"]["full_name"]  # type: ignore
+        repo_name = pr._rawData["base"]["repo"]["full_name"]
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
         in_changelog = False
         merge_commit = pr.merge_commit_sha
-        try:
-            runner.run(f"git rev-parse '{merge_commit}'")
-        except CalledProcessError:
-            # It's possible that commit not in the repo, just continue
-            logging.info("PR %s does not belong to the repo", pr.number)
+        if merge_commit is None:
+            logging.warning("PR %s does not have merge-commit, skipping", pr.number)
             continue
 
         in_changelog = merge_commit in SHA_IN_CHANGELOG

@@ -2,7 +2,6 @@
 #include <limits>
 #include <ostream>
 #include <Core/Field.h>
-#include <Core/iostream_debug_helpers.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -24,9 +23,7 @@ std::ostream & operator << (std::ostream & ostr, const ConvertFieldToTypeTestPar
 {
     return ostr << "{"
             << "\n\tfrom_type  : " << params.from_type
-            << "\n\tfrom_value : " << params.from_value
             << "\n\tto_type    : " << params.to_type
-            << "\n\texpected   : " << (params.expected_value ? *params.expected_value : Field())
             << "\n}";
 }
 
