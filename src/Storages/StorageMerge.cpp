@@ -34,7 +34,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
-#include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -1165,13 +1164,6 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
         builder->addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
-    }
-
-    if (builder->getNumStreams() > 1)
-    {
-        // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
-        // Using concat instead.
-        builder->addTransform(std::make_shared<ConcatProcessor>(builder->getHeader(), builder->getNumStreams()));
     }
 
     return builder;
