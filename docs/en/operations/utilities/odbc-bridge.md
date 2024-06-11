@@ -18,7 +18,7 @@ This tool works via HTTP, not via pipes, shared memory, or TCP because:
 However it can be used as standalone tool from command line with the following
 parameters in POST-request URL:
 - `connection_string` -- ODBC connection string.
-- `columns` -- columns in ClickHouse NamesAndTypesList format, name in backticks,
+- `sample_block` -- columns description in ClickHouse NamesAndTypesList format, name in backticks,
   type as string. Name and type are space separated, rows separated with
   newline.
 - `max_block_size` -- optional parameter, sets maximum size of single block.
