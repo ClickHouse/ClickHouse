@@ -65,16 +65,17 @@ AggregateFunctionPtr createAggregateFunctionUniqCombined(bool use_64_bit_hash,
 
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("uniqCombined",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return createAggregateFunctionUniqCombined(false, name, argument_types, parameters);
-        });
-    factory.registerFunction("uniqCombined64",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return createAggregateFunctionUniqCombined(true, name, argument_types, parameters);
-        });
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = true, .is_order_dependent = false};
+    factory.registerFunction(
+        "uniqCombined",
+        {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+         { return createAggregateFunctionUniqCombined(false, name, argument_types, parameters); },
+         properties});
+    factory.registerFunction(
+        "uniqCombined64",
+        {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+         { return createAggregateFunctionUniqCombined(true, name, argument_types, parameters); },
+         properties});
 }
 
 }

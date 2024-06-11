@@ -7,3 +7,16 @@
 
 SELECT uniqCombined(number)   FROM numbers(1e7);
 SELECT uniqCombined64(number) FROM numbers(1e7);
+
+-- Fix for https://github.com/ClickHouse/ClickHouse/issues/65052
+SELECT sum(u) FROM
+(
+    SELECT uniqCombined(tuple(materialize(toNullable(42)))) AS u
+)
+SETTINGS optimize_injective_functions_inside_uniq = 1, allow_experimental_analyzer = 1;
+
+SELECT sum(u) FROM
+(
+    SELECT uniqCombined64(tuple(materialize(toNullable(42)))) AS u
+)
+SETTINGS optimize_injective_functions_inside_uniq = 1, allow_experimental_analyzer = 1;
