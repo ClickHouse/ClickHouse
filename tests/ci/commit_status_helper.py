@@ -17,7 +17,7 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, CIConfig
+from ci_config import CHECK_DESCRIPTIONS, CheckDescription, CIConfig, StatusNames
 from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
 from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
@@ -290,6 +290,7 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     """The function converst the statuses to TestResults and uploads the report
     to S3 tests bucket. Then it returns the URL"""
     test_results = []  # type: TestResults
+    statuses = sorted(statuses, key=lambda x: x.context)
     for status in statuses:
         log_urls = []
         if status.target_url is not None:
