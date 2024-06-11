@@ -404,6 +404,7 @@ def test_alter_detach_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_detach VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
+    main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
