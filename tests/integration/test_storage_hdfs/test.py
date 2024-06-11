@@ -111,7 +111,7 @@ def test_storage_with_multidirectory_glob(started_cluster):
 
     try:
         node1.query(
-            "SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p4/path1,p2/path3}/postfix/data{1,2}.nonexist', TSV)"
+            "SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p4/path1,p2/path3}/postfix/data{1,2}.nonexist', TSV) SETTINGS hdfs_throw_on_zero_files_match=0"
         )
         assert False, "Exception have to be thrown"
     except Exception as ex:
@@ -220,14 +220,14 @@ def test_globs_in_read_table(started_cluster):
         )
         print("inside_table_func ", inside_table_func)
         assert (
-            node1.query("select * from hdfs(" + inside_table_func + ")")
+            node1.query("select * from hdfs(" + inside_table_func + ") settings hdfs_throw_on_zero_files_match=0")
             == paths_amount * some_data
         )
         assert node1.query(
-            "select count(distinct _path) from hdfs(" + inside_table_func + ")"
+            "select count(distinct _path) from hdfs(" + inside_table_func + ") settings hdfs_throw_on_zero_files_match=0"
         ).rstrip() == str(paths_amount)
         assert node1.query(
-            "select count(distinct _file) from hdfs(" + inside_table_func + ")"
+            "select count(distinct _file) from hdfs(" + inside_table_func + ") settings hdfs_throw_on_zero_files_match=0"
         ).rstrip() == str(files_amount)
 
 
@@ -635,6 +635,7 @@ def test_cluster_join(started_cluster):
         SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
         JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as r
         ON l.id = r.id
+        SETTINGS hdfs_throw_on_zero_files_match=0
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
@@ -643,13 +644,13 @@ def test_cluster_join(started_cluster):
 def test_cluster_macro(started_cluster):
     with_macro = node1.query(
         """
-        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') SETTINGS hdfs_throw_on_zero_files_match=0
     """
     )
 
     no_macro = node1.query(
         """
-        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') SETTINGS hdfs_throw_on_zero_files_match=0
     """
     )
 
