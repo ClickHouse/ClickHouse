@@ -266,7 +266,8 @@ struct FormatSettings
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
-        UInt64 max_block_size = 8192;
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         bool output_compliant_nested_types = true;
