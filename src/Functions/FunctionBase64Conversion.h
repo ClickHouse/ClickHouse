@@ -33,7 +33,7 @@ inline std::string preprocessBase64Url(std::string_view src)
     std::string padded_src;
     padded_src.reserve(src.size() + 3);
 
-    // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
+    // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#section-5
     for (auto s : src)
     {
         switch (s)
@@ -57,7 +57,7 @@ inline std::string preprocessBase64Url(std::string_view src)
         case 0:
             break; // no padding needed
         case 1:
-            padded_src.append("==="); // this case is impossible to occur, however, we'll insert padding anyway
+            padded_src.append("==="); // this case is impossible to occur with valid base64-URL encoded input, however, we'll insert padding anyway
             break;
         case 2:
             padded_src.append("=="); // two bytes padding
@@ -72,7 +72,7 @@ inline std::string preprocessBase64Url(std::string_view src)
 
 inline size_t postprocessBase64Url(UInt8 * dst, size_t out_len)
 {
-    // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#page-7
+    // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#section-5
     for (size_t i = 0; i < out_len; ++i)
     {
         switch (dst[i])
@@ -106,6 +106,10 @@ struct Base64Encode
     {
         size_t outlen = 0;
         base64_encode(src.data(), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+
+        /// Base64 library is using AVX-512 with some shuffle operations.
+        /// Memory sanitizer doesn't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+        __msan_unpoison(dst, outlen);
 
         if constexpr (variant == Base64Variant::Url)
             outlen = postprocessBase64Url(dst, outlen);
@@ -242,10 +246,6 @@ private:
             const size_t src_length = src_offsets[row] - src_offset_prev - 1;
             const size_t outlen = Func::perform({src, src_length}, dst_pos);
 
-            /// Base64 library is using AVX-512 with some shuffle operations.
-            /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
-            __msan_unpoison(dst_pos, outlen);
-
             src += src_length + 1;
             dst_pos += outlen;
             *dst_pos = '\0';
@@ -279,10 +279,6 @@ private:
         for (size_t row = 0; row < src_row_count; ++row)
         {
             const auto outlen = Func::perform({src, src_n}, dst_pos);
-
-            /// Base64 library is using AVX-512 with some shuffle operations.
-            /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
-            __msan_unpoison(dst_pos, outlen);
 
             src += src_n;
             dst_pos += outlen;

@@ -1136,31 +1136,139 @@ SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_i
 
 ## base64Encode
 
-Encodes a String or FixedString as base64.
+Encodes a String or FixedString as base64, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-4).
 
 Alias: `TO_BASE64`.
 
+**Syntax**
+
+```sql
+base64Encode(plaintext)
+```
+
+**Arguments**
+
+- `plaintext` — [String](../data-types/string.md) column or constant.
+
+**Returned value**
+
+- A string containing the encoded value of the argument.
+
+**Example**
+
+``` sql
+SELECT base64Encode('clickhouse');
+```
+
+Result:
+
+```result
+┌─base64Encode('clickhouse')─┐
+│ Y2xpY2tob3VzZQ==           │
+└────────────────────────────┘
+```
+
 ## base64UrlEncode
 
-Encodes an URL (String or FixedString) as base64 according to [RFC 4648](https://tools.ietf.org/html/rfc4648).
+Encodes an URL (String or FixedString) as base64 with URL-specific modifications, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-5).
+
+**Syntax**
+
+```sql
+base64UrlEncode(url)
+```
+
+**Arguments**
+
+- `url` — [String](../data-types/string.md) column or constant.
+
+**Returned value**
+
+- A string containing the encoded value of the argument.
+
+**Example**
+
+``` sql
+SELECT base64UrlEncode('https://clickhouse.com');
+```
+
+Result:
+
+```result
+┌─base64UrlEncode('https://clickhouse.com')─┐
+│ aHR0cDovL2NsaWNraG91c2UuY29t              │
+└───────────────────────────────────────────┘
+```
 
 ## base64Decode
 
-Decodes a base64-encoded String or FixedString. Throws an exception in case of error.
+Accepts a String and decodes it from base64, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-4). Throws an exception in case of an error.
 
 Alias: `FROM_BASE64`.
 
+**Syntax**
+
+```sql
+base64Decode(encoded)
+```
+
+**Arguments**
+
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, an exception is thrown.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Example**
+
+``` sql
+SELECT base64Decode('Y2xpY2tob3VzZQ==');
+```
+
+Result:
+
+```result
+┌─base64Decode('Y2xpY2tob3VzZQ==')─┐
+│ clickhouse                       │
+└──────────────────────────────────┘
+```
+
 ## base64UrlDecode
 
-Decodes a base64-encoded URL (String or FixedString) according to [RFC 4648](https://tools.ietf.org/html/rfc4648). Throws an exception in case of error.
+Accepts a base64-encoded URL and decodes it from base64 with URL-specific modifications, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-5). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+base64UrlDecode(encodedUrl)
+```
+
+**Arguments**
+
+- `encodedUrl` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, an exception is thrown.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Example**
+
+``` sql
+SELECT base64UrlDecode('aHR0cDovL2NsaWNraG91c2UuY29t');
+```
+
+Result:
+
+```result
+┌─base64UrlDecode('aHR0cDovL2NsaWNraG91c2UuY29t')─┐
+│ https://clickhouse.com                          │
+└─────────────────────────────────────────────────┘
+```
 
 ## tryBase64Decode
 
 Like `base64Decode` but returns an empty string in case of error.
-
-## tryBase64UrlDecode
-
-Like `base64UrlDecode` but returns an empty string in case of error.
 
 **Syntax**
 
@@ -1168,9 +1276,13 @@ Like `base64UrlDecode` but returns an empty string in case of error.
 tryBase64Decode(encoded)
 ```
 
-**Parameters**
+**Arguments**
 
-- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, returns an empty string.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
 
 **Examples**
 
@@ -1181,9 +1293,41 @@ SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res
 ```
 
 ```response
-┌─res─────┬─res_invalid─┐
-│ Encoded │             │
-└─────────┴─────────────┘
+┌─res────────┬─res_invalid─┐
+│ clickhouse │             │
+└────────────┴─────────────┘
+```
+
+## tryBase64UrlDecode
+
+Like `base64UrlDecode` but returns an empty string in case of error.
+
+**Syntax**
+
+```sql
+tryBase64UrlDecode(encodedUrl)
+```
+
+**Parameters**
+
+- `encodedUrl`: [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase64UrlDecode('aHR0cDovL2NsaWNraG91c2UuY29t') as res, tryBase64Decode('aHR0cHM6Ly9jbGlja') as res_invalid;
+```
+
+```response
+┌─res────────────────────┬─res_invalid─┐
+│ https://clickhouse.com │             │
+└────────────────────────┴─────────────┘
 ```
 
 ## endsWith {#endswith}
