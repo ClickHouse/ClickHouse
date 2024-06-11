@@ -33,7 +33,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN pip3 install pycurl
+RUN pip3 install pycurl jwcrypto
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
