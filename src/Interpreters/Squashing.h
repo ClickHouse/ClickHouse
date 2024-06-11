@@ -29,7 +29,7 @@ struct ChunksToSquash : public ChunkInfo
 class Squashing
 {
 public:
-    explicit Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    explicit Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
     Squashing(Squashing && other) = default;
 
     Chunk add(Chunk && input_chunk);
@@ -41,6 +41,7 @@ public:
         return !chunks_to_merge_vec.empty();
     }
 
+    Block header;
 private:
     struct CurrentSize
     {
