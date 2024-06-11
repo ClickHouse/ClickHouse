@@ -95,8 +95,7 @@ public:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        IMergeTreeDataPart * parent_part,
-        bool merge_is_needed);
+        IMergeTreeDataPart * parent_part);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
@@ -130,8 +129,7 @@ private:
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
-        const ProjectionDescription & projection,
-        bool merge_is_needed);
+        const ProjectionDescription & projection);
 
     MergeTreeData & data;
     LoggerPtr log;

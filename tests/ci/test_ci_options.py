@@ -3,12 +3,11 @@
 # type: ignore
 
 import unittest
-from ci_settings import CiSettings
-from ci_config import JobConfig
+from ci import CiOptions
 
 _TEST_BODY_1 = """
 #### Run only:
-- [x] <!---ci_set_non_required--> Non required
+- [x] <!---ci_set_integration--> Integration tests
 - [ ] <!---ci_set_arm--> Integration tests (arm64)
 - [x] <!---ci_include_foo--> Integration tests
 - [x] <!---ci_include_foo_Bar--> Integration tests
@@ -30,10 +29,9 @@ _TEST_BODY_1 = """
 _TEST_BODY_2 = """
 - [x] <!---ci_include_integration--> MUST include integration tests
 - [x] <!---ci_include_stateless--> MUST include stateless tests
-- [x] <!---ci_include_azure--> MUST include azure
 - [x] <!---ci_include_foo_Bar--> no action must be applied
 - [ ] <!---ci_include_bar--> no action must be applied
-- [x] <!---ci_exclude_tsan|foobar--> MUST exclude tsan
+- [x] <!---ci_exclude_tsan--> MUST exclude tsan
 - [x] <!---ci_exclude_aarch64--> MUST exclude aarch64
 - [x] <!---ci_exclude_analyzer--> MUST exclude test with analazer
 - [ ] <!---ci_exclude_bar--> no action applied
@@ -45,23 +43,11 @@ _TEST_BODY_3 = """
 - [x] <!---ci_include_analyzer--> Must include all tests for analyzer
 """
 
-_TEST_BODY_4 = """
-"""
-
-
 _TEST_JOB_LIST = [
     "Style check",
     "Fast test",
     "package_release",
     "package_asan",
-    "package_aarch64",
-    "package_release_coverage",
-    "package_debug",
-    "package_tsan",
-    "package_msan",
-    "package_ubsan",
-    "binary_release",
-    "fuzzers",
     "Docker server image",
     "Docker keeper image",
     "Install packages (amd64)",
@@ -78,7 +64,6 @@ _TEST_JOB_LIST = [
     "Stateless tests (debug, s3 storage)",
     "Stateless tests (tsan, s3 storage)",
     "Stateless tests flaky check (asan)",
-    "Stateless tests (azure, asan)",
     "Stateful tests (debug)",
     "Stateful tests (release)",
     "Stateful tests (coverage)",
@@ -137,67 +122,44 @@ _TEST_JOB_LIST = [
     "Bugfix validation",
 ]
 
-_TEST_JOB_LIST_2 = ["Style check", "Fast test", "fuzzers"]
-
 
 class TestCIOptions(unittest.TestCase):
     def test_pr_body_parsing(self):
-        ci_options = CiSettings.create_from_pr_message(
+        ci_options = CiOptions.create_from_pr_message(
             _TEST_BODY_1, update_from_api=False
         )
         self.assertFalse(ci_options.do_not_test)
         self.assertFalse(ci_options.no_ci_cache)
         self.assertTrue(ci_options.no_merge_commit)
-        self.assertEqual(ci_options.ci_sets, ["ci_set_non_required"])
+        self.assertEqual(ci_options.ci_sets, ["ci_set_integration"])
         self.assertCountEqual(ci_options.include_keywords, ["foo", "foo_bar"])
         self.assertCountEqual(ci_options.exclude_keywords, ["foo", "foo_bar"])
 
     def test_options_applied(self):
         self.maxDiff = None
-        ci_options = CiSettings.create_from_pr_message(
+        ci_options = CiOptions.create_from_pr_message(
             _TEST_BODY_2, update_from_api=False
         )
         self.assertCountEqual(
-            ci_options.include_keywords,
-            ["integration", "foo_bar", "stateless", "azure"],
+            ci_options.include_keywords, ["integration", "foo_bar", "stateless"]
         )
         self.assertCountEqual(
             ci_options.exclude_keywords,
-            ["tsan", "foobar", "aarch64", "analyzer", "s3_storage", "coverage"],
+            ["tsan", "aarch64", "analyzer", "s3_storage", "coverage"],
         )
-
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST}
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = (
-            "TEST_LABEL"  # check "fuzzers" appears in the result due to the label
-        )
-        jobs_configs[
-            "Integration tests (asan)"
-        ].release_only = (
-            True  # still must be included as it's set with include keywords
-        )
-        filtered_jobs = list(
-            ci_options.apply(
-                jobs_configs,
-                is_release=False,
-                is_pr=True,
-                is_mq=False,
-                labels=["TEST_LABEL"],
-            )
+        jobs_to_do = list(_TEST_JOB_LIST)
+        jobs_to_skip = []
+        job_params = {}
+        jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
+            jobs_to_do, jobs_to_skip, job_params
         )
         self.assertCountEqual(
-            filtered_jobs,
+            jobs_to_do,
             [
                 "Style check",
-                "fuzzers",
                 "package_release",
                 "package_asan",
-                "package_debug",
-                "package_msan",
-                "package_ubsan",
                 "Stateless tests (asan)",
-                "Stateless tests (azure, asan)",
                 "Stateless tests flaky check (asan)",
                 "Stateless tests (msan)",
                 "Stateless tests (ubsan)",
@@ -210,114 +172,25 @@ class TestCIOptions(unittest.TestCase):
         )
 
     def test_options_applied_2(self):
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST_2}
-        jobs_configs["Style check"].release_only = True
-        jobs_configs["Fast test"].pr_only = True
-        jobs_configs["fuzzers"].run_by_label = "TEST_LABEL"
-        # no settings are set
-        filtered_jobs = list(
-            CiSettings().apply(
-                jobs_configs, is_release=False, is_pr=False, is_mq=True, labels=[]
-            )
-        )
-        self.assertCountEqual(
-            filtered_jobs,
-            [
-                "Fast test",
-            ],
-        )
-        filtered_jobs = list(
-            CiSettings().apply(
-                jobs_configs, is_release=False, is_pr=True, is_mq=False, labels=[]
-            )
-        )
-        self.assertCountEqual(
-            filtered_jobs,
-            [
-                "Fast test",
-            ],
-        )
-        filtered_jobs = list(
-            CiSettings().apply(
-                jobs_configs, is_release=True, is_pr=False, is_mq=False, labels=[]
-            )
-        )
-        self.assertCountEqual(
-            filtered_jobs,
-            [
-                "Style check",
-            ],
-        )
-
-    def test_options_applied_3(self):
-        ci_settings = CiSettings()
-        ci_settings.include_keywords = ["Style"]
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST_2}
-        jobs_configs["Style check"].release_only = True
-        jobs_configs["Fast test"].pr_only = True
-        # no settings are set
-        filtered_jobs = list(
-            ci_settings.apply(
-                jobs_configs,
-                is_release=False,
-                is_pr=True,
-                is_mq=False,
-                labels=["TEST_LABEL"],
-            )
-        )
-        self.assertCountEqual(
-            filtered_jobs,
-            [
-                "Style check",
-            ],
-        )
-
-        ci_settings.include_keywords = ["Fast"]
-        filtered_jobs = list(
-            ci_settings.apply(
-                jobs_configs,
-                is_release=True,
-                is_pr=False,
-                is_mq=False,
-                labels=["TEST_LABEL"],
-            )
-        )
-        self.assertCountEqual(
-            filtered_jobs,
-            [
-                "Style check",
-            ],
-        )
-
-    def test_options_applied_4(self):
         self.maxDiff = None
-        ci_options = CiSettings.create_from_pr_message(
+        ci_options = CiOptions.create_from_pr_message(
             _TEST_BODY_3, update_from_api=False
         )
         self.assertCountEqual(ci_options.include_keywords, ["analyzer"])
         self.assertIsNone(ci_options.exclude_keywords)
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST}
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = "TEST_LABEL"  # check "fuzzers" does not appears in the result
-        jobs_configs["Integration tests (asan)"].release_only = True
-        filtered_jobs = list(
-            ci_options.apply(
-                jobs_configs,
-                is_release=False,
-                is_pr=True,
-                is_mq=False,
-                labels=["TEST_LABEL"],
-            )
+        jobs_to_do = list(_TEST_JOB_LIST)
+        jobs_to_skip = []
+        job_params = {}
+        jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
+            jobs_to_do, jobs_to_skip, job_params
         )
         self.assertCountEqual(
-            filtered_jobs,
+            jobs_to_do,
             [
                 "Style check",
                 "Integration tests (asan, old analyzer)",
                 "package_release",
                 "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
                 "package_asan",
-                "fuzzers",
             ],
         )

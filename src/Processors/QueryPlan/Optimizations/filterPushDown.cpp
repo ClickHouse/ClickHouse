@@ -424,9 +424,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// of the grouping sets, we could not push the filter down.
         if (aggregating->isGroupingSets())
         {
-            /// Cannot push down filter if type has been changed.
-            if (aggregating->isGroupByUseNulls())
-                return 0;
 
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());

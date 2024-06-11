@@ -49,7 +49,7 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01070_window_view_watch_events.wv EVENTS")
     client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\\)")
+    client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
         "INSERT INTO 01070_window_view_watch_events.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
@@ -59,11 +59,11 @@ with client(name="client1>", log=log) as client1, client(
     )
     client2.expect("Ok.")
     client1.expect("1990-01-01 12:00:05" + end_of_block)
-    client1.expect("Progress: 1.00 rows.*\\)")
+    client1.expect("Progress: 1.00 rows.*\)")
 
     # send Ctrl-C
     client1.send("\x03", eol="")
-    match = client1.expect("(%s)|([#\\$] )" % prompt)
+    match = client1.expect("(%s)|([#\$] )" % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)

@@ -8,7 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
@@ -229,7 +229,7 @@ bool DataPartStorageOnDiskBase::isBroken() const
 
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
-    return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
+    return volume->getDisk()->isReadOnly();
 }
 
 void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
@@ -459,8 +459,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
         disk->createDirectories(to);
 
-    Backup(
-        disk,
+    localBackup(
         disk,
         getRelativePath(),
         fs::path(to) / dir_path,
@@ -491,62 +490,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-
-    /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
-}
-
-MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
-{
-    auto src_disk = volume->getDisk();
-    if (params.external_transaction)
-        params.external_transaction->createDirectories(to);
-    else
-        dst_disk->createDirectories(to);
-
-    /// freezeRemote() using copy instead of hardlinks for all files
-    /// In this case, files_to_copy_intead_of_hardlinks is set by empty
-    Backup(
-        src_disk,
-        dst_disk,
-        getRelativePath(),
-        fs::path(to) / dir_path,
-        read_settings,
-        write_settings,
-        params.make_source_readonly,
-        /* max_level= */ {},
-        true,
-        /* files_to_copy_intead_of_hardlinks= */ {},
-        params.external_transaction);
-
-    /// The save_metadata_callback function acts on the target dist.
-    if (save_metadata_callback)
-        save_metadata_callback(dst_disk);
-
-    if (params.external_transaction)
-    {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-    else
-    {
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
     bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
@@ -637,7 +580,7 @@ void DataPartStorageOnDiskBase::rename(
         disk.setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
         disk.moveDirectory(from, to);
 
-        /// Only after moveDirectory() since before the directory does not exist.
+        /// Only after moveDirectory() since before the directory does not exists.
         SyncGuardPtr to_sync_guard;
         if (fsync_part_dir)
             to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to);

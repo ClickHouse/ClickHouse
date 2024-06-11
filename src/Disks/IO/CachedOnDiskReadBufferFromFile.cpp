@@ -274,11 +274,6 @@ bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, co
     return current_write_offset > current_offset;
 }
 
-String CachedOnDiskReadBufferFromFile::toString(ReadType type)
-{
-    return String(magic_enum::enum_name(type));
-}
-
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_segment)
 {

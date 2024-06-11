@@ -21,9 +21,6 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/inlined_vector.h>
-
 
 namespace DB
 {
@@ -592,36 +589,8 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
         }
     }
 
-    std::erase_if(nodes, [&](const Node & node) { return !visited_nodes.contains(&node); });
+    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
-}
-
-
-void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
-{
-    const auto & filter_node = findInOutputs(filter_name);
-    std::stack<Node *> stack;
-    stack.push(const_cast<Node *>(&filter_node));
-
-    std::unordered_set<const Node *> visited;
-    visited.insert(stack.top());
-
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-        for (auto & child : node->children)
-        {
-            while (child->type == ActionType::ALIAS)
-                child = child->children.front();
-
-            if (!visited.contains(child))
-            {
-                stack.push(const_cast<Node *>(child));
-                visited.insert(child);
-            }
-        }
-    }
 }
 
 ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
@@ -739,18 +708,16 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
     return res_column;
 }
 
-Block ActionsDAG::updateHeader(const Block & header) const
+Block ActionsDAG::updateHeader(Block header) const
 {
     IntermediateExecutionResult node_to_column;
     std::set<size_t> pos_to_remove;
 
     {
-        using inline_vector = absl::InlinedVector<size_t, 7>; // 64B, holding max 7 size_t elements inlined
-        absl::flat_hash_map<std::string_view, inline_vector> input_positions;
+        std::unordered_map<std::string_view, std::list<size_t>> input_positions;
 
-        /// We insert from last to first in the inlinedVector so it's easier to pop_back matches later
-        for (size_t pos = inputs.size(); pos != 0; pos--)
-            input_positions[inputs[pos - 1]->result_name].emplace_back(pos - 1);
+        for (size_t pos = 0; pos < inputs.size(); ++pos)
+            input_positions[inputs[pos]->result_name].emplace_back(pos);
 
         for (size_t pos = 0; pos < header.columns(); ++pos)
         {
@@ -758,11 +725,10 @@ Block ActionsDAG::updateHeader(const Block & header) const
             auto it = input_positions.find(col.name);
             if (it != input_positions.end() && !it->second.empty())
             {
+                auto & list = it->second;
                 pos_to_remove.insert(pos);
-
-                auto & v = it->second;
-                node_to_column[inputs[v.back()]] = col;
-                v.pop_back();
+                node_to_column[inputs[list.front()]] = col;
+                list.pop_front();
             }
         }
     }
@@ -780,21 +746,18 @@ Block ActionsDAG::updateHeader(const Block & header) const
         throw;
     }
 
+    if (isInputProjected())
+        header.clear();
+    else
+        header.erase(pos_to_remove);
 
     Block res;
-    res.reserve(result_columns.size());
+
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    if (isInputProjected())
-        return res;
-
-    res.reserve(header.columns() - pos_to_remove.size());
-    for (size_t i = 0; i < header.columns(); i++)
-    {
-        if (!pos_to_remove.contains(i))
-            res.insert(header.data[i]);
-    }
+    for (auto && item : header)
+        res.insert(std::move(item));
 
     return res;
 }
@@ -1649,7 +1612,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     first.projected_output = second.projected_output;
 }
 
-void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
+void ActionsDAG::mergeNodes(ActionsDAG && second)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
     for (auto & node : nodes)
@@ -1705,12 +1668,6 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         nodes_to_process.pop_back();
     }
 
-    if (out_outputs)
-    {
-        for (auto & node : second.getOutputs())
-            out_outputs->push_back(node_name_to_node.at(node->result_name));
-    }
-
     if (nodes_to_move_from_second_dag.empty())
         return;
 
@@ -1732,7 +1689,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
     }
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_list in result.
@@ -1745,14 +1702,6 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     /// List of nodes from current actions which are not inputs, but will be in second part.
     NodeRawConstPtrs new_inputs;
-
-    /// Avoid new inputs to have the same name as existing inputs.
-    /// It's allowed for DAG but may break Block invariant 'columns with identical name must have identical structure'.
-    std::unordered_set<std::string_view> duplicate_inputs;
-    size_t duplicate_counter = 0;
-    if (avoid_duplicate_inputs)
-        for (const auto * input : inputs)
-            duplicate_inputs.insert(input->result_name);
 
     struct Frame
     {
@@ -1866,8 +1815,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                                 input_node.result_name = child->result_name;
                                 child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                                if (child->type != ActionType::INPUT)
-                                    new_inputs.push_back(child);
+                                new_inputs.push_back(child);
                             }
                         }
 
@@ -1923,32 +1871,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     for (const auto * input : new_inputs)
     {
-        auto & cur = data[input];
-
-        if (avoid_duplicate_inputs)
-        {
-            bool is_name_updated = false;
-            while (!duplicate_inputs.insert(cur.to_first->result_name).second)
-            {
-                is_name_updated = true;
-                cur.to_first->result_name = fmt::format("{}_{}", input->result_name, duplicate_counter);
-                ++duplicate_counter;
-            }
-
-            if (is_name_updated)
-            {
-                Node input_node;
-                input_node.type = ActionType::INPUT;
-                input_node.result_type = cur.to_first->result_type;
-                input_node.result_name = cur.to_first->result_name;
-
-                auto * new_input = &second_nodes.emplace_back(std::move(input_node));
-                cur.to_second->type = ActionType::ALIAS;
-                cur.to_second->children = {new_input};
-                cur.to_second = new_input;
-            }
-        }
-
+        const auto & cur = data[input];
         second_inputs.push_back(cur.to_second);
         first_outputs.push_back(cur.to_first);
     }
@@ -2956,7 +2879,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
                 FunctionOverloadResolverPtr function_overload_resolver;
 
-                String result_name;
                 if (node->function_base->getName() == "indexHint")
                 {
                     ActionsDAG::NodeRawConstPtrs children;
@@ -2977,11 +2899,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
                             function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function_clone));
-                            /// Keep the unique name like "indexHint(foo)" instead of replacing it
-                            /// with "indexHint()". Otherwise index analysis (which does look at
-                            /// indexHint arguments that we're hiding here) will get confused by the
-                            /// multiple substantially different nodes with the same result name.
-                            result_name = node->result_name;
                         }
                     }
                 }
@@ -2996,7 +2913,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     function_base,
                     std::move(function_children),
                     std::move(arguments),
-                    result_name,
+                    {},
                     node->result_type,
                     all_const);
                 break;

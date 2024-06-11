@@ -205,7 +205,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType : uint8_t
+    enum class ProcessingUnitType
     {
         START,
         PLAIN,

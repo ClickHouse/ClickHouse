@@ -51,7 +51,7 @@ class ActionsDAG
 {
 public:
 
-    enum class ActionType : uint8_t
+    enum class ActionType
     {
         /// Column which must be in input.
         INPUT,
@@ -195,8 +195,6 @@ public:
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
-    void removeAliasesForFilter(const std::string & filter_name);
-
     /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
@@ -274,7 +272,7 @@ public:
     ///
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(const Block & header) const;
+    Block updateHeader(Block header) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -290,7 +288,7 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
-    enum class MatchColumnsMode : uint8_t
+    enum class MatchColumnsMode
     {
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
@@ -326,9 +324,8 @@ public:
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
 
-    /// Merge current nodes with specified dag nodes.
-    /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
-    void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
+    /// Merge current nodes with specified dag nodes
+    void mergeNodes(ActionsDAG && second);
 
     struct SplitResult
     {
@@ -345,7 +342,7 @@ public:
     ///   initial DAG    : (a, b, c, d, e) -> (w, x, y, z)  | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 3 4 5 6 w x y z
     ///   split (first)  : (a, c, d) -> (i, j, k, w, y)     | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 b 3 4 5 e 6 i j k w y
     ///   split (second) : (i, j, k, y, b, e) -> (x, y, z)  | 1 2 b 3 4 5 e 6 i j k w y  ->  1 2 3 4 5 6 w x y z
-    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
+    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;

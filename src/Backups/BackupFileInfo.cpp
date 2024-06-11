@@ -27,7 +27,7 @@ namespace
         return std::nullopt;
     }
 
-    enum class CheckBackupResult : uint8_t
+    enum class CheckBackupResult
     {
         HasPrefix,
         HasFull,

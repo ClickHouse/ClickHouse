@@ -117,6 +117,8 @@ size_t AggregatedDataVariants::size() const
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+
+    UNREACHABLE();
 }
 
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
@@ -134,6 +136,8 @@ size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+
+    UNREACHABLE();
 }
 
 const char * AggregatedDataVariants::getMethodName() const
@@ -151,6 +155,8 @@ const char * AggregatedDataVariants::getMethodName() const
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+
+    UNREACHABLE();
 }
 
 bool AggregatedDataVariants::isTwoLevel() const
@@ -168,6 +174,8 @@ bool AggregatedDataVariants::isTwoLevel() const
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+
+    UNREACHABLE();
 }
 
 bool AggregatedDataVariants::isConvertibleToTwoLevel() const

@@ -57,10 +57,6 @@ public:
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
-    Float64 getFloat64(size_t n) const override;
-    Float32 getFloat32(size_t n) const override;
-    UInt64 getUInt(size_t n) const override;
-    Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
     StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
@@ -109,7 +105,6 @@ public:
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
-    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
     void reserve(size_t n) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
@@ -191,9 +186,6 @@ public:
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
 
-    bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
@@ -214,8 +206,5 @@ ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
-
-ColumnPtr removeNullable(const ColumnPtr & column);
-ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
 }

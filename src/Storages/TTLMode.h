@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class TTLMode : uint8_t
+enum class TTLMode
 {
     DELETE,
     MOVE,
