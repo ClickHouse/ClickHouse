@@ -1415,11 +1415,6 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
 void StorageWindowView::writeIntoWindowView(
     StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
 {
-    LOG_TRACE(getLogger("StorageWindowView"), "writeIntoWindowView: rows {}, infos {} with {}, window column {}",
-            block.rows(),
-            chunk_infos.size(), chunk_infos.debug(),
-            window_view.timestamp_column_name);
-
     window_view.throwIfWindowViewIsDisabled(local_context);
     while (window_view.modifying_query)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -1463,9 +1458,6 @@ void StorageWindowView::writeIntoWindowView(
     {
         lateness_bound = t_max_fired_watermark;
     }
-
-    LOG_TRACE(getLogger("StorageWindowView"), "writeIntoWindowView: lateness_bound {}, window_view.is_proctime {}",
-            lateness_bound, window_view.is_proctime);
 
     if (lateness_bound > 0) /// Add filter, which leaves rows with timestamp >= lateness_bound
     {
@@ -1583,9 +1575,6 @@ void StorageWindowView::writeIntoWindowView(
 
         if (block_max_timestamp)
             window_view.updateMaxTimestamp(block_max_timestamp);
-
-        LOG_TRACE(getLogger("StorageWindowView"), "writeIntoWindowView: block_max_timestamp {}",
-            block_max_timestamp);
     }
 
     UInt32 lateness_upper_bound = 0;

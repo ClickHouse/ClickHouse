@@ -336,9 +336,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
-    LOG_DEBUG(getLogger("MergedBlockOutputStream()"), "writeImpl block rows {} size {} getPartDirectory {}",
-                block.rows(), block.bytes(), data_part_storage->getPartDirectory());
-
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)

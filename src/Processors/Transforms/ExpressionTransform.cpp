@@ -1,8 +1,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include <Common/logger_useful.h>
-
 
 namespace DB
 {

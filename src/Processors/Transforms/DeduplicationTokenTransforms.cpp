@@ -20,11 +20,6 @@ namespace ErrorCodes
 
 void RestoreChunkInfosTransform::transform(Chunk & chunk)
 {
-    LOG_TRACE(getLogger("RestoreChunkInfosTransform"), "chunk infos before: {}:{}, append: {}:{}, chunk has rows {}",
-        chunk.getChunkInfos().size(), chunk.getChunkInfos().debug(),
-        chunk_infos.size(), chunk_infos.debug(),
-        chunk.getNumRows());
-
     chunk.getChunkInfos().append(chunk_infos.clone());
 }
 
@@ -76,9 +71,6 @@ void TokenInfo::setSourceBlockNumber(size_t sbn)
 
 void TokenInfo::setViewID(const String & id)
 {
-    LOG_DEBUG(getLogger("TokenInfo"),
-        "token: {}, stage: {}, view id: {}",
-        getToken(false), stage, id);
     chassert(stage == VIEW_ID);
     addTokenPart(fmt::format("view-id-{}", id));
     stage = VIEW_BLOCK_NUMBER;
@@ -146,8 +138,6 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
 
-    LOG_DEBUG(getLogger("SetInitialTokenTransform"), "has token_info {}", bool(token_info));
-
     if (!token_info)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -208,7 +198,6 @@ void ResetTokenTransform::transform(Chunk & chunk)
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in ResetTokenTransform");
 
-    LOG_DEBUG(getLogger("ResetTokenTransform"), "token_info was {}", token_info->getToken(false));
     token_info->reset();
 }
 

@@ -311,20 +311,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
                 context->getSettingsRef().insert_deduplication_token.value);
 
         if (token_info->tokenInitialized())
-        {
-            /// multiple blocks can be inserted within the same insert query
-            /// an ordinal number is added to dedup token to generate a distinctive block id for each block
             block_dedup_token = token_info->getToken();
-
-            LOG_DEBUG(storage.log,
-                "dedup token from insert deduplication token in chunk: {}",
-                block_dedup_token);
-        }
-        else
-        {
-            LOG_DEBUG(storage.log,
-                "dedup token from hash is calculated");
-        }
     }
 
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, async_insert_info);
