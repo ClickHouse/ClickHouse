@@ -235,8 +235,7 @@ private:
     struct ChildPlan
     {
         QueryPlan plan;
-        Aliases table_aliases;
-        RowPolicyDataOpt row_policy_data_opt;
+        QueryProcessingStage::Enum stage;
     };
 
     /// Store read plan for each child table.
@@ -250,9 +249,8 @@ private:
 
     void filterTablesAndCreateChildrenPlans();
 
-    QueryPlan createPlanForTable(
+    ChildPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
-        const Aliases & table_aliases,
         SelectQueryInfo & query_info,
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
@@ -262,22 +260,15 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
-    void updatePlan(
-        QueryPlan & plan,
-        const StorageSnapshotPtr & storage_snapshot,
+    void addVirtualColumns(
+        ChildPlan & child,
         SelectQueryInfo & modified_query_info,
         QueryProcessingStage::Enum processed_stage,
-        const Block & header,
-        const Aliases & aliases,
-        const RowPolicyDataOpt & row_policy_data_opt,
         const StorageWithLockAndName & storage_with_lock) const;
 
     QueryPipelineBuilderPtr buildPipeline(
-        QueryPlan & plan,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & modified_query_info,
-        QueryProcessingStage::Enum processed_stage,
-        const StorageWithLockAndName & storage_with_lock) const;
+        ChildPlan & child,
+        QueryProcessingStage::Enum processed_stage) const;
 
     static void convertAndFilterSourceStream(
         const Block & header,
@@ -286,8 +277,7 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        QueryPlan & plan,
-        QueryProcessingStage::Enum processed_stage);
+        ChildPlan & child);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,
