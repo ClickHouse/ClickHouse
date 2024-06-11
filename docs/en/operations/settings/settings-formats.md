@@ -1706,6 +1706,38 @@ Result:
 └────────────┘
 ```
 
+## output_format_pretty_display_column_names_footer
+
+Display column names in the footer if there are 999 or more rows.
+
+Possible values:
+
+- 0 — No column names are displayed in the footer.
+- 1 — Column names are displayed in the footer if row count is greater than or equal to 999.
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
+```
+
+Result:
+
+```response
+      ┌─number─┬─toTypeName(number)─┐
+   1. │      0 │ UInt64             │
+   2. │      1 │ UInt64             │
+   3. │      2 │ UInt64             │
+   ...
+ 999. │    998 │ UInt64             │
+1000. │    999 │ UInt64             │
+      └─number─┴─toTypeName(number)─┘
+```
+
+
+
 ## Template format settings {#template-format-settings}
 
 ### format_template_resultset {#format_template_resultset}
