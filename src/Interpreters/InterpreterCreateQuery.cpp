@@ -972,21 +972,34 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
     }
 
+    Block input_block;
+    bool relaxed = getContext()->getSettingsRef().allow_materialized_view_with_bad_select;
+
     if (check_columns)
     {
-        Block input_block;
-
-        if (getContext()->getSettingsRef().allow_experimental_analyzer)
+        try
         {
-            input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            }
+            else
+            {
+                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                    getContext(),
+                    SelectQueryOptions().analyze()).getSampleBlock();
+            }
         }
-        else
+        catch (Exception &)
         {
-            input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                getContext(),
-                SelectQueryOptions().analyze()).getSampleBlock();
+            if (!relaxed)
+                throw;
+            check_columns = false;
         }
+    }
 
+    if (check_columns)
+    {
         std::unordered_map<std::string_view, DataTypePtr> output_types;
         for (const NameAndTypePair & nt : all_output_columns)
             output_types[nt.name] = nt.type;
@@ -1001,21 +1014,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 input_columns.push_back(input_column.cloneEmpty());
                 output_columns.push_back(ColumnWithTypeAndName(it->second->createColumn(), it->second, input_column.name));
             }
-            else if (create.refresh_strategy)
-            {
-                /// Unrecognized columns produced by SELECT query are allowed for regular materialized
-                /// views, but not for refreshable ones. This is in part because it was easier to
-                /// implement, in part because refreshable views have less concern about ALTERing target
-                /// tables.
-                ///
-                /// The motivating scenario for allowing this in regular MV is ALTERing the table+query.
-                /// Suppose the user removes a column from target table, then a minute later
-                /// correspondingly updates the view's query to not produce that column.
-                /// If MV didn't allow unrecognized columns then during that minute all INSERTs into the
-                /// source table would fail - unacceptable.
-                /// For refreshable views, during that minute refreshes will fail - acceptable.
+            else if (!relaxed)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name.", input_column.name);
-            }
         }
 
         if (input_columns.empty())

@@ -369,5 +369,13 @@ $CLICKHOUSE_CLIENT -nq "
     create materialized view n refresh every 1 second (x Int64) engine MergeTree order by x as select 1 as x from numbers(2);
     drop table n;"
 
+# Reading from table that doesn't exist yet.
+$CLICKHOUSE_CLIENT -nq "
+    create materialized view o refresh every 1 second (x Int64) engine Memory as select x from nonexist; -- { serverError UNKNOWN_TABLE }
+    create materialized view o (x Int64) engine Memory as select x from nonexist; -- { serverError UNKNOWN_TABLE }
+    create materialized view o (x Int64) engine Memory as select x from nope.nonexist; -- { serverError UNKNOWN_DATABASE }
+    create materialized view o refresh every 1 second (x Int64) engine Memory as select x from nope.nonexist settings allow_materialized_view_with_bad_select = 1;
+    drop table o;"
+
 $CLICKHOUSE_CLIENT -nq "
     drop table refreshes;"

@@ -708,6 +708,7 @@ def create_some_tables(db):
         "distributed_ddl_task_timeout": 0,
         "allow_experimental_object_type": 1,
         "allow_suspicious_codecs": 1,
+        "allow_materialized_view_with_bad_select": 1,
     }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
     dummy_node.query(
