@@ -220,14 +220,22 @@ def test_globs_in_read_table(started_cluster):
         )
         print("inside_table_func ", inside_table_func)
         assert (
-            node1.query("select * from hdfs(" + inside_table_func + ") settings hdfs_throw_on_zero_files_match=0")
+            node1.query(
+                "select * from hdfs("
+                + inside_table_func
+                + ") settings hdfs_throw_on_zero_files_match=0"
+            )
             == paths_amount * some_data
         )
         assert node1.query(
-            "select count(distinct _path) from hdfs(" + inside_table_func + ") settings hdfs_throw_on_zero_files_match=0"
+            "select count(distinct _path) from hdfs("
+            + inside_table_func
+            + ") settings hdfs_throw_on_zero_files_match=0"
         ).rstrip() == str(paths_amount)
         assert node1.query(
-            "select count(distinct _file) from hdfs(" + inside_table_func + ") settings hdfs_throw_on_zero_files_match=0"
+            "select count(distinct _file) from hdfs("
+            + inside_table_func
+            + ") settings hdfs_throw_on_zero_files_match=0"
         ).rstrip() == str(files_amount)
 
 
