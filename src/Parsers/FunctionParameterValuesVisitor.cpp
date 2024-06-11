@@ -23,7 +23,7 @@ class FunctionParameterValuesVisitor
 public:
     explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, ContextPtr context_)
         : parameter_values(parameter_values_)
-         ,context(context_)
+         , context(context_)
     {
     }
 
