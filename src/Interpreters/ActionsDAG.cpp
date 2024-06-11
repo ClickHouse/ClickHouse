@@ -3159,11 +3159,17 @@ FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
     {
         /// find input node which corresponds to alias
         const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        while (node)
         {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
+            if (node->type == ActionsDAG::ActionType::ALIAS
+                || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize"))
+            {
+                /// alias has only one child
+                chassert(node->children.size() == 1);
+                node = node->children.front();
+            }
+            else
+                break;
         }
         if (node && node->type == ActionsDAG::ActionType::INPUT)
             /// node can have several aliases but we consider only the first one

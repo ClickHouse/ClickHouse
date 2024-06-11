@@ -53,7 +53,7 @@ namespace ErrorCodes
 String dumpQueryPlan(QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
-    query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
+    query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true, true});
 
     return query_plan_buffer.str();
 }
