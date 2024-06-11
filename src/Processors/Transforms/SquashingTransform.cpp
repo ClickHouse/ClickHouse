@@ -12,7 +12,7 @@ extern const int LOGICAL_ERROR;
 SquashingTransform::SquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
@@ -20,7 +20,7 @@ void SquashingTransform::onConsume(Chunk chunk)
 {
     Chunk planned_chunk = squashing.add(std::move(chunk));
     if (planned_chunk.hasChunkInfo())
-        cur_chunk = squashing.squash(std::move(planned_chunk));
+        cur_chunk = DB::Squashing::squash(std::move(planned_chunk));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -35,7 +35,7 @@ void SquashingTransform::onFinish()
 {
     Chunk chunk = squashing.flush();
     if (chunk.hasChunkInfo())
-        chunk = squashing.squash(std::move(chunk));
+        chunk = DB::Squashing::squash(std::move(chunk));
     finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
 }
 
@@ -59,7 +59,7 @@ void SquashingTransform::work()
 SimpleSquashingTransform::SimpleSquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ISimpleTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
@@ -69,7 +69,7 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
     {
         Chunk planned_chunk = squashing.add(std::move(chunk));
         if (planned_chunk.hasChunkInfo())
-            chunk = squashing.squash(std::move(planned_chunk));
+            chunk = DB::Squashing::squash(std::move(planned_chunk));
     }
     else
     {
@@ -78,7 +78,7 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 
         chunk = squashing.flush();
         if (chunk.hasChunkInfo())
-            chunk = squashing.squash(std::move(chunk));
+            chunk = DB::Squashing::squash(std::move(chunk));
     }
 }
 

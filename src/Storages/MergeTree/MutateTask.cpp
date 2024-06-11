@@ -1286,9 +1286,8 @@ void PartMergerWriter::prepare()
 
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        Squashing squashing(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 
     existing_rows_count = 0;
@@ -1298,6 +1297,7 @@ void PartMergerWriter::prepare()
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
     Block cur_block;
+    Block header;
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
@@ -1315,18 +1315,16 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
             Block block_to_squash = projection.calculate(cur_block, ctx->context);
-            projection_squashes[i].header = block_to_squash;
+            header = block_to_squash.cloneWithoutColumns();
             Chunk planned_chunk = projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
 
             if (planned_chunk.hasChunkInfo())
             {
-                Chunk projection_chunk = projection_squashes[i].squash(std::move(planned_chunk));
-                ColumnsWithTypeAndName cols;
-                if (projection_chunk.hasColumns())
-                    for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-                        cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], block_to_squash.getDataTypes()[j], block_to_squash.getNames()[j]));
+                Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
+
+                auto result = block_to_squash.cloneWithColumns(projection_chunk.getColumns());
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
+                    *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
                 tmp_part.part->getDataPartStorage().commitTransaction();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
@@ -1348,14 +1346,11 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto planned_chunk = projection_squash_plan.flush();
         if (planned_chunk.hasChunkInfo())
         {
-            Chunk projection_chunk = projection_squashes[i].squash(std::move(planned_chunk));
-            ColumnsWithTypeAndName cols;
-            if (projection_chunk.hasColumns())
-                for (size_t j = 0; j < projection_chunk.getNumColumns(); ++j)
-                    cols.push_back(ColumnWithTypeAndName(projection_chunk.getColumns()[j], projection_squashes[i].header.getDataTypes()[j], projection_squashes[i].header.getNames()[j]));
+            Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
 
+            auto result = header.cloneWithColumns(projection_chunk.getColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, Block(cols), projection, ctx->new_data_part.get(), ++block_num);
+                *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
             temp_part.part->getDataPartStorage().commitTransaction();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));

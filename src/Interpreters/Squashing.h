@@ -29,19 +29,17 @@ struct ChunksToSquash : public ChunkInfo
 class Squashing
 {
 public:
-    explicit Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    explicit Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
     Squashing(Squashing && other) = default;
 
     Chunk add(Chunk && input_chunk);
-    Chunk squash(Chunk && input_chunk);
+    static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
     bool isDataLeft()
     {
         return !chunks_to_merge_vec.empty();
     }
-
-    Block header;
 
 private:
     struct CurrentSize
@@ -56,9 +54,9 @@ private:
 
     CurrentSize accumulated_size;
 
-    const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
+    static const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    Chunk squash(std::vector<Chunk> & input_chunks);
+    static Chunk squash(std::vector<Chunk> & input_chunks);
 
     void expandCurrentSize(size_t rows, size_t bytes);
     void changeCurrentSize(size_t rows, size_t bytes);

@@ -10,9 +10,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
-    : header(header_)
-    , min_block_size_rows(min_block_size_rows_)
+Squashing::Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_)
+    : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
 {
 }
@@ -87,12 +86,15 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
     if (chunks.empty())
         return {};
 
+    auto chunk = Chunk(chunks.back().cloneEmptyColumns(), 0);
+
     auto info = std::make_shared<ChunksToSquash>();
     info->chunks = std::move(chunks);
 
     chunks.clear();
 
-    return Chunk(header.cloneEmptyColumns(), 0, info);
+    chunk.setChunkInfo(info);
+    return chunk;
 }
 
 Chunk Squashing::squash(std::vector<Chunk> & input_chunks)
@@ -106,10 +108,10 @@ Chunk Squashing::squash(std::vector<Chunk> & input_chunks)
     {
         auto & first_chunk = input_chunks[0];
         Columns columns = first_chunk.detachColumns();
-        for (size_t i = 0; i < columns.size(); ++i)
+        for (auto & column : columns)
         {
-            mutable_columns.push_back(IColumn::mutate(std::move(columns[i])));
-            mutable_columns[i]->reserve(rows);
+            mutable_columns.push_back(IColumn::mutate(std::move(column)));
+            mutable_columns.back()->reserve(rows);
         }
     }
 
