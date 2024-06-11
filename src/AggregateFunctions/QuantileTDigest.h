@@ -334,6 +334,18 @@ public:
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
+    Float64 getCountEqual(Float64 value) const
+    {
+        Float64 result = 0;
+        for (const auto & c : centroids)
+        {
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            if (value == c.mean)
+                result += c.count;
+        }
+        return result;
+    }
+
     Float64 getCountLessThan(Float64 value) const
     {
         bool first = true;

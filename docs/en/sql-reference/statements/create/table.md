@@ -337,7 +337,7 @@ Then, when executing the query `SELECT name FROM users_a WHERE length(name) < 5;
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs
+## Column Compression Codecs {#column_compression_codec}
 
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
 
