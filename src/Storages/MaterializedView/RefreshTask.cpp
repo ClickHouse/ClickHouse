@@ -1,6 +1,5 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
-#include <fmt/chrono.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -326,10 +325,9 @@ void RefreshTask::refreshTask()
             {
                 info.last_refresh_result = LastRefreshResult::Error;
                 info.exception_message = *exception;
-
-                String retry_info = scheduleRetryOrSkipToNextRefresh(now);
-
-                LOG_ERROR(log, "Refresh failed ({}): {}", retry_info, *exception);
+                Int64 attempt_number = num_retries + 1;
+                scheduleRetryOrSkipToNextRefresh(now);
+                LOG_ERROR(log, "Refresh failed (attempt {}/{}): {}", attempt_number, refresh_settings.refresh_retries + 1, *exception);
             }
             else if (!refreshed)
             {
@@ -459,13 +457,12 @@ void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point n
     info.next_refresh_time = UInt32(secs.time_since_epoch().count());
 }
 
-String RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now)
+void RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now)
 {
-    Int64 attempt_number = num_retries + 1;
     if (refresh_settings.refresh_retries >= 0 && num_retries >= refresh_settings.refresh_retries)
     {
         advanceNextRefreshTime(now);
-        return fmt::format("attempt {}/{}, next refresh at {:%Y.%m.%d %T}", attempt_number, refresh_settings.refresh_retries + 1, next_refresh_actual);
+        return;
     }
 
     num_retries += 1;
@@ -480,7 +477,7 @@ String RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::
         delay_ms = refresh_settings.refresh_retry_max_backoff_ms;
 
     next_refresh_actual = now + std::chrono::milliseconds(delay_ms);
-    return fmt::format("attempt {}/{}, retry in {} seconds", attempt_number, refresh_settings.refresh_retries, (delay_ms + 500) / 1000);
+    return;
 }
 
 bool RefreshTask::arriveDependency(const StorageID & parent)
