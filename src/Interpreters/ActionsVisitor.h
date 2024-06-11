@@ -9,6 +9,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -43,20 +44,16 @@ struct ScopeStack : WithContext
 
     struct Level
     {
-        ActionsDAGPtr actions_dag;
+        ActionsDAG actions_dag;
         IndexPtr index;
         NameSet inputs;
-
-        Level();
-        Level(Level &&) noexcept;
-        ~Level();
     };
 
     using Levels = std::vector<Level>;
 
     Levels stack;
 
-    ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_);
+    ScopeStack(ActionsDAG actions_dag, ContextPtr context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -67,7 +64,7 @@ struct ScopeStack : WithContext
     void addArrayJoin(const std::string & source_name, std::string result_name);
     void addFunction(const FunctionOverloadResolverPtr & function, const Names & argument_names, std::string result_name);
 
-    ActionsDAGPtr popLevel();
+    ActionsDAG popLevel();
 
     const ActionsDAG & getLastActions() const;
     const Index & getLastActionsIndex() const;
@@ -147,7 +144,7 @@ public:
             SizeLimits set_size_limit_,
             size_t subquery_depth_,
             std::reference_wrapper<const NamesAndTypesList> source_columns_,
-            ActionsDAGPtr actions_dag,
+            ActionsDAG actions_dag,
             PreparedSetsPtr prepared_sets_,
             bool no_subqueries_,
             bool no_makeset_,
@@ -182,7 +179,7 @@ public:
             actions_stack.addFunction(function, argument_names, std::move(result_name));
         }
 
-        ActionsDAGPtr getActions()
+        ActionsDAG getActions()
         {
             return actions_stack.popLevel();
         }

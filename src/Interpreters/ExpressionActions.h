@@ -173,48 +173,48 @@ struct ExpressionActionsChain : WithContext
         /// Remove unused result and update required columns
         virtual void finalize(const NameSet & required_output_) = 0;
         /// Add projections to expression
-        virtual void prependProjectInput() const = 0;
+        virtual void prependProjectInput() = 0;
         virtual std::string dump() const = 0;
 
         /// Only for ExpressionActionsStep
-        ActionsDAGPtr & actions();
-        const ActionsDAGPtr & actions() const;
+        ActionsAndFlagsPtr & actions();
+        const ActionsAndFlagsPtr & actions() const;
     };
 
     struct ExpressionActionsStep : public Step
     {
-        ActionsDAGPtr actions_dag;
+        ActionsAndFlagsPtr actions_and_flags;
 
-        explicit ExpressionActionsStep(ActionsDAGPtr actions_dag_, Names required_output_ = Names())
+        explicit ExpressionActionsStep(ActionsAndFlagsPtr actiactions_and_flags_, Names required_output_ = Names())
             : Step(std::move(required_output_))
-            , actions_dag(std::move(actions_dag_))
+            , actions_and_flags(std::move(actiactions_and_flags_))
         {
         }
 
         NamesAndTypesList getRequiredColumns() const override
         {
-            return actions_dag->getRequiredColumns();
+            return actions_and_flags->actions.getRequiredColumns();
         }
 
         ColumnsWithTypeAndName getResultColumns() const override
         {
-            return actions_dag->getResultColumns();
+            return actions_and_flags->actions.getResultColumns();
         }
 
         void finalize(const NameSet & required_output_) override
         {
-            if (!actions_dag->isOutputProjected())
-                actions_dag->removeUnusedActions(required_output_);
+            if (!actions_and_flags->projected_output)
+                actions_and_flags->actions.removeUnusedActions(required_output_);
         }
 
-        void prependProjectInput() const override
+        void prependProjectInput() override
         {
-            actions_dag->projectInput();
+            actions_and_flags->project_input = true;
         }
 
         std::string dump() const override
         {
-            return actions_dag->dumpDAG();
+            return actions_and_flags->actions.dumpDAG();
         }
     };
 
@@ -229,7 +229,7 @@ struct ExpressionActionsChain : WithContext
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const NameSet & required_output_) override;
-        void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
+        void prependProjectInput() override {} /// TODO: remove unused columns before ARRAY JOIN ?
         std::string dump() const override { return "ARRAY JOIN"; }
     };
 
@@ -245,7 +245,7 @@ struct ExpressionActionsChain : WithContext
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const NameSet & required_output_) override;
-        void prependProjectInput() const override {} /// TODO: remove unused columns before JOIN ?
+        void prependProjectInput() override {} /// TODO: remove unused columns before JOIN ?
         std::string dump() const override { return "JOIN"; }
     };
 
@@ -263,7 +263,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)
+    ActionsAndFlagsPtr getLastActions(bool allow_empty = false)
     {
         if (steps.empty())
         {
@@ -272,7 +272,7 @@ struct ExpressionActionsChain : WithContext
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
         }
 
-        return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
+        return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_and_flags;
     }
 
     Step & getLastStep()
@@ -286,7 +286,7 @@ struct ExpressionActionsChain : WithContext
     Step & lastStep(const NamesAndTypesList & columns)
     {
         if (steps.empty())
-            steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
+            steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndFlags>(ActionsDAG(columns), false, false)));
         return *steps.back();
     }
 

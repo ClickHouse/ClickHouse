@@ -1150,8 +1150,6 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     }
 
     removeUnusedActions();
-    projectInput();
-    projected_output = true;
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
@@ -1526,7 +1524,6 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
     actions_dag->outputs.swap(projection);
     actions_dag->removeUnusedActions();
-    actions_dag->projectInput();
 
     return actions_dag;
 }

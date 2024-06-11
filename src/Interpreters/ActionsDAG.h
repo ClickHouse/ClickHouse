@@ -103,13 +103,11 @@ private:
     NodeRawConstPtrs inputs;
     NodeRawConstPtrs outputs;
 
-    bool project_input = false;
-    bool projected_output = false;
-
 public:
     ActionsDAG() = default;
     ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
+    ActionsDAG & operator=(ActionsDAG &&) = default;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
@@ -178,10 +176,6 @@ public:
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
-
-    void projectInput(bool project = true) { project_input = project; }
-    bool isInputProjected() const { return project_input; }
-    bool isOutputProjected() const { return projected_output; }
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -509,5 +503,14 @@ struct ActionDAGNodes
 {
     ActionsDAG::NodeRawConstPtrs nodes;
 };
+
+struct ActionsAndFlags
+{
+    ActionsDAG actions;
+    bool project_input = false;
+    bool projected_output = false;
+};
+
+using ActionsAndFlagsPtr = std::shared_ptr<ActionsAndFlags>;
 
 }

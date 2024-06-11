@@ -757,11 +757,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
         }
     }
 
-    if (actions_dag->isInputProjected())
-    {
-        block.clear();
-    }
-    else if (allow_duplicates_in_input)
+    if (allow_duplicates_in_input)
     {
         /// This case is the same as when the input is projected
         /// since we do not need any input columns.
@@ -862,7 +858,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
+    ss << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
@@ -926,7 +922,6 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     map->add("Actions", std::move(actions_array));
     map->add("Outputs", std::move(outputs_array));
     map->add("Positions", std::move(positions_array));
-    map->add("Project Input", actions_dag->isInputProjected());
 
     return map;
 }
@@ -980,7 +975,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndFlags>(ActionsDAG(columns), false, false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1129,14 +1124,14 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsDAGPtr & ExpressionActionsChain::Step::actions()
+ActionsAndFlagsPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndFlagsPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
 }
