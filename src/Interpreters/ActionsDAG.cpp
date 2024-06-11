@@ -3161,6 +3161,7 @@ FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
         const auto * node = output_node;
         while (node)
         {
+            /// There also can be 'materialize' functions in case of VIEWs
             if (node->type == ActionsDAG::ActionType::ALIAS
                 || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize"))
             {
