@@ -568,8 +568,21 @@ void ZooKeeperMetadataTransaction::commit()
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
-        return replicated_db->tryGetCluster();
+    String name = cluster_name;
+    bool all_groups = false;
+    if (name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+    {
+        name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
+        all_groups = true;
+    }
+
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    {
+        if (all_groups)
+            return replicated_db->tryGetAllGroupsCluster();
+        else
+            return replicated_db->tryGetCluster();
+    }
     return {};
 }
 
