@@ -22,9 +22,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3QueueSetFileProcessingMicroseconds;
-    extern const Event S3QueueSetFileProcessedMicroseconds;
-    extern const Event S3QueueSetFileFailedMicroseconds;
     extern const Event S3QueueFailedFiles;
     extern const Event S3QueueProcessedFiles;
     extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
