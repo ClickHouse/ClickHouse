@@ -1837,7 +1837,7 @@ private:
     void release()
     {
         writer.reset();
-        write_buf->finalize();
+        write_buf.reset();
     }
 
     StorageMetadataPtr metadata_snapshot;

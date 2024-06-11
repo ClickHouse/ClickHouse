@@ -38,8 +38,6 @@ public:
     std::string getFileName() const override { return filename; }
 
 private:
-    void finalizeImpl() override;
-
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
     const std::string filename;

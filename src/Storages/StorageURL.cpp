@@ -623,7 +623,7 @@ void StorageURLSink::finalize()
 void StorageURLSink::release()
 {
     writer.reset();
-    write_buf->finalize();
+    write_buf.reset();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
