@@ -1790,8 +1790,8 @@ public:
     {
         std::lock_guard cancel_lock(cancel_mutex);
         cancelBuffers();
-        cancelled = true;
         releaseBuffers();
+        cancelled = true;
     }
 
     void onException(std::exception_ptr exception) override
@@ -1837,7 +1837,7 @@ private:
     void releaseBuffers()
     {
         writer.reset();
-        write_buf->finalize();
+        write_buf.reset();
     }
 
     void cancelBuffers()
