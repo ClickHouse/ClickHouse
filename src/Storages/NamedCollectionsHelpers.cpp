@@ -95,7 +95,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.empty())
         return nullptr;
 
-    NamedCollectionUtils::loadIfNot();
+    NamedCollectionFactory::instance().loadIfNot();
 
     auto collection_name = getCollectionName(asts);
     if (!collection_name.has_value())

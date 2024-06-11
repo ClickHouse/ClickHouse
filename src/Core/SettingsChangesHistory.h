@@ -96,6 +96,8 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
               {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
               {"s3_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"},
+              {"input_format_parquet_max_block_size", 8192, DEFAULT_BLOCK_SIZE, "Increase block size for parquet reader."},
+              {"input_format_parquet_prefer_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Average block bytes output by parquet reader."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
               {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
               {"allow_experimental_statistic", false, false, "Old setting which popped up here being renamed."},
