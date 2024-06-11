@@ -5,6 +5,9 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
+#include <Common/SharedMutex.h>
+
+#include <base/defines.h>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -28,36 +31,21 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-    /// Node should have as minimal size as possible to reduce memory footprint
-    /// of stored nodes
-    /// New fields should be added to the struct only if it's really necessary
-    struct Node
+    struct NodeStats
     {
         int64_t czxid{0};
         int64_t mzxid{0};
         int64_t pzxid{0};
-        uint64_t acl_id = 0; /// 0 -- no ACL by default
 
         int64_t mtime{0};
-
-        std::unique_ptr<char[]> data{nullptr};
-        uint32_t data_size{0};
 
         int32_t version{0};
         int32_t cversion{0};
         int32_t aversion{0};
 
-        mutable uint64_t cached_digest = 0;
+        uint32_t data_size{0};
 
-        Node() = default;
-
-        Node & operator=(const Node & other);
-        Node(const Node & other);
-
-        Node & operator=(Node && other) noexcept;
-        Node(Node && other) noexcept;
-
-        bool empty() const;
+        uint64_t acl_id = 0; /// 0 -- no ACL by default
 
         bool isEphemeral() const
         {
@@ -88,6 +76,7 @@ public:
 
         void setNumChildren(int32_t num_children)
         {
+            is_ephemeral_and_ctime.is_ephemeral = false;
             ephemeral_or_children_data.children_info.num_children = num_children;
         }
 
@@ -132,34 +121,6 @@ public:
             is_ephemeral_and_ctime.ctime = ctime;
         }
 
-        void copyStats(const Coordination::Stat & stat);
-
-        void setResponseStat(Coordination::Stat & response_stat) const;
-
-        /// Object memory size
-        uint64_t sizeInBytes() const;
-
-        void setData(const String & new_data);
-
-        std::string_view getData() const noexcept { return {data.get(), data_size}; }
-
-        void addChild(StringRef child_path);
-
-        void removeChild(StringRef child_path);
-
-        const auto & getChildren() const noexcept { return children; }
-        auto & getChildren() { return children; }
-
-        // Invalidate the calculated digest so it's recalculated again on the next
-        // getDigest call
-        void invalidateDigestCache() const;
-
-        // get the calculated digest of the node
-        UInt64 getDigest(std::string_view path) const;
-
-        // copy only necessary information for preprocessing and digest calculation
-        // (e.g. we don't need to copy list of children)
-        void shallowCopy(const Node & other);
     private:
         /// as ctime can't be negative because it stores the timestamp when the
         /// node was created, we can use the MSB for a bool
@@ -180,7 +141,56 @@ public:
                 int32_t num_children;
             } children_info;
         } ephemeral_or_children_data{0};
+    };
 
+    /// Node should have as minimal size as possible to reduce memory footprint
+    /// of stored nodes
+    /// New fields should be added to the struct only if it's really necessary
+    struct Node
+    {
+        NodeStats stats;
+        std::unique_ptr<char[]> data{nullptr};
+        mutable uint64_t cached_digest = 0;
+
+        Node() = default;
+
+        Node & operator=(const Node & other);
+        Node(const Node & other);
+
+        Node & operator=(Node && other) noexcept;
+        Node(Node && other) noexcept;
+
+        bool empty() const;
+
+        void copyStats(const Coordination::Stat & stat);
+
+        void setResponseStat(Coordination::Stat & response_stat) const;
+
+        /// Object memory size
+        uint64_t sizeInBytes() const;
+
+        void setData(const String & new_data);
+
+        std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
+
+        void addChild(StringRef child_path);
+
+        void removeChild(StringRef child_path);
+
+        const auto & getChildren() const noexcept { return children; }
+        auto & getChildren() { return children; }
+
+        // Invalidate the calculated digest so it's recalculated again on the next
+        // getDigest call
+        void invalidateDigestCache() const;
+
+        // get the calculated digest of the node
+        UInt64 getDigest(std::string_view path) const;
+
+        // copy only necessary information for preprocessing and digest calculation
+        // (e.g. we don't need to copy list of children)
+        void shallowCopy(const Node & other);
+    private:
         ChildrenSet children{};
     };
 
@@ -249,7 +259,7 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
 
-    int64_t session_id_counter{1};
+    mutable std::shared_mutex storage_mutex;
 
     SessionAndAuth session_and_auth;
 
@@ -278,18 +288,33 @@ public:
     struct RemoveNodeDelta
     {
         int32_t version{-1};
-        int64_t ephemeral_owner{0};
+        NodeStats stat;
+        Coordination::ACLs acls;
+        String data;
     };
 
-    struct UpdateNodeDelta
+    struct UpdateNodeStatDelta
     {
-        std::function<void(Node &)> update_fn;
+        explicit UpdateNodeStatDelta(const KeeperStorage::Node & node);
+
+        NodeStats old_stats;
+        NodeStats new_stats;
+        int32_t old_seq_num;
+        int32_t new_seq_num;
+        int32_t version{-1};
+    };
+
+    struct UpdateNodeDataDelta
+    {
+        std::string old_data;
+        std::string new_data;
         int32_t version{-1};
     };
 
     struct SetACLDelta
     {
-        Coordination::ACLs acls;
+        Coordination::ACLs old_acls;
+        Coordination::ACLs new_acls;
         int32_t version{-1};
     };
 
@@ -311,11 +336,19 @@ public:
     struct AddAuthDelta
     {
         int64_t session_id;
-        AuthID auth_id;
+        std::shared_ptr<AuthID> auth_id;
     };
 
-    using Operation = std::
-        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+    using Operation = std::variant<
+        CreateNodeDelta,
+        RemoveNodeDelta,
+        UpdateNodeStatDelta,
+        UpdateNodeDataDelta,
+        SetACLDelta,
+        AddAuthDelta,
+        ErrorDelta,
+        SubDeltaEnd,
+        FailedMultiDelta>;
 
     struct Delta
     {
@@ -334,15 +367,16 @@ public:
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
-        void addDelta(Delta new_delta);
-        void addDeltas(std::vector<Delta> new_deltas);
-        void commit(int64_t commit_zxid);
+        void addDeltas(std::list<Delta> new_deltas);
+        void cleanup(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
 
         std::shared_ptr<Node> getNode(StringRef path) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
+        void applyDeltas(const std::list<Delta> & new_deltas);
         void applyDelta(const Delta & delta);
+        void rollbackDelta(const Delta & delta);
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
@@ -350,13 +384,13 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
-        std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
+        std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
 
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
-            Coordination::ACLs acls{};
-            int64_t zxid{0};
+            std::optional<Coordination::ACLs> acls{};
+            std::vector<int64_t> applied_zxids{};
         };
 
         struct Hash
@@ -383,9 +417,9 @@ public:
         };
 
         mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
-        std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
-        std::list<Delta> deltas;
+        mutable std::mutex deltas_mutex;
+        std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
         KeeperStorage & storage;
     };
 
@@ -395,7 +429,7 @@ public:
     // with zxid > last_zxid
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
-    Coordination::Error commit(int64_t zxid);
+    Coordination::Error commit(std::list<Delta> deltas);
 
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
@@ -415,20 +449,24 @@ public:
 
     void unregisterEphemeralPath(int64_t session_id, const std::string & path);
 
+    mutable std::mutex ephemerals_mutex;
     /// Mapping session_id -> set of ephemeral nodes paths
-    Ephemerals ephemerals;
-    /// Mapping session_id -> set of watched nodes paths
-    SessionAndWatcher sessions_and_watchers;
+    Ephemerals ephemerals TSA_GUARDED_BY(ephemerals_mutex);
+
+    mutable std::mutex session_mutex;
+    int64_t session_id_counter TSA_GUARDED_BY(session_mutex) = 1;
     /// Expiration queue for session, allows to get dead sessions at some point of time
-    SessionExpiryQueue session_expiry_queue;
+    SessionExpiryQueue session_expiry_queue TSA_GUARDED_BY(session_mutex);
     /// All active sessions with timeout
-    SessionAndTimeout session_and_timeout;
+    SessionAndTimeout session_and_timeout TSA_GUARDED_BY(session_mutex);
 
     /// ACLMap for more compact ACLs storage inside nodes.
     ACLMap acl_map;
 
+    mutable std::mutex transaction_mutex;
+
     /// Global id of all requests applied to storage
-    int64_t zxid{0};
+    int64_t zxid TSA_GUARDED_BY(transaction_mutex) = 0;
 
     // older Keeper node (pre V5 snapshots) can create snapshots and receive logs from newer Keeper nodes
     // this can lead to some inconsistencies, e.g. from snapshot it will use log_idx as zxid
@@ -445,58 +483,48 @@ public:
         int64_t log_idx = 0;
     };
 
-    std::deque<TransactionInfo> uncommitted_transactions;
+    std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
 
-    uint64_t nodes_digest{0};
+    uint64_t nodes_digest = 0;
 
-    bool finalized{false};
+    std::atomic<bool> finalized{false};
+
+
+    mutable std::mutex watches_mutex;
+    /// Mapping session_id -> set of watched nodes paths
+    SessionAndWatcher sessions_and_watchers TSA_GUARDED_BY(watches_mutex);
 
     /// Currently active watches (node_path -> subscribed sessions)
-    Watches watches;
-    Watches list_watches; /// Watches for 'list' request (watches on children).
+    Watches watches TSA_GUARDED_BY(watches_mutex);
+    Watches list_watches TSA_GUARDED_BY(watches_mutex); /// Watches for 'list' request (watches on children).
 
     void clearDeadWatches(int64_t session_id);
 
     /// Get current committed zxid
-    int64_t getZXID() const { return zxid; }
+    int64_t getZXID() const;
 
-    int64_t getNextZXID() const
-    {
-        if (uncommitted_transactions.empty())
-            return zxid + 1;
+    int64_t getNextZXID() const;
+    int64_t getNextZXIDLocked() const TSA_REQUIRES(transaction_mutex);
 
-        return uncommitted_transactions.back().zxid + 1;
-    }
-
-    Digest getNodesDigest(bool committed) const;
+    Digest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
 
     KeeperContextPtr keeper_context;
 
     const String superdigest;
 
-    bool initialized{false};
+    std::atomic<bool> initialized{false};
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
 
-    void initializeSystemNodes();
+    void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Allocate new session id with the specified timeouts
-    int64_t getSessionID(int64_t session_timeout_ms)
-    {
-        auto result = session_id_counter++;
-        session_and_timeout.emplace(result, session_timeout_ms);
-        session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
-        return result;
-    }
+    int64_t getSessionID(int64_t session_timeout_ms);
 
     /// Add session id. Used when restoring KeeperStorage from snapshot.
-    void addSessionID(int64_t session_id, int64_t session_timeout_ms)
-    {
-        session_and_timeout.emplace(session_id, session_timeout_ms);
-        session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
-    }
+    void addSessionID(int64_t session_id, int64_t session_timeout_ms) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    UInt64 calculateNodesDigest(UInt64 current_digest, const std::vector<Delta> & new_deltas) const;
+    UInt64 calculateNodesDigest(UInt64 current_digest, const std::list<Delta> & new_deltas) const;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
@@ -523,21 +551,21 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version) { container.enableSnapshotMode(up_to_version); }
+    void enableSnapshotMode(size_t up_to_version);
 
     /// Turn off snapshot mode.
-    void disableSnapshotMode() { container.disableSnapshotMode(); }
+    void disableSnapshotMode();
 
-    Container::const_iterator getSnapshotIteratorBegin() const { return container.begin(); }
+    Container::const_iterator getSnapshotIteratorBegin() const;
 
     /// Clear outdated data from internal container.
-    void clearGarbageAfterSnapshot() { container.clearOutdatedNodes(); }
+    void clearGarbageAfterSnapshot();
 
     /// Get all active sessions
-    const SessionAndTimeout & getActiveSessions() const { return session_and_timeout; }
+    SessionAndTimeout getActiveSessions() const;
 
     /// Get all dead sessions
-    std::vector<int64_t> getDeadSessions() const { return session_expiry_queue.getExpiredSessions(); }
+    std::vector<int64_t> getDeadSessions() const;
 
     struct Stats
     {
@@ -557,19 +585,19 @@ public:
     const Stats & getStorageStats() const;
 
     /// Introspection functions mostly used in 4-letter commands
-    uint64_t getNodesCount() const { return container.size(); }
+    uint64_t getNodesCount() const;
 
-    uint64_t getApproximateDataSize() const { return container.getApproximateDataSize(); }
+    uint64_t getApproximateDataSize() const;
 
-    uint64_t getArenaDataSize() const { return container.keyArenaSize(); }
+    uint64_t getArenaDataSize() const;
 
     uint64_t getTotalWatchesCount() const;
 
-    uint64_t getWatchedPathsCount() const { return watches.size() + list_watches.size(); }
+    uint64_t getWatchedPathsCount() const;
 
     uint64_t getSessionsWithWatchesCount() const;
 
-    uint64_t getSessionWithEphemeralNodesCount() const { return ephemerals.size(); }
+    uint64_t getSessionWithEphemeralNodesCount() const;
     uint64_t getTotalEphemeralNodesCount() const;
 
     void dumpWatches(WriteBufferFromOwnString & buf) const;
@@ -578,6 +606,8 @@ public:
 
     void recalculateStats();
 private:
+    uint64_t getSessionWithEphemeralNodesCountLocked() const TSA_REQUIRES(ephemerals_mutex);
+
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
 };

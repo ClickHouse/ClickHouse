@@ -100,7 +100,7 @@ public:
     ClusterConfigPtr getClusterConfig() const;
 
     /// Process local read request
-    void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
+    void processReadRequest(const KeeperStorage::RequestsForSessions & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
 
@@ -132,6 +132,8 @@ public:
     void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
 
 private:
+    mutable SharedMutex storage_mutex;
+
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
@@ -140,7 +142,7 @@ private:
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     /// Main state machine logic
-    KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
+    KeeperStoragePtr storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager snapshot_manager;
@@ -159,7 +161,7 @@ private:
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
     /// for request.
-    mutable std::mutex storage_and_responses_lock;
+    mutable std::mutex process_and_responses_lock;
 
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperStorage::RequestForSession>>> parsed_request_cache;
     uint64_t min_request_size_to_cache{0};
@@ -176,6 +178,7 @@ private:
     mutable std::mutex cluster_config_lock;
     ClusterConfigPtr cluster_config;
 
+    ThreadPool read_pool;
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
@@ -184,7 +187,6 @@ private:
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
     KeeperStorage::ResponseForSession processReconfiguration(
-        const KeeperStorage::RequestForSession& request_for_session)
-        TSA_REQUIRES(storage_and_responses_lock);
+        const KeeperStorage::RequestForSession& request_for_session);
 };
 }
