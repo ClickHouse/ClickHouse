@@ -959,7 +959,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             std::move(reading_step));
                         query_plan = std::move(query_plan_parallel_replicas);
                     }
-                    else {
+                    else
+                    {
                         QueryPlan query_plan_no_parallel_replicas;
                         storage->read(
                             query_plan_no_parallel_replicas,
