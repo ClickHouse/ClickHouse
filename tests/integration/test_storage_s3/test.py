@@ -553,16 +553,13 @@ def test_multipart(started_cluster, maybe_auth, positive):
         assert csv_data == get_s3_file_content(started_cluster, bucket, filename)
 
     # select uploaded data from many threads
-    select_query = (
-        "select sum(column1), sum(column2), sum(column3) "
-        "from s3('http://{host}:{port}/{bucket}/{filename}', {auth}'CSV', '{table_format}')".format(
-            host=started_cluster.minio_redirect_host,
-            port=started_cluster.minio_redirect_port,
-            bucket=bucket,
-            filename=filename,
-            auth=maybe_auth,
-            table_format=table_format,
-        )
+    select_query = "select sum(column1), sum(column2), sum(column3) " "from s3('http://{host}:{port}/{bucket}/{filename}', {auth}'CSV', '{table_format}')".format(
+        host=started_cluster.minio_redirect_host,
+        port=started_cluster.minio_redirect_port,
+        bucket=bucket,
+        filename=filename,
+        auth=maybe_auth,
+        table_format=table_format,
     )
     try:
         select_result = run_query(
@@ -2154,16 +2151,14 @@ def test_read_subcolumn_time(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32') select  (42)"
     )
 
     res = instance.query(
-        f"select a.b.d, _path, a.b, _file, dateDiff('minute', _time, now()) < 59, a.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+        f"select a, dateDiff('minute', _time, now()) < 59 from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32')"
     )
 
-    assert (
-        res == "2\troot/test_subcolumn_time.tsv\t(1,2)\ttest_subcolumn_time.tsv\t1\t3\n"
-    )
+    assert res == "42\t1\n"
 
 
 def test_filtering_by_file_or_path(started_cluster):

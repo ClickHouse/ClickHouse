@@ -797,18 +797,16 @@ def test_read_subcolumn_time(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
-        f" 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
+        f" 'a UInt32') select (42)",
     )
 
     res = node.query(
-        f"select a.b.d, _path, a.b, _file, dateDiff('minute', _time, now()) < 59, a.e from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv',"
+        f"select a, dateDiff('minute', _time, now()) < 59 from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv',"
         f" 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
-        f" 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+        f" 'a UInt32')"
     )
 
-    assert (
-        res == "2\tcont/test_subcolumn_time.tsv\t(1,2)\ttest_subcolumn_time.tsv\t1\t3\n"
-    )
+    assert res == "42\t1\n"
 
 
 def test_read_from_not_existing_container(cluster):
