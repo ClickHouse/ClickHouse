@@ -7,7 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -66,13 +66,13 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!open.ignore(pos, expected))
+    if (!open.ignore(pos))
         return false;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
 
-    if (!close.ignore(pos, expected))
+    if (!close.ignore(pos))
         return false;
 
     auto func = std::make_shared<ASTFunction>();
@@ -168,7 +168,7 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserNameList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserCompoundIdentifier>(true, true), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -205,16 +205,18 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
+    auto index = std::make_shared<ASTIndexDeclaration>();
+    index->name = name->as<ASTIdentifier &>().name();
+    index->set(index->expr, expr);
+    index->set(index->type, type);
 
     if (granularity)
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     else
     {
-        auto index_type = index->getType();
-        if (index_type->name == "annoy")
+        if (index->type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type->name == "usearch")
+        else if (index->type->name == "usearch")
             index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
@@ -225,15 +227,15 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_type(Keyword::TYPE);
 
     ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserList types_p(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserIdentifier type_p;
 
     ASTPtr columns;
-    ASTPtr types;
+    ASTPtr type;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
@@ -241,29 +243,12 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!types_p.parse(pos, types, expected))
+    if (!type_p.parse(pos, type, expected))
         return false;
 
-    auto stat = std::make_shared<ASTStatisticsDeclaration>();
+    auto stat = std::make_shared<ASTStatisticDeclaration>();
     stat->set(stat->columns, columns);
-    stat->set(stat->types, types);
-    node = stat;
-
-    return true;
-}
-
-bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-
-    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-
-    ASTPtr columns;
-
-    if (!columns_p.parse(pos, columns, expected))
-        return false;
-
-    auto stat = std::make_shared<ASTStatisticsDeclaration>();
-    stat->set(stat->columns, columns);
+    stat->type = type->as<ASTIdentifier &>().name();
     node = stat;
 
     return true;
@@ -1635,29 +1620,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->set(query->comment, comment);
     if (sql_security)
         query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
-
-    if (query->columns_list && query->columns_list->primary_key)
-    {
-        /// If engine is not set will use default one
-        if (!query->storage)
-            query->set(query->storage, std::make_shared<ASTStorage>());
-        else if (query->storage->primary_key)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-
-        query->storage->primary_key = query->columns_list->primary_key;
-
-    }
-
-    if (query->columns_list && (query->columns_list->primary_key_from_columns))
-    {
-        /// If engine is not set will use default one
-        if (!query->storage)
-            query->set(query->storage, std::make_shared<ASTStorage>());
-        else if (query->storage->primary_key)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-
-        query->storage->primary_key = query->columns_list->primary_key_from_columns;
-    }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

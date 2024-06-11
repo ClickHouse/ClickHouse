@@ -26,62 +26,62 @@ class SimdJSONBasicFormatter
 {
 public:
     explicit SimdJSONBasicFormatter(PaddedPODArray<UInt8> & buffer_) : buffer(buffer_) {}
-    void comma() { oneChar(','); }
+    inline void comma() { oneChar(','); }
     /** Start an array, prints [ **/
-    void startArray() { oneChar('['); }
+    inline void startArray() { oneChar('['); }
     /** End an array, prints ] **/
-    void endArray() { oneChar(']'); }
+    inline void endArray() { oneChar(']'); }
     /** Start an array, prints { **/
-    void startObject() { oneChar('{'); }
+    inline void startObject() { oneChar('{'); }
     /** Start an array, prints } **/
-    void endObject() { oneChar('}'); }
+    inline void endObject() { oneChar('}'); }
     /** Prints a true **/
-    void trueAtom()
+    inline void trueAtom()
     {
         const char * s = "true";
         buffer.insert(s, s + 4);
     }
     /** Prints a false **/
-    void falseAtom()
+    inline void falseAtom()
     {
         const char * s = "false";
         buffer.insert(s, s + 5);
     }
     /** Prints a null **/
-    void nullAtom()
+    inline void nullAtom()
     {
         const char * s = "null";
         buffer.insert(s, s + 4);
     }
     /** Prints a number **/
-    void number(int64_t x)
+    inline void number(int64_t x)
     {
         char number_buffer[24];
         auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
         buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a number **/
-    void number(uint64_t x)
+    inline void number(uint64_t x)
     {
         char number_buffer[24];
         auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
         buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a number **/
-    void number(double x)
+    inline void number(double x)
     {
         char number_buffer[24];
         auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
         buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a key (string + colon) **/
-    void key(std::string_view unescaped)
+    inline void key(std::string_view unescaped)
     {
         string(unescaped);
         oneChar(':');
     }
     /** Prints a string. The string is escaped as needed. **/
-    void string(std::string_view unescaped)
+    inline void string(std::string_view unescaped)
     {
         oneChar('\"');
         size_t i = 0;
@@ -165,7 +165,7 @@ public:
         oneChar('\"');
     }
 
-    void oneChar(char c)
+    inline void oneChar(char c)
     {
         buffer.push_back(c);
     }
@@ -182,7 +182,7 @@ class SimdJSONElementFormatter
 public:
     explicit SimdJSONElementFormatter(PaddedPODArray<UInt8> & buffer_) : format(buffer_) {}
     /** Append an element to the builder (to be printed) **/
-    void append(simdjson::dom::element value)
+    inline void append(simdjson::dom::element value)
     {
         switch (value.type())
         {
@@ -224,7 +224,7 @@ public:
         }
     }
     /** Append an array to the builder (to be printed) **/
-    void append(simdjson::dom::array value)
+    inline void append(simdjson::dom::array value)
     {
         format.startArray();
         auto iter = value.begin();
@@ -241,7 +241,7 @@ public:
         format.endArray();
     }
 
-    void append(simdjson::dom::object value)
+    inline void append(simdjson::dom::object value)
     {
         format.startObject();
         auto pair = value.begin();
@@ -258,7 +258,7 @@ public:
         format.endObject();
     }
 
-    void append(simdjson::dom::key_value_pair kv)
+    inline void append(simdjson::dom::key_value_pair kv)
     {
         format.key(kv.key);
         append(kv.value);

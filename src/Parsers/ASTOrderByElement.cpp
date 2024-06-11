@@ -1,3 +1,4 @@
+#include <Columns/Collator.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>

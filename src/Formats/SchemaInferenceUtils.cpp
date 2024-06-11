@@ -1016,7 +1016,7 @@ namespace
         String field;
         bool ok = true;
         if constexpr (is_json)
-            ok = tryReadJSONStringInto(field, buf, settings.json);
+            ok = tryReadJSONStringInto(field, buf);
         else
             ok = tryReadQuotedString(field, buf);
 
@@ -1071,7 +1071,7 @@ namespace
                 first = false;
 
             String key;
-            if (!tryReadJSONStringInto(key, buf, settings.json))
+            if (!tryReadJSONStringInto(key, buf))
                 return false;
 
             skipWhitespaceIfAny(buf);
@@ -1222,7 +1222,7 @@ namespace
             return nullptr;
 
         auto key_type = removeNullable(key_types.back());
-        if (!DataTypeMap::isValidKeyType(key_type))
+        if (!DataTypeMap::checkKeyType(key_type))
             return nullptr;
 
         return std::make_shared<DataTypeMap>(key_type, value_types.back());

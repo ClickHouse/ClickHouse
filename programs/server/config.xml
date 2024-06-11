@@ -96,7 +96,7 @@
             <to>https://{bucket}.s3.amazonaws.com</to>
         </s3>
         <gs>
-            <to>https://storage.googleapis.com/{bucket}</to>
+            <to>https://{bucket}.storage.googleapis.com</to>
         </gs>
         <oss>
             <to>https://{bucket}.oss.aliyuncs.com</to>
@@ -715,7 +715,7 @@
         <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
-             By default this setting is true. -->
+             By default this setting is false for compatibility with earlier access configurations. -->
         <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
 
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
@@ -741,10 +741,6 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
-
-        <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
-             however you can change this behaviour by setting this to true -->
-        <table_engines_require_grant>false</table_engines_require_grant>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
@@ -1540,8 +1536,6 @@
         <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
         <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
-        <!-- Send LOGICAL_ERRORs as well (default: false) -->
-        <send_logical_errors>false</send_logical_errors>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
@@ -1561,7 +1555,6 @@
     <rocksdb>
         <options>
             <max_background_jobs>8</max_background_jobs>
-            <info_log_level>DEBUG_LEVEL</info_log_level>
         </options>
         <column_family_options>
             <num_levels>2</num_levels>
@@ -1585,42 +1578,6 @@
         </tables>
     </rocksdb>
     -->
-
-    <!-- <kafka> -->
-        <!-- Global configuration properties -->
-        <!--
-        NOTE: statistics should be consumed, otherwise it creates too much
-              entries in the queue, that leads to memory leak and slow shutdown.
-        default value: 0
-        <statistics_interval_ms>3000</statistics_interval_ms>
-        -->
-
-        <!-- Topic configuration properties -->
-        <!--
-        <kafka_topic>
-              <name>football</name>
-              <request_timeout_ms>6000</request_timeout_ms>
-        </kafka_topic>
-        -->
-
-        <!-- Producer configuration -->
-        <!--
-        <producer>
-            <compression_codec>gzip</compression_codec>
-            <kafka_topic>
-                <name>football</name>
-                <request_timeout_ms>6000</request_timeout_ms>
-            </kafka_topic>
-        </producer>
-        -->
-
-        <!-- Consumer configuration -->
-        <!--
-        <consumer>
-            <enable_auto_commit>true</enable_auto_commit>
-        </consumer>
-        -->
-    <!-- </kafka> -->
 
     <!-- Configuration for the query cache -->
     <query_cache>

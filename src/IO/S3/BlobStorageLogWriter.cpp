@@ -3,7 +3,6 @@
 #if USE_AWS_S3
 
 #include <base/getThreadId.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/Client.h>
 #include <Interpreters/Context.h>
@@ -21,9 +20,6 @@ void BlobStorageLogWriter::addEvent(
     BlobStorageLogElement::EvenTime time_now)
 {
     if (!log)
-        return;
-
-    if (log->shouldIgnorePath(local_path_.empty() ? local_path : local_path_))
         return;
 
     if (!time_now.time_since_epoch().count())

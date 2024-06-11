@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -505,7 +504,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
         /// If we have type hint and Variant contains such type, no need to convert field.
-        if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
+        if (from_type_hint && type_variant->tryGetVariantDiscriminator(*from_type_hint))
             return src;
 
         /// Create temporary column and check if we can insert this field to the variant.
@@ -513,11 +512,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
             return src;
-    }
-    else if (isDynamic(type))
-    {
-        /// We can insert any field to Dynamic column.
-        return src;
     }
 
     /// Conversion from string by parsing.

@@ -3,7 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <double-conversion/double-conversion.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"

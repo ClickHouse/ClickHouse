@@ -274,11 +274,6 @@ bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, co
     return current_write_offset > current_offset;
 }
 
-String CachedOnDiskReadBufferFromFile::toString(ReadType type)
-{
-    return String(magic_enum::enum_name(type));
-}
-
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_segment)
 {
@@ -351,7 +346,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                 }
 
                 auto downloader_id = file_segment.getOrSetDownloader();
-                if (downloader_id == FileSegment::getCallerId())
+                if (downloader_id == file_segment.getCallerId())
                 {
                     if (canStartFromCache(file_offset_of_buffer_end, file_segment))
                     {

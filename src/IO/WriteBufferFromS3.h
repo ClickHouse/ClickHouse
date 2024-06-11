@@ -12,12 +12,12 @@
 #include <Storages/StorageS3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
 
 #include <memory>
 #include <vector>
 #include <list>
-
 
 namespace DB
 {
@@ -41,7 +41,7 @@ public:
         const S3Settings::RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
+        ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;

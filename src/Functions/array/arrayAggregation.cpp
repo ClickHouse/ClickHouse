@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-enum class AggregateOperation : uint8_t
+enum class AggregateOperation
 {
     min,
     max,

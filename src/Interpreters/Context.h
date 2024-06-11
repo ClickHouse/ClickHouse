@@ -61,7 +61,7 @@ struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
-enum class RowPolicyFilterType : uint8_t;
+enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
@@ -315,7 +315,6 @@ protected:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
-public:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -340,10 +339,8 @@ public:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs) noexcept TSA_NO_THREAD_SAFETY_ANALYSIS
+        void swap(QueryAccessInfo & rhs) noexcept
         {
-            /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't support scoped_lock
-            std::scoped_lock lck{mutex, rhs.mutex};
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
@@ -354,21 +351,19 @@ public:
 
         /// To prevent a race between copy-constructor and other uses of this structure.
         mutable std::mutex mutex{};
-        std::set<std::string> databases TSA_GUARDED_BY(mutex){};
-        std::set<std::string> tables TSA_GUARDED_BY(mutex){};
-        std::set<std::string> columns TSA_GUARDED_BY(mutex){};
-        std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
-        std::set<std::string> projections TSA_GUARDED_BY(mutex){};
-        std::set<std::string> views TSA_GUARDED_BY(mutex){};
+        std::set<std::string> databases{};
+        std::set<std::string> tables{};
+        std::set<std::string> columns{};
+        std::set<std::string> partitions{};
+        std::set<std::string> projections{};
+        std::set<std::string> views{};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
-protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
     /// Therefore, query_access_info must be a pointer.
     QueryAccessInfoPtr query_access_info;
 
-public:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
@@ -390,20 +385,19 @@ public:
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
 
-        std::unordered_set<std::string> aggregate_functions TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> aggregate_function_combinators TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> database_engines TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> data_type_families TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> dictionaries TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> formats TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> aggregate_functions;
+        std::unordered_set<std::string> aggregate_function_combinators;
+        std::unordered_set<std::string> database_engines;
+        std::unordered_set<std::string> data_type_families;
+        std::unordered_set<std::string> dictionaries;
+        std::unordered_set<std::string> formats;
+        std::unordered_set<std::string> functions;
+        std::unordered_set<std::string> storages;
+        std::unordered_set<std::string> table_functions;
 
         mutable std::mutex mutex;
     };
 
-protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
@@ -683,11 +677,6 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
-    void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
-    void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
-    void addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
-    void updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
-    void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
@@ -721,7 +710,7 @@ public:
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
     /// Supported factories for records in query_log
-    enum class QueryLogFactories : uint8_t
+    enum class QueryLogFactories
     {
         AggregateFunction,
         AggregateFunctionCombinator,
@@ -759,12 +748,6 @@ public:
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
-
-    /// FIXME: for background operations (like Merge and Mutation) we also use the same Context object and even setup
-    /// query_id for it (table_uuid::result_part_name). We can distinguish queries from background operation in some way like
-    /// bool is_background = query_id.contains("::"), but it's much worse than just enum check with more clear purpose
-    void setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType setBackgroundOperationTypeForContextbackground_operation);
-    bool isBackgroundOperationContext() const;
 
     void killCurrentQuery() const;
     bool isCurrentQueryKilled() const;
@@ -867,8 +850,6 @@ public:
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
     void setMaxTableNumToWarn(size_t max_table_to_warn);
-    void setMaxViewNumToWarn(size_t max_view_to_warn);
-    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     /// The port that the server listens for executing SQL queries.
@@ -1077,8 +1058,6 @@ public:
     void initializeSystemLogs();
 
     /// Call after initialization before using trace collector.
-    void createTraceCollector();
-
     void initializeTraceCollector();
 
     /// Call after unexpected crash happen.
@@ -1168,7 +1147,7 @@ public:
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
-    enum class ApplicationType : uint8_t
+    enum class ApplicationType
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
@@ -1256,7 +1235,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOUringReader() const;
+    IOUringReader & getIOURingReader() const;
 #endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
@@ -1398,6 +1377,11 @@ struct HTTPContext : public IHTTPContext
     uint64_t getMaxFieldValueSize() const override
     {
         return context->getSettingsRef().http_max_field_value_size;
+    }
+
+    uint64_t getMaxChunkSize() const override
+    {
+        return context->getSettingsRef().http_max_chunk_size;
     }
 
     Poco::Timespan getReceiveTimeout() const override

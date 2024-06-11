@@ -44,7 +44,7 @@ public:
     {
     }
 
-    bool isConstant() const { return default_values_column == nullptr; }
+    inline bool isConstant() const { return default_values_column == nullptr; }
 
     Field getDefaultValue(size_t row) const
     {
@@ -450,17 +450,17 @@ public:
         keys_size = key_columns.front()->size();
     }
 
-    size_t getKeysSize() const
+    inline size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    size_t getCurrentKeyIndex() const
+    inline size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
 
-    KeyType extractCurrentKey()
+    inline KeyType extractCurrentKey()
     {
         assert(current_key_index < keys_size);
 
