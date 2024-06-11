@@ -89,7 +89,7 @@ public:
     UInt64 getNumColumns() const { return columns.size(); }
     bool hasRows() const { return num_rows > 0; }
     bool hasColumns() const { return !columns.empty(); }
-    bool empty() const { return !hasRows() && !hasColumns() && !hasChunkInfo(); }
+    bool empty() const { return !hasRows() && !hasColumns(); }
     explicit operator bool() const { return !empty(); }
 
     void addColumn(ColumnPtr column);
