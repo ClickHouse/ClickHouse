@@ -1287,7 +1287,7 @@ void PartMergerWriter::prepare()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 
     existing_rows_count = 0;
@@ -1297,6 +1297,7 @@ void PartMergerWriter::prepare()
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
     Block cur_block;
+    Block header;
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
@@ -1314,7 +1315,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
             Block block_to_squash = projection.calculate(cur_block, ctx->context);
-            projection_squashes[i].header = block_to_squash;
+            header = block_to_squash.cloneWithoutColumns();
             Chunk planned_chunk = projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
 
             if (planned_chunk.hasChunkInfo())
@@ -1347,7 +1348,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
 
-            auto result = projection_squash_plan.header.cloneWithColumns(projection_chunk.getColumns());
+            auto result = header.cloneWithColumns(projection_chunk.getColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();

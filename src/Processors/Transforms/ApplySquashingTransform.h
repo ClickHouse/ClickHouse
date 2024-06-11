@@ -11,7 +11,7 @@ class ApplySquashingTransform : public ExceptionKeepingTransform
 public:
     explicit ApplySquashingTransform(const Block & header, const size_t min_block_size_rows, const size_t min_block_size_bytes)
         : ExceptionKeepingTransform(header, header, false)
-        , squashing(header, min_block_size_rows, min_block_size_bytes)
+        , squashing(min_block_size_rows, min_block_size_bytes)
     {
     }
 
@@ -50,7 +50,7 @@ protected:
     }
     void onFinish() override
     {
-        auto chunk = DB::Squashing::squash({});
+        auto chunk = Chunk();
         finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
     }
 
