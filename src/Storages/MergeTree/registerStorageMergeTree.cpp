@@ -5,6 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -540,7 +541,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// This merging param maybe used as part of sorting key
-    std::optional<String> merging_param_key_arg;
+    std::optional<KeyDescription::AdditionalColumns> additional_sorting_key_columns;
+    std::optional<KeyDescription::AdditionalColumns> additional_primary_key_columns;
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
@@ -607,9 +609,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign column name must be an unquoted string{}", verbose_help_message);
 
         --arg_cnt;
-        /// Version collapsing is the only engine which add additional column to
-        /// sorting key.
-        merging_param_key_arg = merging_params.version_column;
+
+        /// Version collapsing is the only engine which add additional column to sorting key.
+        additional_sorting_key_columns = KeyDescription::AdditionalColumns{
+            .ext_columns_front = {},
+            .ext_columns_back = {merging_params.version_column},
+        };
     }
 
     String date_column_name;
@@ -630,6 +635,45 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (is_extended_storage_def)
     {
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
+
+        if (storage_settings->queue_mode)
+        {
+            if (merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree queue settings is not supported for {} mode", merging_params.getModeName());
+
+            auto add_column = [&](const String & name, const DataTypePtr & type, const ASTPtr & codec = nullptr)
+            {
+                /// after alter table columns can be saved in metadata
+                if (metadata.columns.has(name))
+                    return;
+
+                ColumnDescription column(name, type);
+
+                if (codec != nullptr)
+                    column.codec = codec;
+
+                column.default_desc.kind = ColumnDefaultKind::Materialized;
+                column.default_desc.expression = Field::dispatch(
+                    [](auto default_value) { return std::make_shared<ASTLiteral>(std::move(default_value)); }, type->getDefault());
+
+                metadata.columns.add(std::move(column));
+            };
+
+            add_column(QueuePartitionIdColumn::name, QueuePartitionIdColumn::type);
+            add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::codec);
+            add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::codec);
+
+            /// mode is ordinary -> additional_sorting_key_columns must be empty
+            chassert(!additional_sorting_key_columns.has_value());
+
+            additional_sorting_key_columns = KeyDescription::AdditionalColumns{};
+            additional_sorting_key_columns->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+
+            additional_primary_key_columns = KeyDescription::AdditionalColumns{};
+            additional_primary_key_columns->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+        }
+
         ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
             partition_by_key = args.storage_def->partition_by->ptr();
@@ -637,7 +681,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Partition key may be undefined, but despite this we store it's empty
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
-        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
+        metadata.partition_key = KeyDescription::Builder().buildFromAST(partition_by_key, metadata.columns, context);
 
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
@@ -664,19 +708,22 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
-            args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
+        metadata.sorting_key = KeyDescription::Builder(additional_sorting_key_columns).buildFromAST(
+            args.storage_def->order_by->ptr(), metadata.columns, context);
         if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, context);
+            metadata.primary_key = KeyDescription::Builder(additional_primary_key_columns).buildFromAST(
+                args.storage_def->primary_key->ptr(), metadata.columns, context);
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, context);
+            metadata.primary_key = KeyDescription::Builder(additional_primary_key_columns).buildFromAST(
+                args.storage_def->order_by->ptr(), metadata.columns, context);
+
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
@@ -687,10 +734,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         FunctionNameNormalizer::visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, primary_key_asts, context));
+            metadata.columns, partition_key, minmax_columns, primary_key_asts, context));
 
         if (args.storage_def->sample_by)
-            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
+            metadata.sampling_key = KeyDescription::Builder().buildFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
         bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings.allow_suspicious_ttl_expressions;
 
@@ -718,8 +765,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
-
-        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
@@ -762,14 +807,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
 
-        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, context);
+        metadata.partition_key = KeyDescription::Builder().buildFromAST(partition_by_ast, metadata.columns, context);
 
         ++arg_num;
 
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
+            metadata.sampling_key = KeyDescription::Builder().buildFromAST(engine_args[arg_num], metadata.columns, context);
             ++arg_num;
         }
 
@@ -778,13 +823,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key
-            = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
+        metadata.sorting_key = KeyDescription::Builder(additional_sorting_key_columns).buildFromAST(
+            engine_args[arg_num], metadata.columns, context);
         if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
-        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
+        metadata.primary_key = KeyDescription::Builder(additional_primary_key_columns).buildFromAST(
+            engine_args[arg_num], metadata.columns, context);
+
         /// But it's not explicitly defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;

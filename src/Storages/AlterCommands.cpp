@@ -33,9 +33,10 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
@@ -599,7 +600,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             /// Primary and sorting key become independent after this ALTER so
             /// we have to save the old ORDER BY expression as the new primary
             /// key.
-            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
+            primary_key.recalculateWithNewAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
         /// Recalculate key with new order_by expression.
@@ -1160,7 +1161,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
@@ -1294,11 +1295,18 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
+        const auto & column_name = command.column_name;
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
 
-        const auto & column_name = command.column_name;
+        if (isQueueModeColumn(column_name) && table->isMergeTree())
+        {
+            auto casted_table = std::dynamic_pointer_cast<MergeTreeData>(table);
+            if (const auto & settings = casted_table->getSettings(); settings && settings->queue_mode)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot alter column {}: this column is essential for queue mode", backQuote(column_name));
+        }
+
         if (command.type == AlterCommand::ADD_COLUMN)
         {
             if (all_columns.has(column_name) || all_columns.hasNested(column_name))

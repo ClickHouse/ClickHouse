@@ -146,6 +146,13 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
+    /// Block numbers of parts that are currently being inserted into storage
+    /// NOTE: in queue mode block numbers must be allocated before commit, because we must materialize block number column with
+    /// actual block number to have correct indexes. That is why we store currently committing block numbers here - to check
+    /// if there are some committing blocks in merge task and do not break the invariants.
+    std::mutex committing_block_numbers_mutex;
+    std::map<String, std::set<Int64>> committing_block_numbers;
+
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
     /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
     std::atomic<ssize_t> alter_conversions_mutations = 0;
@@ -261,7 +268,7 @@ private:
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatusUnlocked(Int64 mutation_version, std::unique_lock<std::mutex> & lock,
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
-    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock, std::optional<int64_t> block_number = {});
     void fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;

@@ -118,10 +118,12 @@ void AsyncInsertBlockInfo::filterBlockDuplicate(const std::vector<String> & bloc
         block_with_partition.block = unmerged_block_with_partition->block;
 }
 
-std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(BlockWithPartition & block, String partition_id)
+std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(
+    const BlockWithPartition & block,
+    String partition_id,
+    const std::function<bool(const String &)> & column_filter)
 {
     size_t start = 0;
-    auto cols = block.block.getColumns();
     std::vector<String> block_id_vec;
     for (size_t i = 0; i < block.offsets.size(); ++i)
     {
@@ -132,8 +134,9 @@ std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(BlockWithPartition 
             SipHash hash;
             for (size_t j = start; j < offset; ++j)
             {
-                for (const auto & col : cols)
-                    col->updateHashWithValue(j, hash);
+                for (const auto & [col, _, name] : block.block)
+                    if (!column_filter || column_filter(name))
+                        col->updateHashWithValue(j, hash);
             }
 
             const auto hash_value = hash.get128();
@@ -145,6 +148,26 @@ std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(BlockWithPartition 
         start = offset;
     }
     return block_id_vec;
+}
+
+String SyncInsertBlockInfo::getHashForBlock(
+    const BlockWithPartition & block,
+    const String & token,
+    const String & partition_id,
+    const std::function<bool(const String &)> & column_filter)
+{
+    if (!token.empty())
+        return partition_id + "_" + token;
+
+    SipHash hash;
+    for (size_t i = 0; i < block.block.rows(); ++i)
+        for (const auto & [col, _, name] : block.block)
+            if (!column_filter || column_filter(name))
+                col->updateHashWithValue(i, hash);
+
+    const auto hash_value = hash.get128();
+
+    return partition_id + "_" + DB::toString(hash_value.items[0]) + "_" + DB::toString(hash_value.items[1]);
 }
 
 }

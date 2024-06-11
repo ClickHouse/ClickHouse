@@ -191,6 +191,7 @@ struct Settings;
     M(Bool, enable_block_offset_column, false, "Enable persisting column _block_offset for each row.", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
+    M(Bool, queue_mode, false, "Experimental feature that converts a [Replicated]MergeTree into a queue", 0) \
     M(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \
     M(UInt64, part_moves_between_shards_delay_seconds, 30, "Time to wait before/after moving parts between shards.", 0) \
     M(Bool, allow_remote_fs_zero_copy_replication, false, "Don't use this setting in production, because it is not ready.", 0) \

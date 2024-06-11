@@ -9,6 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -1110,14 +1111,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     if (global_ctx->deduplicate)
     {
         const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+        const bool queue_mode = isInQueueMode(global_ctx);
 
-        /// We don't want to deduplicate by virtual persistent column.
-        /// If deduplicate_by_columns is empty, add all columns except virtuals.
+        /// We don't want to deduplicate by virtual persistent and queue mode columns.
+        /// If deduplicate_by_columns is empty, add all columns except virtuals and queue mode.
+        ///
+        /// Queue mode columns are created for internal use only, and the logic behind them is
+        /// to add strict order to the rows in the table, so there will be no duplication when considering them.
         if (global_ctx->deduplicate_by_columns.empty())
         {
             for (const auto & column_name : global_ctx->merging_column_names)
             {
                 if (virtuals.tryGet(column_name, VirtualsKind::Persistent))
+                    continue;
+
+                if (queue_mode && isQueueModeColumn(column_name))
                     continue;
 
                 global_ctx->deduplicate_by_columns.emplace_back(column_name);

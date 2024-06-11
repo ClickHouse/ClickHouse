@@ -87,8 +87,6 @@ public:
         return data.merging_params.mode;
     }
 
-    TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
-
     /// For insertion.
     static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
