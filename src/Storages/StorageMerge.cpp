@@ -888,8 +888,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     const StorageID current_storage_id = storage->getStorageID();
 
     SelectQueryInfo modified_query_info = query_info;
-    if (modified_query_info.optimized_prewhere_info && !modified_query_info.prewhere_info)
-        modified_query_info.prewhere_info = modified_query_info.optimized_prewhere_info;
 
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
