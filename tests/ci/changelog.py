@@ -9,6 +9,7 @@ from pathlib import Path
 from subprocess import DEVNULL
 from typing import Any, Dict, List, Optional, TextIO
 
+import tqdm  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
 from thefuzz.fuzz import ratio  # type: ignore
@@ -439,7 +440,9 @@ def main():
     gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
     gh_cache.download()
     query = f"type:pr repo:{args.repo} is:merged"
-    prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
+    prs = gh.get_pulls_from_search(
+        query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
+    )
 
     descriptions = get_descriptions(prs)
     changelog_year = get_year(prs)
