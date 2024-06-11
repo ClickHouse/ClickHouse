@@ -239,16 +239,6 @@ namespace
         return true;
     }
 
-    bool checkIfTypesContainVariant(const DataTypes & types)
-    {
-        for (size_t i = 0; i < types.size(); ++i)
-        {
-            if (isVariant(types[i]))
-                return true;
-        }
-        return false;
-    }
-
     void updateTypeIndexes(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         type_indexes.clear();
@@ -321,49 +311,28 @@ namespace
     /// if setting 'try_infer_variant' is true then we convert to type variant.
     void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
-        auto typesAreEqual = checkIfTypesAreEqual(data_types);
-        auto typesContainVariant = checkIfTypesContainVariant(data_types);
-        if (typesAreEqual)
+        if (checkIfTypesAreEqual(data_types))
             return;
 
-        DataTypes new_data_types;
-        TypeIndexesSet new_type_indexes;
-        std::shared_ptr<DataTypeVariant> variant_type;
-
-        /// extract the nested types of variant and make a new variant with the nested types and the other type.
-        /// eg. Type 1: variant<String, Array>, Type 2: Date -> variant<String, Array, Date>.
-        if (typesContainVariant)
+        DataTypes variant_types;
+        for (const auto & type : data_types)
         {
-            DataTypes extracted_types;
-            for (size_t i=0; i<data_types.size(); i++)
+            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
             {
-                if (isVariant(data_types[i]))
-                {
-                    if (const auto * variant = typeid_cast<const DataTypeVariant *>(data_types[i].get()))
-                        extracted_types = variant->getVariants();
-                }
-                else
-                    extracted_types.push_back(data_types[i]);
+                const auto & current_variants = variant_type->getVariants();
+                variant_types.insert(variant_types.end(), current_variants.begin(), current_variants.end());
             }
-            variant_type = std::make_shared<DataTypeVariant>(extracted_types);
-        }
-        else
-        {
-            variant_type = std::make_shared<DataTypeVariant>(data_types);
-        }
-
-        size_t i = 0;
-        while (i != data_types.size())
-        {
-            new_data_types.push_back(variant_type);
-            new_type_indexes.insert(TypeIndex::Variant);
-            i++;
+            else
+            {
+                variant_types.push_back(type);
+            }
         }
 
-        data_types.clear();
-        type_indexes.clear();
-        data_types = new_data_types;
-        type_indexes = new_type_indexes;
+        auto variant_type = std::make_shared<DataTypeVariant>(variant_types);
+
+        for (auto & type : data_types)
+            type = variant_type;
+        type_indexes = {TypeIndex::Variant};
     }
 
     /// If we have only Date and DateTime types, convert Date to DateTime,
@@ -703,11 +672,12 @@ namespace
             if (settings.try_infer_dates || settings.try_infer_datetimes)
                 transformDatesAndDateTimes(data_types, type_indexes);
 
-            if (settings.try_infer_variant)
-                transformVariant(data_types, type_indexes);
-
             if constexpr (!is_json)
+            {
+                if (settings.try_infer_variant)
+                    transformVariant(data_types, type_indexes);
                 return;
+            }
 
             /// Check settings specific for JSON formats.
 
@@ -740,11 +710,12 @@ namespace
             /// If there is at least one non Nothing type, change all Nothing types to it.
             transformNothingComplexTypes(data_types, type_indexes);
 
-            if (settings.try_infer_variant)
-                transformVariant(data_types, type_indexes);
-
             if constexpr (!is_json)
+            {
+                if (settings.try_infer_variant)
+                    transformVariant(data_types, type_indexes);
                 return;
+            }
 
             /// Convert JSON tuples with same nested types to arrays.
             transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes);
