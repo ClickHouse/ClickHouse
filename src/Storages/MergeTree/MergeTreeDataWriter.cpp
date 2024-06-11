@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -361,6 +360,8 @@ Block MergeTreeDataWriter::mergeBlock(
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
         }
+
+        UNREACHABLE();
     };
 
     auto merging_algorithm = get_merging_algorithm();
@@ -465,13 +466,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
-    MergeTreeIndices indices;
-    if (context->getSettingsRef().materialize_skip_indexes_on_insert)
-        indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-
-    ColumnsStatistics statistics;
-    if (context->getSettingsRef().materialize_statistics_on_insert)
-        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
+    auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -503,12 +498,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_optimized_row_order)
-    {
-        RowOrderOptimizer::optimize(block, sort_description, perm);
-        perm_ptr = &perm;
-    }
-
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
     {
@@ -519,10 +508,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    /// If optimize_on_insert is true, block may become empty after merge. There
-    /// is no need to create empty part. Since expected_size could be zero when
-    /// part only contains empty tuples. As a result, check rows instead.
-    if (block.rows() == 0)
+    /// If optimize_on_insert is true, block may become empty after merge.
+    /// There is no need to create empty part.
+    if (expected_size == 0)
         return temp_part;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
@@ -610,9 +598,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         metadata_snapshot,
         columns,
         indices,
-        statistics,
+        MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
         compression_codec,
-        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        context->getCurrentTransaction(),
         false,
         false,
         context->getWriteSettings());
@@ -730,12 +718,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_optimized_row_order)
-    {
-        RowOrderOptimizer::optimize(block, sort_description, perm);
-        perm_ptr = &perm;
-    }
-
     if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
@@ -754,10 +736,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        ColumnsStatistics{},
+        Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
         compression_codec,
-        Tx::PrehistoricTID,
+        NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);

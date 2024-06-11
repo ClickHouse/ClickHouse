@@ -8,7 +8,6 @@ import shutil
 
 import zipfile  # For reading backups from zip archives
 import boto3  # For reading backups from S3
-import botocore
 
 
 ## Examples:

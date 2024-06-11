@@ -18,7 +18,6 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -611,8 +610,6 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
 
-        NamedCollectionFactory::instance().shutdown();
-
         delete_async_insert_queue.reset();
 
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
@@ -743,18 +740,12 @@ struct ContextSharedPart : boost::noncopyable
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (!trace_collector.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector needs to be first created before initialization");
-
-        trace_collector->initialize(trace_log);
-    }
-
-    void createTraceCollector()
-    {
+        if (!trace_log)
+            return;
         if (hasTraceCollector())
             return;
 
-        trace_collector.emplace();
+        trace_collector.emplace(std::move(trace_log));
     }
 
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
@@ -2395,17 +2386,6 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType background_operation)
-{
-    chassert(background_operation != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION);
-    client_info.background_operation_type = background_operation;
-}
-
-bool Context::isBackgroundOperationContext() const
-{
-    return client_info.background_operation_type != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION;
-}
-
 void Context::killCurrentQuery() const
 {
     if (auto elem = getProcessListElement())
@@ -3900,11 +3880,6 @@ void Context::initializeSystemLogs()
     });
 }
 
-void Context::createTraceCollector()
-{
-    shared->createTraceCollector();
-}
-
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
@@ -4117,13 +4092,6 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
-    bool enable_blob_storage_log = settings.enable_blob_storage_log;
-    if (hasQueryContext())
-        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
-
-    if (!enable_blob_storage_log)
-        return {};
-
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)

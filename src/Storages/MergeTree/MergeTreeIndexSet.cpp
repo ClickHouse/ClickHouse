@@ -12,7 +12,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
@@ -257,13 +256,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (!filter_dag)
         return;
 
-    std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context, sets_to_prepare))
+    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context))
         return;
-    /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
-    for (auto & set : sets_to_prepare)
-        if (!set->buildOrderedSetInplace(context))
-            return;
 
     auto filter_actions_dag = filter_dag->clone();
     const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
@@ -305,25 +299,6 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     return false;
 }
 
-
-static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, const ActionsDAGPtr & result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
-{
-    chassert(node.type == ActionsDAG::ActionType::FUNCTION);
-    if (node.function_base->getName() != "indexHint")
-        return node.children;
-
-    /// indexHint arguments are stored inside of `FunctionIndexHint` class.
-    const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
-    const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
-    if (!result_dag_or_null)
-        return index_hint.getActions()->getOutputs();
-
-    /// Import the DAG and map argument pointers.
-    ActionsDAGPtr actions_clone = index_hint.getActions()->clone();
-    chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(*actions_clone), storage);
-    return *storage;
-}
 
 const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDAG::Node & node,
     ActionsDAGPtr & result_dag,
@@ -374,7 +349,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+    if (node_to_check->column && isColumnConst(*node_to_check->column))
         return &node;
 
     RPNBuilderTreeContext tree_context(context);
@@ -421,15 +396,14 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+    if (node_to_check->column && isColumnConst(*node_to_check->column))
         return nullptr;
 
     if (node_to_check->type != ActionsDAG::ActionType::FUNCTION)
         return nullptr;
 
     auto function_name = node_to_check->function->getName();
-    ActionsDAG::NodeRawConstPtrs temp_ptrs_to_argument;
-    const auto & arguments = getArguments(*node_to_check, result_dag, &temp_ptrs_to_argument);
+    const auto & arguments = node_to_check->children;
     size_t arguments_size = arguments.size();
 
     if (function_name == "not")
@@ -444,7 +418,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
-        if (arguments_size < 1)
+        if (arguments_size < 2)
             return nullptr;
 
         ActionsDAG::NodeRawConstPtrs children;
@@ -463,12 +437,18 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         const auto * last_argument = children.back();
         children.pop_back();
 
-        while (!children.empty())
-        {
-            const auto * before_last_argument = children.back();
-            children.pop_back();
+        const auto * before_last_argument = children.back();
+        children.pop_back();
 
+        while (true)
+        {
             last_argument = &result_dag->addFunction(function, {before_last_argument, last_argument}, {});
+
+            if (children.empty())
+                break;
+
+            before_last_argument = children.back();
+            children.pop_back();
         }
 
         return last_argument;
@@ -477,7 +457,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     return nullptr;
 }
 
-bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
+bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, bool atomic) const
 {
     const auto * node_to_check = &node;
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
@@ -486,13 +466,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    if (WhichDataType(node.result_type).isSet())
-    {
-        if (auto set = tree_node.tryGetPreparedSet())
-            sets_to_prepare.push_back(set);
-        return false;
-    }
-    else if (node.column && isColumnConst(*node.column))
+    if (node.column && isColumnConst(*node.column)
+        && !WhichDataType(node.result_type).isSet())
     {
         Field literal;
         node.column->get(0, literal);
@@ -505,31 +480,171 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             return false;
 
         auto function_name = node.function_base->getName();
-        const auto & arguments = getArguments(node, nullptr, nullptr);
+        const auto & arguments = node.children;
 
         if (function_name == "and" || function_name == "indexHint")
-        {
-            /// Can't use std::all_of() because we have to call checkDAGUseless() for all arguments
-            /// to populate sets_to_prepare.
-            bool all_useless = true;
-            for (const auto & arg : arguments)
-            {
-                bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
-                all_useless = all_useless && u;
-            }
-            return all_useless;
-        }
+            return std::all_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, atomic); });
         else if (function_name == "or")
-            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
+            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, atomic); });
         else if (function_name == "not")
-            return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
+            return checkDAGUseless(*arguments.at(0), context, atomic);
         else
             return std::any_of(arguments.begin(), arguments.end(),
-                [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
+                [&](const auto & arg) { return checkDAGUseless(*arg, context, true /*atomic*/); });
     }
 
     auto column_name = tree_node.getColumnName();
     return !key_columns.contains(column_name);
+}
+
+void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
+{
+    if (operatorFromAST(node))
+    {
+        auto & args = node->as<ASTFunction>()->arguments->children;
+
+        for (auto & arg : args)
+            traverseAST(arg);
+        return;
+    }
+
+    if (atomFromAST(node))
+    {
+        if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
+            /// __bitWrapperFunc* uses default implementation for Nullable types
+            /// Here we additionally convert Null to 0,
+            /// otherwise condition 'something OR NULL' will always return Null and filter everything.
+            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("ifNull", node, std::make_shared<ASTLiteral>(Field(0))));
+    }
+    else
+        node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
+}
+
+bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
+{
+    /// Function, literal or column
+
+    if (node->as<ASTLiteral>())
+        return true;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+        return key_columns.contains(identifier->getColumnName());
+
+    if (auto * func = node->as<ASTFunction>())
+    {
+        if (key_columns.contains(func->getColumnName()))
+        {
+            /// Function is already calculated.
+            node = std::make_shared<ASTIdentifier>(func->getColumnName());
+            return true;
+        }
+
+        auto & args = func->arguments->children;
+
+        for (auto & arg : args)
+            if (!atomFromAST(arg))
+                return false;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
+{
+    /// Functions AND, OR, NOT. Replace with bit*.
+    auto * func = node->as<ASTFunction>();
+    if (!func)
+        return false;
+
+    auto & args = func->arguments->children;
+
+    if (func->name == "not")
+    {
+        if (args.size() != 1)
+            return false;
+
+        func->name = "__bitSwapLastTwo";
+    }
+    else if (func->name == "and" || func->name == "indexHint")
+    {
+        if (args.size() < 2)
+            return false;
+
+        auto last_arg = args.back();
+        args.pop_back();
+
+        ASTPtr new_func;
+        if (args.size() > 1)
+            new_func = makeASTFunction(
+                    "__bitBoolMaskAnd",
+                    node,
+                    last_arg);
+        else
+            new_func = makeASTFunction(
+                    "__bitBoolMaskAnd",
+                    args.back(),
+                    last_arg);
+
+        node = new_func;
+    }
+    else if (func->name == "or")
+    {
+        if (args.size() < 2)
+            return false;
+
+        auto last_arg = args.back();
+        args.pop_back();
+
+        ASTPtr new_func;
+        if (args.size() > 1)
+            new_func = makeASTFunction(
+                    "__bitBoolMaskOr",
+                    node,
+                    last_arg);
+        else
+            new_func = makeASTFunction(
+                    "__bitBoolMaskOr",
+                    args.back(),
+                    last_arg);
+
+        node = new_func;
+    }
+    else
+        return false;
+
+    return true;
+}
+
+bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomic) const
+{
+    if (!node)
+        return true;
+
+    if (const auto * func = node->as<ASTFunction>())
+    {
+        if (key_columns.contains(func->getColumnName()))
+            return false;
+
+        const ASTs & args = func->arguments->children;
+
+        if (func->name == "and" || func->name == "indexHint")
+            return std::all_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
+        else if (func->name == "or")
+            return std::any_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
+        else if (func->name == "not")
+            return checkASTUseless(args[0], atomic);
+        else
+            return std::any_of(args.begin(), args.end(),
+                [this](const auto & arg) { return checkASTUseless(arg, true); });
+    }
+    else if (const auto * literal = node->as<ASTLiteral>())
+        return !atomic && literal->value.safeGet<bool>();
+    else if (const auto * identifier = node->as<ASTIdentifier>())
+        return !key_columns.contains(identifier->getColumnName());
+    else
+        return true;
 }
 
 

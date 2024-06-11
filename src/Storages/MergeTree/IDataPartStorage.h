@@ -258,15 +258,6 @@ public:
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
 
-    virtual std::shared_ptr<IDataPartStorage> freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const = 0;
-
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
         const std::string & to,

@@ -28,21 +28,7 @@ struct ITokenExtractor
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
     virtual bool nextInStringLike(const char * data, size_t length, size_t * pos, String & out) const = 0;
 
-    /// Updates Bloom filter from exact-match string filter value
     virtual void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
-
-    /// Updates Bloom filter from substring-match string filter value.
-    /// An `ITokenExtractor` implementation may decide to skip certain
-    /// tokens depending on whether the substring is a prefix or a suffix.
-    virtual void substringToBloomFilter(
-        const char * data,
-        size_t length,
-        BloomFilter & bloom_filter,
-        bool is_prefix [[maybe_unused]],
-        bool is_suffix [[maybe_unused]]) const
-    {
-        stringToBloomFilter(data, length, bloom_filter);
-    }
 
     virtual void stringPaddedToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
     {
@@ -51,21 +37,7 @@ struct ITokenExtractor
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
-    /// Updates GIN filter from exact-match string filter value
     virtual void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
-
-    /// Updates GIN filter from substring-match string filter value.
-    /// An `ITokenExtractor` implementation may decide to skip certain
-    /// tokens depending on whether the substring is a prefix or a suffix.
-    virtual void substringToGinFilter(
-        const char * data,
-        size_t length,
-        GinFilter & gin_filter,
-        bool is_prefix [[maybe_unused]],
-        bool is_suffix [[maybe_unused]]) const
-    {
-        stringToGinFilter(data, length, gin_filter);
-    }
 
     virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const
     {
@@ -175,11 +147,6 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
-
-    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-
-    void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
-
 
 };
 

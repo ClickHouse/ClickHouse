@@ -74,6 +74,11 @@ public:
 
     void startup() override;
 
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(

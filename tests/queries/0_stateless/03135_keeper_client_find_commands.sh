@@ -21,7 +21,7 @@ $CLICKHOUSE_KEEPER_CLIENT -q "create $path/1/d/c 'foobar'"
 
 echo 'find_super_nodes'
 $CLICKHOUSE_KEEPER_CLIENT -q "find_super_nodes 1000000000"
-$CLICKHOUSE_KEEPER_CLIENT -q "find_super_nodes 3 $path" | sort
+$CLICKHOUSE_KEEPER_CLIENT -q "find_super_nodes 3 $path"
 
 echo 'find_big_family'
 $CLICKHOUSE_KEEPER_CLIENT -q "find_big_family $path 3"

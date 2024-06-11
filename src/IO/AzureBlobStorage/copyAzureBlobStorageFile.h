@@ -4,7 +4,8 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Storages/StorageAzureBlobCluster.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/types.h>
 #include <functional>

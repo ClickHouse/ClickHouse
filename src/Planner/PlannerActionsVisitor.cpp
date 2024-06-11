@@ -60,7 +60,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
 
     if (constant_node.requiresCastCall())
     {
-        /// Projection name for constants is <value>_<type> so for _cast(1, 'String') we will have _cast(1_Uint8, 'String'_String)
         buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
     }
 

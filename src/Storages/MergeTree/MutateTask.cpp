@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -130,7 +129,7 @@ static void splitAndModifyMutationCommands(
                 }
             }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -143,7 +142,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTICS)
+                     || command.type == MutationCommand::Type::DROP_STATISTIC)
             {
                 for_file_renames.push_back(command);
             }
@@ -258,7 +257,7 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
             }
             else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -269,7 +268,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTICS)
+                     || command.type == MutationCommand::Type::DROP_STATISTIC)
             {
                 for_file_renames.push_back(command);
             }
@@ -532,16 +531,16 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+static std::set<StatisticPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
     const auto & stats_factory = MergeTreeStatisticsFactory::instance();
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
+    std::set<StatisticPtr> stats_to_recalc;
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & col_desc : columns)
     {
-        if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
+        if (col_desc.stat && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(col_desc.statistics));
+            stats_to_recalc.insert(stats_factory.get(*col_desc.stat));
         }
     }
     return stats_to_recalc;
@@ -655,7 +654,7 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
     const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
-    const std::set<ColumnStatisticsPtr> & stats_to_recalc)
+    const std::set<StatisticPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -683,7 +682,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(projection->getDirectoryName());
 
     for (const auto & stat : stats_to_recalc)
-        files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
+        files_to_skip.insert(stat->getFileName() + STAT_FILE_SUFFIX);
 
     if (isWidePart(source_part))
     {
@@ -772,11 +771,11 @@ static NameToNameVector collectFilesForRenames(
             if (source_part->checksums.has(command.column_name + ".proj"))
                 add_rename(command.column_name + ".proj", "");
         }
-        else if (command.type == MutationCommand::Type::DROP_STATISTICS)
+        else if (command.type == MutationCommand::Type::DROP_STATISTIC)
         {
-            for (const auto & statistics_column_name : command.statistics_columns)
-                if (source_part->checksums.has(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX))
-                    add_rename(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX, "");
+            for (const auto & statistic_column_name : command.statistic_columns)
+                if (source_part->checksums.has(STAT_FILE_PREFIX + statistic_column_name + STAT_FILE_SUFFIX))
+                    add_rename(STAT_FILE_PREFIX + statistic_column_name + STAT_FILE_SUFFIX, "");
         }
         else if (isWidePart(source_part))
         {
@@ -797,9 +796,9 @@ static NameToNameVector collectFilesForRenames(
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// if we drop a column with statistics, we should also drop the stat file.
-                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
-                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, "");
+                /// if we drop a column with statistic, we should also drop the stat file.
+                if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
+                    add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, "");
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -833,9 +832,9 @@ static NameToNameVector collectFilesForRenames(
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// if we rename a column with statistics, we should also rename the stat file.
-                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
-                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
+                /// if we rename a column with statistic, we should also rename the stat file.
+                if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
+                    add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, STAT_FILE_PREFIX + command.rename_to + STAT_FILE_SUFFIX);
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN)
             {
@@ -1022,7 +1021,7 @@ struct MutationContext
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
+    std::set<StatisticPtr> stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
     NameSet files_to_skip;
@@ -1473,12 +1472,12 @@ private:
         {
             if (command.type == MutationCommand::DROP_INDEX)
                 removed_indices.insert(command.column_name);
-            else if (command.type == MutationCommand::DROP_STATISTICS)
-                for (const auto & column_name : command.statistics_columns)
+            else if (command.type == MutationCommand::DROP_STATISTIC)
+                for (const auto & column_name : command.statistic_columns)
                     removed_stats.insert(column_name);
             else if (command.type == MutationCommand::RENAME_COLUMN
-                     && ctx->source_part->checksums.files.contains(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
-                renamed_stats[STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX] = STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX;
+                     && ctx->source_part->checksums.files.contains(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
+                renamed_stats[STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX] = STAT_FILE_PREFIX + command.rename_to + STAT_FILE_SUFFIX;
         }
 
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
@@ -1514,23 +1513,23 @@ private:
             }
         }
 
-        ColumnsStatistics stats_to_rewrite;
+        Statistics stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
         {
-            if (col.statistics.empty() || removed_stats.contains(col.name))
+            if (!col.stat || removed_stats.contains(col.name))
                 continue;
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col.statistics));
+                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(*col.stat));
             }
             else
             {
                 /// We do not hard-link statistics which
-                /// 1. In `DROP STATISTICS` statement. It is filtered by `removed_stats`
+                /// 1. In `DROP STATISTIC` statement. It is filtered by `removed_stats`
                 /// 2. Not in column list anymore, including `DROP COLUMN`. It is not touched by this loop.
-                String stat_file_name = STATS_FILE_PREFIX + col.name + STATS_FILE_SUFFIX;
+                String stat_file_name = STAT_FILE_PREFIX + col.name + STAT_FILE_SUFFIX;
                 auto it = ctx->source_part->checksums.files.find(stat_file_name);
                 if (it != ctx->source_part->checksums.files.end())
                 {
@@ -1676,7 +1675,7 @@ private:
             skip_indices,
             stats_to_rewrite,
             ctx->compression_codec,
-            ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
+            ctx->txn,
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
@@ -1904,7 +1903,7 @@ private:
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
+                Statistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info
@@ -2161,8 +2160,8 @@ bool MutateTask::prepare()
         scope_guard lock;
 
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
+                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
         }

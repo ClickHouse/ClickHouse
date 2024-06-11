@@ -3,20 +3,18 @@
 
 import argparse
 import logging
-import os
 import os.path as p
+import os
 import re
 from datetime import date, timedelta
-from subprocess import DEVNULL, CalledProcessError
+from subprocess import CalledProcessError, DEVNULL
 from typing import Dict, List, Optional, TextIO
 
+from fuzzywuzzy.fuzz import ratio  # type: ignore
+from github_helper import GitHub, PullRequest, PullRequests, Repository
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
-from thefuzz.fuzz import ratio  # type: ignore
-
-from git_helper import git_runner as runner
-from git_helper import is_shallow
-from github_helper import GitHub, PullRequest, PullRequests, Repository
+from git_helper import is_shallow, git_runner as runner
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
@@ -60,10 +58,9 @@ class Description:
             self.entry,
         )
         # 2) issue URL w/o markdown link
-        # including #issuecomment-1 or #event-12
         entry = re.sub(
-            r"([^(])(https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})[-#a-z0-9]*)",
-            r"\1[#\3](\2)",
+            r"([^(])https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})",
+            r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
             entry,
         )
         # It's possible that we face a secondary rate limit.
@@ -100,14 +97,17 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # obj._rawData doesn't spend additional API requests
         # We'll save some requests
         # pylint: disable=protected-access
-        repo_name = pr._rawData["base"]["repo"]["full_name"]
+        repo_name = pr._rawData["base"]["repo"]["full_name"]  # type: ignore
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
         in_changelog = False
         merge_commit = pr.merge_commit_sha
-        if merge_commit is None:
-            logging.warning("PR %s does not have merge-commit, skipping", pr.number)
+        try:
+            runner.run(f"git rev-parse '{merge_commit}'")
+        except CalledProcessError:
+            # It's possible that commit not in the repo, just continue
+            logging.info("PR %s does not belong to the repo", pr.number)
             continue
 
         in_changelog = merge_commit in SHA_IN_CHANGELOG
@@ -271,6 +271,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         category,
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
+        return Description(item.number, item.user, item.html_url, item.title, category)
 
     # Filter out documentations changelog
     if re.match(
@@ -299,9 +300,8 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     return Description(item.number, item.user, item.html_url, entry, category)
 
 
-def write_changelog(
-    fd: TextIO, descriptions: Dict[str, List[Description]], year: int
-) -> None:
+def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
+    year = date.today().year
     to_commit = runner(f"git rev-parse {TO_REF}^{{}}")[:11]
     from_commit = runner(f"git rev-parse {FROM_REF}^{{}}")[:11]
     fd.write(
@@ -359,12 +359,6 @@ def set_sha_in_changelog():
     ).split("\n")
 
 
-def get_year(prs: PullRequests) -> int:
-    if not prs:
-        return date.today().year
-    return max(pr.created_at.year for pr in prs)
-
-
 def main():
     log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
@@ -418,9 +412,8 @@ def main():
     prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
 
     descriptions = get_descriptions(prs)
-    changelog_year = get_year(prs)
 
-    write_changelog(args.output, descriptions, changelog_year)
+    write_changelog(args.output, descriptions)
 
 
 if __name__ == "__main__":

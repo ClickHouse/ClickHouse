@@ -61,7 +61,7 @@ all_nodes = [
 
 bad_settings_node = cluster.add_instance(
     "bad_settings_node",
-    main_configs=["configs/config2.xml"],
+    main_configs=["configs/config.xml"],
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
@@ -1522,24 +1522,3 @@ def test_auto_recovery(started_cluster):
 
     assert "42\n" == bad_settings_node.query("SELECT * FROM auto_recovery.t2")
     assert "137\n" == bad_settings_node.query("SELECT * FROM auto_recovery.t1")
-
-
-def test_all_groups_cluster(started_cluster):
-    dummy_node.query("DROP DATABASE IF EXISTS db_cluster")
-    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster")
-    dummy_node.query(
-        "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica1');"
-    )
-    bad_settings_node.query(
-        "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica2');"
-    )
-
-    assert "dummy_node\n" == dummy_node.query(
-        "select host_name from system.clusters where name='db_cluster' order by host_name"
-    )
-    assert "bad_settings_node\n" == bad_settings_node.query(
-        "select host_name from system.clusters where name='db_cluster' order by host_name"
-    )
-    assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
-        "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
-    )

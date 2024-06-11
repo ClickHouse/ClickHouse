@@ -77,17 +77,75 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
 {
 
     size_t size = cond.size();
-    for (size_t i = 0; i < size; ++i)
+    bool a_is_short = a.size() < size;
+    bool b_is_short = b.size() < size;
+
+    if (a_is_short && b_is_short)
     {
-        if constexpr (is_native_int_or_decimal_v<ResultType>)
-            res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-        else if constexpr (std::is_floating_point_v<ResultType>)
+        size_t a_index = 0, b_index = 0;
+        for (size_t i = 0; i < size; ++i)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[b_index], res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[b_index]);
+
+            a_index += !!cond[i];
+            b_index += !cond[i];
         }
-        else
+    }
+    else if (a_is_short)
+    {
+        size_t a_index = 0;
+        for (size_t i = 0; i < size; ++i)
         {
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[i], res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[i]);
+
+            a_index += !!cond[i];
+        }
+    }
+    else if (b_is_short)
+    {
+        size_t b_index = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[b_index], res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index]);
+
+            b_index += !cond[i];
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
+            }
+            else
+            {
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            }
         }
     }
 }
@@ -96,16 +154,37 @@ template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult,
 inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
-    for (size_t i = 0; i < size; ++i)
+    bool a_is_short = a.size() < size;
+    if (a_is_short)
     {
-        if constexpr (is_native_int_or_decimal_v<ResultType>)
-            res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
-        else if constexpr (std::is_floating_point_v<ResultType>)
+        size_t a_index = 0;
+        for (size_t i = 0; i < size; ++i)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b, res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b);
+
+            a_index += !!cond[i];
         }
-        else
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+        }
     }
 }
 
@@ -113,16 +192,37 @@ template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult,
 inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
-    for (size_t i = 0; i < size; ++i)
+    bool b_is_short = b.size() < size;
+    if (b_is_short)
     {
-        if constexpr (is_native_int_or_decimal_v<ResultType>)
-            res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
-        else if constexpr (std::is_floating_point_v<ResultType>)
+        size_t b_index = 0;
+        for (size_t i = 0; i < size; ++i)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[b_index], res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index]);
+
+            b_index += !cond[i];
         }
-        else
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+        }
     }
 }
 
@@ -780,6 +880,9 @@ private:
         bool then_is_const = isColumnConst(*col_then);
         bool else_is_const = isColumnConst(*col_else);
 
+        bool then_is_short = col_then->size() < cond_col->size();
+        bool else_is_short = col_else->size() < cond_col->size();
+
         const auto & cond_array = cond_col->getData();
 
         if (then_is_const && else_is_const)
@@ -799,34 +902,37 @@ private:
         {
             const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
 
+            size_t else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
                     result_column->insertFrom(then_nested_column, 0);
                 else
-                    result_column->insertFrom(*col_else, i);
+                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
             }
         }
         else if (else_is_const)
         {
             const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
+            size_t then_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
+                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
                 else
                     result_column->insertFrom(else_nested_column, 0);
             }
         }
         else
         {
+            size_t then_index = 0, else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
+                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
                 else
-                    result_column->insertFrom(*col_else, i);
+                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
             }
         }
 
@@ -1019,6 +1125,9 @@ private:
         if (then_is_null && else_is_null)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
+        bool then_is_short = arg_then.column->size() < arg_cond.column->size();
+        bool else_is_short = arg_else.column->size() < arg_cond.column->size();
+
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
 
@@ -1037,6 +1146,8 @@ private:
             {
                 arg_else_column = arg_else_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_else_column));
+                if (else_is_short)
+                    result_column->expand(cond_col->getData(), true);
                 if (isColumnNullable(*result_column))
                 {
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
@@ -1082,6 +1193,8 @@ private:
             {
                 arg_then_column = arg_then_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
+                if (then_is_short)
+                    result_column->expand(cond_col->getData(), false);
 
                 if (isColumnNullable(*result_column))
                 {

@@ -72,7 +72,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     codec = other.codec ? other.codec->clone() : nullptr;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
-    statistics = other.statistics;
+    stat = other.stat;
 
     return *this;
 }
@@ -95,7 +95,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     other.ttl.reset();
 
-    statistics = std::move(other.statistics);
+    stat = std::move(other.stat);
 
     return *this;
 }
@@ -107,7 +107,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && statistics == other.statistics
+        && stat == other.stat
         && ast_to_str(codec) == ast_to_str(other.codec)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
@@ -154,10 +154,10 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         DB::writeText(")", buf);
     }
 
-    if (!statistics.empty())
+    if (stat)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(statistics.getAST()), buf);
+        writeEscapedString(queryToString(stat->ast), buf);
     }
 
     if (ttl)

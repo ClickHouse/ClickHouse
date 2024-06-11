@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
+    extern const int EMPTY_DATA_PASSED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
@@ -180,9 +181,6 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 
 MutableColumnPtr DataTypeTuple::createColumn() const
 {
-    if (elems.empty())
-        return ColumnTuple::create(0);
-
     size_t size = elems.size();
     MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
@@ -208,9 +206,6 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     if (!serialization_tuple)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
 
-    if (elems.empty())
-        return IDataType::createColumn(serialization);
-
     const auto & element_serializations = serialization_tuple->getElementsSerializations();
 
     size_t size = elems.size();
@@ -229,12 +224,6 @@ Field DataTypeTuple::getDefault() const
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
 {
-    if (elems.empty())
-    {
-        column.insertDefault();
-        return;
-    }
-
     addElementSafe(elems, column, [&]
     {
         for (const auto & i : collections::range(0, elems.size()))
@@ -399,7 +388,7 @@ void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
-        return std::make_shared<DataTypeTuple>(DataTypes{});
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Tuple cannot be empty");
 
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());

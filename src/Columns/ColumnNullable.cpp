@@ -1,5 +1,4 @@
 #include <Common/Arena.h>
-#include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -622,7 +621,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     if (unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
-            ::sort(std::ranges::next(res.begin(), null_range.from), std::ranges::next(res.begin(), null_range.to));
+            ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
     }
 
     if (is_nulls_last || null_ranges.empty())
@@ -659,33 +658,6 @@ void ColumnNullable::updatePermutationWithCollation(const Collator & collator, I
                                             size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
     updatePermutationImpl(direction, stability, limit, null_direction_hint, res, equal_ranges, &collator);
-}
-
-
-size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
-{
-    const size_t range_size = equal_range.size();
-    if (range_size <= 1)
-        return range_size;
-
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool has_null = false;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
-    {
-        size_t permuted_i = permutation[i];
-        if (isNullAt(permuted_i))
-        {
-            has_null = true;
-        }
-        else
-        {
-            StringRef value = getDataAt(permuted_i);
-            elements.emplace(value, inserted);
-        }
-    }
-    return elements.size() + (has_null ? 1 : 0);
 }
 
 void ColumnNullable::reserve(size_t n)

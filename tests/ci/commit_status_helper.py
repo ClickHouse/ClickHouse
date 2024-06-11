@@ -17,8 +17,13 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, CIConfig
-from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
+from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
+from env_helper import (
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_URL,
+    GITHUB_UPSTREAM_REPOSITORY,
+    TEMP_PATH,
+)
 from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
@@ -80,7 +85,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: StatusType,  # do not change it, it MUST be StatusType and nothing else
+    state: StatusType,
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
@@ -428,8 +433,11 @@ def set_mergeable_check(
     commit: Commit,
     description: str = "",
     state: StatusType = SUCCESS,
+    hide_url: bool = False,
 ) -> CommitStatus:
-    report_url = ""
+    report_url = GITHUB_RUN_URL
+    if hide_url:
+        report_url = ""
     return post_commit_status(
         commit,
         state,
@@ -443,7 +451,7 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
         pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
-        or not CIConfig.is_required(check_name)
+        or not is_required(check_name)
         or pr_info.release_pr
         or pr_info.number == 0
     )
@@ -461,13 +469,12 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
 def trigger_mergeable_check(
     commit: Commit,
     statuses: CommitStatuses,
+    hide_url: bool = False,
     set_if_green: bool = False,
     workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update StatusNames.MERGEABLE"""
-    required_checks = [
-        status for status in statuses if CIConfig.is_required(status.context)
-    ]
+    required_checks = [status for status in statuses if is_required(status.context)]
 
     mergeable_status = None
     for status in statuses:
@@ -477,16 +484,18 @@ def trigger_mergeable_check(
 
     success = []
     fail = []
-    pending = []
     for status in required_checks:
         if status.state == SUCCESS:
             success.append(status.context)
-        elif status.state == PENDING:
-            pending.append(status.context)
         else:
             fail.append(status.context)
 
     state: StatusType = SUCCESS
+
+    if success:
+        description = ", ".join(success)
+    else:
+        description = "awaiting job statuses"
 
     if fail:
         description = "failed: " + ", ".join(fail)
@@ -494,13 +503,6 @@ def trigger_mergeable_check(
     elif workflow_failed:
         description = "check workflow failures"
         state = FAILURE
-    elif pending:
-        description = "pending: " + ", ".join(pending)
-        state = PENDING
-    else:
-        # all good
-        description = ", ".join(success)
-
     description = format_description(description)
 
     if not set_if_green and state == SUCCESS:
@@ -508,7 +510,7 @@ def trigger_mergeable_check(
         pass
     else:
         if mergeable_status is None or mergeable_status.description != description:
-            set_mergeable_check(commit, description, state)
+            set_mergeable_check(commit, description, state, hide_url)
 
     return state
 
@@ -554,12 +556,13 @@ def update_upstream_sync_status(
     post_commit_status(
         last_synced_upstream_commit,
         sync_status,
-        "",
+        "",  # let's won't expose any urls from cloud
         "",
         StatusNames.SYNC,
     )
     trigger_mergeable_check(
         last_synced_upstream_commit,
         get_commit_filtered_statuses(last_synced_upstream_commit),
+        True,
         set_if_green=can_set_green_mergeable_status,
     )

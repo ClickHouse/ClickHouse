@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
@@ -59,7 +60,7 @@ def get_pr_for_commit(sha, ref):
         data = response.json()
         our_prs = []  # type: List[Dict]
         if len(data) > 1:
-            logging.warning("Got more than one pr for commit %s", sha)
+            print("Got more than one pr for commit", sha)
         for pr in data:
             # We need to check if the PR is created in our repo, because
             # https://github.com/kaynewu/ClickHouse/pull/2
@@ -71,20 +72,13 @@ def get_pr_for_commit(sha, ref):
             if pr["head"]["ref"] in ref:
                 return pr
             our_prs.append(pr)
-        logging.warning(
-            "Cannot find PR with required ref %s, sha %s - returning first one",
-            ref,
-            sha,
+        print(
+            f"Cannot find PR with required ref {ref}, sha {sha} - returning first one"
         )
         first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
-        logging.error(
-            "Cannot fetch PR info from commit ref %s, sha %s, exception: %s",
-            ref,
-            sha,
-            ex,
-        )
+        print(f"Cannot fetch PR info from commit {ref}, {sha}", ex)
     return None
 
 
@@ -266,12 +260,12 @@ class PRInfo:
                     self.diff_urls.append(
                         self.compare_url(
                             pull_request["base"]["repo"]["default_branch"],
-                            pull_request["head"]["sha"],
+                            pull_request["head"]["label"],
                         )
                     )
                     self.diff_urls.append(
                         self.compare_url(
-                            pull_request["head"]["sha"],
+                            pull_request["head"]["label"],
                             pull_request["base"]["repo"]["default_branch"],
                         )
                     )
@@ -286,7 +280,7 @@ class PRInfo:
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
                         self.compare_url(
-                            pull_request["head"]["sha"],
+                            pull_request["head"]["label"],
                             pull_request["base"]["repo"]["default_branch"],
                         )
                     )
@@ -296,10 +290,8 @@ class PRInfo:
             else:
                 # assume this is a dispatch
                 self.event_type = EventType.DISPATCH
-            logging.warning(
-                "event.json does not match pull_request or push:\n%s",
-                json.dumps(github_event, sort_keys=True, indent=4),
-            )
+            print("event.json does not match pull_request or push:")
+            print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv(
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
@@ -320,6 +312,12 @@ class PRInfo:
 
     @property
     def is_release(self) -> bool:
+        return self.number == 0 and bool(
+            re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
+        )
+
+    @property
+    def is_release_branch(self) -> bool:
         return self.number == 0 and not self.is_merge_queue
 
     @property
@@ -339,7 +337,7 @@ class PRInfo:
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:
-        return self.compare_url(pr_object["base"]["sha"], pr_object["head"]["sha"])
+        return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
 
     @staticmethod
     def compare_url(first: str, second: str) -> str:
@@ -366,7 +364,7 @@ class PRInfo:
             diff_object = PatchSet(response.text)
             self.changed_files.update({f.path for f in diff_object})
         self.changed_files_requested = True
-        logging.info("Fetched info about %s changed files", len(self.changed_files))
+        print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
         return {

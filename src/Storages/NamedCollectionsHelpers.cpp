@@ -1,7 +1,6 @@
 #include "NamedCollectionsHelpers.h"
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
@@ -95,7 +94,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.empty())
         return nullptr;
 
-    NamedCollectionFactory::instance().loadIfNot();
+    NamedCollectionUtils::loadIfNot();
 
     auto collection_name = getCollectionName(asts);
     if (!collection_name.has_value())
