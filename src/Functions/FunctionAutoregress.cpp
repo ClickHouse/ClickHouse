@@ -1,13 +1,12 @@
 #include <Columns/ColumnFunction.h>
+#include <Common/assert_cast.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include "Common/assert_cast.h"
-#include "Core/ColumnWithTypeAndName.h"
-#include "Core/TypeId.h"
 
 #include <memory>
 
