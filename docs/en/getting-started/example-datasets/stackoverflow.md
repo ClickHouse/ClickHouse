@@ -13,6 +13,7 @@ Users can either download pre-prepared Parquet versions of the data, containing 
 
 The following diagram shows the schema for the available tables assuming Parquet format.
 
+![Stackoverflow schema](./images/stackoverflow.png)
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
