@@ -79,11 +79,13 @@ private:
     ColumnNumbers result_positions;
     Block sample_block;
 
+    bool project_inputs = false;
+
     ExpressionActionsSettings settings;
 
 public:
     ExpressionActions() = delete;
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 

@@ -392,6 +392,9 @@ Block createBlockForSet(
 
 }
 
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level(Level &&) = default;
 
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
@@ -529,7 +532,9 @@ std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
 
 ScopeStack::ScopeStack(ActionsDAG actions_dag, ContextPtr context_) : WithContext(context_)
 {
-    auto & level = stack.emplace_back(ScopeStack::Level{std::move(actions_dag), {}, {}});
+    ScopeStack::Level tmp;
+    tmp.actions_dag = std::move(actions_dag);
+    auto & level = stack.emplace_back(std::move(tmp));
     level.index = std::make_unique<ScopeStack::Index>(level.actions_dag.getOutputs());
 
     for (const auto & node : level.actions_dag.getOutputs())
@@ -1268,7 +1273,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     lambda_dag.removeUnusedActions(Names(1, result_name));
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
-                        std::make_shared<ActionsDAG>(lambda_dag),
+                        std::make_shared<ActionsDAG>(std::move(lambda_dag)),
                         ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;

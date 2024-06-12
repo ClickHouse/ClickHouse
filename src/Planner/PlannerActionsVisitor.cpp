@@ -886,7 +886,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     for (const auto & argument : function_node.getArguments())
     {
-        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(index_hint_actions_dag, argument);
+        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(*index_hint_actions_dag, argument);
 
         for (auto & expression_dag_node : index_hint_argument_expression_dag_nodes)
         {
@@ -1013,10 +1013,13 @@ PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_c
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {}
 
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAGPtr actions_dag, QueryTreeNodePtr expression_node)
+ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
 {
-    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context, use_column_identifier_as_action_node_name);
-    return actions_visitor_impl.visit(expression_node);
+    auto ptr = std::make_shared<ActionsDAG>(std::move(actions_dag));
+    PlannerActionsVisitorImpl actions_visitor_impl(ptr, planner_context, use_column_identifier_as_action_node_name);
+    auto res = actions_visitor_impl.visit(expression_node);
+    actions_dag = std::move(*ptr);
+    return res;
 }
 
 String calculateActionNodeName(const QueryTreeNodePtr & node,

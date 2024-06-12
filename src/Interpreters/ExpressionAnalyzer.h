@@ -115,10 +115,10 @@ public:
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If add_aliases, only the calculated values in the desired order and add aliases.
-    ///     If also project_result, than only aliases remain in the output block.
+    ///     If also remove_unused_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsAndFlagsPtr getActionsDAG(bool add_aliases, bool project_result);
-    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
+    ActionsDAGPtr getActionsDAG(bool add_aliases, bool remove_unused_result = true);
+    ExpressionActionsPtr getActions(bool add_aliases, bool remove_unused_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.

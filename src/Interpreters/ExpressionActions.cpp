@@ -49,8 +49,9 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
-    : settings(settings_)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : project_inputs(project_inputs_)
+    , settings(settings_)
 {
     actions_dag = actions_dag_->clone();
 
@@ -757,6 +758,10 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
         }
     }
 
+    if (project_inputs)
+    {
+        block.clear();
+    }
     if (allow_duplicates_in_input)
     {
         /// This case is the same as when the input is projected

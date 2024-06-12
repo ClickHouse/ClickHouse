@@ -47,6 +47,10 @@ struct ScopeStack : WithContext
         ActionsDAG actions_dag;
         IndexPtr index;
         NameSet inputs;
+
+        ~Level();
+        Level();
+        Level(Level &&);
     };
 
     using Levels = std::vector<Level>;

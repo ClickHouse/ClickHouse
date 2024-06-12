@@ -386,6 +386,8 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
 
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
 
+    std::cerr << adding_missing_defaults_actions->dumpActions() << std::endl;
+
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out.addSource(std::make_shared<ConvertingTransform>(query_sample_block, adding_missing_defaults_actions));

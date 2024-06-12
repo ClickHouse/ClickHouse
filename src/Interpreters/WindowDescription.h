@@ -93,8 +93,8 @@ struct WindowDescription
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
 
-    std::vector<ActionsDAG> partition_by_actions;
-    std::vector<ActionsDAG> order_by_actions;
+    std::vector<ActionsDAGPtr> partition_by_actions;
+    std::vector<ActionsDAGPtr> order_by_actions;
 
     WindowFrame frame;
 

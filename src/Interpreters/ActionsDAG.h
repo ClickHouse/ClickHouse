@@ -166,8 +166,11 @@ public:
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
 
-    /// Add alias actions and remove unused columns from outputs. Also specify result columns order in outputs.
+    /// Add alias actions. Also specify result columns order in outputs.
     void project(const NamesWithAliases & projection);
+
+    /// Add input for every column from sample_block which is not mapped to existing input.
+    void appendInputsForUnusedColumns(const Block & sample_block);
 
     /// If column is not in outputs, try to find it in nodes and insert back into outputs.
     bool tryRestoreColumn(const std::string & column_name);

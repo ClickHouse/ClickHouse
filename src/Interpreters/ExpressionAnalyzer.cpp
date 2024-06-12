@@ -658,8 +658,8 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
 
-            ActionsDAG actions_dag(aggregated_columns);
-            getRootActions(column_ast, false, actions_dag);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
+            getRootActions(column_ast, false, *actions_dag);
             desc.partition_by_actions.push_back(std::move(actions_dag));
         }
     }
@@ -679,8 +679,8 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     order_by_element.direction,
                     order_by_element.nulls_direction));
 
-            ActionsDAG actions_dag(aggregated_columns);
-            getRootActions(column_ast, false, actions_dag);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
+            getRootActions(column_ast, false, *actions_dag);
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
@@ -1068,6 +1068,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 rename_dag->getOutputs()[pos] = &alias;
             }
         }
+        rename_dag->appendInputsForUnusedColumns(joined_plan->getCurrentDataStream().header);
         auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
@@ -1219,7 +1220,7 @@ ActionsAndFlagsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     }
 
     {
-        ActionsDAG actions;
+        auto actions = std::make_shared<ActionsAndFlags>();
 
         auto required_columns = prewhere_actions->actions.getRequiredColumns();
         NameSet prewhere_input_names;
@@ -1265,7 +1266,7 @@ ActionsAndFlagsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
                 }
             }
 
-            actions = ActionsDAG(required_columns);
+            actions->actions = ActionsDAG(required_columns);
         }
         else
         {
@@ -1280,7 +1281,7 @@ ActionsAndFlagsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
                 }
             }
 
-            actions = ActionsDAG(columns);
+            actions->actions = ActionsDAG(columns);
         }
 
         chain.steps.emplace_back(
@@ -1351,8 +1352,8 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     {
         for (auto & child : asts)
         {
-            ActionsDAG actions_dag(columns_after_join);
-            getRootActions(child, only_types, actions_dag);
+            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            getRootActions(child, only_types, *actions_dag);
             group_by_elements_actions.emplace_back(
                 std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
         }
@@ -1730,9 +1731,8 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
     step.addRequiredOutput(expr->getColumnName());
 }
 
-ActionsAndFlagsPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_result)
+ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unused_result)
 {
-    ActionsAndFlagsPtr res;
     ActionsDAG actions_dag(aggregated_columns);
     NamesWithAliases result_columns;
     Names result_names;
@@ -1759,16 +1759,15 @@ ActionsAndFlagsPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool proj
 
     if (add_aliases)
     {
-        if (project_result)
+        if (remove_unused_result)
         {
             actions_dag.project(result_columns);
-            res->project_input = res->projected_output = true;
         }
         else
             actions_dag.addAliases(result_columns);
     }
 
-    if (!(add_aliases && project_result))
+    if (!(add_aliases && remove_unused_result))
     {
         NameSet name_set(result_names.begin(), result_names.end());
         /// We will not delete the original columns.
@@ -1784,14 +1783,13 @@ ActionsAndFlagsPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool proj
         actions_dag.removeUnusedActions(name_set);
     }
 
-    res->actions = std::move(actions_dag);
-    return res;
+    return std::make_unique<ActionsDAG>(std::move(actions_dag));
 }
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result, CompileExpressions compile_expressions)
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool remove_unused_result, CompileExpressions compile_expressions)
 {
     return std::make_shared<ExpressionActions>(
-        getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
+        getActionsDAG(add_aliases, remove_unused_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions), remove_unused_result);
 }
 
 ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
@@ -1925,7 +1923,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             /// Prewhere is always the first one.
             prewhere_step_num = 0;
-            prewhere_info = std::make_shared<PrewhereInfo>(actions, query.prewhere()->getColumnName());
+            auto dag = std::make_shared<ActionsDAG>(std::move(actions->actions));
+            prewhere_info = std::make_shared<PrewhereInfo>(std::move(dag), query.prewhere()->getColumnName());
 
             if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))
             {
@@ -1967,7 +1966,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 if (sanitizeBlock(before_where_sample))
                 {
                     ExpressionActions(
-                        std::make_shared<ActionsDAG>(before_where->actions.clone()),
+                        before_where->actions.clone(),
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem
