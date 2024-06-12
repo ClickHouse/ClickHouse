@@ -825,6 +825,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     }
 
     size_t rows = source_block.rows();
+    data->rows_to_join += rows;
 
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
@@ -967,7 +968,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             total_bytes = getTotalByteCount();
         }
     }
-
+    data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -1083,6 +1084,7 @@ public:
     {
         PaddedPODArray<UInt64> blocks;
         PaddedPODArray<UInt32> row_nums;
+        PaddedPODArray<UInt64> rows;
     };
 
     AddedColumns(
@@ -1098,6 +1100,7 @@ public:
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())
+        , join_data_sorted(join.getJoinedData()->sorted)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -1109,6 +1112,7 @@ public:
             has_columns_to_add = num_columns_to_add > 0;
             lazy_output.blocks.reserve(rows_to_add);
             lazy_output.row_nums.reserve(rows_to_add);
+            lazy_output.rows.reserve(rows_to_add);
         }
 
         columns.reserve(num_columns_to_add);
@@ -1152,12 +1156,16 @@ public:
 
     void buildOutput();
 
+    void buildOutputIfDataSorted();
+
     ColumnWithTypeAndName moveColumn(size_t i)
     {
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
     void appendFromBlock(const Block & block, size_t row_num, bool has_default);
+
+    void appendFromSortedBlock(const Block & block, size_t row_num, size_t rows, bool has_default);
 
     void appendDefaultRow();
 
@@ -1174,6 +1182,7 @@ public:
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     IColumn::Filter filter;
+    bool join_data_sorted = false;
 
     void reserve(bool need_replicate)
     {
@@ -1244,9 +1253,8 @@ private:
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
-template<> void AddedColumns<false>::buildOutput()
-{
-}
+template<> void AddedColumns<false>::buildOutput() {}
+template<> void AddedColumns<false>::buildOutputIfDataSorted() {}
 
 template<>
 void AddedColumns<true>::buildOutput()
@@ -1276,14 +1284,52 @@ void AddedColumns<true>::buildOutput()
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             if (is_join_get)
             {
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get());
-                    nullable_col && !column_from_block.column->isNullable())
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block.column->isNullable())
                 {
                     nullable_col->insertFromNotNullable(*column_from_block.column, lazy_output.row_nums[j]);
                     continue;
                 }
             }
             col->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
+        }
+        apply_default();
+    }
+}
+
+template<>
+void AddedColumns<true>::buildOutputIfDataSorted()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        auto& col = columns[i];
+        size_t default_count = 0;
+        auto apply_default = [&]()
+        {
+            if (default_count > 0)
+            {
+                JoinCommon::addDefaultValues(*col, type_name[i].type, default_count);
+                default_count = 0;
+            }
+        };
+
+        for (size_t j = 0; j < lazy_output.blocks.size(); ++j)
+        {
+            if (!lazy_output.blocks[j])
+            {
+                default_count ++;
+                continue;
+            }
+            apply_default();
+            const auto & column_from_block = reinterpret_cast<const Block *>(lazy_output.blocks[j])->getByPosition(right_indexes[i]);
+            if (is_join_get)
+            {
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block.column->isNullable())
+                {
+                    nullable_col->insertRangeFromNotNullable(*column_from_block.column, lazy_output.row_nums[j], lazy_output.rows[j]);
+                    continue;
+                }
+            }
+            col->insertRangeFrom(*column_from_block.column, lazy_output.row_nums[j], lazy_output.rows[j]);
         }
         apply_default();
     }
@@ -1306,7 +1352,7 @@ void AddedColumns<true>::applyLazyDefaults()
 }
 
 template <>
-void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,const bool has_defaults)
+void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num, const bool has_defaults)
 {
     if (has_defaults)
         applyLazyDefaults();
@@ -1345,8 +1391,26 @@ void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bo
 #endif
     if (has_columns_to_add)
     {
-        lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
-        lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+       lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
+       lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+    }
+}
+template<>
+void AddedColumns<false>::appendFromSortedBlock(const Block & block, size_t row_num, size_t, bool has_defaults)
+{
+    appendFromBlock(block, row_num, has_defaults);
+}
+template<>
+void AddedColumns<true>::appendFromSortedBlock(const Block & block, size_t row_num, size_t rows, bool)
+{
+    #ifndef NDEBUG
+    checkBlock(block);
+#endif
+    if (has_columns_to_add)
+    {
+       lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
+       lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+       lazy_output.rows.emplace_back(rows);
     }
 }
 template<>
@@ -1362,6 +1426,7 @@ void AddedColumns<true>::appendDefaultRow()
     {
         lazy_output.blocks.emplace_back(0);
         lazy_output.row_nums.emplace_back(0);
+        if (join_data_sorted) lazy_output.rows.emplace_back(1);
     }
 }
 
@@ -1501,12 +1566,20 @@ void addFoundRowAll(
             known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
         }
     }
+    else if (added.join_data_sorted)
+    {
+        for (auto it = mapped.begin(); it.ok(); ++it)
+        {
+            added.appendFromSortedBlock(*it->block, it->row_num, it->rows, false);
+            current_offset += it->rows;
+        }
+    }
     else
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
             added.appendFromBlock(*it->block, it->row_num, false);
-            ++current_offset;
+            current_offset ++;
         }
     }
 }
@@ -2193,7 +2266,10 @@ Block HashJoin::joinBlockImpl(
     added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
 
-    added_columns.buildOutput();
+    if (data->sorted)
+        added_columns.buildOutputIfDataSorted();
+    else
+        added_columns.buildOutput();
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
 
@@ -2455,7 +2531,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         joinBlockImplCross(block, not_processed);
         return;
     }
-
     if (kind == JoinKind::Right || kind == JoinKind::Full)
     {
         materializeBlockInplace(block);
@@ -2480,6 +2555,85 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
+}
+
+template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
+void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
+{
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    if constexpr (join_features.is_all_join && (join_features.left || join_features.inner))
+    {
+        auto merge_rows_into_one_block = [&](BlocksList & blocks, RowRefList & rows_ref)
+        {
+            auto it = rows_ref.begin();
+            if (it.ok())
+            {
+                if (blocks.empty() || blocks.back().rows() > DEFAULT_BLOCK_SIZE)
+                    blocks.emplace_back(it->block->cloneEmpty());
+            }
+            else
+            {
+                return;
+            }
+            auto & block = blocks.back();
+            size_t start_row = block.rows();
+            for (; it.ok(); ++it)
+            {
+                for (size_t i = 0; i < block.columns(); ++i)
+                {
+                    auto & col = *(block.getByPosition(i).column->assumeMutable());
+                    col.insertFrom(*it->block->getByPosition(i).column, it->row_num);
+                }
+            }
+            if (block.rows() > start_row)
+            {
+                RowRefList new_rows_ref(&block, start_row, block.rows() - start_row);
+                rows_ref = std::move(new_rows_ref);
+            }
+        };
+
+        auto visit_rows_map = [&](BlocksList & blocks, MapsAll & rows_map)
+        {
+            switch (data->type)
+            {
+        #define M(TYPE) \
+                case Type::TYPE: \
+                {\
+                    rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(blocks, rows_ref); }); \
+                    break; \
+                }
+                APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
+                default:
+                    break;
+            }
+        };
+        BlocksList sorted_blocks;
+        visit_rows_map(sorted_blocks, map);
+        data->blocks.swap(sorted_blocks);
+    }
+}
+
+void HashJoin::tryRerangeRightTableData()
+{
+    if (!data || data->blocks.empty() || data->maps.size() > 1)
+        return;
+    size_t keys_to_join = data->keys_to_join != 0 ? data->keys_to_join : getTotalRowCount();
+    if (keys_to_join == 0
+        || sample_block_with_columns_to_add.columns() == 0
+        || data->rows_to_join > table_join->rightTableSortRowsUpperLimit()
+        || data->rows_to_join / keys_to_join < table_join->rightTableSortPerkeyRowsLowerLimit())
+    {
+        LOG_DEBUG(log, "The joined right table total rows :{}, total keys :{}, columns added:{}",
+            data->rows_to_join, keys_to_join, sample_block_with_columns_to_add.columns());
+        return;
+    }
+    joinDispatch(
+        kind,
+        strictness,
+        data->maps.front(),
+        [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
+    data->sorted = true;
 }
 
 HashJoin::~HashJoin()

@@ -1,6 +1,7 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TableJoin.h>
 
 #include <Common/logger_useful.h>
 
@@ -292,23 +293,73 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         for_totals = true;
         return Status::Ready;
     }
-
     output.finish();
     return Status::Finished;
 }
 
 void FillingRightJoinSideTransform::work()
 {
-    auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto & input = inputs.front();
+    auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
         stop_reading = !join->addBlockToJoin(block);
-
+    if (input.isFinished()
+        && !join->supportParallelJoin()
+        && (join->getTableJoin().kind() == JoinKind::Inner || join->getTableJoin().kind() == JoinKind::Left)
+        && join->getTableJoin().strictness() == JoinStrictness::All)
+    {
+        join->tryRerangeRightTableData();
+    }
     set_totals = for_totals;
 }
 
+RerangeRightJoinSideTransform::RerangeRightJoinSideTransform(Block input_header, JoinPtr join_)
+    : IProcessor({input_header}, {Block()})
+    , join(std::move(join_))
+{}
+
+InputPort * RerangeRightJoinSideTransform::addTotalsPort()
+{
+    if (inputs.size() > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to RerangeRightJoinSideTransform");
+    return &inputs.emplace_back(inputs.front().getHeader(), this);
+}
+
+IProcessor::Status RerangeRightJoinSideTransform::prepare()
+{
+    auto & output = outputs.front();
+    auto & input = inputs.front();
+    if (!output.canPush())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+    if (!input.isFinished())
+    {
+        input.setNeeded();
+        return Status::Ready;
+    }
+    else if (!to_execute)
+    {
+        to_execute = true;
+        return Status::Ready;
+    }
+    output.finish();
+    for (auto & in : inputs)
+        in.close();
+    return Status::Finished;
+}
+
+void RerangeRightJoinSideTransform::work()
+{
+    if (to_execute)
+    {
+        join->tryRerangeRightTableData();
+    }
+}
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     Block output_header_,

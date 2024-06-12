@@ -746,4 +746,10 @@ GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const
     return buckets;
 }
 
+void GraceHashJoin::tryRerangeRightTableData()
+{
+    if (hash_join)
+        hash_join->tryRerangeRightTableData();
+}
+
 }
