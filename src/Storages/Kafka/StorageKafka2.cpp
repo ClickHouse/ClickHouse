@@ -278,6 +278,18 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
 void StorageKafka2::startup()
 {
+    for (size_t i = 0; i < num_consumers; ++i)
+    {
+        try
+        {
+            consumers.emplace_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = keeper});
+            ++num_created_consumers;
+        }
+        catch (const cppkafka::Exception &)
+        {
+            tryLogCurrentException(log);
+        }
+    }
     // Start the reader thread
     for (auto & task : tasks)
         task->holder->activateAndSchedule();
