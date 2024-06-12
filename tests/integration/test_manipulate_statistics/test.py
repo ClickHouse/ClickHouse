@@ -156,20 +156,29 @@ def test_replicated_table_ddl(started_cluster):
         == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS index_granularity = 8192\n"
     )
 
-    node2.query("insert into test_stat values(1,2,3), (2,3,4)");
+    node2.query("insert into test_stat values(1,2,3), (2,3,4)")
     # check_stat_file_on_disk(node2, "test_stat", "all_0_0_0", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0", "c", True)
-    node1.query("ALTER TABLE test_stat RENAME COLUMN c TO d", settings={"alter_sync": "2"})
-    assert (node2.query("select sum(a), sum(d) from test_stat") == "3\t7\n")
+    node1.query(
+        "ALTER TABLE test_stat RENAME COLUMN c TO d", settings={"alter_sync": "2"}
+    )
+    assert node2.query("select sum(a), sum(d) from test_stat") == "3\t7\n"
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "c", False)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "d", True)
-    node1.query("ALTER TABLE test_stat CLEAR STATISTICS d", settings={"alter_sync": "2"})
-    node1.query("ALTER TABLE test_stat ADD STATISTICS b type tdigest", settings={"alter_sync": "2"})
+    node1.query(
+        "ALTER TABLE test_stat CLEAR STATISTICS d", settings={"alter_sync": "2"}
+    )
+    node1.query(
+        "ALTER TABLE test_stat ADD STATISTICS b type tdigest",
+        settings={"alter_sync": "2"},
+    )
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "b", False)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "d", False)
-    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTICS b", settings={"alter_sync": "2"})
+    node1.query(
+        "ALTER TABLE test_stat MATERIALIZE STATISTICS b", settings={"alter_sync": "2"}
+    )
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "b", True)
