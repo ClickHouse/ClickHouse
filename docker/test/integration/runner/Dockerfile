@@ -100,6 +100,7 @@ RUN python3 -m pip install --no-cache-dir \
     pyyaml==5.3.1 \
     redis \
     requests-kerberos \
+    requests==2.31.0 \
     tzlocal==2.1 \
     retry \
     bs4 \
