@@ -44,7 +44,7 @@ struct ProxyConfiguration
         }
     }
 
-    std::string host = std::string{};
+    std::string host{};
     Protocol protocol = Protocol::HTTP;
     uint16_t port = 0;
     bool tunneling = false;

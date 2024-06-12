@@ -115,7 +115,7 @@ std::unique_ptr<S3::Client> getClient(
         /*
         * Override proxy configuration for backwards compatibility with old configuration format.
         * */
-        if (auto proxy_config = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        if (auto proxy_config = ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
                 ProxyConfiguration::protocolFromString(url.uri.getScheme()), config_prefix, config))
         {
             client_configuration.per_request_configuration
