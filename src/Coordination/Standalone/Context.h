@@ -130,7 +130,8 @@ public:
 
     enum class ApplicationType : uint8_t
     {
-        KEEPER
+        KEEPER,
+        SERVER,
     };
 
     void setApplicationType(ApplicationType) {}
