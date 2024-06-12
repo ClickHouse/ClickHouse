@@ -283,7 +283,7 @@ public:
         if (has_join_use_nulls)
         {
             /// Do not optimize if we have JOIN with setting join_use_null.
-            /// It may change the behaviour if subcolumn can be coverted
+            /// It may change the behaviour if subcolumn can be converted
             /// to nullable while the original column cannot.
             return {};
         }
