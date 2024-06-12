@@ -1,6 +1,4 @@
 #include "filesystemHelpers.h"
-#include <utime.h>
-#include <sys/select.h>
 
 #if defined(OS_LINUX)
 #    include <mntent.h>
@@ -13,7 +11,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/time.h>
+#include <utime.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
