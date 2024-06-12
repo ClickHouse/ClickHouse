@@ -18,18 +18,20 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
 }
 
-S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settings & settings)
+S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settings & settings, bool validate_settings)
 {
-    updateFromSettingsImpl(settings, false);
-    validate();
+    updateFromSettings(settings, false);
+    if (validate_settings)
+        validate();
 }
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const Settings & settings,
-    String setting_name_prefix)
-    : PartUploadSettings(settings)
+    String setting_name_prefix,
+    bool validate_settings)
+    : PartUploadSettings(settings, validate_settings)
 {
     String key = config_prefix + "." + setting_name_prefix;
     strict_upload_part_size = config.getUInt64(key + "strict_upload_part_size", strict_upload_part_size);
@@ -46,7 +48,8 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     storage_class_name = config.getString(config_prefix + ".s3_storage_class", storage_class_name);
     storage_class_name = Poco::toUpperInPlace(storage_class_name);
 
-    validate();
+    if (validate_settings)
+        validate();
 }
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
@@ -65,7 +68,7 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedC
     validate();
 }
 
-void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(const Settings & settings, bool if_changed)
+void S3Settings::RequestSettings::PartUploadSettings::updateFromSettings(const Settings & settings, bool if_changed)
 {
     if (!if_changed || settings.s3_strict_upload_part_size.changed)
         strict_upload_part_size = settings.s3_strict_upload_part_size;
@@ -108,7 +111,7 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     if (max_upload_part_size > max_upload_part_size_limit)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_upload_part_size has invalid value {} which is grater than the s3 API limit {}",
+            "Setting max_upload_part_size has invalid value {} which is greater than the s3 API limit {}",
             ReadableSize(max_upload_part_size), ReadableSize(max_upload_part_size_limit));
 
     if (max_single_part_upload_size > max_upload_part_size_limit)
@@ -170,8 +173,8 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
 }
 
 
-S3Settings::RequestSettings::RequestSettings(const Settings & settings)
-    : upload_settings(settings)
+S3Settings::RequestSettings::RequestSettings(const Settings & settings, bool validate_settings)
+    : upload_settings(settings, validate_settings)
 {
     updateFromSettingsImpl(settings, false);
 }
@@ -190,8 +193,9 @@ S3Settings::RequestSettings::RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const Settings & settings,
-    String setting_name_prefix)
-    : upload_settings(config, config_prefix, settings, setting_name_prefix)
+    String setting_name_prefix,
+    bool validate_settings)
+    : upload_settings(config, config_prefix, settings, setting_name_prefix, validate_settings)
 {
     String key = config_prefix + "." + setting_name_prefix;
     max_single_read_retries = config.getUInt64(key + "max_single_read_retries", settings.s3_max_single_read_retries);
@@ -262,12 +266,11 @@ void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settin
         request_timeout_ms = settings.s3_request_timeout_ms;
 }
 
-void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)
+void S3Settings::RequestSettings::updateFromSettingsIfChanged(const Settings & settings)
 {
     updateFromSettingsImpl(settings, true);
-    upload_settings.updateFromSettings(settings);
+    upload_settings.updateFromSettings(settings, true);
 }
-
 
 void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings)
 {
@@ -292,7 +295,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-S3Settings StorageS3Settings::getSettings(const String & endpoint, const String & user, bool ignore_user) const
+std::optional<S3Settings> StorageS3Settings::getSettings(const String & endpoint, const String & user, bool ignore_user) const
 {
     std::lock_guard lock(mutex);
     auto next_prefix_setting = s3_settings.upper_bound(endpoint);

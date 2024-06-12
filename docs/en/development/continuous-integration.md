@@ -71,7 +71,7 @@ If it fails, fix the style errors following the [code style guide](style.md).
 ```sh
 mkdir -p /tmp/test_output
 # running all checks
-docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE clickhouse/style-test
+python3 tests/ci/style_check.py --no-push
 
 # run specified check script (e.g.: ./check-mypy)
 docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
@@ -90,6 +90,9 @@ cd ./utils/check-style
 
 # Check python type hinting with mypy
 ./check-mypy
+
+# Check python with flake8
+./check-flake8
 
 # Check code with codespell
 ./check-typos

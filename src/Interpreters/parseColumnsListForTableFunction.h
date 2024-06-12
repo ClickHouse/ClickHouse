@@ -21,6 +21,7 @@ struct DataTypeValidationSettings
         , allow_experimental_variant_type(settings.allow_experimental_variant_type)
         , allow_suspicious_variant_types(settings.allow_suspicious_variant_types)
         , validate_nested_types(settings.validate_experimental_and_suspicious_types_inside_nested_types)
+        , allow_experimental_dynamic_type(settings.allow_experimental_dynamic_type)
     {
     }
 
@@ -30,6 +31,7 @@ struct DataTypeValidationSettings
     bool allow_experimental_variant_type = true;
     bool allow_suspicious_variant_types = true;
     bool validate_nested_types = true;
+    bool allow_experimental_dynamic_type = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);
