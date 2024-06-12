@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Analyzer/Resolve/ScopeAliases.h>
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
@@ -1871,7 +1872,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
             auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, ScopeAliases{});
             StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
@@ -2072,7 +2073,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
+StoragePtr Context::buildParametrizedViewStorage(
+    const ASTPtr & table_expression, const String & database_name, const String & table_name, const ScopeAliases & scope_aliases)
 {
     if (table_name.empty())
         return nullptr;
@@ -2085,7 +2087,7 @@ StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression
         return nullptr;
 
     auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, scope_aliases);
     StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
     ASTCreateQuery create;

@@ -147,6 +147,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+struct ScopeAliases;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -743,7 +744,8 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name);
+    StoragePtr buildParametrizedViewStorage(
+        const ASTPtr & table_expression, const String & database_name, const String & table_name, const ScopeAliases & scope_aliases);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;

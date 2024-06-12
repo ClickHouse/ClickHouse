@@ -4505,7 +4505,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(function_ast, database_name, table_name);
+        auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(
+            function_ast, database_name, table_name, scope.aliases);
+
         if (parametrized_view_storage)
         {
             auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
