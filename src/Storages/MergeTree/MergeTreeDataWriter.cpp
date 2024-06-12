@@ -471,13 +471,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     ColumnsStatistics statistics;
     if (context->getSettingsRef().materialize_statistics_on_insert)
-    {
-        for (auto col : metadata_snapshot->getColumns())
-            LOG_INFO(log, "column col {} stats {}", col.name, col.statistics.column_name);
         statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
-        for (auto stats : statistics)
-            LOG_INFO(log, "writing stats {}", stats->columnName());
-    }
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
