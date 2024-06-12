@@ -172,6 +172,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
         bool use_default_on_bad_values = false;
         bool try_infer_numbers_from_strings = true;
+        bool try_infer_strings_from_quoted_tuples = true;
     } csv{};
 
     struct HiveText
