@@ -1198,6 +1198,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         if (allow_experimental_analyzer)
         {
+            /// Converting query to AST because types might be different in the source table.
+            /// Need to resolve types again.
             InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree->toAST(),
                 modified_context,
                 SelectQueryOptions(processed_stage));
