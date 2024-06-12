@@ -7,6 +7,7 @@
 []
 [2,3]
 Array(Tuple(Nullable(UInt8), Array(Nullable(String))))
+[2,0]
 [(NULL,['c']),(2,['c',''])]
 [(NULL,['f']),(3,['g',''])]
 [(NULL,['i']),(4,['j',''])]

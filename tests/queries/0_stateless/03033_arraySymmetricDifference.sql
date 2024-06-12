@@ -5,6 +5,7 @@ SELECT arraySymmetricDifference(1, 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT
 SELECT arraySymmetricDifference(1, [1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arraySymmetricDifference([1, 2], 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arraySymmetricDifference(1, [1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arraySymmetricDifference([CAST('str_', 'Dynamic(max_types = 2)'), 71], [1, 2]) settings allow_experimental_dynamic_type = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- const inputs
 SELECT arraySymmetricDifference([]);
@@ -16,6 +17,7 @@ SELECT arraySymmetricDifference([1, NULL], [NULL, 3]);
 SELECT arraySymmetricDifference([1, 2], [1, 2], [1, 2]);
 SELECT arraySymmetricDifference([1, 2], [1, 2], [1, 3]);
 SELECT toTypeName(arraySymmetricDifference([(1, ['a', 'b']), (Null, ['c'])], [(2, ['c', Null]), (1, ['a', 'b'])]));
+SELECT arraySymmetricDifference([2], [toDecimal64(0., 9)]);
 
 -- non-const inputs
 DROP TABLE IF EXISTS tab;

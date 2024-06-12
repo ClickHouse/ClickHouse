@@ -300,7 +300,8 @@ FunctionArrayLogicalBase<intersect>::prepareArrays(const ColumnsWithTypeAndName 
             }
 
             /// In case the column was casted, we need to create an overflow mask for integer types.
-            if (arg.nested_column != initial_column)
+            /// Not needed for arraySymmetricDifference because result type is getLeastSupertype which covers all possible data values
+            if (intersect && arg.nested_column != initial_column)
             {
                 const auto & nested_init_type
                     = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
@@ -311,7 +312,7 @@ FunctionArrayLogicalBase<intersect>::prepareArrays(const ColumnsWithTypeAndName 
                 {
                     /// Compare original and casted columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                        {arg.nested_column->getPtr(), nested_init_type, ""}, {initial_column->getPtr(), nested_cast_type, ""}, context);
+                        {arg.nested_column->getPtr(), nested_init_type, {}}, {initial_column->getPtr(), nested_cast_type, {}}, context);
 
                     arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
@@ -598,11 +599,10 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
     }
 
     DataTypePtr result_type;
-
     if constexpr (intersect)
     {
         if (!nested_types.empty())
-            result_type = getMostSubtype(nested_types, true);
+            result_type = getMostSubtype(nested_types, true, true);
         if (has_nothing)
             result_type = std::make_shared<DataTypeNothing>();
     }
