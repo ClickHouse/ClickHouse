@@ -1,4 +1,5 @@
 #include <Core/ServerUUID.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -16,7 +17,9 @@ namespace ErrorCodes
 
 UUID ServerUUID::get()
 {
-    if (server_uuid == UUIDHelpers::Nil)
+    if (server_uuid == UUIDHelpers::Nil &&
+        (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER ||
+         Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::KEEPER))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ServerUUID is not initialized yet");
     return server_uuid;
 }
