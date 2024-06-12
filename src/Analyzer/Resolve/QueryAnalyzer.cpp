@@ -985,15 +985,15 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     {
         result_aggregate_function_name = settings.count_distinct_implementation;
     }
-    else if (aggregate_function_name_lowercase == "countdistinctif" || aggregate_function_name_lowercase == "countifdistinct")
+    else if (settings.rewrite_count_distinct_if_with_count_distinct_implementation &&
+        (aggregate_function_name_lowercase == "countdistinctif" || aggregate_function_name_lowercase == "countifdistinct"))
     {
         result_aggregate_function_name = settings.count_distinct_implementation;
         result_aggregate_function_name += "If";
     }
-
-    /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
-    if (aggregate_function_name_lowercase.ends_with("ifdistinct"))
+    else if (aggregate_function_name_lowercase.ends_with("ifdistinct"))
     {
+        /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
         size_t prefix_length = result_aggregate_function_name.size() - strlen("ifdistinct");
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
     }
