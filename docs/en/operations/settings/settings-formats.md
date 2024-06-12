@@ -1706,7 +1706,7 @@ Result:
 └────────────┘
 ```
 
-## output_format_pretty_display_column_names_footer
+## output_format_pretty_display_footer_column_names
 
 Display column names in the footer if there are 999 or more rows.
 

@@ -286,7 +286,7 @@ struct FormatSettings
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
-        UInt64 output_format_pretty_display_column_names_footer = 0;
+        UInt64 output_format_pretty_display_footer_column_names = 0;
 
         enum class Charset : uint8_t
         {
