@@ -67,6 +67,23 @@ To manage named collections with DDL a user must have the `named_control_collect
 In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 :::
 
+### Storage for named collections
+
+Named collections can either be stored on local disk or in zookeeper/keeper. By default local storage is used.
+
+To configure named collections storage in keeper and a `type` (equal to either `keeper` or `zookeeper`) and `path` (path in keeper, where named collections will be stored) to `named_collections_storage` section in configuration file:
+```
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper</type>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>1000</update_timeout_ms>
+  </named_collections_storage>
+</clickhouse>
+```
+
+An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
+
 ## Storing named collections in configuration files
 
 ### XML example

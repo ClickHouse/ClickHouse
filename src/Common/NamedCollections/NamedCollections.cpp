@@ -4,7 +4,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -297,7 +296,7 @@ MutableNamedCollectionPtr NamedCollection::duplicate() const
     auto impl = pimpl->createCopy(collection_name);
     return std::unique_ptr<NamedCollection>(
         new NamedCollection(
-            std::move(impl), collection_name, NamedCollectionUtils::SourceId::NONE, true));
+            std::move(impl), collection_name, SourceId::NONE, true));
 }
 
 NamedCollection::Keys NamedCollection::getKeys(ssize_t depth, const std::string & prefix) const
