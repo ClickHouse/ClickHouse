@@ -1,3 +1,4 @@
+#include <memory>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 
 #include <Functions/IFunction.h>
@@ -7,7 +8,8 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
+#include "Analyzer/IQueryTreeNode.h"
+#include "Analyzer/ListNode.h"
 
 
 namespace DB
@@ -44,53 +46,53 @@ public:
         bool replaced_argument = false;
         auto & uniq_function_arguments_nodes = function_node->getArguments().getNodes();
 
-        auto recursively_remove_injective_functions = [&replaced_argument](QueryTreeNodePtr & arg)
+        auto new_arguments_nodes = std::make_shared<ListNode>();
+        DataTypes new_argument_types;
+
+        auto remove_injective_function = [&replaced_argument](QueryTreeNodePtr & arg) -> bool
         {
-            auto * uniq_function_argument_node_typed = arg->as<FunctionNode>();
-            if (!uniq_function_argument_node_typed || !uniq_function_argument_node_typed->isOrdinaryFunction())
+            auto * arg_typed = arg->as<FunctionNode>();
+            if (!arg_typed || !arg_typed->isOrdinaryFunction())
                 return false;
 
-            auto & uniq_function_argument_node_argument_nodes = uniq_function_argument_node_typed->getArguments().getNodes();
-
-            /// Do not apply optimization if injective function contains multiple arguments
-            if (uniq_function_argument_node_argument_nodes.size() != 1)
+            auto & arg_arguments_nodes = arg_typed->getArguments().getNodes();
+            if (arg_arguments_nodes.size() != 1)
                 return false;
 
-            const auto & uniq_function_argument_node_function = uniq_function_argument_node_typed->getFunction();
-            if (!uniq_function_argument_node_function->isInjective({}))
+            const auto & arg_function = arg_typed->getFunction();
+            if (!arg_function->isInjective({}))
                 return false;
 
-            /// Replace injective function with its single argument
-            arg = uniq_function_argument_node_argument_nodes[0];
+            arg = arg_arguments_nodes[0];
             return replaced_argument = true;
         };
 
-        for (auto & uniq_function_argument_node : uniq_function_arguments_nodes)
+        for (auto uniq_function_argument_node : uniq_function_arguments_nodes)
         {
-            while (recursively_remove_injective_functions(uniq_function_argument_node))
+            while (remove_injective_function(uniq_function_argument_node))
                 ;
+            new_arguments_nodes->getNodes().push_back(uniq_function_argument_node);
+            new_argument_types.push_back(uniq_function_argument_node->getResultType());
         }
 
         if (!replaced_argument)
             return;
 
-        const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
-
-        DataTypes argument_types;
-        argument_types.reserve(function_node_argument_nodes.size());
-
-        for (const auto & function_node_argument : function_node_argument_nodes)
-            argument_types.emplace_back(function_node_argument->getResultType());
-
+        auto current_aggregate_function = function_node->getAggregateFunction();
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
+        auto new_aggregate_function = AggregateFunctionFactory::instance().get(
             function_node->getFunctionName(),
             NullsAction::EMPTY,
-            argument_types,
-            function_node->getAggregateFunction()->getParameters(),
+            new_argument_types,
+            current_aggregate_function->getParameters(),
             properties);
 
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
+        /// Enforce that new aggregate function does not change the result type
+        if (current_aggregate_function->getResultType()->equals(*new_aggregate_function->getResultType()))
+        {
+            function_node->getArgumentsNode() = new_arguments_nodes->clone();
+            function_node->resolveAsAggregateFunction(std::move(new_aggregate_function));
+        }
     }
 };
 
