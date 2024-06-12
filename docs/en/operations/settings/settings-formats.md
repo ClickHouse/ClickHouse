@@ -1708,12 +1708,12 @@ Result:
 
 ## output_format_pretty_display_footer_column_names
 
-Display column names in the footer if there are many table rows. The minimum number of rows for which
+Display column names in the footer if there are many table rows.
 
 Possible values:
 
 - 0 — No column names are displayed in the footer.
-- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows).
+- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows) (50 by default).
 
 Default value: `1`.
 
