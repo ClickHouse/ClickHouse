@@ -235,6 +235,7 @@ libhdfs3 support HDFS namenode HA.
 - `_path` — Path to the file. Type: `LowCardinalty(String)`.
 - `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Storage Settings {#storage-settings}
 

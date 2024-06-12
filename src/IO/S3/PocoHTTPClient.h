@@ -156,7 +156,6 @@ private:
 
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
-        const DB::ProxyConfiguration & proxy_configuration,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;

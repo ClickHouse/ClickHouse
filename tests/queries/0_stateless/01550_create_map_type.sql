@@ -1,5 +1,3 @@
-set allow_experimental_map_type = 1;
-
 -- String type
 drop table if exists table_map;
 create table table_map (a Map(String, String)) engine = Memory;

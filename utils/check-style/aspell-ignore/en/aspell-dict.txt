@@ -222,6 +222,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -293,6 +294,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
@@ -446,6 +448,7 @@ KafkaLibrdkafkaThreads
 KafkaProducers
 KafkaWrites
 Kahan
+Kaser
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequets
@@ -466,11 +469,13 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
+Lemir
 Levenshtein
 Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineString
 Linf
 LinfDistance
 LinfNorm
@@ -989,6 +994,7 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
+UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -1366,6 +1372,10 @@ const
 contrib
 convertCharset
 coroutines
+corrMatrix
+corrStable
+corrmatrix
+corrstable
 cosineDistance
 countDigits
 countEqual
@@ -1375,10 +1385,19 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF
 covarPop
+covarPopMatrix
+covarPopStable
 covarSamp
+covarSampMatrix
+covarSampStable
+covarStable
 covariates
 covarpop
+covarpopmatrix
+covarpopstable
 covarsamp
+covarsampmatrix
+covarsampstable
 covid
 cpp
 cppkafka
@@ -1609,6 +1628,7 @@ formated
 formatschema
 formatter
 formatters
+frac
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1735,6 +1755,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
+hilbertDecode
+hilbertEncode
 hiveHash
 holistics
 homebrew
@@ -1915,6 +1937,8 @@ london
 lookups
 loongarch
 lowcardinality
+lowCardinalityIndices
+lowCardinalityKeys
 lowerUTF
 lowercased
 lttb
@@ -1981,6 +2005,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
@@ -2133,6 +2159,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
@@ -2286,6 +2315,7 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKTLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2664,16 +2694,16 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
+toStartOfMicrosecond
+toStartOfMillisecond
 toStartOfMinute
 toStartOfMonth
+toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
 toStartOfYear
-toStartOfMicrosecond
-toStartOfMillisecond
-toStartOfNanosecond
 toString
 toStringCutToZero
 toTime
@@ -2803,7 +2833,6 @@ urls
 usearch
 userspace
 userver
-UTCTimestamp
 utils
 uuid
 uuidv

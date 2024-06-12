@@ -213,36 +213,13 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+    const auto & settings = local_context->getSettingsRef();
+    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
+    if (local_context->canUseParallelReplicasOnInitiator() && settings.parallel_replicas_for_non_replicated_merge_tree
+        && !settings.allow_experimental_analyzer)
     {
-        ASTPtr modified_query_ast;
-        Block header;
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
-        {
-            QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
-            rewriteJoinToGlobalJoin(modified_query_tree, local_context);
-            modified_query_tree = buildQueryTreeForShard(query_info.planner_context, modified_query_tree);
-            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
-            modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
-        }
-        else
-        {
-            const auto table_id = getStorageID();
-            modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
-                table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
-            header
-                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-        }
-
         ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan,
-            getStorageID(),
-            header,
-            processed_stage,
-            modified_query_ast,
-            local_context,
-            query_info.storage_limits);
+            query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
     }
     else
     {
@@ -2119,16 +2096,36 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
-            src_part,
-            TMP_PREFIX,
-            dst_part_info,
-            my_metadata_snapshot,
-            clone_params,
-            local_context->getReadSettings(),
-            local_context->getWriteSettings());
-        dst_parts.emplace_back(std::move(dst_part));
-        dst_parts_locks.emplace_back(std::move(part_lock));
+        if (replace)
+        {
+            /// Replace can only work on the same disk
+            auto [dst_part, part_lock] = cloneAndLoadDataPart(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                my_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings(),
+                true/*must_on_same_disk*/);
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
+        else
+        {
+            /// Attach can work on another disk
+            auto [dst_part, part_lock] = cloneAndLoadDataPart(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                my_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings(),
+                false/*must_on_same_disk*/);
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
     }
 
     /// ATTACH empty part set
@@ -2233,14 +2230,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
             TMP_PREFIX,
             dst_part_info,
             dest_metadata_snapshot,
             clone_params,
             local_context->getReadSettings(),
-            local_context->getWriteSettings()
+            local_context->getWriteSettings(),
+            true/*must_on_same_disk*/
         );
 
         dst_parts.emplace_back(std::move(dst_part));
