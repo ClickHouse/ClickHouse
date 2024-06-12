@@ -58,6 +58,7 @@ ClickHouse-specific aggregate functions:
 - [topKWeighted](../reference/topkweighted.md)
 - [deltaSum](../reference/deltasum.md)
 - [deltaSumTimestamp](../reference/deltasumtimestamp.md)
+- [flameGraph](../reference/flame_graph.md)
 - [groupArray](../reference/grouparray.md)
 - [groupArrayLast](../reference/grouparraylast.md)
 - [groupUniqArray](../reference/groupuniqarray.md)

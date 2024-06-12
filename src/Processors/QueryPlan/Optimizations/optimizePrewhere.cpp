@@ -8,7 +8,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
-
 namespace DB
 {
 
@@ -31,7 +30,7 @@ static void removeFromOutput(ActionsDAG & dag, const std::string name)
 
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 {
-    if (stack.size() < 3)
+    if (stack.size() < 2)
         return;
 
     auto & frame = stack.back();
@@ -46,8 +45,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!source_step_with_filter)
         return;
 
-    /// Prewhere is broken with StorageMerge and old analyzer.
-    if (!source_step_with_filter->getContext()->getSettingsRef().allow_experimental_analyzer && typeid_cast<ReadFromMerge *>(source_step_with_filter))
+    if (typeid_cast<ReadFromMerge *>(frame.node->step.get()))
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
@@ -123,7 +121,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         outputs.resize(size);
     }
 
-    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true);
+    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.

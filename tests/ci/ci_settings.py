@@ -134,6 +134,7 @@ class CiSettings:
         job_config: JobConfig,
         is_release: bool,
         is_pr: bool,
+        is_mq: bool,
         labels: Iterable[str],
     ) -> bool:  # type: ignore #too-many-return-statements
         if self.do_not_test:
@@ -189,7 +190,7 @@ class CiSettings:
 
         if job_config.release_only and not is_release:
             return False
-        elif job_config.pr_only and not is_pr:
+        elif job_config.pr_only and not is_pr and not is_mq:
             return False
 
         return not to_deny
@@ -199,6 +200,7 @@ class CiSettings:
         job_configs: Dict[str, JobConfig],
         is_release: bool,
         is_pr: bool,
+        is_mq: bool,
         labels: Iterable[str],
     ) -> Dict[str, JobConfig]:
         """
@@ -207,16 +209,24 @@ class CiSettings:
         res = {}
         for job, job_config in job_configs.items():
             if self._check_if_selected(
-                job, job_config, is_release=is_release, is_pr=is_pr, labels=labels
+                job,
+                job_config,
+                is_release=is_release,
+                is_pr=is_pr,
+                is_mq=is_mq,
+                labels=labels,
             ):
                 res[job] = job_config
 
+        add_parents = []
         for job in list(res):
             parent_jobs = CI_CONFIG.get_job_parents(job)
             for parent_job in parent_jobs:
                 if parent_job not in res:
+                    add_parents.append(parent_job)
                     print(f"Job [{job}] requires [{parent_job}] - add")
-                    res[parent_job] = job_configs[parent_job]
+        for job in add_parents:
+            res[job] = job_configs[job]
 
         for job, job_config in res.items():
             batches = []
