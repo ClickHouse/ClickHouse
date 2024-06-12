@@ -150,7 +150,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -176,6 +176,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
+
     initSkipIndices();
     initStatistics();
 }
@@ -264,7 +265,7 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
         stats_streams.emplace_back(std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<true>>(
                                        stats_name,
                                        data_part_storage,
-                                       stats_name, STAT_FILE_SUFFIX,
+                                       stats_name, STATS_FILE_SUFFIX,
                                        default_codec, settings.max_compress_block_size,
                                        settings.query_write_settings));
     }
@@ -272,6 +273,9 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
+    if (skip_indices.empty())
+        return;
+
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);

@@ -189,7 +189,6 @@ private:
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
-        size_t fetched_columns_index_without_default = 0;
         size_t keys_size = keys.size();
 
         PaddedPODArray<FetchedKey> fetched_keys;
@@ -211,14 +210,9 @@ private:
 
             result.expired_keys_size += static_cast<size_t>(key_state == KeyState::expired);
 
-            result.key_index_to_state[key_index] = {key_state,
-                default_mask ? fetched_columns_index_without_default : fetched_columns_index};
+            result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
             fetched_keys[fetched_columns_index] = FetchedKey(cell.element_index, cell.is_default);
-
             ++fetched_columns_index;
-
-            if (!cell.is_default)
-                ++fetched_columns_index_without_default;
 
             result.key_index_to_state[key_index].setDefaultValue(cell.is_default);
             result.default_keys_size += cell.is_default;
@@ -233,8 +227,7 @@ private:
 
             auto & attribute = attributes[attribute_index];
             auto & fetched_column = *result.fetched_columns[attribute_index];
-            fetched_column.reserve(default_mask ? fetched_columns_index_without_default :
-                                                  fetched_columns_index);
+            fetched_column.reserve(fetched_columns_index);
 
             if (!default_mask)
             {
@@ -689,7 +682,11 @@ private:
             auto fetched_key = fetched_keys[fetched_key_index];
 
             if (unlikely(fetched_key.is_default))
+            {
                 default_mask[fetched_key_index] = 1;
+                auto v = ValueType{};
+                value_setter(v);
+            }
             else
             {
                 default_mask[fetched_key_index] = 0;

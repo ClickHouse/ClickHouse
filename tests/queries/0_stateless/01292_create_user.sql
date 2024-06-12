@@ -19,7 +19,7 @@ SHOW CREATE USER u3_01292;
 
 SELECT '-- rename';
 ALTER USER u2_01292 RENAME TO 'u2_01292_renamed';
-SHOW CREATE USER u2_01292; -- { serverError 192 } -- User not found
+SHOW CREATE USER u2_01292; -- { serverError UNKNOWN_USER } -- User not found
 SHOW CREATE USER u2_01292_renamed;
 DROP USER u1_01292, u2_01292_renamed, u3_01292;
 

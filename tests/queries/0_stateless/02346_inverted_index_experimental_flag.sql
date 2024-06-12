@@ -1,6 +1,6 @@
--- Tests that the inverted index can only be supported when allow_experimental_inverted_index = 1.
+-- Tests that the inverted index can only be supported when allow_experimental_full_text_index = 1.
 
-SET allow_experimental_inverted_index = 0;
+SET allow_experimental_full_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
