@@ -303,7 +303,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
                 /// If we couldn't infer any type or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
-                if (!type || (isTuple(type) && format_settings.csv.try_infer_strings_from_quoted_tuples) || (isNumber(type) && !format_settings.csv.try_infer_numbers_from_strings))
+                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)))
                     return std::make_shared<DataTypeString>();
 
                 return type;
