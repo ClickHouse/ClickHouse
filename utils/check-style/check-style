@@ -243,6 +243,10 @@ done
 # All the submodules should be from https://github.com/
 find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
 
+# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
+# - restrict the check to top-level .gitmodules file
+find $ROOT_PATH -maxdepth 1 -name '.gitmodules' | while read i; do grep -F '[submodule ' $i | grep -v -F 'contrib' && echo 'All submodules should have form [submodule "contrib/libxyz"]'; done
+
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
