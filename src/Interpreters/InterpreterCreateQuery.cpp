@@ -145,16 +145,29 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    if (auto max_db = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw; max_db > 0)
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw;
+    if (db_num_limit > 0)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
-        // there's an invisible system database _temporary_and_external_tables, so we need to subtract 1
-        if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(DatabaseCatalog::TEMPORARY_DATABASE))
-            db_count--;
-        if (db_count >= max_db)
+        std::vector<String> system_databases = {
+            DatabaseCatalog::TEMPORARY_DATABASE,
+            DatabaseCatalog::SYSTEM_DATABASE,
+            DatabaseCatalog::INFORMATION_SCHEMA,
+            DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            DatabaseCatalog::DEFAULT_DATABASE
+        };
+
+        for (const auto & system_database : system_databases)
+        {
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
+                db_count--;
+        }
+
+        if (db_count >= db_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_DATABASES,
-                            "Too many databases, max: {}, now: {}. "
-                            "See setting max_database_num_to_throw.", max_db, db_count);
+                            "Too many databases in the Clickhouse. "
+                            "The limit (setting 'max_database_num_to_throw') is set to {}, currnt number of databases is {}",
+                            db_num_limit, db_count);
     }
 
     /// Will write file with database metadata, if needed.
@@ -1563,14 +1576,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    if (UInt64 max_table = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw; max_table > 0)
+    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw;
+    if (table_num_limit > 0)
     {
         UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
-        if (table_count >= max_table)
+        if (table_count >= table_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many tables in the system. Current is {}, limit is {}. "
-                            "See setting 'max_table_num_to_throw'.",
-                            table_count, max_table);
+                            "Too many tables in the Clickhouse. "
+                            "The limit (setting 'max_table_num_to_throw') is set to {}, currnt number of tables is {}",
+                            table_num_limit, table_count);
     }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);

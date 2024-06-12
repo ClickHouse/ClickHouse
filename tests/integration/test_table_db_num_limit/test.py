@@ -21,7 +21,7 @@ def started_cluster():
 
 
 def test_table_db_limit(started_cluster):
-    for i in range(6):
+    for i in range(10):
         node1.query("create database db{}".format(i))
 
     with pytest.raises(QueryRuntimeException) as exp_info:
