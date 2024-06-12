@@ -1,18 +1,18 @@
 #include <memory>
 #include <Server/HTTPHandlerFactory.h>
 
-#include <Access/Credentials.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
+#include <Access/Credentials.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
-#include "InterserverIOHTTPHandler.h"
-#include "PrometheusRequestHandler.h"
-#include "ReplicasStatusHandler.h"
 #include "Server/PrometheusMetricsWriter.h"
 #include "StaticRequestHandler.h"
+#include "ReplicasStatusHandler.h"
+#include "InterserverIOHTTPHandler.h"
+#include "PrometheusRequestHandler.h"
 #include "WebUIRequestHandler.h"
 
 
@@ -21,9 +21,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-extern const int INVALID_CONFIG_PARAMETER;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -35,7 +35,10 @@ private:
     std::string url;
 
 public:
-    explicit RedirectRequestHandler(std::string url_) : url(std::move(url_)) { }
+    explicit RedirectRequestHandler(std::string url_)
+        : url(std::move(url_))
+    {
+    }
 
     void handleRequest(HTTPServerRequest &, HTTPServerResponse & response, const ProfileEvents::Event &) override
     {
@@ -43,8 +46,9 @@ public:
     }
 };
 
-HTTPRequestHandlerFactoryPtr
-createRedirectHandlerFactory(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix)
 {
     std::string url = config.getString(config_prefix + ".handler.location");
 
@@ -99,12 +103,8 @@ static inline auto createHandlersFactoryFromConfig(
             const auto & handler_type = config.getString(prefix + "." + key + ".handler.type", "");
 
             if (handler_type.empty())
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Handler type in config is not specified here: "
-                    "{}.{}.handler.type",
-                    prefix,
-                    key);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Handler type in config is not specified here: "
+                    "{}.{}.handler.type", prefix, key);
 
             if (handler_type == "static")
             {
@@ -155,27 +155,19 @@ static inline auto createHandlersFactoryFromConfig(
                 main_handler_factory->addHandler(std::move(handler));
             }
             else
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Unknown handler type '{}' in config here: {}.{}.handler.type",
-                    handler_type,
-                    prefix,
-                    key);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
+                    handler_type, prefix, key);
         }
         else
-            throw Exception(
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "Unknown element in config: "
-                "{}.{}, must be 'rule' or 'defaults'",
-                prefix,
-                key);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
+                "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
 
     return main_handler_factory;
 }
 
-static inline HTTPRequestHandlerFactoryPtr createHTTPHandlerFactory(
-    IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics)
+static inline HTTPRequestHandlerFactoryPtr
+createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics)
 {
     if (config.has("http_handlers"))
     {
@@ -202,8 +194,7 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
 }
 
 
-HTTPRequestHandlerFactoryPtr createHandlerFactory(
-    IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
         return createHTTPHandlerFactory(server, config, name, async_metrics);
@@ -276,23 +267,28 @@ void addDefaultHandlersFactory(
 {
     addCommonDefaultHandlersFactory(factory, server);
 
-    auto dynamic_creator
-        = [&server]() -> std::unique_ptr<DynamicQueryHandler> { return std::make_unique<DynamicQueryHandler>(server, "query"); };
+    auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, "query");
+    };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
-    query_handler->addFilter(
-        [](const auto & request)
+    query_handler->addFilter([](const auto & request)
         {
-            bool path_matches_get_or_head
-                = startsWith(request.getURI(), "?") || startsWith(request.getURI(), "/?") || startsWith(request.getURI(), "/query?");
-            bool is_get_or_head_request
-                = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+            bool path_matches_get_or_head = startsWith(request.getURI(), "?")
+                            || startsWith(request.getURI(), "/?")
+                            || startsWith(request.getURI(), "/query?");
+            bool is_get_or_head_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
 
-            bool path_matches_post_or_options = path_matches_get_or_head || request.getURI() == "/" || request.getURI().empty();
-            bool is_post_or_options_request
-                = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+            bool path_matches_post_or_options = path_matches_get_or_head
+                             || request.getURI() == "/"
+                             || request.getURI().empty();
+            bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
 
             return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
-        });
+        }
+    );
     factory.addHandler(query_handler);
 
     /// We check that prometheus handler will be served on current (default) port.
@@ -300,8 +296,10 @@ void addDefaultHandlersFactory(
     if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
     {
         auto writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
-        auto creator = [&server, writer]() -> std::unique_ptr<PrometheusRequestHandler>
-        { return std::make_unique<PrometheusRequestHandler>(server, writer); };
+        auto creator = [&server, writer] () -> std::unique_ptr<PrometheusRequestHandler>
+        {
+            return std::make_unique<PrometheusRequestHandler>(server, writer);
+        };
         auto prometheus_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
         prometheus_handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
         prometheus_handler->allowGetAndHeadRequest();

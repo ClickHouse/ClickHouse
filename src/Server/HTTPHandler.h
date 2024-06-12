@@ -3,27 +3,24 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <Compression/CompressedWriteBuffer.h>
 #include <Core/Names.h>
-#include <IO/CascadeWriteBuffer.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
 
 #include "HTTPResponseHeaderWriter.h"
 
 namespace CurrentMetrics
 {
-extern const Metric HTTPConnection;
+    extern const Metric HTTPConnection;
 }
 
-namespace Poco
-{
-class Logger;
-}
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -45,7 +42,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) { }
+    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
@@ -85,7 +82,10 @@ private:
         bool exception_is_written = false;
         std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        bool hasDelayed() const { return out_maybe_delayed_and_compressed != out_maybe_compressed.get(); }
+        bool hasDelayed() const
+        {
+            return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
+        }
 
         void finalize()
         {
@@ -99,7 +99,10 @@ private:
                 out->finalize();
         }
 
-        bool isFinalized() const { return finalized; }
+        bool isFinalized() const
+        {
+            return finalized;
+        }
     };
 
     IServer & server;
@@ -130,7 +133,10 @@ private:
     // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
     //  the session and request_credentials instances are preserved.
     // Throws an exception if authentication failed.
-    bool authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response);
+    bool authenticateUser(
+        HTTPServerRequest & request,
+        HTMLForm & params,
+        HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(
@@ -142,9 +148,17 @@ private:
         const ProfileEvents::Event & write_event);
 
     void trySendExceptionToClient(
-        const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
+        const std::string & s,
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
 
-    void formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
+    void formatExceptionForClient(
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
 
     static void pushDelayedResults(Output & used_output);
 };
@@ -162,7 +176,7 @@ public:
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
