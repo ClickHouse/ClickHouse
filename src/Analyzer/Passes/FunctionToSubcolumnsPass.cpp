@@ -19,6 +19,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/JoinNode.h>
 
 namespace DB
 {
@@ -269,10 +270,24 @@ public:
             enterImpl(*function_node, *first_argument_node, *table_node);
             return;
         }
+
+        if (const auto * join_node = node->as<JoinNode>())
+        {
+            has_join_use_nulls |= getContext()->getSettingsRef().join_use_nulls;
+            return;
+        }
     }
 
     std::unordered_set<Identifier> getIdentifiersToOptimize() const
     {
+        if (has_join_use_nulls)
+        {
+            /// Do not optimize if we have JOIN with setting join_use_null.
+            /// It may change the behaviour if subcolumn can be coverted
+            /// to nullable while the original column cannot.
+            return {};
+        }
+
         /// Do not optimize if full column is requested in other context.
         /// It doesn't make sense because it doesn't reduce amount of read data
         /// and optimized functions are not computation heavy. But introducing
@@ -306,7 +321,9 @@ private:
     std::unordered_set<Identifier> all_key_columns;
     std::unordered_map<Identifier, UInt64> identifiers_count;
     std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
+
     NameSet processed_tables;
+    bool has_join_use_nulls = false;
 
     void enterImpl(const TableNode & table_node)
     {
