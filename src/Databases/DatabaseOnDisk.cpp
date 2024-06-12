@@ -372,16 +372,19 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 {
     String table_metadata_path = getObjectMetadataPath(to_table_name);
     String suffix = ".sql.detached";
-    //The uuid of the table will take 36 characters.
-    //36 is prepared for renaming table operation while dropping
-    auto current_table_length = to_table_name.length() + suffix.length() + 36;
     auto max_file_name_length = pathconf("/", _PC_NAME_MAX);
+
     if (max_file_name_length == -1)
         max_file_name_length = NAME_MAX;
-    
-    if (current_table_length > static_cast<size_t>(max_file_name_length))
-        throw Exception(ErrorCodes::TOO_LONG_TABLE_NAME, "The max length of table name is {}, current length is {}",
-                            max_file_name_length, current_table_length);
+
+    //Max file name may be like 'database.table.sql.detached'
+    //The uuid and 2 dots of the table will take 38 characters
+    //36 is prepared for renaming table operation while dropping
+    auto max_table_name_length = static_cast<size_t>(max_file_name_length) - database_name.length() - suffix.length() - 38;
+
+    if (to_table_name.length() > max_table_name_length)
+        throw Exception(ErrorCodes::TOO_LONG_TABLE_NAME, "The max length of table name in {} is {}, current length is {}",
+                            database_name, max_table_name_length, to_table_name.length());
 
     if (fs::exists(table_metadata_path))
     {
