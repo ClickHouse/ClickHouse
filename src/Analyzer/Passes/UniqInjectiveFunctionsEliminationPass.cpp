@@ -8,8 +8,8 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/ListNode.h"
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/ListNode.h>
 
 
 namespace DB
