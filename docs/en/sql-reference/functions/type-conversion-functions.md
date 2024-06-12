@@ -10,7 +10,7 @@ sidebar_label: Type Conversion
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-`to<type>` functions and [cast](#castx-t) behave differently in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
+`to<type>` functions and [cast](#cast) behave differently in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#cast) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
 
 :::note
 Be aware of potential data loss if values of a datatype are converted to a smaller datatype (for example from `Int64` to `Int32`) or between
@@ -996,7 +996,7 @@ Result:
 
 ## reinterpretAsUInt8
 
-Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1034,7 +1034,7 @@ Result:
 
 ## reinterpretAsUInt16
 
-Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1072,7 +1072,7 @@ Result:
 
 ## reinterpretAsUInt32
 
-Performs byte reinterpretation by treating the input value as a value of type UInt32. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
 **Syntax**
 
@@ -1110,7 +1110,7 @@ Result:
 
 ## reinterpretAsUInt64
 
-Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1148,7 +1148,7 @@ Result:
 
 ## reinterpretAsUInt128
 
-Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1186,7 +1186,7 @@ Result:
 
 ## reinterpretAsUInt256
 
-Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
+Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -1224,7 +1224,7 @@ Result:
 
 ## reinterpretAsInt8
 
-Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1262,7 +1262,7 @@ Result:
 
 ## reinterpretAsInt16
 
-Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
+Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -1300,7 +1300,7 @@ Result:
 
 ## reinterpretAsInt32
 
-Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1338,7 +1338,7 @@ Result:
 
 ## reinterpretAsInt64
 
-Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1376,7 +1376,7 @@ Result:
 
 ## reinterpretAsInt128
 
-Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1414,7 +1414,7 @@ Result:
 
 ## reinterpretAsInt256
 
-Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1452,7 +1452,7 @@ Result:
 
 ## reinterpretAsFloat32
 
-Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -1486,7 +1486,7 @@ Result:
 
 ## reinterpretAsFloat64
 
-Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#castx-t), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
+Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 

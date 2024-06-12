@@ -40,7 +40,7 @@ Where:
 
 The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use the [`varPop()` function](./varpop#varpop) instead.
 
-This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varSampStable`](#varSampStable) function.
+This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varSampStable`](#varsampstable) function.
 
 **Example**
 
@@ -66,7 +66,7 @@ Response:
 0.8650000000000091
 ```
 
-## varSampStable {#varSampStable}
+## varSampStable
 
 Calculate the sample variance of a data set using a numerically stable algorithm.
 
@@ -86,7 +86,7 @@ The `varSampStable` function returns a Float64 value representing the sample var
 
 **Implementation details**
 
-The `varSampStable` function calculates the sample variance using the same formula as the [`varSamp`](#varSamp) function:
+The `varSampStable` function calculates the sample variance using the same formula as the [`varSamp`](#varsamp) function:
 
 ```plaintext
 ∑(x - mean(x))^2 / (n - 1)

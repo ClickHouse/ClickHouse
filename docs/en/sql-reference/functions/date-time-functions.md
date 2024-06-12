@@ -1049,7 +1049,7 @@ toLastDayOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the last day of the week as described in the [toWeek()](date-time-functions#toweek) function
+- `mode` - determines the last day of the week as described in the [toWeek](#toweek) function
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1763,7 +1763,7 @@ Result:
 
 ## fromDaysSinceYearZero32
 
-Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../data-types/date32.md).
+Like [fromDaysSinceYearZero](#fromdayssinceyearzero) but returns a [Date32](../data-types/date32.md).
 
 ## age
 

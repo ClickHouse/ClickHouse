@@ -274,7 +274,7 @@ roundBankers(10.755, 2) = 10.76
 
 **See Also**
 
-- [round](#rounding_functions-round)
+- [round](#round)
 
 ## roundToExp2
 

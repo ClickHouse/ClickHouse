@@ -106,14 +106,14 @@ To work with these states, use:
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
 - [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
-- [-Merge](#aggregate_functions_combinators_merge) combinator.
-- [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
+- [-Merge](#-merge) combinator.
+- [-MergeState](#-mergestate) combinator.
 
-## -Merge {#aggregate_functions_combinators_merge}
+## -Merge
 
 If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
 
-## -MergeState {#aggregate_functions_combinators_mergestate}
+## -MergeState
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it does not return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 

@@ -235,7 +235,7 @@ If `some_predicate` is not selective enough, it will return a large amount of da
 
 ### Distributed Subqueries and max_parallel_replicas
 
-When [max_parallel_replicas](#settings-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
+When [max_parallel_replicas](#distributed-subqueries-and-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
 
 For example, the following:
 

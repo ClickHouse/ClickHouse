@@ -1665,7 +1665,7 @@ Result:
 
 ## hasSubsequenceUTF8
 
-Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
+Like [hasSubsequence](#hassubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
 
 **Syntax**
 
