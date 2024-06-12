@@ -1573,14 +1573,8 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
 
     QueryPlanRawPtrs plans;
     for (auto & child_plan : *child_plans)
-    {
         if (child_plan.plan.isInitialized())
-        {
-            /// So we will see the optimized plan in EXPLAIN output
-            child_plan.plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
             plans.push_back(&child_plan.plan);
-        }
-    }
 
     return plans;
 }
