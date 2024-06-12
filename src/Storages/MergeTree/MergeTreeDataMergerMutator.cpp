@@ -778,7 +778,14 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}", new_data_part->name, replaced_parts.size(), parts.size());
+        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}\n"
+            "Replaced parts:\n{}\n"
+            "Parts:\n{}\n",
+            new_data_part->name,
+            replaced_parts.size(),
+            parts.size(),
+            fmt::join(getPartsNames(replaced_parts), "\n"),
+            fmt::join(getPartsNames(parts), "\n"));
     }
     else
     {
