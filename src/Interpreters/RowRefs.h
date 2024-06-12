@@ -122,7 +122,7 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
+    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 
@@ -135,11 +135,20 @@ struct RowRefList : RowRef
             *next = Batch(nullptr);
         }
         next = next->insert(std::move(row_ref), pool);
-        ++rows;
     }
 
-public:
-    SizeT rows = 0;
+    SizeT getTotalRows() const
+    {
+        SizeT rows = block != nullptr ? 1 : 0;
+        Batch * t = next;
+        while (t)
+        {
+            rows += t->size;
+            t = t->next;
+        }
+        return rows;
+    }
+
 private:
     Batch * next = nullptr;
 };
