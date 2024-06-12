@@ -70,7 +70,7 @@ Integer value in the `Int8`, `Int16`, `Int32`, `Int64`, `Int128` or `Int256` dat
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for the [NaN and Inf](../data-types/float.md/#data_type-float-nan-inf) arguments is undefined. Remember about [numeric conversions issues](#numeric-conversion-issues), when using the functions.
+The behavior of functions for the [NaN and Inf](../data-types/float.md/#data_type-float-nan-inf) arguments is undefined. Remember about [numeric conversions issues](#common-issues-with-data-conversion), when using the functions.
 
 **Example**
 
@@ -169,7 +169,7 @@ Converts an input value to the [UInt](../data-types/int-uint.md) data type. This
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for negative arguments and for the [NaN and Inf](../data-types/float.md/#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric conversions issues](#numeric-conversion-issues), when using the functions.
+The behavior of functions for negative arguments and for the [NaN and Inf](../data-types/float.md/#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric conversions issues](#common-issues-with-data-conversion), when using the functions.
 
 **Example**
 
@@ -1730,7 +1730,7 @@ Result:
 └─────────────────────┘
 ```
 
-## reinterpret(x, T)
+## reinterpret
 
 Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
 
@@ -1766,9 +1766,9 @@ Result:
 └─────────────┴──────────────┴───────────────┘
 ```
 
-## CAST(x, T)
+## CAST
 
-Converts an input value to the specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, `CAST` tries to present the same value using the new data type. If the conversion can not be done then an exception is raised.
+Converts an input value to the specified data type. Unlike the [reinterpret](#reinterpret) function, `CAST` tries to present the same value using the new data type. If the conversion can not be done then an exception is raised.
 Several syntax variants are supported.
 
 **Syntax**
@@ -1875,7 +1875,7 @@ Result:
 
 Converts `x` to the `T` data type.
 
-The difference from [cast(x, T)](#type_conversion_function-cast) is that `accurateCast` does not allow overflow of numeric types during cast if type value `x` does not fit the bounds of type `T`. For example, `accurateCast(-1, 'UInt8')` throws an exception.
+The difference from [cast](#cast) is that `accurateCast` does not allow overflow of numeric types during cast if type value `x` does not fit the bounds of type `T`. For example, `accurateCast(-1, 'UInt8')` throws an exception.
 
 **Example**
 
@@ -2061,7 +2061,7 @@ Result:
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTime {#type_conversion_functions-parseDateTime}
+## parseDateTime
 
 Converts a [String](../data-types/string.md) to [DateTime](../data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
@@ -2102,15 +2102,15 @@ Alias: `TO_TIMESTAMP`.
 
 ## parseDateTimeOrZero
 
-Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns zero date when it encounters a date format that cannot be processed.
+Same as for [parseDateTime](#parsedatetime) except that it returns zero date when it encounters a date format that cannot be processed.
 
 ## parseDateTimeOrNull
 
-Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns `NULL` when it encounters a date format that cannot be processed.
+Same as for [parseDateTime](#parsedatetime) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 Alias: `str_to_date`.
 
-## parseDateTimeInJodaSyntax {#type_conversion_functions-parseDateTimeInJodaSyntax}
+## parseDateTimeInJodaSyntax
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
 
@@ -2151,11 +2151,11 @@ SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', '
 
 ## parseDateTimeInJodaSyntaxOrZero
 
-Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
 
 ## parseDateTimeInJodaSyntaxOrNull
 
-Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
@@ -2313,11 +2313,11 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 
 ## parseDateTimeBestEffortUSOrNull
 
-Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) function except that it returns `NULL` when it encounters a date format that cannot be processed.
+Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortus) function except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffortUSOrZero
 
-Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) function except that it returns zero date (`1970-01-01`) or zero date with time (`1970-01-01 00:00:00`) when it encounters a date format that cannot be processed.
+Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortus) function except that it returns zero date (`1970-01-01`) or zero date with time (`1970-01-01 00:00:00`) when it encounters a date format that cannot be processed.
 
 ## parseDateTime64BestEffort
 
@@ -2389,7 +2389,7 @@ Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that
 
 Converts input parameter to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
 
-To convert data from the `LowCardinality` data type use the [CAST](#type_conversion_function-cast) function. For example, `CAST(x as String)`.
+To convert data from the `LowCardinality` data type use the [CAST](#cast) function. For example, `CAST(x as String)`.
 
 **Syntax**
 

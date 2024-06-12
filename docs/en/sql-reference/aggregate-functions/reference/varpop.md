@@ -6,7 +6,7 @@ sidebar_position: 32
 
 This page covers the `varPop` and `varPopStable` functions available in ClickHouse.
 
-## varPop
+## varPop {#varPop}
 
 Calculates the population covariance between two data columns. The population covariance measures the degree to which two variables vary together. Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
@@ -27,7 +27,7 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable` function](#varPopStable).
+This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable`](#varPopStable) function.
 
 **Example**
 
@@ -55,7 +55,7 @@ Result:
 3
 ```
 
-## varPopStable
+## varPopStable {#varPopStable}
 
 Calculates population covariance between two data columns using a stable, numerically accurate method to calculate the variance. This function is designed to provide reliable results even with large datasets or values that might cause numerical instability in other implementations.
 
@@ -76,7 +76,7 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-Unlike [`varPop()`](#varPop), this function uses a stable, numerically accurate algorithm to calculate the population variance to avoid issues like catastrophic cancellation or loss of precision. This function also handles `NaN` and `Inf` values correctly, excluding them from calculations.
+Unlike [`varPop`](#varPop), this function uses a stable, numerically accurate algorithm to calculate the population variance to avoid issues like catastrophic cancellation or loss of precision. This function also handles `NaN` and `Inf` values correctly, excluding them from calculations.
 
 **Example**
 

@@ -74,7 +74,7 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Arguments**
 
-- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `bitmap` – [Bitmap object](#bitmapbuild).
 - `range_start` – Start of the range (inclusive). [UInt32](../data-types/int-uint.md).
 - `range_end` – End of the range (exclusive). [UInt32](../data-types/int-uint.md).
 
@@ -188,7 +188,7 @@ Result:
 
 Checks whether two bitmaps intersect.
 
-If `bitmap2` contains exactly one element, consider using [bitmapContains](#bitmap_functions-bitmapcontains) instead as it works more efficiently.
+If `bitmap2` contains exactly one element, consider using [bitmapContains](#bitmapcontains) instead as it works more efficiently.
 
 **Syntax**
 

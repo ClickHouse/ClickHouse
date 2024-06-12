@@ -295,7 +295,7 @@ Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null
 ## toIPv6
 
 Converts a string form of IPv6 address to [IPv6](../data-types/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
-Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
+Similar to [IPv6StringToNum](#ipv6stringtonum) function, which converts IPv6 address to binary format.
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
