@@ -346,7 +346,10 @@ void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses
         auto next_addr = resolver->resolve();
 
         if (now() > deadline)
+        {
+            ASSERT_NE(i, 0);
             break;
+        }
 
         ASSERT_TRUE(addresses.contains(*next_addr));
         ASSERT_NE(*next_addr, *failed_addr);
