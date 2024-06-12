@@ -115,7 +115,6 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"http_max_chunk_size", 0, 0, "Internal limitation"},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
               {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
-              {"backup_restore_s3_retry_attempts", 0, 1000, "A new setting."},
               {"cast_string_to_dynamic_use_inference", false, false, "Add setting to allow converting String to Dynamic through parsing"},
               {"allow_experimental_dynamic_type", false, false, "Add new experimental Dynamic type"},
               {"azure_max_blocks_in_multipart_upload", 50000, 50000, "Maximum number of blocks in multipart upload for Azure."},
