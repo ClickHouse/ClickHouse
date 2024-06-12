@@ -17,6 +17,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Logger.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -441,9 +442,7 @@ Chain buildPushingToViewsChain(
       */
     result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
-    bool disable_deduplication_for_children = false;
-    if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-        disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
+    bool disable_deduplication_for_children = !context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views;
 
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);

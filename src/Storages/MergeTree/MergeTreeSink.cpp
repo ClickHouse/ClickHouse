@@ -1,5 +1,8 @@
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/PartLog.h>
@@ -185,6 +188,8 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
+    const Settings & settings = context->getSettingsRef();
+
     for (auto & partition : delayed_chunk->partitions)
     {
         ProfileEventsScope scoped_attach(&partition.part_counters);
@@ -204,7 +209,7 @@ void MergeTreeSink::finishDelayedChunk()
 
             auto * deduplication_log = storage.getDeduplicationLog();
 
-            if (deduplication_log)
+            if (settings.insert_deduplicate && deduplication_log)
             {
                 const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
 
