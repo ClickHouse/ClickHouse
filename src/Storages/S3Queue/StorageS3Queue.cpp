@@ -99,7 +99,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `s3queue_processing_threads_num` cannot be set to zero");
         }
 
-        if (!s3queue_settings.s3queue_processing_threads_num.changed)
+        if (!is_attach && !s3queue_settings.s3queue_processing_threads_num.changed)
         {
             s3queue_settings.s3queue_processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
             LOG_TRACE(log, "Set `processing_threads_num` to {}", s3queue_settings.s3queue_processing_threads_num);
