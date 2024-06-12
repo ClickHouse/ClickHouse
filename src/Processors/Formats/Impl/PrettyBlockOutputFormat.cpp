@@ -361,7 +361,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
 
     /// output column names in the footer
-    if ((num_rows >= 999) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
     {
         writeString(footer_top_separator_s, out);
 

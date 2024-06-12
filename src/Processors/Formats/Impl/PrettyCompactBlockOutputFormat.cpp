@@ -210,7 +210,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
         writeRow(i, header, chunk, widths, max_widths);
 
-    if ((num_rows >= 999) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
     {
         writeHeader(header, max_widths, name_widths, true);
     }

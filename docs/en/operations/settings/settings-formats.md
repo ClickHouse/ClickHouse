@@ -1708,12 +1708,14 @@ Result:
 
 ## output_format_pretty_display_footer_column_names
 
-Display column names in the footer if there are 999 or more rows.
+Display column names in the footer if there are many table rows. The minimum number of rows for which
 
 Possible values:
 
 - 0 — No column names are displayed in the footer.
-- 1 — Column names are displayed in the footer if row count is greater than or equal to 999.
+- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows).
+
+Default value: `1`.
 
 **Example**
 
@@ -1735,8 +1737,11 @@ Result:
 1000. │    999 │ UInt64             │
       └─number─┴─toTypeName(number)─┘
 ```
+## output_format_pretty_display_footer_column_names_min_rows
 
+Sets the minimum number of rows for which a footer with column names will be displayed if setting [output_format_pretty_display_footer_column_names](#output_format_pretty_display_footer_column_names) is enabled.
 
+Default value: `50`.
 
 ## Template format settings {#template-format-settings}
 

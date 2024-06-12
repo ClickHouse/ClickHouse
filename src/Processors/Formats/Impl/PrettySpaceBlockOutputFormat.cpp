@@ -110,7 +110,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     if (format_settings.pretty.output_format_pretty_row_numbers && format_settings.pretty.output_format_pretty_display_footer_column_names)
         writeString(String(row_number_width, ' '), out);
     /// Write footer
-    if ((num_rows >= 999) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
         write_names();
     total_rows += num_rows;
 }
