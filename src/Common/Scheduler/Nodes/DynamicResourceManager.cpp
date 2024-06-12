@@ -5,7 +5,7 @@
 #include <Common/Scheduler/ISchedulerQueue.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <map>
 #include <tuple>

@@ -52,7 +52,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AggregateFunctionsArithmericOperationsVisitor>;
     using Base::Base;
 
-    void leaveImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
             return;

@@ -26,6 +26,7 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -321,8 +322,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -337,8 +336,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -353,8 +350,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
@@ -441,6 +436,10 @@ private:
     mutable JoinStuff::JoinUsedFlags used_flags;
     RightTableDataPtr data;
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;

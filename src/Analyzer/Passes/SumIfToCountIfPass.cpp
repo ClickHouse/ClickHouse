@@ -158,8 +158,7 @@ public:
     }
 
 private:
-
-    inline QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
+    QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");
         auto & multiply_arguments_nodes = multiply_function_node->getArguments().getNodes();

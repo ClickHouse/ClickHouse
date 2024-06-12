@@ -324,7 +324,6 @@ private:
         };
 
         const auto & metadata_snapshot = table_node.getStorageSnapshot()->metadata;
-
         const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
         add_key_columns(primary_key_columns);
 
@@ -363,7 +362,6 @@ private:
 
         const auto & column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-
         Identifier qualified_name({table_name, column.name});
 
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))

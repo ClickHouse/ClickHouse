@@ -42,8 +42,7 @@ public:
         std::optional<MarkRanges> mark_ranges_,
         bool apply_deleted_mask,
         bool read_with_direct_io_,
-        bool take_column_types_from_storage,
-        bool quiet = false);
+        bool prefetch);
 
     ~MergeTreeSequentialSource() override;
 
@@ -96,8 +95,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges_,
     bool apply_deleted_mask,
     bool read_with_direct_io_,
-    bool take_column_types_from_storage,
-    bool quiet)
+    bool prefetch)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -107,16 +105,13 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , mark_ranges(std::move(mark_ranges_))
     , mark_cache(storage.getContext()->getMarkCache())
 {
-    if (!quiet)
-    {
-        /// Print column name but don't pollute logs in case of many columns.
-        if (columns_to_read.size() == 1)
-            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
-                data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
-        else
-            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
-                data_part->getMarksCount(), data_part->name, data_part->rows_count);
-    }
+    /// Print column name but don't pollute logs in case of many columns.
+    if (columns_to_read.size() == 1)
+        LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+            data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
+    else
+        LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+            data_part->getMarksCount(), data_part->name, data_part->rows_count);
 
     auto alter_conversions = storage.getAlterConversionsForPart(data_part);
 
@@ -131,21 +126,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         storage.supportsSubcolumns(),
         columns_to_read);
 
-    NamesAndTypesList columns_for_reader;
-    if (take_column_types_from_storage)
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-            .withExtendedObjects()
-            .withVirtuals()
-            .withSubcolumns(storage.supportsSubcolumns());
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withExtendedObjects()
+        .withVirtuals()
+        .withSubcolumns(storage.supportsSubcolumns());
 
-        columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
-    }
-    else
-    {
-        /// take columns from data_part
-        columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
-    }
+    auto columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
@@ -191,6 +177,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         reader_settings,
         /*avg_value_size_hints=*/ {},
         /*profile_callback=*/ {});
+
+    if (prefetch)
+        reader->prefetchBeginOfRange(Priority{});
 }
 
 static void fillBlockNumberColumns(
@@ -313,11 +302,10 @@ Pipe createMergeTreeSequentialSource(
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool take_column_types_from_storage,
-    bool quiet,
-    std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
+    bool prefetch)
 {
 
     /// The part might have some rows masked by lightweight deletes
@@ -329,7 +317,7 @@ Pipe createMergeTreeSequentialSource(
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
         storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
-        /*apply_deleted_mask=*/ false, read_with_direct_io, take_column_types_from_storage, quiet);
+        /*apply_deleted_mask=*/ false, read_with_direct_io, prefetch);
 
     Pipe pipe(std::move(column_part_source));
 
@@ -393,7 +381,13 @@ public:
 
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    data_part, metadata_snapshot, key_condition, {}, context->getSettingsRef(), log);
+                    data_part,
+                    metadata_snapshot,
+                    key_condition,
+                    /*part_offset_condition=*/{},
+                    /*exact_ranges=*/nullptr,
+                    context->getSettingsRef(),
+                    log);
 
             if (mark_ranges && mark_ranges->empty())
             {
@@ -408,11 +402,10 @@ public:
             data_part,
             columns_to_read,
             std::move(mark_ranges),
+            /*filtered_rows_count=*/ nullptr,
             apply_deleted_mask,
             /*read_with_direct_io=*/ false,
-            /*take_column_types_from_storage=*/ true,
-            /*quiet=*/ false,
-            /*filtered_rows_count=*/ nullptr);
+            /*prefetch=*/ false);
 
         pipeline.init(Pipe(std::move(source)));
     }

@@ -166,7 +166,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get()) || typeid_cast<const StorageMerge *>(storage.get())
+        if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
         {
             collect_filters = true;
@@ -1229,8 +1229,9 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query to stage {}{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
@@ -1506,8 +1507,9 @@ void Planner::buildPlanForQueryNode()
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
-    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query from stage {} to stage {}{}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");

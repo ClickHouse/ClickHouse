@@ -18,6 +18,7 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -37,6 +38,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -159,6 +161,8 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
     extern const Metric AttachedTable;
+    extern const Metric AttachedView;
+    extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
 }
@@ -358,6 +362,8 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
+    std::atomic_size_t max_view_num_to_warn = 10000lu;
+    std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
@@ -605,6 +611,8 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
 
+        NamedCollectionFactory::instance().shutdown();
+
         delete_async_insert_queue.reset();
 
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
@@ -735,12 +743,18 @@ struct ContextSharedPart : boost::noncopyable
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (!trace_log)
-            return;
+        if (!trace_collector.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector needs to be first created before initialization");
+
+        trace_collector->initialize(trace_log);
+    }
+
+    void createTraceCollector()
+    {
         if (hasTraceCollector())
             return;
 
-        trace_collector.emplace(std::move(trace_log));
+        trace_collector.emplace();
     }
 
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
@@ -934,6 +948,10 @@ Strings Context::getWarnings() const
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
+        if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}", shared->max_view_num_to_warn));
+        if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
@@ -1608,40 +1626,53 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
+    addExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
+
+void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+{
+    updateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
+
+void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+{
+    addOrUpdateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
+
+void Context::addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
+{
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
-    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+
+    external_tables_mapping.emplace(table_name, std::move(temporary_table));
 }
 
-void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+void Context::updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
 
     std::lock_guard lock(mutex);
     auto it = external_tables_mapping.find(table_name);
     if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exists", backQuoteIfNeed(table_name));
-    it->second = std::move(temporary_table_ptr);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
+
+    it->second = std::move(temporary_table);
 }
 
-void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+void Context::addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
 
-    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
-
     std::lock_guard lock(mutex);
-    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table_ptr);
+    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table);
     if (!inserted)
-        it->second = std::move(temporary_table_ptr);
+        it->second = std::move(temporary_table);
 }
 
 std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
@@ -2362,6 +2393,17 @@ void Context::setCurrentQueryId(const String & query_id)
 
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         client_info.initial_query_id = client_info.current_query_id;
+}
+
+void Context::setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType background_operation)
+{
+    chassert(background_operation != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION);
+    client_info.background_operation_type = background_operation;
+}
+
+bool Context::isBackgroundOperationContext() const
+{
+    return client_info.background_operation_type != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION;
 }
 
 void Context::killCurrentQuery() const
@@ -3697,6 +3739,18 @@ void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
     shared->max_table_num_to_warn= max_table_to_warn;
 }
 
+void Context::setMaxViewNumToWarn(size_t max_view_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_view_num_to_warn= max_view_to_warn;
+}
+
+void Context::setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_dictionary_num_to_warn= max_dictionary_to_warn;
+}
+
 void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
@@ -3844,6 +3898,11 @@ void Context::initializeSystemLogs()
         std::lock_guard lock(shared->mutex);
         shared->system_logs = std::move(system_logs);
     });
+}
+
+void Context::createTraceCollector()
+{
+    shared->createTraceCollector();
 }
 
 void Context::initializeTraceCollector()
@@ -4058,6 +4117,13 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
+    bool enable_blob_storage_log = settings.enable_blob_storage_log;
+    if (hasQueryContext())
+        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
+
+    if (!enable_blob_storage_log)
+        return {};
+
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
@@ -4467,7 +4533,7 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
     if (type == ApplicationType::SERVER)
@@ -5175,10 +5241,10 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 }
 
 #if USE_LIBURING
-IOUringReader & Context::getIOURingReader() const
+IOUringReader & Context::getIOUringReader() const
 {
     callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+        shared->io_uring_reader = createIOUringReader();
     });
 
     return *shared->io_uring_reader;

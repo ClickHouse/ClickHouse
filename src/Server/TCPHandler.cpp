@@ -34,6 +34,7 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
@@ -1107,7 +1108,7 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
-        /// In interserver mode session context does not exists, because authentication is done for each query.
+        /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
         ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());

@@ -166,11 +166,8 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
-        const Attribute & attribute,
-        const PaddedPODArray<UInt64> & keys,
-        ValueSetter && set_value,
-        IColumn::Filter & default_mask) const;
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute, const PaddedPODArray<UInt64> & keys, ValueSetter && set_value, IColumn::Filter & default_mask) const;
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);

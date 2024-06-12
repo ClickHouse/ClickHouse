@@ -7,7 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -225,15 +225,15 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_type(Keyword::TYPE);
 
     ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserIdentifier type_p;
+    ParserList types_p(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
-    ASTPtr type;
+    ASTPtr types;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
@@ -241,12 +241,29 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!type_p.parse(pos, type, expected))
+    if (!types_p.parse(pos, types, expected))
         return false;
 
-    auto stat = std::make_shared<ASTStatisticDeclaration>();
+    auto stat = std::make_shared<ASTStatisticsDeclaration>();
     stat->set(stat->columns, columns);
-    stat->type = type->as<ASTIdentifier &>().name();
+    stat->set(stat->types, types);
+    node = stat;
+
+    return true;
+}
+
+bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    ASTPtr columns;
+
+    if (!columns_p.parse(pos, columns, expected))
+        return false;
+
+    auto stat = std::make_shared<ASTStatisticsDeclaration>();
+    stat->set(stat->columns, columns);
     node = stat;
 
     return true;
@@ -1618,6 +1635,29 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->set(query->comment, comment);
     if (sql_security)
         query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
+
+    if (query->columns_list && query->columns_list->primary_key)
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key;
+
+    }
+
+    if (query->columns_list && (query->columns_list->primary_key_from_columns))
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key_from_columns;
+    }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

@@ -13,18 +13,16 @@ namespace ErrorCodes
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Block & header_,
+    const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
-    , header(header_)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
-    const auto & storage_settings = data_part->storage.getSettings();
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
@@ -33,11 +31,18 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */ false);
 
-    writer = data_part->getWriter(
-        header.getNamesAndTypesList(),
+    writer = createMergeTreeDataPartWriter(
+        data_part->getType(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part_storage, data_part->index_granularity_info,
+        storage_settings,
+        columns_list_,
+        data_part->getColumnPositions(),
         metadata_snapshot_,
+        data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
         stats_to_recalc_,
+        data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
         index_granularity);

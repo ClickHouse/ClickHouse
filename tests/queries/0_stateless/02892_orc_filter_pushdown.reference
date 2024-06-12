@@ -1,8 +1,4 @@
 number	Nullable(Int64)					
-u8	Nullable(Int8)					
-u16	Nullable(Int16)					
-u32	Nullable(Int32)					
-u64	Nullable(Int64)					
 i8	Nullable(Int8)					
 i16	Nullable(Int16)					
 i32	Nullable(Int32)					
@@ -22,34 +18,34 @@ d64	Nullable(Decimal(18, 10))
 d128	Nullable(Decimal(38, 20))					
 -- Go over all types individually
 -- { echoOn }
-select count(), sum(number) from file('02892.orc') where indexHint(u8 in (10, 15, 250));
-800	4229600
-select count(1), min(u8), max(u8) from file('02892.orc') where u8 in (10, 15, 250);
-66	10	15
+select count(), sum(number) from file('02892.orc') where indexHint(i8 in (10, 15, -6));
+1100	5744450
+select count(1), min(i8), max(i8) from file('02892.orc') where i8 in (10, 15, -6);
+99	-6	15
 select count(), sum(number) from file('02892.orc') where indexHint(i8 between -3 and 2);
 1000	4999500
 select count(1), min(i8), max(i8) from file('02892.orc') where i8 between -3 and 2;
 208	-3	2
-select count(), sum(number) from file('02892.orc') where indexHint(u16 between 4000 and 61000 or u16 == 42);
-1800	6479100
-select count(1), min(u16), max(u16) from file('02892.orc') where u16 between 4000 and 61000 or u16 == 42;
+select count(), sum(number) from file('02892.orc') where indexHint(i16 between 4000 and 61000 or i16 == 42);
+1200	1099400
+select count(1), min(i16), max(i16) from file('02892.orc') where i16 between 4000 and 61000 or i16 == 42;
 1002	42	5000
 select count(), sum(number) from file('02892.orc') where indexHint(i16 between -150 and 250);
 500	2474750
 select count(1), min(i16), max(i16) from file('02892.orc') where i16 between -150 and 250;
 401	-150	250
-select count(), sum(number) from file('02892.orc') where indexHint(u32 in (42, 4294966296));
-200	999900
-select count(1), min(u32), max(u32) from file('02892.orc') where u32 in (42, 4294966296);
-1	42	42
+select count(), sum(number) from file('02892.orc') where indexHint(i32 in (42, -1000));
+200	1099900
+select count(1), min(i32), max(i32) from file('02892.orc') where i32 in (42, -1000);
+2	-1000	42
 select count(), sum(number) from file('02892.orc') where indexHint(i32 between -150 and 250);
 500	2474750
 select count(1), min(i32), max(i32) from file('02892.orc') where i32 between -150 and 250;
 401	-150	250
-select count(), sum(number) from file('02892.orc') where indexHint(u64 in (42, 18446744073709550616));
-100	494950
-select count(1), min(u64), max(u64) from file('02892.orc') where u64 in (42, 18446744073709550616);
-1	42	42
+select count(), sum(number) from file('02892.orc') where indexHint(i64 in (42, -1000));
+200	1099900
+select count(1), min(i64), max(i64) from file('02892.orc') where i64 in (42, -1000);
+2	-1000	42
 select count(), sum(number) from file('02892.orc') where indexHint(i64 between -150 and 250);
 500	2474750
 select count(1), min(i64), max(i64) from file('02892.orc') where i64 between -150 and 250;
@@ -111,21 +107,21 @@ select count(), sum(number) from file('02892.orc') where indexHint(0);
 0	\N
 select count(), min(number), max(number) from file('02892.orc') where indexHint(0);
 0	\N	\N
-select count(), sum(number) from file('02892.orc') where indexHint(s like '99%' or u64 == 2000);
+select count(), sum(number) from file('02892.orc') where indexHint(s like '99%' or i64 == 2000);
 300	1204850
-select count(), min(s), max(s) from file('02892.orc') where (s like '99%' or u64 == 2000);
+select count(), min(s), max(s) from file('02892.orc') where (s like '99%' or i64 == 2000);
 12	2000	999
 select count(), sum(number) from file('02892.orc') where indexHint(s like 'z%');
 0	\N
 select count(), min(s), max(s) from file('02892.orc') where (s like 'z%');
 0	\N	\N
-select count(), sum(number) from file('02892.orc') where indexHint(u8 == 10 or 1 == 1);
+select count(), sum(number) from file('02892.orc') where indexHint(i8 == 10 or 1 == 1);
 10000	49995000
-select count(), min(u8), max(u8) from file('02892.orc') where (u8 == 10 or 1 == 1);
+select count(), min(i8), max(i8) from file('02892.orc') where (i8 == 10 or 1 == 1);
 10000	-128	127
-select count(), sum(number) from file('02892.orc') where indexHint(u8 < 0);
+select count(), sum(number) from file('02892.orc') where indexHint(i8 < 0);
 5300	26042350
-select count(), min(u8), max(u8) from file('02892.orc') where (u8 < 0);
+select count(), min(i8), max(i8) from file('02892.orc') where (i8 < 0);
 5001	-128	-1
 -- { echoOn }
 select count(), sum(number) from file('02892.orc') where indexHint(sometimes_null is NULL);
@@ -210,7 +206,7 @@ select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative
 select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null < -500);
 596	-1099	-501
 select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null is null);
-1000	499500
+0	0
 select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null is null);
 0	0	0
 select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null in (0, -1, -10, -100, -1000));
