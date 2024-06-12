@@ -315,20 +315,18 @@ void ORCBlockOutputFormat::writeColumn(
     if (null_bytemap)
         orc_column.hasNulls = true;
 
-    /// ORC doesn't have unsigned types, so cast everything to signed and sign-extend to Int64 to
-    /// make the ORC library calculate min and max correctly.
     switch (type->getTypeId())
     {
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             /// Note: Explicit cast to avoid clang-tidy error: 'signed char' to 'long' conversion; consider casting to 'unsigned char' first.
-            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int8 & value){ return Int64(Int8(value)); });
+            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int8 & value){ return static_cast<int64_t>(value); });
             break;
         }
         case TypeIndex::UInt8:
         {
-            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return Int64(Int8(value)); });
+            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return value; });
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
@@ -340,7 +338,7 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return Int64(Int16(value)); });
+            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return value; });
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -351,12 +349,12 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::UInt32:
         {
-            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return Int64(Int32(value)); });
+            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return value; });
             break;
         }
         case TypeIndex::IPv4:
         {
-            writeNumbers<IPv4, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const IPv4 & value){ return Int64(Int32(value.toUnderType())); });
+            writeNumbers<IPv4, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const IPv4 & value){ return value.toUnderType(); });
             break;
         }
         case TypeIndex::Int64:
@@ -428,14 +426,14 @@ void ORCBlockOutputFormat::writeColumn(
             const auto * timestamp_type = assert_cast<const DataTypeDateTime64 *>(type.get());
             UInt32 scale = timestamp_type->getScale();
             writeDateTimes<DataTypeDateTime64::ColumnType>(
-                orc_column,
-                column,
-                null_bytemap,
-                [scale](Int64 value) { return value / Int64(std::pow(10, scale)); },
-                [scale](Int64 value) { return (value % Int64(std::pow(10, scale))) * Int64(std::pow(10, 9 - scale)); });
+                    orc_column,
+                    column, null_bytemap,
+                    [scale](UInt64 value){ return value / std::pow(10, scale); },
+                    [scale](UInt64 value){ return (value % UInt64(std::pow(10, scale))) * std::pow(10, 9 - scale); });
             break;
         }
-        case TypeIndex::Decimal32: {
+        case TypeIndex::Decimal32:;
+        {
             writeDecimals<Decimal32, orc::Decimal64VectorBatch>(
                     orc_column,
                     column,
@@ -610,7 +608,6 @@ void ORCBlockOutputFormat::prepareWriter()
     const Block & header = getPort(PortKind::Main).getHeader();
     schema = orc::createStructType();
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
-    options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));

@@ -23,6 +23,7 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
+    String getSQLCompatibleName() const override { return dictionary_type->getSQLCompatibleName(); }
 
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
@@ -60,8 +61,6 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
-    void forEachChild(const ChildCallback & callback) const override;
-
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -93,7 +92,4 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
-/// Removes LowCardinality and Nullable in a correct order and returns T
-/// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
-DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
 }

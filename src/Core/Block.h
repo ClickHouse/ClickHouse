@@ -149,13 +149,6 @@ public:
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
-    /** See IColumn::shrinkToFit() */
-    Block shrinkToFit() const;
-
-    Block compress() const;
-
-    Block decompress() const;
-
     void clear();
     void swap(Block & other) noexcept;
 
@@ -181,6 +174,7 @@ using BlockPtr = std::shared_ptr<Block>;
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;
+using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 
 /// Extends block with extra data in derived classes
 struct ExtraBlock

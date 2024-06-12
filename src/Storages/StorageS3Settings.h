@@ -39,19 +39,20 @@ struct S3Settings
             size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
             String storage_class_name;
 
-            void updateFromSettings(const Settings & settings, bool if_changed);
+            void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
             void validate();
 
         private:
             PartUploadSettings() = default;
-            explicit PartUploadSettings(const Settings & settings, bool validate_settings = true);
+            explicit PartUploadSettings(const Settings & settings);
             explicit PartUploadSettings(const NamedCollection & collection);
             PartUploadSettings(
                 const Poco::Util::AbstractConfiguration & config,
                 const String & config_prefix,
                 const Settings & settings,
-                String setting_name_prefix = {},
-                bool validate_settings = true);
+                String setting_name_prefix = {});
+
+            void updateFromSettingsImpl(const Settings & settings, bool if_changed);
 
             friend struct RequestSettings;
         };
@@ -68,18 +69,18 @@ struct S3Settings
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
         size_t retry_attempts = 10;
-        size_t request_timeout_ms = 30000;
+        size_t request_timeout_ms = 3000;
+        size_t long_request_timeout_ms = 30000; // TODO: Take this from config like request_timeout_ms
         bool allow_native_copy = true;
 
         bool throw_on_zero_files_match = false;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
-        PartUploadSettings & getUploadSettings() { return upload_settings; }
 
         void setStorageClassName(const String & storage_class_name) { upload_settings.storage_class_name = storage_class_name; }
 
         RequestSettings() = default;
-        explicit RequestSettings(const Settings & settings, bool validate_settings = true);
+        explicit RequestSettings(const Settings & settings);
         explicit RequestSettings(const NamedCollection & collection);
 
         /// What's the setting_name_prefix, and why do we need it?
@@ -93,10 +94,9 @@ struct S3Settings
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
             const Settings & settings,
-            String setting_name_prefix = {},
-            bool validate_settings = true);
+            String setting_name_prefix = {});
 
-        void updateFromSettingsIfChanged(const Settings & settings);
+        void updateFromSettings(const Settings & settings);
 
     private:
         void updateFromSettingsImpl(const Settings & settings, bool if_changed);
@@ -112,7 +112,7 @@ class StorageS3Settings
 public:
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
-    std::optional<S3Settings> getSettings(const String & endpoint, const String & user, bool ignore_user = false) const;
+    S3Settings getSettings(const String & endpoint) const;
 
 private:
     mutable std::mutex mutex;

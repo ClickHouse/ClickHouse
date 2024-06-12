@@ -9,7 +9,6 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
     set_source_files_properties(
         FlatDictionary.cpp
         HashedDictionary.cpp
-        SparseHashedDictionary.cpp
         HashedArrayDictionary.cpp
         CacheDictionary.cpp
         RangeHashedDictionary.cpp
@@ -39,6 +38,7 @@ target_link_libraries(clickhouse_dictionaries
         Poco::Data
         Poco::MongoDB
         Poco::Redis
+        string_utils
 )
 
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)

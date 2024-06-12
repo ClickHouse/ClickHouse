@@ -1,7 +1,6 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include "Core/Names.h"
 #include "Parsers/IAST_fwd.h"
 
 namespace DB
@@ -30,11 +29,9 @@ public:
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
-    NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
-
     static size_t getMaxNumberOfArguments() { return 4; }
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr &);
+    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr &);
 
 protected:
 
@@ -42,9 +39,10 @@ protected:
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 
     virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
-    virtual std::optional<String> tryGetFormatFromFirstArgument();
+    virtual String getFormatFromFirstArgument();
 
     String filename;
+    String path_to_archive;
     String format = "auto";
     String structure = "auto";
     String compression_method = "auto";

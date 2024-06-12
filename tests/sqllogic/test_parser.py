@@ -2,24 +2,20 @@
 # -*- coding: utf-8 -*-
 
 import logging
-from enum import Enum
-from functools import reduce
-from hashlib import md5
-from itertools import chain
+import os
 
-# pylint:disable=import-error; for style check
-import sqlglot
-from sqlglot.expressions import ColumnDef, PrimaryKeyColumnConstraint
+from itertools import chain
+from enum import Enum
+from hashlib import md5
+from functools import reduce
 
 from exceptions import (
-    DataResultDiffer,
     Error,
-    ErrorWithParent,
     ProgramError,
+    ErrorWithParent,
+    DataResultDiffer,
     QueryExecutionError,
 )
-
-# pylint:enable=import-error; for style check
 
 
 logger = logging.getLogger("parser")
@@ -139,41 +135,6 @@ class FileBlockBase:
         return result, result_end
 
     @staticmethod
-    def convert_request(sql):
-        if sql.startswith("CREATE TABLE"):
-            result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
-            pk_token = sqlglot.parse_one(result, read="clickhouse").find(
-                PrimaryKeyColumnConstraint
-            )
-            pk_string = "tuple()"
-            if pk_token is not None:
-                pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
-
-            result += " ENGINE = MergeTree() ORDER BY " + pk_string
-            return result
-        elif "SELECT" in sql and "CAST" in sql and "NULL" in sql:
-            # convert `CAST (NULL as INTEGER)` to `CAST (NULL as Nullable(Int32))`
-            try:
-                ast = sqlglot.parse_one(sql, read="sqlite")
-            except sqlglot.errors.ParseError as err:
-                logger.info("cannot parse %s , error is %s", sql, err)
-                return sql
-            cast = ast.find(sqlglot.expressions.Cast)
-            # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
-            if (
-                cast is not None
-                and cast.name == "NULL"
-                and ("nested" not in cast.to.args or not cast.to.args["nested"])
-            ):
-                cast.args["to"] = sqlglot.expressions.DataType.build(
-                    "NULLABLE", expressions=[cast.to]
-                )
-                new_sql = ast.sql("clickhouse")
-                # logger.info("convert from %s to %s", sql, new_sql)
-                return new_sql
-        return sql
-
-    @staticmethod
     def parse_block(parser, start, end):
         file_pos = FileAndPos(parser.get_test_name(), start + 1)
         logger.debug("%s start %s end %s", file_pos, start, end)
@@ -208,8 +169,6 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
-                if parser.dbms_name == "ClickHouse":
-                    request = FileBlockBase.convert_request(request)
                 assert last_line == end
                 line = last_line
 
@@ -220,8 +179,6 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
-                if parser.dbms_name == "ClickHouse":
-                    request = FileBlockBase.convert_request(request)
                 result_line = last_line
                 line = last_line
                 if line == end:
@@ -250,7 +207,6 @@ class FileBlockBase:
             )
             block.with_result(result)
             return block
-        raise ValueError(f"Unknown block_type {block_type}")
 
     def dump_to(self, output):
         if output is None:
@@ -261,6 +217,9 @@ class FileBlockBase:
 
 
 class FileBlockComments(FileBlockBase):
+    def __init__(self, parser, start, end):
+        super().__init__(parser, start, end)
+
     def get_block_type(self):
         return BlockType.comments
 
@@ -366,11 +325,10 @@ class TestFileParser:
 
     DEFAULT_HASH_THRESHOLD = 8
 
-    def __init__(self, stream, test_name, test_file, dbms_name):
+    def __init__(self, stream, test_name, test_file):
         self._stream = stream
         self._test_name = test_name
         self._test_file = test_file
-        self.dbms_name = dbms_name
 
         self._lines = []
         self._raw_tokens = []
@@ -469,20 +427,20 @@ class QueryResult:
             (
                 str(x)
                 for x in [
-                    f"rows: {self.rows}" if self.rows else "",
-                    f"values_count: {self.values_count}" if self.values_count else "",
-                    f"data_hash: {self.data_hash}" if self.data_hash else "",
-                    f"exception: {self.exception}" if self.exception else "",
-                    (
-                        f"hash_threshold: {self.hash_threshold}"
-                        if self.hash_threshold
-                        else ""
-                    ),
+                    "rows: {}".format(self.rows) if self.rows else "",
+                    "values_count: {}".format(self.values_count)
+                    if self.values_count
+                    else "",
+                    "data_hash: {}".format(self.data_hash) if self.data_hash else "",
+                    "exception: {}".format(self.exception) if self.exception else "",
+                    "hash_threshold: {}".format(self.hash_threshold)
+                    if self.hash_threshold
+                    else "",
                 ]
                 if x
             )
         )
-        return f"QueryResult({params})"
+        return "QueryResult({})".format(params)
 
     def __iter__(self):
         if self.rows is not None:
@@ -491,10 +449,12 @@ class QueryResult:
             if self.values_count <= self.hash_threshold:
                 return iter(self.rows)
         if self.data_hash is not None:
-            return iter([[f"{self.values_count} values hashing to {self.data_hash}"]])
+            return iter(
+                [["{} values hashing to {}".format(self.values_count, self.data_hash)]]
+            )
         if self.exception is not None:
-            return iter([[f"exception: {self.exception}"]])
-        raise ProgramError("Query result is empty", details=str(self))
+            return iter([["exception: {}".format(self.exception)]])
+        raise ProgramError("Query result is empty", details="{}".format(self.__str__()))
 
     @staticmethod
     def __value_count(rows):
@@ -526,7 +486,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
-                logger.debug("Building row. c:%s t:%s", c, t)
+                logger.debug(f"Builging row. c:{c} t:{t}")
                 if c is None:
                     res_row.append("NULL")
                     continue
@@ -539,16 +499,10 @@ class QueryResult:
                 elif t == "I":
                     try:
                         res_row.append(str(int(c)))
-                    except ValueError:
-                        # raise QueryExecutionError(
-                        #     f"Got non-integer result '{c}' for I type."
-                        # )
-                        res_row.append(str(int(0)))
-                    except OverflowError as ex:
+                    except ValueError as ex:
                         raise QueryExecutionError(
-                            f"Got overflowed result '{c}' for I type."
-                        ) from ex
-
+                            f"Got non-integer result '{c}' for I type."
+                        )
                 elif t == "R":
                     res_row.append(f"{c:.3f}")
 
@@ -565,7 +519,6 @@ class QueryResult:
             values = list(chain(*rows))
             values.sort()
             return [values] if values else []
-        return []
 
     @staticmethod
     def __calculate_hash(rows):
@@ -594,9 +547,9 @@ class QueryResult:
         # do not print details to the test file
         # but print original exception
         if isinstance(e, ErrorWithParent):
-            message = f"{e}, original is: {e.get_parent()}"
+            message = "{}, original is: {}".format(e, e.get_parent())
         else:
-            message = str(e)
+            message = "{}".format(e)
 
         return QueryResult(exception=message)
 
@@ -615,8 +568,9 @@ class QueryResult:
                         "canonic and actual results have different exceptions",
                         details=f"canonic: {canonic.exception}, actual: {actual.exception}",
                     )
-                # exceptions are the same
-                return
+                else:
+                    # exceptions are the same
+                    return
             elif canonic.exception is not None:
                 raise DataResultDiffer(
                     "canonic result has exception and actual result doesn't",
@@ -637,8 +591,9 @@ class QueryResult:
             if canonic.values_count != actual.values_count:
                 raise DataResultDiffer(
                     "canonic and actual results have different value count",
-                    details=f"canonic values count {canonic.values_count}, "
-                    f"actual {actual.values_count}",
+                    details="canonic values count {}, actual {}".format(
+                        canonic.values_count, actual.values_count
+                    ),
                 )
             if canonic.data_hash != actual.data_hash:
                 raise DataResultDiffer(
@@ -650,8 +605,9 @@ class QueryResult:
             if canonic.values_count != actual.values_count:
                 raise DataResultDiffer(
                     "canonic and actual results have different value count",
-                    details=f"canonic values count {canonic.values_count}, "
-                    f"actual {actual.values_count}",
+                    details="canonic values count {}, actual {}".format(
+                        canonic.values_count, actual.values_count
+                    ),
                 )
             if canonic.rows != actual.rows:
                 raise DataResultDiffer(
@@ -661,5 +617,5 @@ class QueryResult:
 
         raise ProgramError(
             "Unable to compare results",
-            details=f"actual {actual}, canonic {canonic}",
+            details="actual {}, canonic {}".format(actual, canonic),
         )

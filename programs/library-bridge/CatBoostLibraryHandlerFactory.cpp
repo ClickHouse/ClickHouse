@@ -13,7 +13,7 @@ CatBoostLibraryHandlerFactory & CatBoostLibraryHandlerFactory::instance()
 }
 
 CatBoostLibraryHandlerFactory::CatBoostLibraryHandlerFactory()
-    : log(getLogger("CatBoostLibraryHandlerFactory"))
+    : log(&Poco::Logger::get("CatBoostLibraryHandlerFactory"))
 {
 }
 

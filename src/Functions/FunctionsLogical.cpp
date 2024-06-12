@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -170,7 +169,7 @@ public:
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    ResultValueType apply(const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
         return Op::apply(a, next.apply(i));
@@ -190,7 +189,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    ResultValueType apply(const size_t i) const { return !!vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -291,7 +290,7 @@ public:
         }
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    ResultValueType apply(const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
         return Op::ternaryApply(vec[i], next.apply(i));
     }
@@ -315,7 +314,7 @@ public:
             TernaryValueBuilder::build(in[in.size() - 1], vec.data());
         }
 
-    ResultValueType apply(const size_t i) const { return vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return vec[i]; }
 
 private:
     UInt8Container vec;
@@ -531,7 +530,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
         {
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Unexpected type of argument for function \"{}\": "
                     " argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
@@ -775,23 +774,6 @@ ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAnd
             getName());
 
     return res;
-}
-
-FunctionOverloadResolverPtr createInternalFunctionOrOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-}
-FunctionOverloadResolverPtr createInternalFunctionAndOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-}
-FunctionOverloadResolverPtr createInternalFunctionXorOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionXor>());
-}
-FunctionOverloadResolverPtr createInternalFunctionNotOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionNot>());
 }
 
 }

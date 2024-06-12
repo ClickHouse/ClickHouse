@@ -267,8 +267,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
 
 void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * /*cache*/) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
@@ -478,7 +477,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             settings.low_cardinality_max_dictionary_size);
     }
 
-    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(&*keys))
+    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
@@ -516,14 +515,8 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
+    SubstreamsCache * /* cache */) const
 {
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
-    {
-        column = cached_column;
-        return;
-    }
-
     auto mutable_column = column->assumeMutable();
     ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(*mutable_column);
 
@@ -677,7 +670,6 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     }
 
     column = std::move(mutable_column);
-    addToSubstreamsCache(cache, settings.path, column);
 }
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -708,11 +700,6 @@ void SerializationLowCardinality::deserializeTextEscaped(IColumn & column, ReadB
     deserializeImpl(column, &ISerialization::deserializeTextEscaped, istr, settings);
 }
 
-bool SerializationLowCardinality::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextEscaped, istr, settings);
-}
-
 void SerializationLowCardinality::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextQuoted, ostr, settings);
@@ -723,19 +710,9 @@ void SerializationLowCardinality::deserializeTextQuoted(IColumn & column, ReadBu
     deserializeImpl(column, &ISerialization::deserializeTextQuoted, istr, settings);
 }
 
-bool SerializationLowCardinality::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextQuoted, istr, settings);
-}
-
 void SerializationLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeWholeText, istr, settings);
-}
-
-bool SerializationLowCardinality::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    return tryDeserializeImpl(column, &ISerialization::tryDeserializeWholeText, istr, settings);
 }
 
 void SerializationLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -746,11 +723,6 @@ void SerializationLowCardinality::serializeTextCSV(const IColumn & column, size_
 void SerializationLowCardinality::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextCSV, istr, settings);
-}
-
-bool SerializationLowCardinality::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextCSV, istr, settings);
 }
 
 void SerializationLowCardinality::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -768,11 +740,6 @@ void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuff
     deserializeImpl(column, &ISerialization::deserializeTextJSON, istr, settings);
 }
 
-bool SerializationLowCardinality::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextJSON, istr, settings);
-}
-
 void SerializationLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextXML, ostr, settings);
@@ -781,11 +748,6 @@ void SerializationLowCardinality::serializeTextXML(const IColumn & column, size_
 void SerializationLowCardinality::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextRaw, istr, settings);
-}
-
-bool SerializationLowCardinality::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextRaw, istr, settings);
 }
 
 void SerializationLowCardinality::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -807,28 +769,13 @@ template <typename... Params, typename... Args>
 void SerializationLowCardinality::deserializeImpl(
     IColumn & column, SerializationLowCardinality::DeserializeFunctionPtr<Params...> func, Args &&... args) const
 {
-    auto & low_cardinality_column = getColumnLowCardinality(column);
+    auto & low_cardinality_column= getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
     auto serialization = dictionary_type->getDefaultSerialization();
     (serialization.get()->*func)(*temp_column, std::forward<Args>(args)...);
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
-}
-
-template <typename... Params, typename... Args>
-bool SerializationLowCardinality::tryDeserializeImpl(
-    IColumn & column, SerializationLowCardinality::TryDeserializeFunctionPtr<Params...> func, Args &&... args) const
-{
-    auto & low_cardinality_column = getColumnLowCardinality(column);
-    auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
-
-    auto serialization = dictionary_type->getDefaultSerialization();
-    if (!(serialization.get()->*func)(*temp_column, std::forward<Args>(args)...))
-        return false;
-
-    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
-    return true;
 }
 
 }

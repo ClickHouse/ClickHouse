@@ -20,15 +20,15 @@ public:
         /// for set
         bool operator<(const AtomicFormula & rhs) const
         {
-            return ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true)
+            return ast->getTreeHash() == rhs.ast->getTreeHash()
                 ? negative < rhs.negative
-                : ast->getTreeHash(/*ignore_aliases=*/ true) < rhs.ast->getTreeHash(/*ignore_aliases=*/ true);
+                : ast->getTreeHash() < rhs.ast->getTreeHash();
         }
 
         bool operator==(const AtomicFormula & rhs) const
         {
             return negative == rhs.negative &&
-                ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true) &&
+                ast->getTreeHash() == rhs.ast->getTreeHash() &&
                 ast->getColumnName() == rhs.ast->getColumnName();
         }
     };
@@ -58,7 +58,7 @@ public:
         for (const auto & or_group : statements)
         {
             OrGroup filtered_group;
-            for (const auto & ast : or_group)
+            for (auto ast : or_group)
             {
                 if (predicate_is_unknown(ast))
                     filtered_group.insert(ast);
@@ -164,12 +164,6 @@ public:
 
 void pushNotIn(CNFQuery::AtomicFormula & atom);
 
-/// Reduces CNF groups by removing mutually exclusive atoms
-/// found across groups, in case other atoms are identical.
-/// Might require multiple passes to complete reduction.
-///
-/// Example:
-/// (x OR y) AND (x OR !y) -> x
 template <typename TAndGroup>
 TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
 {
@@ -181,19 +175,10 @@ TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
         bool inserted = false;
         for (const auto & atom : group)
         {
+            copy.erase(atom);
             using AtomType = std::decay_t<decltype(atom)>;
             AtomType negative_atom(atom);
             negative_atom.negative = !atom.negative;
-
-            // Sikpping erase-insert for mutually exclusive atoms within
-            // single group, since it won't insert negative atom, which
-            // will break the logic of this rule
-            if (copy.contains(negative_atom))
-            {
-                continue;
-            }
-
-            copy.erase(atom);
             copy.insert(negative_atom);
 
             if (groups.contains(copy))
@@ -224,10 +209,6 @@ bool isCNFGroupSubset(const TOrGroup & left, const TOrGroup & right)
     return true;
 }
 
-/// Removes CNF groups if subset group is found in CNF.
-///
-/// Example:
-/// (x OR y) AND (x) -> x
 template <typename TAndGroup>
 TAndGroup filterCNFSubsets(const TAndGroup & groups)
 {

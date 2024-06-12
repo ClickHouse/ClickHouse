@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mutex>
 #include <Core/Defines.h>
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
@@ -87,10 +86,7 @@ public:
     void free(char * ptr, const size_t size)
     {
         if (size > max_fixed_block_size)
-        {
-            Allocator<false>::free(ptr, size);
-            return;
-        }
+            return Allocator<false>::free(ptr, size);
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -132,7 +128,7 @@ public:
     void free(char * ptr, const size_t size)
     {
         std::lock_guard lock{mutex};
-        ArenaWithFreeLists::free(ptr, size);
+        return ArenaWithFreeLists::free(ptr, size);
     }
 
     /// Size of the allocated pool in bytes

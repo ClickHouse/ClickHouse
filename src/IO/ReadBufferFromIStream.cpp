@@ -1,50 +1,38 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <Common/Exception.h>
 
-#include <istream>
-
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_FROM_ISTREAM;
+}
+
 bool ReadBufferFromIStream::nextImpl()
 {
-    if (eof)
-        return false;
+    istr.read(internal_buffer.begin(), internal_buffer.size());
+    size_t gcount = istr.gcount();
 
-    chassert(internal_buffer.begin() != nullptr);
-    chassert(!internal_buffer.empty());
-
-    size_t bytes_read = 0;
-    char * read_to = internal_buffer.begin();
-
-    /// It is necessary to read in a loop, since socket usually returns only data available at the moment.
-    while (bytes_read < internal_buffer.size())
+    if (!gcount)
     {
-        const auto bytes_read_last_time = stream_buf.readFromDevice(read_to, internal_buffer.size() - bytes_read);
-        if (bytes_read_last_time <= 0)
-        {
-            eof = true;
-            break;
-        }
+        if (istr.eof())
+            return false;
 
-        bytes_read += bytes_read_last_time;
-        read_to += bytes_read_last_time;
+        if (istr.fail())
+            throw Exception(ErrorCodes::CANNOT_READ_FROM_ISTREAM, "Cannot read from istream at offset {}", count());
+
+        throw Exception(ErrorCodes::CANNOT_READ_FROM_ISTREAM, "Unexpected state of istream at offset {}", count());
     }
+    else
+        working_buffer.resize(gcount);
 
-    if (bytes_read)
-    {
-        working_buffer = internal_buffer;
-        working_buffer.resize(bytes_read);
-    }
-
-    return bytes_read;
+    return true;
 }
 
 ReadBufferFromIStream::ReadBufferFromIStream(std::istream & istr_, size_t size)
-    : BufferWithOwnMemory<ReadBuffer>(size)
-    , istr(istr_)
-    , stream_buf(dynamic_cast<Poco::Net::HTTPBasicStreamBuf &>(*istr.rdbuf()))
+    : BufferWithOwnMemory<ReadBuffer>(size), istr(istr_)
 {
 }
 

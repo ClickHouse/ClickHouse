@@ -1,9 +1,9 @@
 import logging
 import helpers.s3_url_proxy_tests_util as proxy_util
+import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-import os
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +33,6 @@ def cluster():
             env_variables={
                 "http_proxy": "http://proxy1",
             },
-            instance_env_variables=True,
         )
 
         logging.info("Starting cluster...")
@@ -53,7 +52,7 @@ def test_s3_with_http_proxy_list(cluster):
 
 
 def test_s3_with_http_remote_proxy(cluster):
-    proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "http", "remote_proxy_node")
+    proxy_util.simple_test(cluster, ["proxy1"], "http", "remote_proxy_node")
 
 
 def test_s3_with_http_env_proxy(cluster):

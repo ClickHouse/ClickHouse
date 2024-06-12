@@ -28,7 +28,7 @@ class FormatSchemaInfo;
 class ProtobufSchemas : private boost::noncopyable
 {
 public:
-    enum class WithEnvelope : uint8_t
+    enum class WithEnvelope
     {
         // Return descriptor for a top-level message with a user-provided name.
         // Example: In protobuf schema
@@ -54,13 +54,10 @@ public:
     };
 
     static ProtobufSchemas & instance();
-    // Clear cached protobuf schemas
-    void clear();
 
     /// Parses the format schema, then parses the corresponding proto file, and returns the descriptor of the message type.
     /// The function never returns nullptr, it throws an exception if it cannot load or parse the file.
-    const google::protobuf::Descriptor *
-    getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path);
+    const google::protobuf::Descriptor * getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope);
 
 private:
     class ImporterWithSourceTree;

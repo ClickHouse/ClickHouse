@@ -50,10 +50,8 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Virtual Columns
 
-- `_path` — Path to the `URL`. Type: `LowCardinalty(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinalty(String)`.
-- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_path` — Path to the `URL`.
+- `_file` — Resource name of the `URL`.
 
 ## Storage Settings {#storage-settings}
 

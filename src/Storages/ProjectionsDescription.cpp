@@ -64,6 +64,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.sample_block_for_keys = sample_block_for_keys;
     other.metadata = metadata;
     other.key_size = key_size;
+    other.is_minmax_count_projection = is_minmax_count_projection;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
 
@@ -194,6 +195,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     ContextPtr query_context)
 {
     ProjectionDescription result;
+    result.is_minmax_count_projection = true;
 
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
@@ -280,22 +282,18 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     return result;
 }
 
+
 void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
 {
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
+
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {
-    auto mut_context = Context::createCopy(context);
-    /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
-    /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
-    mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
-    mut_context->setSetting("transform_null_in", Field(0));
-
     auto builder = InterpreterSelectQuery(
                        query_ast,
-                       mut_context,
+                       context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
@@ -337,7 +335,7 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
         return result;
 
     ParserProjectionDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & projection_ast : list->children)
     {

@@ -40,6 +40,7 @@ bool MergePlainMergeTreeTask::executeStep()
     if (merge_list_entry)
     {
         switcher.emplace((*merge_list_entry)->thread_group);
+
     }
 
     switch (state)
@@ -149,7 +150,7 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
     write_part_log({});
-    StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
+    storage.incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
 
     if (auto txn_ = txn_holder.getTransaction())
@@ -168,7 +169,6 @@ ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
     context->makeQueryContext();
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
-    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
     return context;
 }
 

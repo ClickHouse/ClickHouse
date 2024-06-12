@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class IFunction;
 
 /// Methods, that helps dispatching over real column types.
@@ -28,13 +23,6 @@ template <typename Type>
 const Type * checkAndGetDataType(const IDataType * data_type)
 {
     return typeid_cast<const Type *>(data_type);
-}
-
-/// Throws on mismatch.
-template <typename Type>
-const Type & checkAndGetDataType(const IDataType & data_type)
-{
-    return typeid_cast<const Type &>(data_type);
 }
 
 template <typename... Types>
@@ -46,27 +34,13 @@ bool checkDataTypes(const IDataType * data_type)
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column)
+    if (!column || !isColumnConst(*column))
         return {};
 
-    const ColumnConst * res = checkAndGetColumn<ColumnConst>(column);
-    if (!res)
-        return {};
+    const ColumnConst * res = assert_cast<const ColumnConst *>(column);
 
     if (!checkColumn<Type>(&res->getDataColumn()))
         return {};
-
-    return res;
-}
-
-template <typename Type>
-const ColumnConst & checkAndGetColumnConst(const IColumn & column)
-{
-    const ColumnConst & res = checkAndGetColumn<ColumnConst>(column);
-
-    const auto & data_column = res.getDataColumn();
-    if (!checkColumn<Type>(&data_column))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected const column type: expected {}, got {}", demangle(typeid(Type).name()), demangle(typeid(data_column).name()));
 
     return res;
 }
@@ -134,10 +108,8 @@ struct FunctionArgumentDescriptor
 {
     const char * argument_name;
 
-    using TypeValidator = bool (*)(const IDataType &);
-    TypeValidator type_validator_func;
-    using ColumnValidator = bool (*)(const IColumn &);
-    ColumnValidator column_validator_func;
+    std::function<bool (const IDataType &)> type_validator_func;
+    std::function<bool (const IColumn &)> column_validator_func;
 
     const char * expected_type_description;
 
@@ -183,6 +155,11 @@ void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithType
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
+/// Check if two types are equal
+bool areTypesEqual(const IDataType & lhs, const IDataType & rhs);
+
+bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs);
+
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
@@ -197,6 +174,4 @@ struct NullPresence
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
-
-void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 }

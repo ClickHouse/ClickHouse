@@ -11,17 +11,19 @@ class Context;
 
 /** Implements `metrics` system table, which provides information about the operation of the server.
   */
-class StorageSystemMetrics final : public IStorageSystemOneBlock
+class StorageSystemMetrics final : public IStorageSystemOneBlock<StorageSystemMetrics>
 {
 public:
     std::string getName() const override { return "SystemMetrics"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
+
+    static NamesAndAliases getNamesAndAliases();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

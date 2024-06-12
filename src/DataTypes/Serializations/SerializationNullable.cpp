@@ -45,9 +45,7 @@ void SerializationNullable::enumerateStreams(
     const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
     const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
 
-    auto null_map_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationNumber<UInt8>>(),
-        "null", SubstreamType::NamedNullMap);
+    auto null_map_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false);
 
     settings.path.push_back(Substream::NullMap);
     auto null_map_data = SubstreamData(null_map_serialization)
@@ -95,11 +93,10 @@ void SerializationNullable::serializeBinaryBulkStateSuffix(
 
 void SerializationNullable::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
+    nested->deserializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -190,59 +187,55 @@ void SerializationNullable::serializeBinary(const IColumn & column, size_t row_n
         nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-template <typename ReturnType>
-ReturnType safeAppendToNullMap(ColumnNullable & column, bool is_null)
+/// Deserialize value into ColumnNullable.
+/// We need to insert both to nested column and to null byte map, or, in case of exception, to not insert at all.
+template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, ReturnType * = nullptr>
+requires std::same_as<ReturnType, void>
+static ReturnType
+safeDeserialize(IColumn & column, const ISerialization &, CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
-    try
-    {
-        column.getNullMapData().push_back(is_null);
-    }
-    catch (...)
-    {
-        column.getNestedColumn().popBack(1);
-        if constexpr (std::is_same_v<ReturnType, void>)
-            throw;
-        return ReturnType(false);
-    }
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
-    return ReturnType(true);
-}
-
-/// Deserialize value into non-nullable column. In case of NULL, insert default and set is_null to true.
-/// If ReturnType is bool, return true if parsing was successful and false in case of any error.
-template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested>
-static ReturnType deserializeImpl(IColumn & column, ReadBuffer & buf, CheckForNull && check_for_null, DeserializeNested && deserialize_nested, bool & is_null)
-{
-    is_null = check_for_null(buf);
-    if (is_null)
+    if (check_for_null())
     {
-        column.insertDefault();
+        col.insertDefault();
     }
     else
     {
-        if constexpr (std::is_same_v<ReturnType, void>)
-            deserialize_nested(column, buf);
-        else if (!deserialize_nested(column, buf))
-            return ReturnType(false);
-    }
+        deserialize_nested(col.getNestedColumn());
 
-    return ReturnType(true);
+        try
+        {
+            col.getNullMapData().push_back(0);
+        }
+        catch (...)
+        {
+            col.getNestedColumn().popBack(1);
+            throw;
+        }
+    }
+}
+
+/// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
+template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, ReturnType * = nullptr>
+requires std::same_as<ReturnType, bool>
+static ReturnType
+safeDeserialize(IColumn & column, const ISerialization &, CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
+{
+    bool insert_default = check_for_null();
+    if (insert_default)
+        column.insertDefault();
+    else
+        deserialize_nested(column);
+    return !insert_default;
 }
 
 
 void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    auto check_for_null = [](ReadBuffer & buf)
-    {
-        bool is_null_ = false;
-        readBinary(is_null_, buf);
-        return is_null_;
-    };
-    auto deserialize_nested = [this, &settings] (IColumn & nested_column, ReadBuffer & buf) { nested->deserializeBinary(nested_column, buf, settings); };
-    deserializeImpl(col.getNestedColumn(), istr, check_for_null, deserialize_nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
+    safeDeserialize(column, *nested,
+        [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
+        [this, &istr, settings] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr, settings); });
 }
 
 
@@ -251,19 +244,20 @@ void SerializationNullable::serializeTextEscaped(const IColumn & column, size_t 
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        serializeNullEscaped(ostr, settings);
+        writeString(settings.tsv.null_representation, ostr);
     else
         nested->serializeTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeNullEscaped(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
+
+void SerializationNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    writeString(settings.tsv.null_representation, ostr);
+    deserializeTextEscapedImpl<void>(column, istr, settings, nested);
 }
 
-bool SerializationNullable::tryDeserializeNullEscaped(DB::ReadBuffer & istr, const DB::FormatSettings & settings)
+void SerializationNullable::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return checkString(settings.tsv.null_representation, istr);
+    deserializeTextRawImpl<void>(column, istr, settings, nested);
 }
 
 void SerializationNullable::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -271,94 +265,91 @@ void SerializationNullable::serializeTextRaw(const IColumn & column, size_t row_
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        serializeNullRaw(ostr, settings);
+        writeString(settings.tsv.null_representation, ostr);
     else
         nested->serializeTextRaw(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeNullRaw(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
+template<typename ReturnType>
+ReturnType SerializationNullable::deserializeTextRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested)
 {
-    writeString(settings.tsv.null_representation, ostr);
+    return deserializeTextEscapedAndRawImpl<ReturnType, false>(column, istr, settings, nested);
 }
 
-bool SerializationNullable::tryDeserializeNullRaw(DB::ReadBuffer & istr, const DB::FormatSettings & settings)
+template<typename ReturnType>
+ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                             const SerializationPtr & nested)
 {
-    return checkString(settings.tsv.null_representation, istr);
+    return deserializeTextEscapedAndRawImpl<ReturnType, true>(column, istr, settings, nested);
 }
 
 template<typename ReturnType, bool escaped>
-ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, bool & is_null)
+ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                    const SerializationPtr & nested_serialization)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
     const String & null_representation = settings.tsv.null_representation;
-    auto deserialize_nested = [&nested_serialization, &settings] (IColumn & nested_column, ReadBuffer & buf_)
-    {
-        if constexpr (throw_exception)
-        {
-            if constexpr (escaped)
-                nested_serialization->deserializeTextEscaped(nested_column, buf_, settings);
-            else
-                nested_serialization->deserializeTextRaw(nested_column, buf_, settings);
-        }
-        else
-        {
-            if constexpr (escaped)
-                return nested_serialization->tryDeserializeTextEscaped(nested_column, buf_, settings);
-            else
-                return nested_serialization->tryDeserializeTextRaw(nested_column, buf_, settings);
-        }
-    };
 
     /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     if (istr.eof() || (!null_representation.empty() && *istr.position() != null_representation[0]))
     {
         /// This is not null, surely.
-        return deserializeImpl<ReturnType>(column, istr, [](ReadBuffer &){ return false; }, deserialize_nested, is_null);
+        return safeDeserialize<ReturnType>(column, *nested_serialization,
+            [] { return false; },
+            [&nested_serialization, &istr, &settings] (IColumn & nested_column)
+            {
+                if constexpr (escaped)
+                    nested_serialization->deserializeTextEscaped(nested_column, istr, settings);
+                else
+                    nested_serialization->deserializeTextRaw(nested_column, istr, settings);
+            });
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
     if (istr.available() > null_representation.size())
     {
-        auto check_for_null = [&null_representation, &settings](ReadBuffer & buf)
+        auto check_for_null = [&istr, &null_representation]()
         {
-            auto * pos = buf.position();
-            if (checkString(null_representation, buf) && (*buf.position() == '\t' || *buf.position() == '\n' || (settings.tsv.crlf_end_of_line_input && *buf.position() == '\r')))
+            auto * pos = istr.position();
+            if (checkString(null_representation, istr) && (*istr.position() == '\t' || *istr.position() == '\n'))
                 return true;
-            buf.position() = pos;
+            istr.position() = pos;
             return false;
         };
-        return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+        auto deserialize_nested = [&nested_serialization, &settings, &istr] (IColumn & nested_column)
+        {
+            if constexpr (escaped)
+                nested_serialization->deserializeTextEscaped(nested_column, istr, settings);
+            else
+                nested_serialization->deserializeTextRaw(nested_column, istr, settings);
+        };
+        return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);
     }
 
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
-    auto check_for_null = [&null_representation, &settings](ReadBuffer & buf_)
+    PeekableReadBuffer buf(istr, true);
+    auto check_for_null = [&buf, &null_representation]()
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
-
-        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || (settings.tsv.crlf_end_of_line_input && *buf.position() == '\r')))
+        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'))
             return true;
+
         buf.rollbackToCheckpoint();
         return false;
     };
 
-    auto deserialize_nested_with_check = [&deserialize_nested, &nested_serialization, &settings, &null_representation, &istr] (IColumn & nested_column, ReadBuffer & buf_)
+    auto deserialize_nested = [&nested_serialization, &settings, &buf, &null_representation, &istr] (IColumn & nested_column)
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         auto * pos = buf.position();
-        if constexpr (throw_exception)
-            deserialize_nested(nested_column, buf);
-        else if (!deserialize_nested(nested_column, buf))
-            return ReturnType(false);
-
+        if constexpr (escaped)
+            nested_serialization->deserializeTextEscaped(nested_column, buf, settings);
+        else
+            nested_serialization->deserializeTextRaw(nested_column, buf, settings);
         /// Check that we don't have any unread data in PeekableReadBuffer own memory.
         if (likely(!buf.hasUnreadData()))
-            return ReturnType(true);
+            return;
 
         /// We have some unread data in PeekableReadBuffer own memory.
         /// It can happen only if there is a string instead of a number
@@ -367,22 +358,16 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
         /// We also should delete incorrectly deserialized value from nested column.
         nested_column.popBack(1);
 
-        if constexpr (!throw_exception)
-            return ReturnType(false);
-
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
-            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
-                "containing '\\t' or '\\n' may not work correctly for large input.");
-        if (settings.tsv.crlf_end_of_line_input && null_representation.find('\r') != std::string::npos)
-            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
-                "containing '\\r' may not work correctly for large input.");
+            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
+                                       "containing '\\t' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
         if constexpr (escaped)
             nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
         else
             nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
+        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
                                    std::string(pos, buf.buffer().end()),
@@ -390,63 +375,7 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
                                    istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
     };
 
-    return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested_with_check, is_null);
-}
-
-void SerializationNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    deserializeTextEscapedAndRawImpl<void, true>(col.getNestedColumn(), istr, settings, nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
-}
-
-bool SerializationNullable::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    return deserializeTextEscapedAndRawImpl<bool, true>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeTextEscapedAndRawImpl<void, true>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    return deserializeTextEscapedAndRawImpl<bool, true>(nested_column, istr, settings, nested_serialization, is_null);
-}
-
-void SerializationNullable::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    deserializeTextEscapedAndRawImpl<void, false>(col.getNestedColumn(), istr, settings, nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
-}
-
-bool SerializationNullable::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    return deserializeTextEscapedAndRawImpl<bool, false>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeTextEscapedAndRawImpl<void, false>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    return deserializeTextEscapedAndRawImpl<bool, false>(nested_column, istr, settings, nested_serialization, is_null);
+    return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);
 }
 
 void SerializationNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -454,51 +383,45 @@ void SerializationNullable::serializeTextQuoted(const IColumn & column, size_t r
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        serializeNullQuoted(ostr);
+        writeCString("NULL", ostr);
     else
         nested->serializeTextQuoted(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeNullQuoted(DB::WriteBuffer & ostr)
-{
-    writeCString("NULL", ostr);
-}
 
-bool SerializationNullable::tryDeserializeNullQuoted(DB::ReadBuffer & istr)
+void SerializationNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return checkStringCaseInsensitive("NULL", istr);
+    deserializeTextQuotedImpl<void>(column, istr, settings, nested);
 }
 
 template<typename ReturnType>
-ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
+ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                   const SerializationPtr & nested)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    auto deserialize_nested = [&nested, &settings] (IColumn & nested_column, ReadBuffer & buf)
-    {
-        if constexpr (!throw_exception)
-            return nested->tryDeserializeTextQuoted(nested_column, buf, settings);
-        nested->deserializeTextQuoted(nested_column, buf, settings);
-    };
-
     if (istr.eof() || (*istr.position() != 'N' && *istr.position() != 'n'))
     {
         /// This is not null, surely.
-        return deserializeImpl<ReturnType>(column, istr, [](ReadBuffer &){ return false; }, deserialize_nested, is_null);
+        return safeDeserialize<ReturnType>(column, *nested,
+            [] { return false; },
+            [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr, settings); });
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
     if (istr.available() >= 4)
     {
-        auto check_for_null = [](ReadBuffer & buf)
+        auto check_for_null = [&istr]()
         {
-            auto * pos = buf.position();
-            if (checkStringCaseInsensitive("NULL", buf))
+            auto * pos = istr.position();
+            if (checkStringCaseInsensitive("NULL", istr))
                 return true;
-            buf.position() = pos;
+            istr.position() = pos;
             return false;
         };
-        return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+        auto deserialize_nested = [&nested, &settings, &istr] (IColumn & nested_column)
+        {
+            nested->deserializeTextQuoted(nested_column, istr, settings);
+        };
+        return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
     }
 
     /// We don't have enough data in buffer to check if it's a NULL
@@ -506,10 +429,9 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     /// to differentiate for example NULL and NaN for float)
     /// Use PeekableReadBuffer to make a checkpoint before checking
     /// null and rollback if the check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
-    auto check_for_null = [](ReadBuffer & buf_)
+    PeekableReadBuffer buf(istr, true);
+    auto check_for_null = [&buf]()
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
         if (checkStringCaseInsensitive("NULL", buf))
@@ -519,74 +441,39 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
         return false;
     };
 
-    auto deserialize_nested_with_check = [&deserialize_nested] (IColumn & nested_column, ReadBuffer & buf_)
+    auto deserialize_nested = [&nested, &settings, &buf] (IColumn & nested_column)
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
-
-        if constexpr (throw_exception)
-            deserialize_nested(nested_column, buf);
-        else if (!deserialize_nested(nested_column, buf))
-            return false;
-
+        nested->deserializeTextQuoted(nested_column, buf, settings);
         /// Check that we don't have any unread data in PeekableReadBuffer own memory.
         if (likely(!buf.hasUnreadData()))
-            return ReturnType(true);
+            return;
 
         /// We have some unread data in PeekableReadBuffer own memory.
         /// It can happen only if there is an unquoted string instead of a number.
         /// We also should delete incorrectly deserialized value from nested column.
         nested_column.popBack(1);
-
-        if constexpr (!throw_exception)
-            return ReturnType(false);
-
-        throw DB::Exception(
+        throw DB::ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while parsing Nullable: got an unquoted string {} instead of a number",
             String(buf.position(), std::min(10ul, buf.available())));
     };
 
-    return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested_with_check, is_null);
+    return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
 }
 
 
-void SerializationNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    deserializeTextQuotedImpl<void>(col.getNestedColumn(), istr, settings, nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
-}
-
-bool SerializationNullable::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    return deserializeTextQuotedImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeTextQuotedImpl<void>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    return deserializeTextQuotedImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    deserializeWholeTextImpl<void>(column, istr, settings, nested);
 }
 
 template <typename ReturnType>
-ReturnType deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
+ReturnType SerializationNullable::deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                  const SerializationPtr & nested)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    PeekableReadBuffer peekable_buf(istr, true);
-    auto check_for_null = [](ReadBuffer & buf_)
+    PeekableReadBuffer buf(istr, true);
+    auto check_for_null = [&buf]()
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
 
@@ -601,46 +488,15 @@ ReturnType deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const F
         return false;
     };
 
-    auto deserialize_nested = [&nested, &settings] (IColumn & nested_column, ReadBuffer & buf_)
+    auto deserialize_nested = [&nested, &settings, &buf] (IColumn & nested_column)
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
-        if constexpr (!throw_exception)
-            return nested->tryDeserializeWholeText(nested_column, buf, settings);
-
         nested->deserializeWholeText(nested_column, buf, settings);
         assert(!buf.hasUnreadData());
     };
 
-    return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested, is_null);
+    return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
 }
 
-void SerializationNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    deserializeWholeTextImpl<void>(col.getNestedColumn(), istr, settings, nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
-}
-
-bool SerializationNullable::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    return deserializeWholeTextImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeWholeTextImpl<void>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedWholeText(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    return deserializeWholeTextImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
-}
 
 void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -652,56 +508,48 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
         nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeNullCSV(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
+void SerializationNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    writeString(settings.csv.null_representation, ostr);
-}
-
-bool SerializationNullable::tryDeserializeNullCSV(DB::ReadBuffer & istr, const DB::FormatSettings & settings)
-{
-    return checkString(settings.csv.null_representation, istr);
+    deserializeTextCSVImpl<void>(column, istr, settings, nested);
 }
 
 template<typename ReturnType>
-ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, bool & is_null)
+ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                         const SerializationPtr & nested_serialization)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    auto deserialize_nested = [&nested_serialization, &settings] (IColumn & nested_column, ReadBuffer & buf)
-    {
-        if constexpr (!throw_exception)
-            return nested_serialization->tryDeserializeTextCSV(nested_column, buf, settings);
-        nested_serialization->deserializeTextCSV(nested_column, buf, settings);
-    };
-
     const String & null_representation = settings.csv.null_representation;
     if (istr.eof() || (!null_representation.empty() && *istr.position() != null_representation[0]))
     {
         /// This is not null, surely.
-        return deserializeImpl<ReturnType>(column, istr, [](ReadBuffer &){ return false; }, deserialize_nested, is_null);
+        return safeDeserialize<ReturnType>(column, *nested_serialization,
+            [] { return false; },
+            [&nested_serialization, &istr, &settings] (IColumn & nested_column) { nested_serialization->deserializeTextCSV(nested_column, istr, settings); });
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
     if (settings.csv.custom_delimiter.empty() && istr.available() > null_representation.size())
     {
-        auto check_for_null = [&null_representation, &settings](ReadBuffer & buf)
+        auto check_for_null = [&istr, &null_representation, &settings]()
         {
-            auto * pos = buf.position();
-            if (checkString(null_representation, buf) && (*buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n'))
+            auto * pos = istr.position();
+            if (checkString(null_representation, istr) && (*istr.position() == settings.csv.delimiter || *istr.position() == '\r' || *istr.position() == '\n'))
                 return true;
-            buf.position() = pos;
+            istr.position() = pos;
             return false;
         };
-        return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+        auto deserialize_nested = [&nested_serialization, &settings, &istr] (IColumn & nested_column)
+        {
+            nested_serialization->deserializeTextCSV(nested_column, istr, settings);
+        };
+        return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);
     }
 
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if the check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
-    auto check_for_null = [&null_representation, &settings](ReadBuffer & buf_)
+    PeekableReadBuffer buf(istr, true);
+    auto check_for_null = [&buf, &null_representation, &settings]()
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
         if (checkString(null_representation, buf))
@@ -724,18 +572,13 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
         return false;
     };
 
-    auto deserialize_nested_with_check = [&deserialize_nested, &nested_serialization, &settings, &null_representation, &istr] (IColumn & nested_column, ReadBuffer & buf_)
+    auto deserialize_nested = [&nested_serialization, &settings, &buf, &null_representation, &istr] (IColumn & nested_column)
     {
-        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         auto * pos = buf.position();
-        if constexpr (throw_exception)
-            deserialize_nested(nested_column, buf);
-        else if (!deserialize_nested(nested_column, buf))
-            return ReturnType(false);
-
+        nested_serialization->deserializeTextCSV(nested_column, buf, settings);
         /// Check that we don't have any unread data in PeekableReadBuffer own memory.
         if (likely(!buf.hasUnreadData()))
-            return ReturnType(true);
+            return;
 
         /// We have some unread data in PeekableReadBuffer own memory.
         /// It can happen only if there is an unquoted string instead of a number
@@ -744,17 +587,14 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
         /// We also should delete incorrectly deserialized value from nested column.
         nested_column.popBack(1);
 
-        if constexpr (!throw_exception)
-            return ReturnType(false);
-
         if (null_representation.find(settings.csv.delimiter) != std::string::npos || null_representation.find('\r') != std::string::npos
             || null_representation.find('\n') != std::string::npos)
-            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
+            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
         nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
+        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
                                    std::string(pos, buf.buffer().end()),
@@ -762,35 +602,7 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
                                    istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
     };
 
-    return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested_with_check, is_null);
-}
-
-void SerializationNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    deserializeTextCSVImpl<void>(col.getNestedColumn(), istr, settings, nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
-}
-
-bool SerializationNullable::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    return deserializeTextCSVImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeTextCSVImpl<void>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    return deserializeTextCSVImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);
 }
 
 void SerializationNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -804,24 +616,14 @@ void SerializationNullable::serializeText(const IColumn & column, size_t row_num
     /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
 
     if (col.isNullAt(row_num))
-        serializeNullText(ostr, settings);
+    {
+        if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
+            writeCString("ᴺᵁᴸᴸ", ostr);
+        else
+            writeCString("NULL", ostr);
+    }
     else
         nested->serializeText(col.getNestedColumn(), row_num, ostr, settings);
-}
-
-void SerializationNullable::serializeNullText(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
-{
-    if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
-        writeCString("ᴺᵁᴸᴸ", ostr);
-    else
-        writeCString("NULL", ostr);
-}
-
-bool SerializationNullable::tryDeserializeNullText(DB::ReadBuffer & istr)
-{
-    if (checkCharCaseInsensitive('N', istr))
-        return checkStringCaseInsensitive("ULL", istr);
-    return checkStringCaseInsensitive("ᴺᵁᴸᴸ", istr);
 }
 
 void SerializationNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -829,61 +631,23 @@ void SerializationNullable::serializeTextJSON(const IColumn & column, size_t row
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        serializeNullJSON(ostr);
+        writeCString("null", ostr);
     else
         nested->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeNullJSON(DB::WriteBuffer & ostr)
+void SerializationNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    writeCString("null", ostr);
-}
-
-bool SerializationNullable::tryDeserializeNullJSON(DB::ReadBuffer & istr)
-{
-    return checkString("null", istr);
+    deserializeTextJSONImpl<void>(column, istr, settings, nested);
 }
 
 template<typename ReturnType>
-ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
+ReturnType SerializationNullable::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                    const SerializationPtr & nested)
 {
-    auto check_for_null = [](ReadBuffer & buf){ return checkStringByFirstCharacterAndAssertTheRest("null", buf); };
-    auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf)
-    {
-        if constexpr (std::is_same_v<ReturnType, bool>)
-            return nested->tryDeserializeTextJSON(nested_column, buf, settings);
-        nested->deserializeTextJSON(nested_column, buf, settings);
-    };
-
-    return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
-}
-
-void SerializationNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    deserializeTextJSONImpl<void>(col.getNestedColumn(), istr, settings, nested, is_null);
-    safeAppendToNullMap<void>(col, is_null);
-}
-
-bool SerializationNullable::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-    bool is_null;
-    return deserializeTextJSONImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeTextJSONImpl<void>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    return deserializeTextJSONImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+    return safeDeserialize<ReturnType>(column, *nested,
+        [&istr] { return checkStringByFirstCharacterAndAssertTheRest("null", istr); },
+        [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr, settings); });
 }
 
 void SerializationNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -896,9 +660,11 @@ void SerializationNullable::serializeTextXML(const IColumn & column, size_t row_
         nested->serializeTextXML(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeNullXML(DB::WriteBuffer & ostr)
-{
-    writeCString("\\N", ostr);
-}
+template bool SerializationNullable::deserializeWholeTextImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
+template bool SerializationNullable::deserializeTextEscapedImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
+template bool SerializationNullable::deserializeTextQuotedImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
+template bool SerializationNullable::deserializeTextCSVImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
+template bool SerializationNullable::deserializeTextJSONImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
+template bool SerializationNullable::deserializeTextRawImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
 
 }

@@ -119,9 +119,9 @@ public:
         return result;
     }
 
-    size_t getAllocatedSize() const { return allocated_size; }
+    inline size_t getAllocatedSize() const { return allocated_size; }
 
-    size_t getPageSize() const { return page_size; }
+    inline size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -153,7 +153,7 @@ public:
             {
                 int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
                 if (res != 0)
-                    throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
+                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
                 invalidate_cache = false;
@@ -161,7 +161,7 @@ public:
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
             if (res != 0)
-                throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
+                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
 
             if (invalidate_cache)
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
@@ -177,10 +177,10 @@ private:
         {
         }
 
-        void * base() const { return pages_base; }
-        size_t pagesSize() const { return pages_size; }
-        size_t pageSize() const { return page_size; }
-        size_t blockSize() const { return pages_size * page_size; }
+        inline void * base() const { return pages_base; }
+        inline size_t pagesSize() const { return pages_size; }
+        inline size_t pageSize() const { return page_size; }
+        inline size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -232,12 +232,10 @@ private:
         int res = posix_memalign(&buf, page_size, allocate_size);
 
         if (res != 0)
-            ErrnoException::throwWithErrno(
+            throwFromErrno(
+                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                res,
-                "Cannot allocate memory (posix_memalign) alignment {} size {}",
-                page_size,
-                ReadableSize(allocate_size));
+                res);
 
         page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
         page_blocks_allocated_size.emplace_back(0);
@@ -245,31 +243,6 @@ private:
         allocated_size += allocate_size;
     }
 };
-
-#ifdef PRINT_ASSEMBLY
-
-class AssemblyPrinter
-{
-public:
-    explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
-    : target_machine(target_machine_)
-    {
-    }
-
-    void print(llvm::Module & module)
-    {
-        llvm::legacy::PassManager pass_manager;
-        target_machine.Options.MCOptions.AsmVerbose = true;
-        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
-            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
-
-        pass_manager.run(module);
-    }
-private:
-    llvm::TargetMachine & target_machine;
-};
-
-#endif
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
@@ -298,7 +271,7 @@ public:
         return true;
     }
 
-    size_t allocatedSize() const
+    inline size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();
@@ -401,11 +374,6 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
     runOptimizationPassesOnModule(*module);
-
-#ifdef PRINT_ASSEMBLY
-    AssemblyPrinter assembly_printer(*machine);
-    assembly_printer.print(*module);
-#endif
 
     auto buffer = compiler->compile(*module);
 

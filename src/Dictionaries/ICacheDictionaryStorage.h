@@ -26,15 +26,15 @@ struct KeyState
         : state(state_)
     {}
 
-    bool isFound() const { return state == State::found; }
-    bool isExpired() const { return state == State::expired; }
-    bool isNotFound() const { return state == State::not_found; }
-    bool isDefault() const { return is_default; }
-    void setDefault() { is_default = true; }
-    void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
+    inline bool isFound() const { return state == State::found; }
+    inline bool isExpired() const { return state == State::expired; }
+    inline bool isNotFound() const { return state == State::not_found; }
+    inline bool isDefault() const { return is_default; }
+    inline void setDefault() { is_default = true; }
+    inline void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
     /// Valid only if keyState is found or expired
-    size_t getFetchedColumnIndex() const { return fetched_column_index; }
-    void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
+    inline size_t getFetchedColumnIndex() const { return fetched_column_index; }
+    inline void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
 private:
     State state = not_found;
     size_t fetched_column_index = 0;
@@ -81,8 +81,7 @@ public:
     /// Fetch columns for keys, this method is not write thread safe
     virtual SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * default_mask) = 0;
+        const DictionaryStorageFetchRequest & fetch_request) = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) = 0;
@@ -99,8 +98,7 @@ public:
     /// Fetch columns for keys, this method is not write thread safe
     virtual ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & column_fetch_requests,
-        IColumn::Filter * default_mask) = 0;
+        const DictionaryStorageFetchRequest & column_fetch_requests) = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) = 0;

@@ -1,8 +1,5 @@
 #pragma once
-
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Formats/MarkInCompressedFile.h>
-
 
 namespace DB
 {
@@ -21,17 +18,10 @@ class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterWide(
-        const String & data_part_name_,
-        const String & logger_name_,
-        const SerializationByName & serializations_,
-        MutableDataPartStoragePtr data_part_storage_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const MergeTreeSettingsPtr & storage_settings_,
+        const MergeTreeMutableDataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -39,14 +29,14 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
 
     void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
     void finishDataSerialization(bool sync);
 
     /// Write data of one column.
@@ -69,8 +59,7 @@ private:
 
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
-        const NameAndTypePair & name_and_type,
-        const ColumnPtr & column_sample,
+        const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns);
 
     /// Write mark to disk using stream and rows count
@@ -80,20 +69,17 @@ private:
 
     /// Write mark for column taking offsets from column stream
     void writeSingleMark(
-        const NameAndTypePair & name_and_type,
+        const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows);
 
     void writeFinalMark(
-        const NameAndTypePair & name_and_type,
+        const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns);
 
     void addStreams(
-        const NameAndTypePair & name_and_type,
-        const ColumnPtr & column,
+        const NameAndTypePair & column,
         const ASTPtr & effective_codec_desc);
-
-    void initDynamicStreamsIfNeeded(const Block & block);
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -115,7 +101,6 @@ private:
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
-    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -125,12 +110,6 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
-    /// Some long column names may be replaced to hashes.
-    /// Below are mapping from original stream name to actual
-    /// stream name (probably hash of the stream) and vice versa.
-    std::unordered_map<String, String> full_name_to_stream_name;
-    std::unordered_map<String, String> stream_name_to_full_name;
-
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
@@ -139,10 +118,6 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
-
-    Block block_sample;
-
-    bool is_dynamic_streams_initialized = false;
 };
 
 }

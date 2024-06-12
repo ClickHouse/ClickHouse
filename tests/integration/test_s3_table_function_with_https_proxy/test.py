@@ -41,7 +41,6 @@ def cluster():
             env_variables={
                 "https_proxy": "https://proxy1",
             },
-            instance_env_variables=True,
         )
 
         logging.info("Starting cluster...")
@@ -61,7 +60,7 @@ def test_s3_with_https_proxy_list(cluster):
 
 
 def test_s3_with_https_remote_proxy(cluster):
-    proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "https", "remote_proxy_node")
+    proxy_util.simple_test(cluster, ["proxy1"], "https", "remote_proxy_node")
 
 
 def test_s3_with_https_env_proxy(cluster):

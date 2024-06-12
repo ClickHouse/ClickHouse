@@ -215,7 +215,7 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
                         [node](const Node & constraint_node)
                         {
                             if constexpr (with_ast)
-                                return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
+                                return constraint_node->getTreeHash() == node->getTreeHash()
                                     && constraint_node->getColumnName() == node->getColumnName();
                             else
                                 return constraint_node->isEqual(*node);
@@ -309,6 +309,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::pathToCompareResult(Path pat
         case Path::GREATER: return inverse ? ComparisonGraphCompareResult::LESS : ComparisonGraphCompareResult::GREATER;
         case Path::GREATER_OR_EQUAL: return inverse ? ComparisonGraphCompareResult::LESS_OR_EQUAL : ComparisonGraphCompareResult::GREATER_OR_EQUAL;
     }
+    UNREACHABLE();
 }
 
 template <ComparisonGraphNodeType Node>
@@ -473,7 +474,7 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
         [node](const Node & constraint_node)
         {
             if constexpr (with_ast)
-                return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
+                return constraint_node->getTreeHash() == node->getTreeHash()
                     && constraint_node->getColumnName() == node->getColumnName();
             else
                 return constraint_node->getTreeHash() == node->getTreeHash();

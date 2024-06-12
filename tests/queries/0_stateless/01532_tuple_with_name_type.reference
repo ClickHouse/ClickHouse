@@ -1,4 +1,4 @@
-a	Tuple(\n    key String,\n    value String)					
-a	Tuple(Tuple(\n    key String,\n    value String))					
-a	Array(Tuple(\n    key String,\n    value String))					
-a	Tuple(UInt8, Tuple(\n    key String,\n    value String))					
+a	Tuple(key String, value String)					
+a	Tuple(Tuple(key String, value String))					
+a	Array(Tuple(key String, value String))					
+a	Tuple(UInt8, Tuple(key String, value String))					

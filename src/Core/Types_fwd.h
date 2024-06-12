@@ -28,11 +28,17 @@ namespace DB
 using UUID = StrongTypedef<UInt128, struct UUIDTag>;
 
 struct IPv4;
+
 struct IPv6;
 
 struct Null;
 
-enum class TypeIndex : uint8_t;
+using UInt128 = ::UInt128;
+using UInt256 = ::UInt256;
+using Int128 = ::Int128;
+using Int256 = ::Int256;
+
+enum class TypeIndex;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;

@@ -39,14 +39,14 @@ namespace
             else
                 ss << value;
 
-            LOG_DEBUG(getLogger("redundantDistinct"), "{}{}{}", key, separator, ss.str());
+            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}{}{}", key, separator, ss.str());
         }
     }
 
     void logActionsDAG(const String & prefix, const ActionsDAGPtr & actions)
     {
         if constexpr (debug_logging_enabled)
-            LOG_DEBUG(getLogger("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
+            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
     }
 
     using DistinctColumns = std::set<std::string_view>;
@@ -173,12 +173,8 @@ namespace
 
             if (typeid_cast<const WindowStep *>(current_step))
             {
-                /// it can be empty in case of 2 WindowSteps following one another
-                if (!dag_stack.empty())
-                {
-                    actions_chain.push_back(std::move(dag_stack));
-                    dag_stack.clear();
-                }
+                actions_chain.push_back(std::move(dag_stack));
+                dag_stack.clear();
             }
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)

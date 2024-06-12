@@ -3,10 +3,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
 #include <Common/ThreadPool.h>
-#include <Common/callOnce.h>
-#include <Disks/IO/IOUringReader.h>
-#include <Storages/StorageS3Settings.h>
-#include <Disks/IO/getIOUringReader.h>
 
 #include <Core/ServerSettings.h>
 
@@ -18,7 +14,6 @@
 namespace ProfileEvents
 {
     extern const Event ContextLock;
-    extern const Event ContextLockWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -28,7 +23,6 @@ namespace CurrentMetrics
     extern const Metric BackgroundSchedulePoolSize;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
-    extern const Metric IOWriterThreadsScheduled;
 }
 
 namespace DB
@@ -37,7 +31,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 struct ContextSharedPart : boost::noncopyable
@@ -46,98 +39,24 @@ struct ContextSharedPart : boost::noncopyable
         : macros(std::make_unique<Macros>())
     {}
 
-    ~ContextSharedPart()
-    {
-        if (keeper_dispatcher)
-        {
-            try
-            {
-                keeper_dispatcher->shutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
+    /// For access of most of shared objects. Recursive mutex.
+    mutable std::recursive_mutex mutex;
 
-        /// Wait for thread pool for background reads and writes,
-        /// since it may use per-user MemoryTracker which will be destroyed here.
-        if (asynchronous_remote_fs_reader)
-        {
-            try
-            {
-                asynchronous_remote_fs_reader->wait();
-                asynchronous_remote_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (asynchronous_local_fs_reader)
-        {
-            try
-            {
-                asynchronous_local_fs_reader->wait();
-                asynchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (synchronous_local_fs_reader)
-        {
-            try
-            {
-                synchronous_local_fs_reader->wait();
-                synchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (threadpool_writer)
-        {
-            try
-            {
-                threadpool_writer->wait();
-                threadpool_writer.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-    }
-
-    /// For access of most of shared objects.
-    mutable SharedMutex mutex;
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 
     ServerSettings server_settings;
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     ConfigurationPtr config;                                /// Global configuration settings.
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    OnceFlag schedule_pool_initialized;
     mutable std::unique_ptr<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
-
-    mutable OnceFlag readers_initialized;
+                                         ///
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
 
-#if USE_LIBURING
-    mutable OnceFlag io_uring_reader_initialized;
-    mutable std::unique_ptr<IOUringReader> io_uring_reader;
-#endif
-
-    mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
     mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
@@ -146,18 +65,12 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
 
-    std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 };
 
-ContextData::ContextData() = default;
-ContextData::ContextData(const ContextData &) = default;
-
 Context::Context() = default;
-Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 Context::~Context() = default;
+Context::Context(const Context &) = default;
+Context & Context::operator=(const Context &) = default;
 
 SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
 SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) noexcept = default;
@@ -174,10 +87,10 @@ void Context::makeGlobalContext()
     global_context = shared_from_this();
 }
 
-ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
+ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 {
     auto res = std::shared_ptr<Context>(new Context);
-    res->shared = shared_part;
+    res->shared = shared;
     return res;
 }
 
@@ -192,7 +105,6 @@ SharedContextHolder Context::createShared()
     return SharedContextHolder(std::make_unique<ContextSharedPart>());
 }
 
-
 ContextMutablePtr Context::getGlobalContext() const
 {
     auto ptr = global_context.lock();
@@ -200,55 +112,22 @@ ContextMutablePtr Context::getGlobalContext() const
     return ptr;
 }
 
-std::unique_lock<SharedMutex> Context::getGlobalLock() const
+std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
     ProfileEvents::increment(ProfileEvents::ContextLock);
     CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    auto lock = std::unique_lock(shared->mutex);
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-    return lock;
-}
-
-std::shared_lock<SharedMutex> Context::getGlobalSharedLock() const
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    auto lock = std::shared_lock(shared->mutex);
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-    return lock;
-}
-
-std::unique_lock<SharedMutex> Context::getLocalLock() const
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    auto lock = std::unique_lock(mutex);
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-    return lock;
-}
-
-std::shared_lock<SharedMutex> Context::getLocalSharedLock() const
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    auto lock = std::shared_lock(mutex);
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-    return lock;
+    return std::unique_lock(shared->mutex);
 }
 
 String Context::getPath() const
 {
-    auto lock = getGlobalSharedLock();
+    auto lock = getLock();
     return shared->path;
 }
 
 void Context::setPath(const String & path)
 {
-    auto lock = getGlobalLock();
+    auto lock = getLock();
     shared->path = path;
 }
 
@@ -264,13 +143,15 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
-    callOnce(shared->schedule_pool_initialized, [&] {
+    auto lock = getLock();
+    if (!shared->schedule_pool)
+    {
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
             shared->server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
-    });
+    }
 
     return *shared->schedule_pool;
 }
@@ -287,34 +168,32 @@ const RemoteHostFilter & Context::getRemoteHostFilter() const
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    callOnce(shared->readers_initialized, [&] {
-        const auto & config = getConfigRef();
-        shared->asynchronous_remote_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, config);
-        shared->asynchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, config);
-        shared->synchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, config);
-    });
+    auto lock = getLock();
 
     switch (type)
     {
         case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
+        {
+            if (!shared->asynchronous_remote_fs_reader)
+                shared->asynchronous_remote_fs_reader = createThreadPoolReader(type, getConfigRef());
             return *shared->asynchronous_remote_fs_reader;
+        }
         case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
+        {
+            if (!shared->asynchronous_local_fs_reader)
+                shared->asynchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
+
             return *shared->asynchronous_local_fs_reader;
+        }
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
+        {
+            if (!shared->synchronous_local_fs_reader)
+                shared->synchronous_local_fs_reader = createThreadPoolReader(type, getConfigRef());
+
             return *shared->synchronous_local_fs_reader;
+        }
     }
 }
-
-#if USE_LIBURING
-IOUringReader & Context::getIOUringReader() const
-{
-    callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = createIOUringReader();
-    });
-
-    return *shared->io_uring_reader;
-}
-#endif
 
 std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 {
@@ -326,26 +205,21 @@ std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetche
     return nullptr;
 }
 
-std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
-{
-    return nullptr;
-}
-
 void Context::setConfig(const ConfigurationPtr & config)
 {
-    auto lock = getGlobalLock();
+    auto lock = getLock();
     shared->config = config;
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 {
-    auto lock = getGlobalSharedLock();
+    auto lock = getLock();
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
 std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 {
-    auto lock = getLocalLock();
+    auto lock = getLock();
     if (!async_read_counters)
         async_read_counters = std::make_shared<AsyncReadCounters>();
     return async_read_counters;
@@ -353,14 +227,18 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 
 ThreadPool & Context::getThreadPoolWriter() const
 {
-    callOnce(shared->threadpool_writer_initialized, [&] {
-        const auto & config = getConfigRef();
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+
+    if (!shared->threadpool_writer)
+    {
         auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
-    });
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
+    }
 
     return *shared->threadpool_writer;
 }
@@ -388,16 +266,6 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 ReadSettings Context::getReadSettings() const
 {
     return ReadSettings{};
-}
-
-ResourceManagerPtr Context::getResourceManager() const
-{
-    return nullptr;
-}
-
-ClassifierPtr Context::getWorkloadClassifier() const
-{
-    return nullptr;
 }
 
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
@@ -447,40 +315,7 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
     if (!shared->keeper_dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(config_, getMacros());
-}
-
-std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
-{
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
-}
-
-const StorageS3Settings & Context::getStorageS3Settings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->storage_s3_settings)
-    {
-        const auto & config = shared->config ? *shared->config : Poco::Util::Application::instance().config();
-        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
-    }
-
-    return *shared->storage_s3_settings;
-}
-
-const ServerSettings & Context::getServerSettings() const
-{
-    return shared->server_settings;
-}
-
-bool Context::hasTraceCollector() const
-{
-    return false;
-}
-
-bool Context::isBackgroundOperationContext() const
-{
-    return false;
+    shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
 }
 
 }

@@ -125,7 +125,7 @@ private:
         static auto getHash(const Node & node)
         {
             if constexpr (with_ast)
-                return node->getTreeHash(/*ignore_aliases=*/ true);
+                return node->getTreeHash();
             else
                 return QueryTreeNodePtrWithHash{node};
         }
@@ -154,7 +154,7 @@ private:
         const Graph & reversed_graph, size_t v,
         OptionalIndices & components, size_t component);
 
-    enum class Path : uint8_t
+    enum class Path
     {
         GREATER,
         GREATER_OR_EQUAL,

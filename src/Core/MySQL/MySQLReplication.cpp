@@ -513,49 +513,49 @@ namespace MySQLReplication
                     {
                         UInt8 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt8{val}});
                         break;
                     }
                     case MYSQL_TYPE_SHORT:
                     {
                         UInt16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt16{val}});
                         break;
                     }
                     case MYSQL_TYPE_INT24:
                     {
                         Int32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 3);
-                        row.push_back(Field{val});
+                        row.push_back(Field{Int32{val}});
                         break;
                     }
                     case MYSQL_TYPE_LONG:
                     {
                         UInt32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt32{val}});
                         break;
                     }
                     case MYSQL_TYPE_LONGLONG:
                     {
                         UInt64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt64{val}});
                         break;
                     }
                     case MYSQL_TYPE_FLOAT:
                     {
                         Float32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{val});
+                        row.push_back(Field{Float32{val}});
                         break;
                     }
                     case MYSQL_TYPE_DOUBLE:
                     {
                         Float64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                        row.push_back(Field{val});
+                        row.push_back(Field{Float64{val}});
                         break;
                     }
                     case MYSQL_TYPE_TIMESTAMP:
@@ -580,7 +580,7 @@ namespace MySQLReplication
                     case MYSQL_TYPE_YEAR: {
                         Int16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{static_cast<UInt16>(val + 1900)});
+                        row.push_back(Field{UInt16{static_cast<UInt16>(val + 1900)}});
                         break;
                     }
                     case MYSQL_TYPE_TIME2:
@@ -665,9 +665,8 @@ namespace MySQLReplication
 
                         Int64 time_micro = 0;
                         time_micro = (hh * 3600  + mm * 60 + ss) * 1000000 + std::abs(frac);
-                        if (negative)
-                            time_micro = - time_micro;
-                        row.push_back(Field{time_micro});
+                        if (negative) time_micro = - time_micro;
+                        row.push_back(Field{Int64{time_micro}});
                         break;
                     }
                     case MYSQL_TYPE_DATETIME2:
@@ -813,13 +812,13 @@ namespace MySQLReplication
                         {
                             UInt8 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                            row.push_back(Field{val});
+                            row.push_back(Field{UInt8{val}});
                         }
                         else
                         {
                             UInt16 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                            row.push_back(Field{val});
+                            row.push_back(Field{UInt16{val}});
                         }
                         break;
                     }
@@ -968,59 +967,6 @@ namespace MySQLReplication
         out << "[DryRun Event]" << '\n';
     }
 
-    void UnparsedRowsEvent::dump(WriteBuffer & out) const
-    {
-        std::lock_guard lock(mutex);
-        header.dump(out);
-        out << "[UnparsedRowsEvent Event]" << '\n';
-        out << "Unparsed Data Size: " << unparsed_data.size() << '\n';
-    }
-
-    void UnparsedRowsEvent::parseImpl(ReadBuffer & payload_)
-    {
-        char c = 0;
-        if (payload_.position() < payload_.buffer().end())
-            unparsed_data.reserve(payload_.buffer().end() - payload_.position());
-        /// Prevent reading after the end
-        /// payload.available() might have incorrect value
-        while (payload_.position() <= payload_.buffer().end() && payload_.read(c))
-            unparsed_data.push_back(c);
-        if (!payload_.eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Available {} bytes but not eof", payload_.available());
-    }
-
-    std::shared_ptr<RowsEvent> UnparsedRowsEvent::parse()
-    {
-        std::lock_guard lock(mutex);
-        if (!unparsed_data.empty())
-        {
-            RowsEventHeader rows_header(header.type);
-            rows_header.table_id = table_id;
-            rows_header.flags = flags;
-            switch (header.type)
-            {
-                case WRITE_ROWS_EVENT_V1:
-                case WRITE_ROWS_EVENT_V2:
-                    parsed_event = std::make_shared<WriteRowsEvent>(table_map, EventHeader(header), rows_header);
-                    break;
-                case DELETE_ROWS_EVENT_V1:
-                case DELETE_ROWS_EVENT_V2:
-                    parsed_event = std::make_shared<DeleteRowsEvent>(table_map, EventHeader(header), rows_header);
-                    break;
-                case UPDATE_ROWS_EVENT_V1:
-                case UPDATE_ROWS_EVENT_V2:
-                    parsed_event = std::make_shared<UpdateRowsEvent>(table_map, EventHeader(header), rows_header);
-                    break;
-                default:
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown event type: {}", magic_enum::enum_name(header.type));
-            }
-            ReadBufferFromMemory payload(unparsed_data.data(), unparsed_data.size());
-            parsed_event->parseEvent(payload);
-            unparsed_data.clear();
-        }
-        return parsed_event;
-    }
-
     /// Update binlog name/position/gtid based on the event type.
     void Position::update(BinlogEventPtr event)
     {
@@ -1052,8 +998,7 @@ namespace MySQLReplication
             case ROTATE_EVENT: {
                 auto rotate = std::static_pointer_cast<RotateEvent>(event);
                 binlog_name = rotate->next_binlog;
-                /// If binlog name has changed, need to use position from next binlog
-                binlog_pos = rotate->position;
+                binlog_pos = event->header.log_pos;
                 break;
             }
             case GTID_EVENT: {
@@ -1067,18 +1012,13 @@ namespace MySQLReplication
             default:
                 throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "Position update with unsupported event");
         }
-        if (event->header.timestamp > 0)
-        {
-            timestamp = event->header.timestamp;
-        }
     }
 
-    void Position::update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_, UInt32 binlog_time_)
+    void Position::update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_)
     {
         binlog_pos = binlog_pos_;
         binlog_name = binlog_name_;
         gtid_sets.parse(gtid_sets_);
-        timestamp = binlog_time_;
     }
 
     void Position::dump(WriteBuffer & out) const
@@ -1095,7 +1035,7 @@ namespace MySQLReplication
             throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
         UInt16 header = static_cast<unsigned char>(*payload.position());
-        switch (header) // NOLINT(bugprone-switch-missing-default-case)
+        switch (header)
         {
             case PACKET_EOF:
                 throw ReplicationError(ErrorCodes::CANNOT_READ_ALL_DATA, "Master maybe lost");

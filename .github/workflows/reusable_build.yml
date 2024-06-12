@@ -22,26 +22,13 @@ name: Build ClickHouse
         description: the label of runner to use
         default: builder
         type: string
-      data:
-        description: json ci data
-        type: string
-        required: true
-      force:
-        description: disallow job skipping
-        type: boolean
-        default: false
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
-    secrets:
-      secret_envs:
-        description: if given, it's passed to the environments
-        required: false
 
 jobs:
   Build:
     name: Build-${{inputs.build_name}}
-    if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
@@ -50,7 +37,6 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
-          ref: ${{ fromJson(inputs.data).git_ref }}
           submodules: true
           fetch-depth: ${{inputs.checkout_depth}}
           filter: tree:0
@@ -58,16 +44,11 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
-          ${{secrets.secret_envs}}
-          DOCKER_TAG<<DOCKER_JSON
-          ${{ toJson(fromJson(inputs.data).docker_data.images) }}
-          DOCKER_JSON
           EOF
           python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
       - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
         # This step is done in GITHUB_WORKSPACE,
         # because it's broken in REPO_COPY for some reason
-        # See also update-submodules.sh
         if: ${{ env.BUILD_SPARSE_CHECKOUT == 'true' }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
@@ -79,25 +60,20 @@ jobs:
         uses: ./.github/actions/common_setup
         with:
           job_type: build_check
-      - name: Pre
+      - name: Download changed images
+        uses: actions/download-artifact@v3
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
+      - name: Build
         run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.build_name}}'
-      - name: Run
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
-            --infile ${{ toJson(inputs.data) }} \
-            --job-name "$BUILD_NAME" \
-            --run \
-            ${{ inputs.force && '--force' || '' }}
-      - name: Post
-        # it still be build report to upload for failed build job
-        if: ${{ !cancelled() }}
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.build_name}}'
-      - name: Mark as done
-        if: ${{ !cancelled() }}
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.build_name}}'
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Clean
         if: always()
         uses: ./.github/actions/clean

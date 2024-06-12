@@ -98,15 +98,9 @@ public:
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return required_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
-    ///
-    /// @param allow_duplicates_in_input - actions are allowed to have
-    /// duplicated input (that will refer into the block). This is needed for
-    /// preliminary query filtering (filterBlockWithDAG()), because they just
-    /// pass available virtual columns, which cannot be moved in case they are
-    /// used multiple times.
-    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, size_t & num_rows, bool dry_run = false) const;
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
-    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
     void assertDeterministic() const;

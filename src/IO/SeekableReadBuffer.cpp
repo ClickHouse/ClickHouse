@@ -1,6 +1,5 @@
 #include <IO/SeekableReadBuffer.h>
 
-#include <istream>
 
 namespace DB
 {
@@ -65,7 +64,7 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
     return std::make_unique<SeekableReadBufferWrapper<SeekableReadBufferPtr>>(*ptr, SeekableReadBufferPtr{ptr});
 }
 
-void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled)
+size_t copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, bool * out_cancelled)
 {
     const size_t chunk = DBMS_DEFAULT_BUFFER_SIZE;
     if (out_cancelled)
@@ -83,7 +82,6 @@ void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t 
         bool cancelled = false;
         if (gcount && progress_callback)
             cancelled = progress_callback(copied);
-        *out_bytes_copied = copied;
 
         if (gcount != to_copy)
         {
@@ -105,7 +103,7 @@ void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t 
         }
     }
 
-    *out_bytes_copied = copied;
+    return copied;
 }
 
 }

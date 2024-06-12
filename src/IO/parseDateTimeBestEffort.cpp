@@ -1,5 +1,5 @@
 #include <Common/DateLUTImpl.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -95,7 +95,7 @@ ReturnType parseDateTimeBestEffortImpl(
                                              FmtArgs && ...fmt_args [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+            throw ParsingException(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
         else
             return false;
     };
@@ -147,9 +147,6 @@ ReturnType parseDateTimeBestEffortImpl(
             {
                 has_comma_between_date_and_time = true;
                 ++in.position();
-
-                if (in.eof())
-                    break;
             }
         }
 
@@ -437,7 +434,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
                 {
-                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
+                    using FractionalType = typename std::decay<decltype(fractional->value)>::type;
                     // Reading more decimal digits than fits into FractionalType would case an
                     // overflow, so it is better to skip all digits from the right side that do not
                     // fit into result type. To provide less precise value rather than bogus one.
@@ -585,18 +582,11 @@ ReturnType parseDateTimeBestEffortImpl(
         day_of_month = 1;
     if (!month)
         month = 1;
-
     if (!year)
     {
-        /// If year is not specified, it will be the current year if the date is unknown or not greater than today,
-        /// otherwise it will be the previous year.
-        /// This convoluted logic is needed to parse the syslog format, which looks as follows: "Mar  3 01:33:48".
-        /// If you have questions, ask Victor Krasnov, https://www.linkedin.com/in/vickr/
-
         time_t now = time(nullptr);
-        auto today = local_time_zone.toDayNum(now);
-        UInt16 curr_year = local_time_zone.toYear(today);
-        year = local_time_zone.makeDayNum(curr_year, month, day_of_month) <= today ? curr_year : curr_year - 1;
+        UInt16 curr_year = local_time_zone.toYear(now);
+        year = now < local_time_zone.makeDateTime(curr_year, month, day_of_month, hour, minute, second) ? curr_year - 1 : curr_year;
     }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
@@ -712,12 +702,12 @@ bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTIm
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
+    return parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 void parseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
+    return parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

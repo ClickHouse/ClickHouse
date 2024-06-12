@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <bit>
 #include <base/types.h>
 #include <Common/BitHelpers.h>
