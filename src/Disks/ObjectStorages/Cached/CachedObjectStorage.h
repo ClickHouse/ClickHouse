@@ -100,6 +100,12 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
+    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
+
+    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
+
+    bool isPlain() const override { return object_storage->isPlain(); }
+
     bool isRemote() const override { return object_storage->isRemote(); }
 
     void removeCacheIfExists(const std::string & path_key_for_cache) override;

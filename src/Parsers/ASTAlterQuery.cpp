@@ -42,8 +42,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->projection_decl = res->children.emplace_back(projection_decl->clone()).get();
     if (projection)
         res->projection = res->children.emplace_back(projection->clone()).get();
-    if (statistic_decl)
-        res->statistic_decl = res->children.emplace_back(statistic_decl->clone()).get();
+    if (statistics_decl)
+        res->statistics_decl = res->children.emplace_back(statistics_decl->clone()).get();
     if (partition)
         res->partition = res->children.emplace_back(partition->clone()).get();
     if (predicate)
@@ -200,27 +200,33 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             partition->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::ADD_STATISTIC)
+    else if (type == ASTAlterCommand::ADD_STATISTICS)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "")
                       << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
+        statistics_decl->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::DROP_STATISTIC)
+    else if (type == ASTAlterCommand::MODIFY_STATISTICS)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY STATISTICS "
+                      << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_STATISTICS)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
                       << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
+        statistics_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
+    else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTICS " << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
@@ -507,7 +513,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&constraint));
     f(reinterpret_cast<void **>(&projection_decl));
     f(reinterpret_cast<void **>(&projection));
-    f(reinterpret_cast<void **>(&statistic_decl));
+    f(reinterpret_cast<void **>(&statistics_decl));
     f(reinterpret_cast<void **>(&partition));
     f(reinterpret_cast<void **>(&predicate));
     f(reinterpret_cast<void **>(&update_assignments));

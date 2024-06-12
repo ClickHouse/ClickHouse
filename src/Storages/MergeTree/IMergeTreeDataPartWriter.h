@@ -84,7 +84,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
+        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,

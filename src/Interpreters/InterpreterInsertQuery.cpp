@@ -280,6 +280,8 @@ Chain InterpreterInsertQuery::buildChain(
     std::atomic_uint64_t * elapsed_counter_ms,
     bool check_access)
 {
+    IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, getContext());
+
     ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
