@@ -36,11 +36,11 @@ TEST(SchedulerDynamicResourceManager, Smoke)
 
     for (int i = 0; i < 10; i++)
     {
-        ResourceGuard gA(cA->get("res1"), ResourceGuard::PostponeLocking);
+        ResourceGuard gA(ResourceGuard::Metrics::getIOWrite(), cA->get("res1"), ResourceGuard::PostponeLocking);
         gA.lock();
         gA.unlock();
 
-        ResourceGuard gB(cB->get("res1"));
+        ResourceGuard gB(ResourceGuard::Metrics::getIOWrite(), cB->get("res1"));
     }
 }
 

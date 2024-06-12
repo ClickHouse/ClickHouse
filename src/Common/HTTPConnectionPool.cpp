@@ -9,6 +9,7 @@
 #include <Common/ProxyConfiguration.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
+#include <Common/Scheduler/ResourceGuard.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -249,6 +250,54 @@ public:
 };
 
 
+// Session data hooks implementation for integration with resource scheduler.
+// Hooks are created per every request-response pair and are registered/unregistered in HTTP session.
+// * `start()` send resource request to the scheduler every time HTTP session is going to send or receive
+//   data to/from socket. `start()` waits for the scheduler confirmation. This way scheduler might
+//   throttle and/or schedule socket data streams.
+// * `finish()` hook is called on successful socket read/write operation.
+//   It informs the scheduler that operation is complete, which allows the scheduler to control the total
+//   amount of in-flight bytes and/or operations.
+// * `fail()` hook is called on failure of socket operation. The purpose is to correct the amount of bytes
+//   passed through the scheduler queue to ensure fair bandwidth allocation even in presence of errors.
+struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
+{
+    explicit ResourceGuardSessionDataHooks(const ResourceGuard::Metrics * metrics, ResourceLink link_)
+        : link(link_)
+    {
+        request.metrics = metrics;
+        chassert(link);
+    }
+
+    ~ResourceGuardSessionDataHooks() override
+    {
+        request.assertFinished(); // Never destruct with an active request
+    }
+
+    void start(int bytes) override
+    {
+        // TODO(serxa): add metrics here or better in scheduler code (e.g. during enqueue, or better in REsourceGuard::REquest)?
+        request.enqueue(bytes, link);
+        request.wait();
+    }
+
+    void finish(int bytes) override
+    {
+        request.finish();
+        link.adjust(request.cost, bytes); // success
+    }
+
+    void fail() override
+    {
+        request.finish();
+        link.accumulate(request.cost); // We assume no resource was used in case of failure
+    }
+
+    ResourceLink link;
+    ResourceGuard::Request request;
+};
+
+
 // EndpointConnectionPool manage connections to the endpoint
 // Features:
 // - it uses HostResolver for address selecting. See Common/HostResolver.h for more info.
@@ -259,8 +308,6 @@ public:
 // - `Session::reconnect()` uses the pool as well
 // - comprehensive sensors
 // - session is reused according its inner state, automatically
-
-
 template <class Session>
 class EndpointConnectionPool : public std::enable_shared_from_this<EndpointConnectionPool<Session>>, public IExtendedPool
 {
@@ -350,6 +397,19 @@ private:
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
             auto idle = idleTime();
+
+            // Reset data hooks for IO scheduling
+            if (ResourceLink link = CurrentThread::getReadResourceLink()) {
+                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIORead(), link));
+            } else {
+                Session::setSendDataHooks();
+            }
+            if (ResourceLink link = CurrentThread::getWriteResourceLink()) {
+                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIOWrite(), link));
+            } else {
+                Session::setReceiveDataHooks();
+            }
+
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
 

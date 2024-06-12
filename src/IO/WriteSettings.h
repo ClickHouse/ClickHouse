@@ -13,8 +13,7 @@ struct WriteSettings
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
 
-    // Resource to be used during reading
-    ResourceLink resource_link;
+    IOSchedulingSettings io_scheduling;
 
     /// Filesystem cache settings
     bool enable_filesystem_cache_on_write_operations = false;

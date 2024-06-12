@@ -109,22 +109,22 @@ TEST(SchedulerRoot, Smoke)
     r2.registerResource();
 
     {
-        ResourceGuard rg(a);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a);
         EXPECT_TRUE(fc1->requests.contains(&rg.request));
     }
 
     {
-        ResourceGuard rg(b);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), b);
         EXPECT_TRUE(fc1->requests.contains(&rg.request));
     }
 
     {
-        ResourceGuard rg(c);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), c);
         EXPECT_TRUE(fc2->requests.contains(&rg.request));
     }
 
     {
-        ResourceGuard rg(d);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), d);
         EXPECT_TRUE(fc2->requests.contains(&rg.request));
     }
 }

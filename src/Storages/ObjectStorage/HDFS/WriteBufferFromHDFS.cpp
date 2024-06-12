@@ -66,25 +66,21 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
     int write(const char * start, size_t size)
     {
-        ResourceGuard rlock(write_settings.resource_link, size);
         int bytes_written;
         try
         {
+            ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, size);
             bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+            write_settings.io_scheduling.write_resource_link.adjust(size, std::max(0, bytes_written));
         }
         catch (...)
         {
-            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
+            write_settings.io_scheduling.write_resource_link.accumulate(size); // We assume no resource was used in case of failure
             throw;
         }
-        rlock.unlock();
 
         if (bytes_written < 0)
-        {
-            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
             throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {} {}", hdfs_uri, std::string(hdfsGetLastError()));
-        }
-        write_settings.resource_link.adjust(size, bytes_written);
 
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
