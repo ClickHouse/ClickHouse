@@ -1,3 +1,4 @@
+SET output_format_pretty_display_footer_column_names=0;
 SET output_format_pretty_color = 0;
 SHOW SETTING output_format_pretty_color;
 
