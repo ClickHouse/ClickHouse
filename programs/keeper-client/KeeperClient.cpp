@@ -144,7 +144,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("port"));
 
     options.addOption(
-        Poco::Util::Option("query", "q", "will execute given query, then exit.")
+        Poco::Util::Option("query", "q", "will run in non-interactive mode (execute given query, then exit).")
             .argument("<query>")
             .binding("query"));
 

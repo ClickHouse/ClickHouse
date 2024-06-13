@@ -76,7 +76,7 @@ bool SetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
     node->args.push_back(std::move(path));
 
     String arg;
-    if (!parseKeeperArg(pos, expected, arg))
+    if (!parseKeeperValue(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
@@ -106,7 +106,7 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     node->args.push_back(std::move(path));
 
     String arg;
-    if (!parseKeeperArg(pos, expected, arg))
+    if (!parseKeeperValue(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
@@ -536,7 +536,7 @@ bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> 
     ParserToken{TokenType::Whitespace}.ignore(pos);
 
     String arg;
-    if (!parseKeeperArg(pos, expected, arg))
+    if (!parseKeeperValue(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
@@ -584,15 +584,30 @@ void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * c
     std::cout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
-bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
+bool HelpCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
+    String command;
+    if (parseKeeperValue(pos, expected, command))
+        node->args.push_back(command);
+
     return true;
 }
 
-void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClient * /* client */) const
+void HelpCommand::execute(const ASTKeeperQuery * query, KeeperClient * /* client */) const
 {
-    for (const auto & pair : KeeperClient::commands)
-        std::cout << pair.second->generateHelpString() << "\n";
+    if (query->args.empty())
+    {
+        for (const auto & pair : KeeperClient::commands)
+            std::cout << pair.second->generateHelpString() << "\n";
+    }
+    else
+    {
+        auto it = KeeperClient::commands.find(query->args[0].get<String>());
+        if (it == KeeperClient::commands.end())
+            std::cout << "Command not found";
+        else
+            std::cout << it->second->generateHelpString() << "\n";
+    }
 }
 
 bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const

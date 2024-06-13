@@ -5,26 +5,35 @@
 namespace DB
 {
 
-bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result)
+namespace
 {
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result)
     {
-        if (!parseIdentifierOrStringLiteral(pos, expected, result))
+        if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+        {
+            if (!parseIdentifierOrStringLiteral(pos, expected, result))
+                return false;
+        }
+
+        while (pos->type != TokenType::Whitespace && pos->type != TokenType::EndOfStream && pos->type != TokenType::Semicolon)
+        {
+            result.append(pos->begin, pos->end);
+            ++pos;
+        }
+
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+
+        if (result.empty())
             return false;
+
+        return true;
     }
+}
 
-    while (pos->type != TokenType::Whitespace && pos->type != TokenType::EndOfStream && pos->type != TokenType::Semicolon)
-    {
-        result.append(pos->begin, pos->end);
-        ++pos;
-    }
-
-    ParserToken{TokenType::Whitespace}.ignore(pos);
-
-    if (result.empty())
-        return false;
-
-    return true;
+bool parseKeeperValue(IParser::Pos & pos, Expected & expected, String & path)
+{
+    expected.add(pos, "value");
+    return parseKeeperArg(pos, expected, path);
 }
 
 bool parseKeeperPath(IParser::Pos & pos, Expected & expected, String & path)
