@@ -255,6 +255,17 @@ void HedgedConnections::sendCancel()
     if (!sent_query || cancelled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel. Either no query sent or already cancelled.");
 
+    /// All hedged connections should be stopped, since otherwise before the
+    /// HedgedConnectionsFactory will be destroyed (that will happen from
+    /// QueryPipeline dtor) they could still do some work.
+    /// And not only this does not make sense, but it also could lead to
+    /// use-after-free of the current_thread, since the thread from which they
+    /// had been created differs from the thread where the dtor of
+    /// QueryPipeline will be called and the initial thread could be already
+    /// destroyed (especially when the system is under pressure).
+    if (hedged_connections_factory.hasEventsInProcess())
+        hedged_connections_factory.stopChoosingReplicas();
+
     cancelled = true;
 
     for (auto & offset_status : offset_states)
