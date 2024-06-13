@@ -1,5 +1,6 @@
 #include "ParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
+#include "Parquet/ParquetColumnIndexFilter.h"
 
 #if USE_PARQUET
 
@@ -25,6 +26,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
+#include <Processors/Formats/Impl/Parquet/ParquetColumnIndexFilter.h>
 
 namespace CurrentMetrics
 {
@@ -515,14 +517,15 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
                 ErrorCodes::BAD_ARGUMENTS,
                 "parquet native reader only supports little endian system currently");
 #pragma clang diagnostic pop
-
         row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
             getPort().getHeader(),
             arrow_properties,
             reader_properties,
             arrow_file,
             format_settings,
-            row_group_batch.row_groups_idxs);
+            row_group_batch.row_groups_idxs,
+            column_indices,
+            key_condition);
     }
     else
     {
