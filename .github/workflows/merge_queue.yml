@@ -99,7 +99,7 @@ jobs:
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Tests_1]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
