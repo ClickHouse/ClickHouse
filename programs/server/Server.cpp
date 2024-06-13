@@ -1671,6 +1671,10 @@ try
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings.cannot_allocate_thread_fault_injection_probability);
 
+#if USE_GWP_ASAN
+            GWPAsan::setForceSampleProbability(new_server_settings.gwp_asan_force_sample_probability);
+#endif
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -2119,6 +2123,10 @@ try
         ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
+
+#if USE_GWP_ASAN
+        GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
+#endif
 
         try
         {
