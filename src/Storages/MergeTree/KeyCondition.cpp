@@ -18,6 +18,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HilbertUtils.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>

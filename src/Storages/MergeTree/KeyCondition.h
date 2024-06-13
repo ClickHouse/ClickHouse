@@ -2,8 +2,6 @@
 
 #include <optional>
 
-#include <Common/HilbertUtils.h>
-
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 #include <Core/PlainRanges.h>

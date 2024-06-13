@@ -117,12 +117,27 @@ inline std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1
     UInt64 dist_x = x1 > x2 ? x1 - x2 : x2 - x1;
     UInt64 dist_y = y1 > y2 ? y1 - y2 : y2 - y1;
     UInt64 range_size = std::max(dist_x, dist_y);
-    UInt64 x_min = std::min(x1, x2);
-    UInt64 y_min = std::min(y1, y2);
-    return {
-        std::pair<UInt64, UInt64>{x_min, x_min + range_size},
-        std::pair<UInt64, UInt64>{y_min, y_min + range_size}
-    };
+    bool containsMinimumVertice = x1 % (range_size + 1) == 0;
+    if (containsMinimumVertice)
+    {
+        UInt64 x_min = std::min(x1, x2);
+        UInt64 y_min = std::min(y1, y2);
+        return {
+            std::pair<UInt64, UInt64>{x_min, x_min + range_size},
+            std::pair<UInt64, UInt64>{y_min, y_min + range_size}
+        };
+    }
+    else
+    {
+        UInt64 x_max = std::max(x1, x2);
+        UInt64 y_max = std::max(y1, y2);
+        chassert(x_max >= range_size);
+        chassert(y_max >= range_size);
+        return {
+            std::pair<UInt64, UInt64>{x_max - range_size, x_max},
+            std::pair<UInt64, UInt64>{y_max - range_size, y_max}
+        };
+    }
 }
 
 /** Unpack an interval of Hilbert curve to hyperrectangles covered by it across N dimensions.
@@ -130,7 +145,7 @@ inline std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1
 template <typename F>
 void hilbertIntervalToHyperrectangles2D(UInt64 first, UInt64 last, F && callback)
 {
-    const auto equal_bits_count = getLeadingZeroBits(last - first);
+    const auto equal_bits_count = getLeadingZeroBits(last | first);
     const auto even_equal_bits_count = equal_bits_count - equal_bits_count % 2;
     segmentBinaryPartition(first, last, 64 - even_equal_bits_count, [&](HilbertDetails::Segment range)
     {
