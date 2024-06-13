@@ -48,7 +48,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(const QueryTreeNodePtr & filte
     result.filter_actions = std::make_shared<ActionsAndFlags>();
     result.filter_actions->actions = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context);
 
-    const auto * output = result.filter_actions->getOutputs().at(0);
+    const auto * output = result.filter_actions->actions.getOutputs().at(0);
     if (output->column && ConstantFilterDescription(*output->column).always_true)
         return {};
 
