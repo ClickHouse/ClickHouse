@@ -33,6 +33,7 @@ RUN pip3 install \
         flake8==4.0.1 \
         requests \
         thefuzz \
+        tqdm==4.66.4 \
         types-requests \
         unidiff \
     && rm -rf /root/.cache/pip
