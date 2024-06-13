@@ -178,6 +178,9 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
+        if (config.has(prefix + "accept-invalid-certificate")) {
+            config.setString("accept-invalid-certificate", prefix + "accept-invalid-certificate");
+        }
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -721,7 +724,7 @@ bool Client::processWithFuzzing(const String & full_query)
     }
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+        if (auto *set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
             return true;
     }
 
@@ -1102,7 +1105,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.count("accept-invalid-certificate"))
+    if (options.count("accept-invalid-certificate") || config().has("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
         config().setString("openSSL.client.verificationMode", "none");
