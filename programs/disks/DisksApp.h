@@ -52,7 +52,9 @@ public:
     ~DisksApp() override;
 
 private:
+    void runInteractive();
     void runInteractiveReplxx();
+    void runInteractiveTestMode();
 
     String getDefaultConfigFileName();
 
@@ -88,7 +90,11 @@ private:
            {"packed_io", "packed-io"},
            {"change-dir", "cd"},
            {"change_dir", "cd"},
-           {"switch_disk", "switch-disk"}};
+           {"switch_disk", "switch-disk"},
+           {"current", "current_disk_with_path"},
+           {"current_disk", "current_disk_with_path"},
+           {"current_path", "current_disk_with_path"},
+           {"cur", "current_disk_with_path"}};
 
     std::set<String> multidisk_commands = {"copy", "packed-io", "switch-disk", "cd"};
 

@@ -13,7 +13,8 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandRemove.cpp
     CommandSwitchDisk.cpp
     CommandWrite.cpp
-    CommandHelp.cpp)
+    CommandHelp.cpp
+    CommandGetCurrentDiskAndPath.cpp)
 
 if (CLICKHOUSE_CLOUD)
   set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)

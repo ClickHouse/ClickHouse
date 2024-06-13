@@ -29,9 +29,15 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     {
         path = String{"/"};
     }
+
     if (!disk->isDirectory(normalizePathAndGetAsRelative(path)))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} at disk {} is not a directory", path, disk->getName());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Initializing path {} (normalized path: {}) at disk {} is not a directory",
+            path,
+            normalizePathAndGetAsRelative(path),
+            disk->getName());
     }
 }
 

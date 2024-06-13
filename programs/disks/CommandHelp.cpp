@@ -14,7 +14,8 @@ public:
     {
         command_name = "help";
         description = "Print help message about available commands (all or only required)";
-        options_description.add_options()("command", po::value<String>(), "A command to help with");
+        options_description.add_options()(
+            "command", po::value<String>(), "A command to help with (optional, positional), if not specified, help lists all the commands");
         positional_options_description.add("command", 1);
     }
 

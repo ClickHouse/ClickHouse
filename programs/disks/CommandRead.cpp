@@ -24,7 +24,6 @@ public:
     {
         auto disk = client.getCurrentDiskWithPath();
         String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
-        std::cerr << path_from << std::endl;
         std::optional<String> path_to = getValueFromCommandLineOptionsWithOptional<String>(options, "path-to");
 
         auto in = disk.getDisk()->readFile(path_from);

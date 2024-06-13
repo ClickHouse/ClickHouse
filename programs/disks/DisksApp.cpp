@@ -192,6 +192,10 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
 
 bool DisksApp::processQueryText(const String & text)
 {
+    if (text.find_first_not_of(word_break_characters) == std::string::npos)
+    {
+        return true;
+    }
     if (exit_strings.find(text) != exit_strings.end())
         return false;
     CommandPtr command;
@@ -275,7 +279,8 @@ void DisksApp::addOptions()
 {
     options_description.add_options()("help,h", "Print common help message")("config-file,C", po::value<String>(), "Set config file")(
         "disk", po::value<String>(), "Set disk name")("save-logs", "Save logs to a file")(
-        "log-level", po::value<String>(), "Logging level")("query,q", po::value<String>(), "Query for a non-interactive mode");
+        "log-level", po::value<String>(), "Logging level")("query,q", po::value<String>(), "Query for a non-interactive mode")(
+        "test-mode", "Interface in test regyme");
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("copy", makeCommandCopy());
@@ -288,6 +293,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("read", makeCommandRead());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
+    command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
@@ -311,6 +317,8 @@ void DisksApp::processOptions()
         config().setBool("save-logs", true);
     if (options.count("log-level"))
         config().setString("log-level", options["log-level"].as<String>());
+    if (options.count("test-mode"))
+        config().setBool("test-mode", true);
     if (options.count("query"))
         query = std::optional{options["query"].as<String>()};
 }
@@ -492,7 +500,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     if (!query.has_value())
     {
-        runInteractiveReplxx();
+        runInteractive();
     }
     else
     {
@@ -506,6 +514,26 @@ DisksApp::~DisksApp()
 {
     if (global_context)
         global_context->shutdown();
+}
+
+void DisksApp::runInteractiveTestMode()
+{
+    for (String input; std::getline(std::cin, input);)
+    {
+        if (!processQueryText(input))
+            break;
+
+        std::cout << "\a\a\a\a" << std::endl;
+        std::cerr << std::flush;
+    }
+}
+
+void DisksApp::runInteractive()
+{
+    if (config().hasOption("test-mode"))
+        runInteractiveTestMode();
+    else
+        runInteractiveReplxx();
 }
 }
 
