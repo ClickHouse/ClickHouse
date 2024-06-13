@@ -237,10 +237,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
             auto resized = hash;
             resized.resize(64);
 
+#if USE_BCRYPT
             /// Verify that it is a valid hash
             int ret = bcrypt_checkpw("", reinterpret_cast<const char *>(resized.data()));
             if (ret == -1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not decode the provided hash with 'bcrypt_hash'");
+#endif
 
             password_hash = hash;
             password_hash.resize(64);
