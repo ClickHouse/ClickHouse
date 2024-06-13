@@ -83,7 +83,7 @@ namespace SettingsChangesHistory
 /// For newly added setting choose the most appropriate previous_value (for example, if new setting
 /// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
-static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
+static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
@@ -96,7 +96,15 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
               {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
               {"s3_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"},
+              {"input_format_parquet_max_block_size", 8192, DEFAULT_BLOCK_SIZE, "Increase block size for parquet reader."},
+              {"input_format_parquet_prefer_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Average block bytes output by parquet reader."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
+              {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
+              {"allow_experimental_statistic", false, false, "Old setting which popped up here being renamed."},
+              {"allow_statistics_optimize", false, false, "The setting was renamed. The previous name is `allow_statistic_optimize`."},
+              {"allow_experimental_statistics", false, false, "The setting was renamed. The previous name is `allow_experimental_statistic`."},
+              {"parallel_replicas_custom_key_range_lower", 0, 0, "Add settings to control the range filter when using parallel replicas with dynamic shards"},
+              {"parallel_replicas_custom_key_range_upper", 0, 0, "Add settings to control the range filter when using parallel replicas with dynamic shards. A value of 0 disables the upper limit"},
               }},
     {"24.5", {{"allow_deprecated_error_prone_window_functions", true, false, "Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)"},
               {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
