@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import sys
 
@@ -20,27 +21,38 @@ from report import FAILURE, PENDING, SUCCESS, StatusType
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Script to merge the given PR. Additional checks for approved "
+        "status and green commit statuses could be done",
+    )
+    parser.add_argument(
+        "--wf-status",
+        type=str,
+        default="",
+        help="overall workflow status [success|failure]",
+    )
+    return parser.parse_args()
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
+    args = parse_args()
 
-    has_failure = False
-
-    # FIXME: temporary hack to fail Mergeable Check in MQ if pipeline has any failed jobs
-    if len(sys.argv) > 1 and sys.argv[1] == "--pipeline-failure":
-        has_failure = True
+    has_workflow_failures = args.wf_status == FAILURE
 
     pr_info = PRInfo(need_orgs=True)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    statuses = None
 
     if pr_info.is_merge_queue:
-        # in MQ Mergeable check status must never be green if any failures in workflow
-        if has_failure:
-            set_mergeable_check(commit, "workflow failed", "failure")
+        # in MQ Mergeable check status must never be green if any failures in the workflow
+        if has_workflow_failures:
+            set_mergeable_check(commit, "workflow failed", FAILURE)
         else:
             # This must be the only place where green MCheck is set in the MQ (in the end of CI) to avoid early merge
-            set_mergeable_check(commit, "workflow passed", "success")
+            set_mergeable_check(commit, "workflow passed", SUCCESS)
     else:
         statuses = get_commit_filtered_statuses(commit)
         state = trigger_mergeable_check(commit, statuses, set_if_green=True)
@@ -67,6 +79,7 @@ def main():
 
         has_failure = False
         has_pending = False
+        error_cnt = 0
         for status in statuses:
             if status.context in (StatusNames.MERGEABLE, StatusNames.CI):
                 # do not account these statuses
@@ -80,12 +93,19 @@ def main():
                 continue
             else:
                 has_failure = True
+                error_cnt += 1
 
         ci_state = SUCCESS  # type: StatusType
+        description = "All checks finished"
         if has_failure:
             ci_state = FAILURE
+            description = f"All checks finished. {error_cnt} jobs failed"
+        elif has_workflow_failures:
+            ci_state = FAILURE
+            description = "All checks finished. Workflow has failures."
         elif has_pending:
             print("ERROR: CI must not have pending jobs by the time of finish check")
+            description = "ERROR: workflow has pending jobs"
             ci_state = FAILURE
 
         if ci_status.state == PENDING:
@@ -93,7 +113,7 @@ def main():
                 commit,
                 ci_state,
                 ci_status.target_url,
-                "All checks finished",
+                description,
                 StatusNames.CI,
                 pr_info,
                 dump_to_file=True,
