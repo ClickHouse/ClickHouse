@@ -234,6 +234,8 @@ struct FormatSettings
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
         bool case_insensitive_column_matching = false;
+        String content_type{};        
+        bool ignore_key_case = false;
     } json{};
 
     struct

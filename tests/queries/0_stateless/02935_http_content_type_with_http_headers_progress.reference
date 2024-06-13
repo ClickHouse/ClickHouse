@@ -22,3 +22,5 @@ Values
  Content-Type: text/plain; charset=UTF-8
 Vertical
  Content-Type: text/plain; charset=UTF-8
+JSONEachRow output_format_json_content_type_header
+ Content-Type: custom-type
