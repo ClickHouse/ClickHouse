@@ -1526,7 +1526,7 @@ void addFoundRowAll(
     else if constexpr (AddedColumns::isLazy())
     {
         added.appendFromBlock(&mapped, false);
-        current_offset += mapped.getTotalRows();
+        current_offset += mapped.rows;
     }
     else
     {
