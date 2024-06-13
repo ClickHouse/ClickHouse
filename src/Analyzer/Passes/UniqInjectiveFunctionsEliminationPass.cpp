@@ -85,6 +85,7 @@ public:
         if (!aggregate_function->getResultType()->equals(*function_node->getAggregateFunction()->getResultType()))
             return;
 
+        function_node->getArguments().getNodes() = replaced_uniq_function_arguments_nodes;
         function_node->resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
