@@ -56,13 +56,13 @@ std::unordered_map<String, String> parseHTTPResponseHeaders(const std::string & 
 void applyHTTPResponseHeaders(Poco::Net::HTTPResponse & response, const HTTPResponseHeaderSetup & setup)
 {
     if (setup)
-        for (auto [header_name, header_value] : *setup)
+        for (const auto & [header_name, header_value] : *setup)
             response.set(header_name, header_value);
 }
 
 void applyHTTPResponseHeaders(Poco::Net::HTTPResponse & response, const std::unordered_map<String, String> & setup)
 {
-    for (auto [header_name, header_value] : setup)
+    for (const auto & [header_name, header_value] : setup)
         response.set(header_name, header_value);
 }
 
