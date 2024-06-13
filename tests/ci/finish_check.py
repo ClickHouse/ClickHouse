@@ -81,17 +81,12 @@ def main():
     has_pending = False
     error_cnt = 0
     for status in statuses:
-        if status.context in (StatusNames.MERGEABLE, StatusNames.CI):
+        if status.context in (StatusNames.MERGEABLE, StatusNames.CI, StatusNames.SYNC):
             # do not account these statuses
             continue
         if status.state == PENDING:
-            if status.context == StatusNames.SYNC:
-                # do not account sync status if pending - it's a different WF
-                continue
             has_pending = True
-        elif status.state == SUCCESS:
-            continue
-        else:
+        elif status.state != SUCCESS:
             has_failure = True
             error_cnt += 1
 
@@ -108,16 +103,15 @@ def main():
         description = "ERROR: workflow has pending jobs"
         ci_state = FAILURE
 
-    if ci_status.state == PENDING:
-        post_commit_status(
-            commit,
-            ci_state,
-            ci_status.target_url,
-            description,
-            StatusNames.CI,
-            pr_info,
-            dump_to_file=True,
-        )
+    post_commit_status(
+        commit,
+        ci_state,
+        ci_status.target_url,
+        description,
+        StatusNames.CI,
+        pr_info,
+        dump_to_file=True,
+    )
 
 
 if __name__ == "__main__":
