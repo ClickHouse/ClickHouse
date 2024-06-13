@@ -212,13 +212,40 @@ toTypeName(x)
 
 ## blockSize {#blockSize}
 
-In ClickHouse, queries are processed in blocks (chunks).
+In ClickHouse, queries are processed in [blocks](../../development/architecture.md/#block-block) (chunks).
 This function returns the size (row count) of the block the function is called on.
 
 **Syntax**
 
 ```sql
 blockSize()
+```
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (n UInt8) ENGINE = Memory;
+
+INSERT INTO test
+SELECT * FROM system.numbers LIMIT 5;
+
+SELECT blockSize()
+FROM test;
+```
+
+Result:
+
+```response
+   ┌─blockSize()─┐
+1. │           5 │
+2. │           5 │
+3. │           5 │
+4. │           5 │
+5. │           5 │
+   └─────────────┘ 
 ```
 
 ## byteSize
@@ -735,6 +762,8 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
+The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
+
 **Syntax**
 
 ```sql
@@ -765,6 +794,8 @@ Result:
 ## formatReadableSize
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
+
+The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
 
 **Syntax**
 
@@ -888,6 +919,122 @@ SELECT
 │              12345 │ 205 minutes and 45 seconds                     │
 │ 432546534.00000006 │ 7209108 minutes, 54 seconds and 60 nanoseconds │
 └────────────────────┴────────────────────────────────────────────────┘
+```
+
+## parseReadableSize
+
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
+If the function is unable to parse the input value, it throws an exception.
+
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
+**Syntax**
+
+```sql
+formatReadableSize(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes,  
+    parseReadableSize(readable_sizes) AS sizes;
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KiB      │    5442 │
+└────────────────┴─────────┘
+```
+
+## parseReadableSizeOrNull
+
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
+If the function is unable to parse the input value, it returns `NULL`.
+
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
+**Syntax**
+
+```sql
+parseReadableSizeOrNull(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes,  
+    parseReadableSizeOrNull(readable_sizes) AS sizes;
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │    ᴺᵁᴸᴸ │
+└────────────────┴─────────┘
+```
+
+## parseReadableSizeOrZero
+
+Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`.
+
+The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+
+
+**Syntax**
+
+```sql
+parseReadableSizeOrZero(x)
+```
+
+**Arguments**
+
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit  ([String](../../sql-reference/data-types/string.md)).
+
+**Returned value**
+
+- Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT
+    arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_sizes,  
+    parseReadableSizeOrZero(readable_sizes) AS sizes;
+```
+
+```text
+┌─readable_sizes─┬───sizes─┐
+│ 1 B            │       1 │
+│ 1 KiB          │    1024 │
+│ 3 MB           │ 3000000 │
+│ 5.314 KiB      │    5442 │
+│ invalid        │       0 │
+└────────────────┴─────────┘
 ```
 
 ## parseTimeDelta
@@ -3567,4 +3714,109 @@ Result:
 
 ```response
 {'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
+```
+
+## lowCardinalityIndices
+
+Returns the position of a value in the dictionary of a [LowCardinality](../data-types/lowcardinality.md) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
+
+**Syntax**
+
+```sql
+lowCardinalityIndices(col)
+```
+
+**Arguments**
+
+- `col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
+
+**Returned value**
+
+- The position of the value in the dictionary of the current part. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
+
+-- create two parts:
+
+INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
+INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
+
+SELECT s, lowCardinalityIndices(s) FROM test;
+```
+
+Result:
+
+```response
+   ┌─s──┬─lowCardinalityIndices(s)─┐
+1. │ ab │                        1 │
+2. │ cd │                        2 │
+3. │ ab │                        1 │
+4. │ ab │                        1 │
+5. │ df │                        3 │
+   └────┴──────────────────────────┘
+    ┌─s──┬─lowCardinalityIndices(s)─┐
+ 6. │ ef │                        1 │
+ 7. │ cd │                        2 │
+ 8. │ ab │                        3 │
+ 9. │ cd │                        2 │
+10. │ ef │                        1 │
+    └────┴──────────────────────────┘
+```
+## lowCardinalityKeys
+
+Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality.md) column. If the block is smaller or larger than the dictionary size, the result will be truncated or extended with default values. Since LowCardinality have per-part dictionaries, this function may return different dictionary values in different parts.
+
+**Syntax**
+
+```sql
+lowCardinalityIndices(col)
+```
+
+**Arguments**
+
+- `col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
+
+**Returned value**
+
+- The dictionary keys. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
+
+-- create two parts:
+
+INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
+INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
+
+SELECT s, lowCardinalityKeys(s) FROM test;
+```
+
+Result:
+
+```response
+   ┌─s──┬─lowCardinalityKeys(s)─┐
+1. │ ef │                       │
+2. │ cd │ ef                    │
+3. │ ab │ cd                    │
+4. │ cd │ ab                    │
+5. │ ef │                       │
+   └────┴───────────────────────┘
+    ┌─s──┬─lowCardinalityKeys(s)─┐
+ 6. │ ab │                       │
+ 7. │ cd │ ab                    │
+ 8. │ ab │ cd                    │
+ 9. │ ab │ df                    │
+10. │ df │                       │
+    └────┴───────────────────────┘
 ```

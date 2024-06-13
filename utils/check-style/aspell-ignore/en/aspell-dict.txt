@@ -222,6 +222,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -293,6 +294,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
@@ -446,6 +448,7 @@ KafkaLibrdkafkaThreads
 KafkaProducers
 KafkaWrites
 Kahan
+Kaser
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequets
@@ -466,11 +469,13 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
+Lemir
 Levenshtein
 Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineString
 Linf
 LinfDistance
 LinfNorm
@@ -1932,6 +1937,8 @@ london
 lookups
 loongarch
 lowcardinality
+lowCardinalityIndices
+lowCardinalityKeys
 lowerUTF
 lowercased
 lttb
@@ -1998,6 +2005,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
@@ -2150,6 +2159,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
@@ -2303,6 +2315,7 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKTLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon

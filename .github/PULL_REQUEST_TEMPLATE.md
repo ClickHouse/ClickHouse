@@ -48,19 +48,17 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_stateful--> Allow: Stateful tests
 - [ ] <!---ci_include_integration--> Allow: Integration Tests
 - [ ] <!---ci_include_performance--> Allow: Performance tests
+- [ ] <!---ci_set_normal_builds--> Allow: Normal Builds
+- [ ] <!---ci_set_special_builds--> Allow: Special Builds
 - [ ] <!---ci_set_non_required--> Allow: All NOT Required Checks
 - [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
 - [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
 ---
 - [ ] <!---ci_exclude_style--> Exclude: Style check
 - [ ] <!---ci_exclude_fast--> Exclude: Fast test
-- [ ] <!---ci_exclude_integration--> Exclude: Integration Tests
-- [ ] <!---ci_exclude_stateless--> Exclude: Stateless tests
-- [ ] <!---ci_exclude_stateful--> Exclude: Stateful tests
-- [ ] <!---ci_exclude_performance--> Exclude: Performance tests
 - [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
-- [ ] <!---ci_exclude_aarch64--> Exclude: All with Aarch64
 - [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
+- [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
 ---
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---upload_all--> Upload binaries for special builds
