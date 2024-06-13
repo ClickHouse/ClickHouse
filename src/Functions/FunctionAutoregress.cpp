@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -28,6 +29,15 @@ void checkArguments(const DataTypes & arguments)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "The argument 1 of the function '{}' should be lambda expression",
+            function_name);
+    }
+    const DataTypeFunction * lambda = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
+    const DataTypes & lambda_args = lambda->getArgumentTypes();
+    if (lambda_args.size() != 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The argument 1, lambda expression of the function '{}' should accept only one argument of type Float64",
             function_name);
     }
     if (arguments[1]->getTypeId() != TypeIndex::UInt8)
