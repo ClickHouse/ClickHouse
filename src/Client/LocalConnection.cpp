@@ -477,13 +477,25 @@ Packet LocalConnection::receivePacket()
         return packet;
     }
 
+    bool ret = false;
     if (!next_packet_type)
-        poll(0);
+        ret = poll(0);
 
     if (!next_packet_type)
     {
-        packet.type = Protocol::Server::EndOfStream;
-        return packet;
+        if (state && !ret)
+        {
+            /// We should retry.
+            /// Let's send a dummy packet and hope for the best.
+            /// TODO proper fix
+            packet.type = Protocol::Server::Progress;
+            return packet;
+        }
+        else
+        {
+            packet.type = Protocol::Server::EndOfStream;
+            return packet;
+        }
     }
 
     packet.type = next_packet_type.value();
