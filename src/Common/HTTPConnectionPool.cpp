@@ -400,14 +400,14 @@ private:
 
             // Reset data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink()) {
-                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIORead(), link));
-            } else {
-                Session::setSendDataHooks();
-            }
-            if (ResourceLink link = CurrentThread::getWriteResourceLink()) {
-                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIOWrite(), link));
+                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIORead(), link));
             } else {
                 Session::setReceiveDataHooks();
+            }
+            if (ResourceLink link = CurrentThread::getWriteResourceLink()) {
+                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIOWrite(), link));
+            } else {
+                Session::setSendDataHooks();
             }
 
             std::ostream & result = Session::sendRequest(request);
