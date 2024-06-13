@@ -1,6 +1,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/TypeId.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -174,7 +175,22 @@ protected:
 
 REGISTER_FUNCTION(Autoregress)
 {
-    factory.registerFunction<FunctionAutoregressResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAutoregressResolver>(
+        FunctionDocumentation{
+            .description = "Calculates autoregressive function. The Autoregressive (AR) model is a fundamental component in the realm of time series analysis and forecasting.",
+            .syntax = "autoregress(x->{ar_expr}, backward_offset, initial_value)",
+            .arguments = {
+                {"ar_expr","Autoregressive function. Lambda."},
+                {"backward_offset", "autoregressive need `T-n` result which is calculated previously, the argument specifies the `n`. UInt64."},
+                {"initial_value", "Initial values used for autoregressive. Float64."}
+            },
+            .returned_value = "Autoregressive function result.",
+            .examples = {
+                {"autoregress", "select groupArray(autoregress(x-> toFloat64(x+1.25), 1, toFloat64(100))) from numbers(5);", "[101.25,102.5,103.75,105,106.25]"}
+            },
+            .categories = {"autoregressive"}
+        },
+        FunctionFactory::CaseInsensitive);
 }
 
 }
