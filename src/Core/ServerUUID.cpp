@@ -68,4 +68,9 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
     }
 }
 
+void ServerUUID::setRandomForUnitTests()
+{
+    server_uuid = UUIDHelpers::generateV4();
+}
+
 }
