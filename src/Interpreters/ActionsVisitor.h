@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <string_view>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -53,7 +54,7 @@ struct ScopeStack : WithContext
         Level(Level &&);
     };
 
-    using Levels = std::vector<Level>;
+    using Levels = std::deque<Level>;
 
     Levels stack;
 

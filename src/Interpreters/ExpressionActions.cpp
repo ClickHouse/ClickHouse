@@ -762,7 +762,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     {
         block.clear();
     }
-    if (allow_duplicates_in_input)
+    else if (allow_duplicates_in_input)
     {
         /// This case is the same as when the input is projected
         /// since we do not need any input columns.

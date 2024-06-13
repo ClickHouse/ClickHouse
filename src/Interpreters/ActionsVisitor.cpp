@@ -532,9 +532,8 @@ std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
 
 ScopeStack::ScopeStack(ActionsDAG actions_dag, ContextPtr context_) : WithContext(context_)
 {
-    ScopeStack::Level tmp;
-    tmp.actions_dag = std::move(actions_dag);
-    auto & level = stack.emplace_back(std::move(tmp));
+    auto & level = stack.emplace_back();
+    level.actions_dag = std::move(actions_dag);
     level.index = std::make_unique<ScopeStack::Index>(level.actions_dag.getOutputs());
 
     for (const auto & node : level.actions_dag.getOutputs())
