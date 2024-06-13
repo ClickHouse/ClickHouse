@@ -195,7 +195,8 @@ void ColumnGathererTransform::work()
 void ColumnGathererTransform::onFinish()
 {
     auto merged_rows = algorithm.getMergedRows();
-    auto merged_bytes = algorithm.getMergedRows();
+    auto merged_bytes = algorithm.getMergedBytes();
+
     /// Don't print info for small parts (< 10M rows)
     if (merged_rows < 10000000)
         return;
