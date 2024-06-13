@@ -511,7 +511,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
                 if (default_mask)
                 {
                     if (key_state_from_storage.isDefault())
+                    {
                         (*default_mask)[key_index] = 1;
+                        aggregated_column->insertDefault();
+                    }
                     else
                     {
                         (*default_mask)[key_index] = 0;
