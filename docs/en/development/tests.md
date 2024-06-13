@@ -229,6 +229,10 @@ For production builds, clang is used, but we also test make gcc builds. For deve
 
 ## Sanitizers {#sanitizers}
 
+:::note
+Make sure to have address space layout randomization disabled when running sanitizer builds locally: `sudo sysctl kernel.randomize_va_space=0`
+:::
+
 ### Address sanitizer
 We run functional, integration, stress and unit tests under ASan on per-commit basis.
 
