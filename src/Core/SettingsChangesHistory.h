@@ -172,6 +172,7 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"azure_max_upload_part_size", 5ull*1024*1024*1024, 5ull*1024*1024*1024, "The maximum size of part to upload during multipart upload to Azure blob storage."},
               {"azure_upload_part_size_multiply_factor", 2, 2, "Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage."},
               {"azure_upload_part_size_multiply_parts_count_threshold", 500, 500, "Each time this number of parts was uploaded to Azure blob storage, azure_min_upload_part_size is multiplied by azure_upload_part_size_multiply_factor."},
+              {"input_format_csv_empty_string_is_not_null", false, false, "Controls how `Nullable(String)` is read from a missing value in CSV. A missing value is an empty space between/before/after commas, not surrounded by quotes. If this setting is enabled, regardless of the value of `input_format_csv_empty_as_default`, the missing value of `Nullable(String)` will be interpreted as an empty `String`, not as NULL."},
               }},
     {"24.2", {{"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
               {"validate_experimental_and_suspicious_types_inside_nested_types", false, true, "Validate usage of experimental and suspicious types inside nested types"},

@@ -1002,6 +1002,12 @@ When enabled, replace empty input fields in CSV with default values. For complex
 
 Enabled by default.
 
+### input_format_csv_empty_string_is_not_null {#input_format_csv_empty_string_is_not_null}
+
+Controls how `Nullable(String)` is read from a missing value in CSV. A missing value is an empty space between/before/after commas, not surrounded by quotes. If this setting is enabled, regardless of the value of `input_format_csv_empty_as_default`, the missing value of `Nullable(String)` will be interpreted as an empty `String`, not as NULL.
+
+Disabled by default
+
 ### input_format_csv_use_best_effort_in_schema_inference {#input_format_csv_use_best_effort_in_schema_inference}
 
 Use some tweaks and heuristics to infer schema in CSV format. If disabled, all fields will be treated as String.
