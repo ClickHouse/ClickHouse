@@ -230,7 +230,7 @@ For production builds, clang is used, but we also test make gcc builds. For deve
 ## Sanitizers {#sanitizers}
 
 :::note
-Make sure to have address space layout randomization disabled when running sanitizer builds locally: `sudo sysctl kernel.randomize_va_space=0`
+If the process crashes at the start when running it locally, you might need to disable address space layout randomization: `sudo sysctl kernel.randomize_va_space=0`
 :::
 
 ### Address sanitizer
