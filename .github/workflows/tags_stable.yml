@@ -36,7 +36,7 @@ jobs:
     - name: Check out repository code
       uses: ClickHouse/checkout@v1
       with:
-        ref: master
+        ref: fix-changelog-progress
         fetch-depth: 0
         filter: tree:0
     - name: Update versions, docker version, changelog, security
@@ -48,7 +48,7 @@ jobs:
         GID=$(id -g "${UID}")
         # --network=host is required for the S3 access from a container
         docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 --network=host \
-            --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test \
+                --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test:9c5daa2c62d1 \
                 /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
                 --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
                 --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
