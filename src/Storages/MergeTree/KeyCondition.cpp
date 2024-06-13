@@ -755,7 +755,7 @@ void KeyCondition::getAllSpaceFillingCurves()
     {
         if (action.node->type == ActionsDAG::ActionType::FUNCTION
             && action.node->children.size() >= 2
-            && space_filling_curve_name_to_type.count(action.node->function_base->getName()) > 0)
+            && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
