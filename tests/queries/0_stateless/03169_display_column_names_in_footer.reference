@@ -2068,7 +2068,6 @@
 100.      99   UInt64                            1 
 
       number   toTypeName(number)   mod(number, 2)
-
       number   toTypeName(number)   mod(number, 2)
 
   1.       0   UInt64                            0 
@@ -2173,7 +2172,6 @@
 100.      99   UInt64                            1 
 
       number   toTypeName(number)   mod(number, 2)
-
       number   toTypeName(number)   mod(number, 2)
 
   1.       0   UInt64                            0 
@@ -2278,7 +2276,6 @@
 100.      99   UInt64                            1 
 
       number   toTypeName(number)   mod(number, 2)
-
       number   toTypeName(number)   mod(number, 2)
 
   1.       0   UInt64                            0 
@@ -2383,4 +2380,3 @@
 100.      99   UInt64                            1 
 
       number   toTypeName(number)   mod(number, 2)
-
