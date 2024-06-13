@@ -41,6 +41,7 @@ public:
         bool skip_empty_files;
         size_t list_object_keys_size;
         bool throw_on_zero_files_match;
+        const char * throw_on_zero_files_match_setting_name = nullptr;
         bool ignore_non_existent_file;
     };
 

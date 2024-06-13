@@ -126,7 +126,8 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
         iterator = std::make_unique<GlobIterator>(
             object_storage, configuration, predicate, virtual_columns,
             local_context, is_archive ? nullptr : read_keys, settings.list_object_keys_size,
-            settings.throw_on_zero_files_match, file_progress_callback);
+            settings.throw_on_zero_files_match, settings.throw_on_zero_files_match_setting_name,
+            file_progress_callback);
     }
     else
     {
@@ -425,6 +426,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
+    const char * throw_on_zero_files_match_setting_name_,
     std::function<void(FileProgress)> file_progress_callback_)
     : IIterator("GlobIterator")
     , WithContext(context_)
@@ -432,6 +434,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
+    , throw_on_zero_files_match_setting_name(throw_on_zero_files_match_setting_name_)
     , read_keys(read_keys_)
     , file_progress_callback(file_progress_callback_)
 {
@@ -484,8 +487,11 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     if (first_iteration && !object_info && throw_on_zero_files_match)
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-                        "Can not match any files with path {}",
-                        configuration->getPath());
+                        "Can not match any files with path {}{}",
+                        configuration->getPath(),
+                        throw_on_zero_files_match_setting_name
+                          ? fmt::format(" (this error can be suppressed by setting {} = false)", throw_on_zero_files_match_setting_name)
+                          : "");
     }
     first_iteration = false;
     return object_info;

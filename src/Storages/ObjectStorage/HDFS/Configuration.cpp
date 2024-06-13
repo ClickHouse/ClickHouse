@@ -76,6 +76,7 @@ StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(c
         .skip_empty_files = settings.hdfs_skip_empty_files,
         .list_object_keys_size = 0, /// HDFS does not support listing in batches.
         .throw_on_zero_files_match = settings.hdfs_throw_on_zero_files_match,
+        .throw_on_zero_files_match_setting_name = "hdfs_throw_on_zero_files_match",
         .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
     };
 }
