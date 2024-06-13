@@ -116,7 +116,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     if (!not_in_use.empty())
     {
         not_in_use.clear();
-        LOG_DEBUG(log, "Finish removing non using detached tables");
+        LOG_DEBUG(log, "Finished removing not used detached tables");
     }
 
     return table;

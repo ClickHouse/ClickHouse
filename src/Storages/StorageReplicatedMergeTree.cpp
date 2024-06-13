@@ -5,17 +5,15 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
-#include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils.h>
-#include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
@@ -5287,7 +5285,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         if (attach_thread)
         {
             attach_thread->shutdown();
-            LOG_TRACE(log, "Attach thread shutdowned");
+            LOG_TRACE(log, "The attach thread is shutdown");
         }
 
 
@@ -5303,7 +5301,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         throw;
     }
 
-    LOG_TRACE(log, "Finish preparing for shutdown");
+    LOG_TRACE(log, "Finished preparing for shutdown");
 }
 
 void StorageReplicatedMergeTree::partialShutdown()
@@ -5342,7 +5340,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
         return;
 
     const auto storage_name = getStorageID().getNameForLogs();
-    LOG_TRACE(log, "Shutdown started, table={}", storage_name);
+    LOG_TRACE(log, "Shutdown started");
 
     flushAndPrepareForShutdown();
 
@@ -5386,7 +5384,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
         /// Wait for all of them
         std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
-    LOG_TRACE(log, "Shutdown finished, table={}", storage_name);
+    LOG_TRACE(log, "Shutdown finished");
 }
 
 
