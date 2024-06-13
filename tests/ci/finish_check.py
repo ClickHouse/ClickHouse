@@ -52,71 +52,72 @@ def main():
         else:
             # This must be the only place where green MCheck is set in the MQ (in the end of CI) to avoid early merge
             set_mergeable_check(commit, "workflow passed", SUCCESS)
-    else:
-        statuses = get_commit_filtered_statuses(commit)
-        state = trigger_mergeable_check(commit, statuses, set_if_green=True)
+        return
 
-        # Process upstream StatusNames.SYNC
-        if (
-            pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-            and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-        ):
-            upstream_pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-            update_upstream_sync_status(
-                upstream_pr_number,
-                pr_info.number,
-                gh,
-                state,
-                can_set_green_mergeable_status=True,
-            )
+    statuses = get_commit_filtered_statuses(commit)
+    state = trigger_mergeable_check(commit, statuses, set_if_green=True)
 
-        ci_running_statuses = [s for s in statuses if s.context == StatusNames.CI]
-        if not ci_running_statuses:
-            return
-        # Take the latest status
-        ci_status = ci_running_statuses[-1]
+    # Process upstream StatusNames.SYNC
+    if (
+        pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
+        and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
+    ):
+        upstream_pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
+        update_upstream_sync_status(
+            upstream_pr_number,
+            pr_info.number,
+            gh,
+            state,
+            can_set_green_mergeable_status=True,
+        )
 
-        has_failure = False
-        has_pending = False
-        error_cnt = 0
-        for status in statuses:
-            if status.context in (StatusNames.MERGEABLE, StatusNames.CI):
-                # do not account these statuses
+    ci_running_statuses = [s for s in statuses if s.context == StatusNames.CI]
+    if not ci_running_statuses:
+        return
+    # Take the latest status
+    ci_status = ci_running_statuses[-1]
+
+    has_failure = False
+    has_pending = False
+    error_cnt = 0
+    for status in statuses:
+        if status.context in (StatusNames.MERGEABLE, StatusNames.CI):
+            # do not account these statuses
+            continue
+        if status.state == PENDING:
+            if status.context == StatusNames.SYNC:
+                # do not account sync status if pending - it's a different WF
                 continue
-            if status.state == PENDING:
-                if status.context == StatusNames.SYNC:
-                    # do not account sync status if pending - it's a different WF
-                    continue
-                has_pending = True
-            elif status.state == SUCCESS:
-                continue
-            else:
-                has_failure = True
-                error_cnt += 1
+            has_pending = True
+        elif status.state == SUCCESS:
+            continue
+        else:
+            has_failure = True
+            error_cnt += 1
 
-        ci_state = SUCCESS  # type: StatusType
-        description = "All checks finished"
-        if has_failure:
-            ci_state = FAILURE
-            description = f"All checks finished. {error_cnt} jobs failed"
-        elif has_workflow_failures:
-            ci_state = FAILURE
-            description = "All checks finished. Workflow has failures."
-        elif has_pending:
-            print("ERROR: CI must not have pending jobs by the time of finish check")
-            description = "ERROR: workflow has pending jobs"
-            ci_state = FAILURE
+    ci_state = SUCCESS  # type: StatusType
+    description = "All checks finished"
+    if has_failure:
+        ci_state = FAILURE
+        description = f"All checks finished. {error_cnt} jobs failed"
+    elif has_workflow_failures:
+        ci_state = FAILURE
+        description = "All checks finished. Workflow has failures."
+    elif has_pending:
+        print("ERROR: CI must not have pending jobs by the time of finish check")
+        description = "ERROR: workflow has pending jobs"
+        ci_state = FAILURE
 
-        if ci_status.state == PENDING:
-            post_commit_status(
-                commit,
-                ci_state,
-                ci_status.target_url,
-                description,
-                StatusNames.CI,
-                pr_info,
-                dump_to_file=True,
-            )
+    if ci_status.state == PENDING:
+        post_commit_status(
+            commit,
+            ci_state,
+            ci_status.target_url,
+            description,
+            StatusNames.CI,
+            pr_info,
+            dump_to_file=True,
+        )
 
 
 if __name__ == "__main__":
