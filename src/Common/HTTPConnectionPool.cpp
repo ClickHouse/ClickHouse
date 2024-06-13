@@ -276,21 +276,18 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 
     void start(int bytes) override
     {
-        // TODO(serxa): add metrics here or better in scheduler code (e.g. during enqueue, or better in REsourceGuard::REquest)?
         request.enqueue(bytes, link);
         request.wait();
     }
 
     void finish(int bytes) override
     {
-        request.finish();
-        link.adjust(request.cost, bytes); // success
+        request.finish(bytes, link);
     }
 
     void fail() override
     {
-        request.finish();
-        link.accumulate(request.cost); // We assume no resource was used in case of failure
+        request.finish(0, link);
     }
 
     ResourceLink link;
@@ -466,6 +463,9 @@ private:
                 }
             }
             response_stream = nullptr;
+            // FIXME: We are not sure that response stream is fully read at this moment, so hooks could possible be called after this point, right?
+            // Session::setSendDataHooks();
+            // Session::setReceiveDataHooks();
 
             group->atConnectionDestroy();
 

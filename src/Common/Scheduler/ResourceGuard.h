@@ -42,12 +42,12 @@ namespace DB
 class ResourceGuard
 {
 public:
-    enum ResourceGuardCtor
+    enum class Lock
     {
-        LockStraightAway, /// Locks inside constructor (default)
+        StraightAway, /// Locks inside constructor (default)
 
         // WARNING: Only for tests. It is not exception-safe because `lock()` must be called after construction.
-        PostponeLocking /// Don't lock in constructor, but send request
+        Postpone /// Don't lock in constructor, but send request
     };
 
     struct Metrics
@@ -96,8 +96,6 @@ public:
             chassert(state == Finished);
             state = Enqueued;
             ResourceRequest::reset(cost_);
-            ProfileEvents::increment(metrics->requests);
-            ProfileEvents::increment(metrics->cost, cost_);
             link_.queue->enqueueRequestUsingBudget(this);
         }
 
@@ -121,12 +119,16 @@ public:
             dequeued_cv.wait(lock, [this] { return state == Dequeued; });
         }
 
-        void finish()
+        void finish(ResourceCost real_cost_, ResourceLink link_)
         {
             // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
             chassert(state == Dequeued);
             state = Finished;
+            if (cost != real_cost_)
+                link_.adjust(cost, real_cost_);
             ResourceRequest::finish();
+            ProfileEvents::increment(metrics->requests);
+            ProfileEvents::increment(metrics->cost, real_cost_);
         }
 
         void assertFinished()
@@ -153,7 +155,7 @@ public:
     };
 
     /// Creates pending request for resource; blocks while resource is not available (unless `PostponeLocking`)
-    explicit ResourceGuard(const Metrics * metrics, ResourceLink link_, ResourceCost cost = 1, ResourceGuardCtor ctor = LockStraightAway)
+    explicit ResourceGuard(const Metrics * metrics, ResourceLink link_, ResourceCost cost = 1, ResourceGuard::Lock type = ResourceGuard::Lock::StraightAway)
         : link(link_)
         , request(Request::local(metrics))
     {
@@ -162,7 +164,7 @@ public:
         else if (link)
         {
             request.enqueue(cost, link);
-            if (ctor == LockStraightAway)
+            if (type == Lock::StraightAway)
                 request.wait();
         }
     }
@@ -179,18 +181,25 @@ public:
             request.wait();
     }
 
-    /// Report resource consumption has finished
-    void unlock()
+    void consume(ResourceCost cost)
     {
+        real_cost += cost;
+    }
+
+    /// Report resource consumption has finished
+    void unlock(ResourceCost consumed = 0)
+    {
+        consume(consumed);
         if (link)
         {
-            request.finish();
+            request.finish(real_cost, link);
             link.reset();
         }
     }
 
     ResourceLink link;
     Request & request;
+    ResourceCost real_cost = 0;
 };
 
 }

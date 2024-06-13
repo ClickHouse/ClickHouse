@@ -119,18 +119,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             return false;
         }
 
-        int bytes_read;
-        try
-        {
-            ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
-            bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
-            read_settings.io_scheduling.read_resource_link.adjust(num_bytes_to_read, std::max(0, bytes_read));
-        }
-        catch (...)
-        {
-            read_settings.io_scheduling.read_resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
-            throw;
-        }
+        ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
+        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        rlock.unlock(std::max(0, bytes_read));
 
         if (bytes_read < 0)
         {

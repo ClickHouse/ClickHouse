@@ -111,21 +111,25 @@ TEST(SchedulerRoot, Smoke)
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a);
         EXPECT_TRUE(fc1->requests.contains(&rg.request));
+        rg.consume(1);
     }
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), b);
         EXPECT_TRUE(fc1->requests.contains(&rg.request));
+        rg.consume(1);
     }
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), c);
         EXPECT_TRUE(fc2->requests.contains(&rg.request));
+        rg.consume(1);
     }
 
     {
         ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), d);
         EXPECT_TRUE(fc2->requests.contains(&rg.request));
+        rg.consume(1);
     }
 }
 
