@@ -5,10 +5,12 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
