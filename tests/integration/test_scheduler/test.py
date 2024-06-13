@@ -36,9 +36,9 @@ def test_s3_resource_request_granularity():
     """
     )
 
-    total_bytes = 50000000 # Approximate data size
-    max_bytes_per_request = 2000000 # Should be ~1MB or less in general
-    min_bytes_per_request = 6000 # Small requests are ok, but we don't want hurt performance with too often resource requests
+    total_bytes = 50000000  # Approximate data size
+    max_bytes_per_request = 2000000  # Should be ~1MB or less in general
+    min_bytes_per_request = 6000  # Small requests are ok, but we don't want hurt performance with too often resource requests
 
     writes_before = int(
         node.query(
@@ -50,7 +50,9 @@ def test_s3_resource_request_granularity():
             f"select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
-    node.query(f"insert into data select number, randomString(10000000) from numbers(5) SETTINGS workload='admin'")
+    node.query(
+        f"insert into data select number, randomString(10000000) from numbers(5) SETTINGS workload='admin'"
+    )
     writes_after = int(
         node.query(
             f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
@@ -64,8 +66,12 @@ def test_s3_resource_request_granularity():
 
     assert write_bytes_after - write_bytes_before > 1.0 * total_bytes
     assert write_bytes_after - write_bytes_before < 1.2 * total_bytes
-    assert (write_bytes_after - write_bytes_before) / (writes_after - writes_before) < max_bytes_per_request
-    assert (write_bytes_after - write_bytes_before) / (writes_after - writes_before) > min_bytes_per_request
+    assert (write_bytes_after - write_bytes_before) / (
+        writes_after - writes_before
+    ) < max_bytes_per_request
+    assert (write_bytes_after - write_bytes_before) / (
+        writes_after - writes_before
+    ) > min_bytes_per_request
 
     reads_before = int(
         node.query(
@@ -77,7 +83,9 @@ def test_s3_resource_request_granularity():
             f"select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
-    node.query(f"select count() from data where not ignore(*) SETTINGS workload='admin'")
+    node.query(
+        f"select count() from data where not ignore(*) SETTINGS workload='admin'"
+    )
     reads_after = int(
         node.query(
             f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
@@ -91,8 +99,12 @@ def test_s3_resource_request_granularity():
 
     assert read_bytes_after - read_bytes_before > 1.0 * total_bytes
     assert read_bytes_after - read_bytes_before < 1.2 * total_bytes
-    assert (read_bytes_after - read_bytes_before) / (reads_after - reads_before) < max_bytes_per_request
-    assert (read_bytes_after - read_bytes_before) / (reads_after - reads_before) > min_bytes_per_request
+    assert (read_bytes_after - read_bytes_before) / (
+        reads_after - reads_before
+    ) < max_bytes_per_request
+    assert (read_bytes_after - read_bytes_before) / (
+        reads_after - reads_before
+    ) > min_bytes_per_request
 
 
 def test_s3_disk():
