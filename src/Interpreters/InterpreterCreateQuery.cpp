@@ -166,7 +166,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (db_count >= db_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_DATABASES,
                             "Too many databases in the Clickhouse. "
-                            "The limit (setting 'max_database_num_to_throw') is set to {}, currnt number of databases is {}",
+                            "The limit (setting 'max_database_num_to_throw') is set to {}, current number of databases is {}",
                             db_num_limit, db_count);
     }
 
@@ -1583,7 +1583,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (table_count >= table_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_TABLES,
                             "Too many tables in the Clickhouse. "
-                            "The limit (setting 'max_table_num_to_throw') is set to {}, currnt number of tables is {}",
+                            "The limit (setting 'max_table_num_to_throw') is set to {}, current number of tables is {}",
                             table_num_limit, table_count);
     }
 
