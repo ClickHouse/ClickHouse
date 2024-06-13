@@ -47,7 +47,7 @@ jobs:
         ./utils/list-versions/update-docker-version.sh
         GID=$(id -g "${UID}")
         # --network=host is required for the S3 access from a container
-        docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 --network=host \
+        docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
                 --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test:9c5daa2c62d1 \
                 /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
                 --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
