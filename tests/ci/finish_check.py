@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import logging
-import sys
 
 from github import Github
 
