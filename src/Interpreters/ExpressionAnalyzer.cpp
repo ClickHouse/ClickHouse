@@ -1789,7 +1789,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_un
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool remove_unused_result, CompileExpressions compile_expressions)
 {
     return std::make_shared<ExpressionActions>(
-        getActionsDAG(add_aliases, remove_unused_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions), remove_unused_result);
+        getActionsDAG(add_aliases, remove_unused_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions), add_aliases && remove_unused_result);
 }
 
 ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
@@ -1850,14 +1850,16 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     ssize_t where_step_num = -1;
     ssize_t having_step_num = -1;
 
+    ActionsAndFlagsPtr prewhere_dag_and_flags;
+
     auto finalize_chain = [&](ExpressionActionsChain & chain) -> ColumnsWithTypeAndName
     {
         if (prewhere_step_num >= 0)
         {
             ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
 
-            auto required_columns_ = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-            NameSet required_source_columns(required_columns_.begin(), required_columns_.end());
+            auto prewhere_required_columns = prewhere_dag_and_flags->actions.getRequiredColumnsNames();
+            NameSet required_source_columns(prewhere_required_columns.begin(), prewhere_required_columns.end());
             /// Add required columns to required output in order not to remove them after prewhere execution.
             /// TODO: add sampling and final execution to common chain.
             for (const auto & column : additional_required_columns_after_prewhere)
@@ -1868,6 +1870,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         chain.finalize();
+
+        if (prewhere_dag_and_flags)
+        {
+            auto dag = std::make_shared<ActionsDAG>(std::move(prewhere_dag_and_flags->actions));
+            prewhere_info = std::make_shared<PrewhereInfo>(std::move(dag), query.prewhere()->getColumnName());
+        }
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
@@ -1919,20 +1927,19 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             filter_info->do_remove_column = true;
         }
 
-        if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage))
+        if (prewhere_dag_and_flags = query_analyzer.appendPrewhere(chain, !first_stage); prewhere_dag_and_flags)
         {
             /// Prewhere is always the first one.
             prewhere_step_num = 0;
-            auto dag = std::make_shared<ActionsDAG>(std::move(actions->actions));
-            prewhere_info = std::make_shared<PrewhereInfo>(std::move(dag), query.prewhere()->getColumnName());
 
-            if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))
+            if (allowEarlyConstantFolding(prewhere_dag_and_flags->actions, settings))
             {
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
+                    auto dag = prewhere_dag_and_flags->actions.clone();
                     ExpressionActions(
-                        prewhere_info->prewhere_actions,
+                        dag,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.

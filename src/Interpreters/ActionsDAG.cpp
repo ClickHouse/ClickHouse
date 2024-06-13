@@ -1149,6 +1149,21 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     removeUnusedActions();
 }
 
+static void appendInputsFromNamesMap(
+    ActionsDAG & dag,
+    const ColumnsWithTypeAndName & source_columns,
+    const std::unordered_map<std::string_view, std::list<size_t>> & names_map)
+{
+    for (const auto & [_, positions] : names_map)
+    {
+        for (auto pos : positions)
+        {
+            const auto & col = source_columns[pos];
+            dag.addInput(col.name, col.type);
+        }
+    }
+}
+
 void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
 {
     std::unordered_map<std::string_view, std::list<size_t>> names_map;
@@ -1166,14 +1181,7 @@ void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
         positions.pop_front();
     }
 
-    for (const auto & [_, positions] : names_map)
-    {
-        for (auto pos : positions)
-        {
-            const auto & col = sample_block.getByPosition(pos);
-            addInput(col.name, col.type);
-        }
-    }
+    appendInputsFromNamesMap(*this, sample_block.getColumnsWithTypeAndName(), names_map);
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
@@ -1426,7 +1434,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
-    std::map<std::string_view, std::list<size_t>> inputs;
+    std::unordered_map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
     {
         size_t input_nodes_size = actions_dag->inputs.size();
@@ -1542,7 +1550,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     }
 
     actions_dag->outputs.swap(projection);
-    actions_dag->removeUnusedActions();
+    actions_dag->removeUnusedActions(false);
+
+    if (mode == MatchColumnsMode::Name)
+        appendInputsFromNamesMap(*actions_dag, source, inputs);
 
     return actions_dag;
 }
