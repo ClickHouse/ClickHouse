@@ -904,11 +904,13 @@ void StorageDistributed::read(
                 [my_custom_key_ast = std::move(custom_key_ast),
                  column_description = this->getInMemoryMetadataPtr()->columns,
                  custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+                 custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
+                 custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
                  context = local_context,
                  replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
+                    replica_count, replica_num - 1, my_custom_key_ast, {custom_key_type, custom_key_range_lower, custom_key_range_upper}, column_description, context);
             };
         }
     }
