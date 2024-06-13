@@ -40,6 +40,7 @@ RUN apt-get update -y \
             cargo='1.*' \
             zstd='1.4.*' \
             file='1:5.41-*' \
+            jq='1.6-*' \
             pv='1.6.*' \
             zip='3.0-*' \
             p7zip-full='16.02*' \

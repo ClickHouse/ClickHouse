@@ -519,7 +519,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-system-ubuntu-22.04, altinity-setup-regression
-      commit: 17a81c07fc1f41fbee651e0ef0ca4b44e537e5b1
+      commit: d1aebea79d8062b44ce9d2e940d3dfcb6225e71d
       arch: release 
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   RegressionTestsAarch64:
@@ -529,7 +529,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-system-ubuntu-22.04, altinity-setup-regression
-      commit: 17a81c07fc1f41fbee651e0ef0ca4b44e537e5b1
+      commit: d1aebea79d8062b44ce9d2e940d3dfcb6225e71d
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   SignRelease:
