@@ -175,8 +175,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
                     if (!mask_filled)
                         (*default_mask)[requested_key_index] = 1;
 
-                    Field value{};
-                    result_column->insert(value);
+                    result_column->insertDefault();
                 }
                 else
                 {
