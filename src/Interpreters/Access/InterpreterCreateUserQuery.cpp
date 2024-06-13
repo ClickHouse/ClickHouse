@@ -39,6 +39,7 @@ namespace
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & valid_until,
+        bool reset_authentication_methods,
         bool allow_implicit_no_password,
         bool allow_no_password,
         bool allow_plaintext_password)
@@ -57,11 +58,22 @@ namespace
                             "in the server configuration");
 
         if (auth_data)
-            user.auth_data = *auth_data;
+        {
+            user.authentication_methods.push_back(*auth_data);
+        }
+
+        if (reset_authentication_methods)
+        {
+            // todo check if element exists
+            auto primary_authentication_method = user.authentication_methods.back();
+            user.authentication_methods.clear();
+            user.authentication_methods.push_back(primary_authentication_method);
+        }
 
         if (auth_data || !query.alter)
         {
-            auto auth_type = user.auth_data.getType();
+            // todo arthur
+            auto auth_type = user.authentication_methods[0].getType();
             if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                 ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
             {
@@ -196,7 +208,7 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
-                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                valid_until, query.reset_authentication_methods_to_new, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             return updated_user;
         };
 
@@ -216,7 +228,7 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto new_user = std::make_shared<User>();
             updateUserFromQueryImpl(
                 *new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
-                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                valid_until, query.reset_authentication_methods_to_new, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -259,7 +271,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
     if (query.auth_data)
         auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, query.reset_authentication_methods_to_new, allow_no_password, allow_plaintext_password, true);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)

@@ -42,6 +42,7 @@ public:
     bool if_exists = false;
     bool if_not_exists = false;
     bool or_replace = false;
+    bool reset_authentication_methods_to_new = false;
 
     std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;

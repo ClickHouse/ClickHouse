@@ -64,8 +64,9 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data.toAST();
+        // todo arthur
+        if (user.authentication_methods[0].getType() != AuthenticationType::NO_PASSWORD)
+            query->auth_data = user.authentication_methods[0].toAST();
 
         if (user.valid_until)
         {

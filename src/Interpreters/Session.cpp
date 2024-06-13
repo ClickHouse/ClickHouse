@@ -309,7 +309,7 @@ Session::~Session()
 
 AuthenticationType Session::getAuthenticationType(const String & user_name) const
 {
-    return global_context->getAccessControl().read<User>(user_name)->auth_data.getType();
+    return global_context->getAccessControl().read<User>(user_name)->authentication_methods.back().getType();
 }
 
 AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const

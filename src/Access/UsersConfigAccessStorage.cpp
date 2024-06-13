@@ -154,18 +154,18 @@ namespace
 
         if (has_password_plaintext)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
-            user->auth_data.setPassword(config.getString(user_config + ".password"));
+            user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
+            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"));
         }
         else if (has_password_sha256_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
         }
         else if (has_password_double_sha1_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
         else if (has_ldap)
         {
@@ -177,19 +177,19 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
 
-            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
-            user->auth_data.setLDAPServerName(ldap_server_name);
+            user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+            user->authentication_methods.back().setLDAPServerName(ldap_server_name);
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
 
-            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
-            user->auth_data.setKerberosRealm(realm);
+            user->authentication_methods.emplace_back(AuthenticationType::KERBEROS);
+            user->authentication_methods.back().setKerberosRealm(realm);
         }
         else if (has_certificates)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SSL_CERTIFICATE};
+            user->authentication_methods.emplace_back(AuthenticationType::SSL_CERTIFICATE);
 
             /// Fill list of allowed certificates.
             Poco::Util::AbstractConfiguration::Keys keys;
@@ -205,12 +205,12 @@ namespace
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
-            user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
+            user->authentication_methods.back().setSSLCertificateCommonNames(std::move(common_names));
         }
         else if (has_ssh_keys)
         {
 #if USE_SSH
-            user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
+            user->authentication_methods.emplace_back(AuthenticationType::SSH_KEY);
 
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
@@ -247,20 +247,25 @@ namespace
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ssh_key entry pattern type: {}", entry);
             }
-            user->auth_data.setSSHKeys(std::move(keys));
+            user->authentication_methods.back().setSSHKeys(std::move(keys));
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
         }
         else if (has_http_auth)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::HTTP};
-            user->auth_data.setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
+            user->authentication_methods.emplace_back(AuthenticationType::HTTP);
+            user->authentication_methods.back().setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
             auto scheme = config.getString(http_auth_config + ".scheme");
-            user->auth_data.setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+            user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+        }
+        else
+        {
+            // remember to clean it up.. do I need to? smth in my memory tells me I don't need to
+            user->authentication_methods.emplace_back();
         }
 
-        auto auth_type = user->auth_data.getType();
+        auto auth_type = user->authentication_methods.back().getType();
         if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
             ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
         {

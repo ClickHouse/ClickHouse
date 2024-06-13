@@ -24,7 +24,7 @@ struct Authentication
     /// returned by the authentication server
     static bool areCredentialsValid(
         const Credentials & credentials,
-        const AuthenticationData & auth_data,
+        const std::vector<AuthenticationData> & authentication_methods,
         const ExternalAuthenticators & external_authenticators,
         SettingsChanges & settings);
 

@@ -514,8 +514,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
     bool throw_if_user_not_exists,
-    bool allow_no_password,
-    bool allow_plaintext_password) const
+    bool ,
+    bool ) const
 {
     if (auto id = find<User>(credentials.getUserName()))
     {
@@ -525,10 +525,11 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            auto auth_type = user->auth_data.getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-                throwAuthenticationTypeNotAllowed(auth_type);
+            // todo arthur
+//            auto auth_type = user->auth_data.getType();
+//            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+//                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+//                throwAuthenticationTypeNotAllowed(auth_type);
 
             if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
                 throwInvalidCredentials();
@@ -564,7 +565,7 @@ bool IAccessStorage::areCredentialsValid(
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators, settings);
+    return Authentication::areCredentialsValid(credentials, user.authentication_methods, external_authenticators, settings);
 }
 
 

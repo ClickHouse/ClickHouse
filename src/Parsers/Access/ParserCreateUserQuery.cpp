@@ -48,6 +48,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            ParserKeyword{Keyword::ADD_NEW_AUTHENTICATION_METHOD}.ignore(pos, expected);
             if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
             {
                 auth_data = std::make_shared<ASTAuthenticationData>();
@@ -401,6 +402,14 @@ namespace
             return until_p.parse(pos, valid_until, expected);
         });
     }
+
+    bool parseResetAuthenticationMethods(IParserBase::Pos & pos, Expected & expected)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{Keyword::RESET_AUTHENTICATION_METHODS_TO_NEW}.ignore(pos, expected);
+        });
+    }
 }
 
 
@@ -454,6 +463,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr valid_until;
     String cluster;
     String storage_name;
+    std::optional<bool> reset_authentication_methods_to_new;
 
     while (true)
     {
@@ -465,6 +475,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 auth_data = std::move(new_auth_data);
                 continue;
             }
+        }
+
+        if (!reset_authentication_methods_to_new.has_value())
+        {
+            reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
+            continue;
         }
 
         if (!valid_until)
@@ -564,6 +580,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->default_database = std::move(default_database);
     query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
+    query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
 
     if (query->auth_data)
         query->children.push_back(query->auth_data);
