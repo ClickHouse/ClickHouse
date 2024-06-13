@@ -21,6 +21,13 @@ struct S3Settings
 {
     S3::AuthSettings auth_settings;
     S3::RequestSettings request_settings;
+
+    void loadFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const DB::Settings & settings);
+
+    void updateIfChanged(const S3Settings & settings);
 };
 
 class S3SettingsByEndpoint

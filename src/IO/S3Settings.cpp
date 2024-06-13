@@ -8,6 +8,21 @@
 namespace DB
 {
 
+void S3Settings::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings)
+{
+    auth_settings = S3::AuthSettings(config, settings, config_prefix);
+    request_settings = S3::RequestSettings(config, settings, config_prefix);
+}
+
+void S3Settings::updateIfChanged(const S3Settings & settings)
+{
+    auth_settings.updateIfChanged(settings.auth_settings);
+    request_settings.updateIfChanged(settings.request_settings);
+}
+
 void S3SettingsByEndpoint::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,

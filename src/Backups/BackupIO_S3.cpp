@@ -128,13 +128,13 @@ BackupReaderS3::BackupReaderS3(
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
 {
-    auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-        s3_uri.uri.toString(),
-        context_->getUserName(),
-        /*ignore_user=*/is_internal_backup);
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    if (endpoint_settings.has_value())
-        s3_settings = endpoint_settings.value();
+    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    {
+        s3_settings.updateIfChanged(*endpoint_settings);
+    }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
@@ -226,13 +226,13 @@ BackupWriterS3::BackupWriterS3(
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
 {
-    auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-        s3_uri.uri.toString(),
-        context_->getUserName(),
-        /*ignore_user=*/is_internal_backup);
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    if (endpoint_settings.has_value())
-        s3_settings = endpoint_settings.value();
+    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    {
+        s3_settings.updateIfChanged(*endpoint_settings);
+    }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
