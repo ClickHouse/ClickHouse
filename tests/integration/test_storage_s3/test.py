@@ -1133,6 +1133,7 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1142,6 +1143,7 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(
@@ -1169,6 +1171,7 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1178,6 +1181,7 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
@@ -2117,12 +2121,10 @@ def test_read_subcolumns(started_cluster):
     assert res == "0\troot/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
 
     res = instance.query(
-        f"select x.b.d, _path, x.b, _file, dateDiff('minute', _time, now()), x.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
+        f"select x.b.d, _path, x.b, _file, x.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
     )
 
-    assert (
-        res == "42\troot/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t0\t42\n"
-    )
+    assert res == "42\troot/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
     res = instance.query(
         f"select a.b.d, _path, a.b, _file, a.e from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
@@ -2150,7 +2152,20 @@ def test_read_subcolumns(started_cluster):
         res == "42\t/root/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
     )
 
-    logging.info("Some custom logging")
+
+def test_read_subcolumn_time(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32') select  (42)"
+    )
+
+    res = instance.query(
+        f"select a, dateDiff('minute', _time, now()) < 59 from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32')"
+    )
+
+    assert res == "42\t1\n"
 
 
 def test_filtering_by_file_or_path(started_cluster):

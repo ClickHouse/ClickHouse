@@ -222,6 +222,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -293,6 +294,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
