@@ -762,7 +762,7 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
-The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
+The opposite operations of this function are [parseReadableSize](#parsereadablesize), [parseReadableSizeOrZero](#parsereadablesizeorzero), and [parseReadableSizeOrNull](#parsereadablesizeornull).
 
 **Syntax**
 
@@ -795,7 +795,7 @@ Result:
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
 
-The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
+The opposite operations of this function are [parseReadableSize](#parsereadablesize), [parseReadableSizeOrZero](#parsereadablesizeorzero), and [parseReadableSizeOrNull](#parsereadablesizeornull).
 
 **Syntax**
 
@@ -926,7 +926,7 @@ SELECT
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
 If the function is unable to parse the input value, it throws an exception.
 
-The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+The inverse operations of this function are [formatReadableSize](#formatreadablesize) and [formatReadableDecimalSize](#formatreadabledecimalsize).
 
 **Syntax**
 
@@ -964,7 +964,7 @@ SELECT
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.  
 If the function is unable to parse the input value, it returns `NULL`.
 
-The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+The inverse operations of this function are [formatReadableSize](#formatreadablesize) and [formatReadableDecimalSize](#formatreadabledecimalsize).
 
 **Syntax**
 
@@ -1002,7 +1002,7 @@ SELECT
 
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`.
 
-The inverse operations of this function are [formatReadableSize](#formatReadableSize) and [formatReadableDecimalSize](#formatReadableDecimalSize).
+The inverse operations of this function are [formatReadableSize](#formatreadablesize) and [formatReadableDecimalSize](#formatreadabledecimalsize).
 
 
 **Syntax**
@@ -2711,7 +2711,7 @@ countDigits(x)
 - Number of digits. [UInt8](../data-types/int-uint.md#uint-ranges).
 
 :::note
-For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
+For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#isdecimaloverflow).
 :::
 
 **Example**
@@ -2803,7 +2803,7 @@ currentProfiles()
 
 ## enabledProfiles
 
-Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
+Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#currentprofiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
 
 **Syntax**
 
@@ -2916,11 +2916,11 @@ Result:
 └───────────────────────────┘
 ```
 
-## queryID {#queryID}
+## queryID
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 
-In contrast to [initialQueryID](#initial-query-id) function, `queryID` can return different results on different shards (see the example).
+In contrast to [initialQueryID](#initialqueryid) function, `queryID` can return different results on different shards (see the example).
 
 **Syntax**
 
@@ -2954,7 +2954,7 @@ Result:
 
 Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
-In contrast to [queryID](#query-id) function, `initialQueryID` returns the same results on different shards (see example).
+In contrast to [queryID](#queryid) function, `initialQueryID` returns the same results on different shards (see example).
 
 **Syntax**
 
@@ -3041,7 +3041,7 @@ shardCount()
 
 **See Also**
 
-- [shardNum()](#shard-num) function example also contains `shardCount()` function call.
+- [shardNum()](#shardnum) function example also contains `shardCount()` function call.
 
 ## getOSKernelVersion
 

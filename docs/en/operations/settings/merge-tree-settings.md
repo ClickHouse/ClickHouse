@@ -974,9 +974,11 @@ Default value: false
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
-### allow_experimental_optimized_row_order
+### optimize_row_order
 
 Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
+
+Only has an effect for ordinary MergeTree-engine tables. Does nothing for specialized MergeTree engine tables (e.g. CollapsingMergeTree).
 
 MergeTree tables are (optionally) compressed using [compression codecs](../../sql-reference/statements/create/table.md#column_compression_codec).
 Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.

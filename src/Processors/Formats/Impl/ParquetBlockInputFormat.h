@@ -208,6 +208,8 @@ private:
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
 
+        size_t adaptive_chunk_size = 0;
+
         std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
