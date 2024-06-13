@@ -1188,7 +1188,10 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         std::rethrow_exception(local_format_error);
 
     if (cancelled && is_interactive)
+    {
         std::cout << "Query was cancelled." << std::endl;
+        cancelled_printed = true;
+    }
 }
 
 
@@ -1302,8 +1305,13 @@ void ClientBase::onEndOfStream()
 
     resetOutput();
 
-    if (is_interactive && !written_first_block)
-        std::cout << "Ok." << std::endl;
+    if (is_interactive)
+    {
+        if (cancelled && !cancelled_printed)
+            std::cout << "Query was cancelled." << std::endl;
+        else if (!written_first_block)
+            std::cout << "Ok." << std::endl;
+    }
 }
 
 
@@ -1866,6 +1874,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     resetOutput();
     have_error = false;
     cancelled = false;
+    cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
 
