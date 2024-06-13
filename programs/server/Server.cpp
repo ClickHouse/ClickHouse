@@ -48,6 +48,7 @@
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -70,7 +71,6 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
@@ -1378,7 +1378,7 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
-    NamedCollectionUtils::loadIfNot();
+    NamedCollectionFactory::instance().loadIfNot();
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -1647,7 +1647,7 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-            NamedCollectionUtils::reloadFromConfig(*config);
+            NamedCollectionFactory::instance().reloadFromConfig(*config);
 
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
@@ -1670,6 +1670,10 @@ try
 
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings.cannot_allocate_thread_fault_injection_probability);
+
+#if USE_GWP_ASAN
+            GWPAsan::setForceSampleProbability(new_server_settings.gwp_asan_force_sample_probability);
+#endif
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -2119,6 +2123,10 @@ try
         ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
+
+#if USE_GWP_ASAN
+        GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
+#endif
 
         try
         {
