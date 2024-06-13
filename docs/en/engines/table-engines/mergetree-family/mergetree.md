@@ -102,7 +102,7 @@ Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an ac
 
 For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
-#### Settings
+#### SETTINGS
 
 See [MergeTree Settings](../../../operations/settings/merge-tree-settings.md).
 

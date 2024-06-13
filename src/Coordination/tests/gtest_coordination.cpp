@@ -2045,6 +2045,7 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 
     state_machine->pre_commit(1, create_entry_1->get_buf());    
     EXPECT_TRUE(uncommitted_state.nodes.contains(node_path_1));
+
     state_machine->commit(1, create_entry_1->get_buf());
     EXPECT_TRUE(storage.container.contains(node_path_1));
 
