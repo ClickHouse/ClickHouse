@@ -25,8 +25,11 @@ handle SIG$RTMIN nostop noprint pass
 info signals
 continue
 backtrace full
-thread apply all backtrace full
 info registers
+p "top 1 KiB of the stack:"
+p/x *(uint64_t[128]*)$sp
+maintenance info sections
+thread apply all backtrace full
 disassemble /s
 up
 disassemble /s
