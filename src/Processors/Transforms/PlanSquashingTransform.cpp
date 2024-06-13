@@ -64,12 +64,12 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
     for (auto & input : inputs)
     {
         if (!input.isFinished())
-            all_finished = false;
-        else
         {
+            all_finished = false;
             input.setNeeded();
-            continue;
         }
+        else
+            continue;
 
         if (input.hasData())
         {
