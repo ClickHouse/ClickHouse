@@ -466,7 +466,7 @@ bool StorageS3Queue::streamToViews()
     auto file_iterator = createFileIterator(s3queue_context, nullptr);
     size_t total_rows = 0;
 
-    while (!file_iterator->isFinished())
+    while (!shutdown_called && !file_iterator->isFinished())
     {
         InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
         auto block_io = interpreter.execute();

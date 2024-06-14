@@ -101,6 +101,7 @@ protected:
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
         const ObjectInfo & getObjectInfo() const { return *object_info; }
+        ObjectInfoPtr getObjectInfoPtr() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:

@@ -233,7 +233,7 @@ void S3QueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Setting file {} as processed (path: {})", path, processed_node_path);
 
     ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
-    file_status->onProcessed();
+    chassert(file_status->state == FileStatus::State::Processed);
 
     try
     {
@@ -253,10 +253,11 @@ void S3QueueIFileMetadata::setProcessed()
 
 void S3QueueIFileMetadata::setFailed(const std::string & exception, bool reduce_retry_count)
 {
-    LOG_TRACE(log, "Setting file {} as failed (exception: {}, path: {})", path, exception, failed_node_path);
+    LOG_TRACE(log, "Setting file {} as failed (path: {}, reduce retry count: {}, exception: {})",
+              path, failed_node_path, reduce_retry_count, exception);
 
     ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
-    file_status->onFailed(exception);
+    chassert(file_status->state == FileStatus::State::Failed);
     node_metadata.last_exception = exception;
 
     if (reduce_retry_count)
@@ -330,15 +331,16 @@ void S3QueueIFileMetadata::setFailedRetriable()
     Coordination::Requests requests;
     Coordination::Stat stat;
     std::string res;
-    if (zk_client->tryGet(retrieable_failed_node_path, res, &stat))
+    bool has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &stat);
+    if (has_failed_before)
     {
         auto failed_node_metadata = NodeMetadata::fromString(res);
         node_metadata.retries = failed_node_metadata.retries + 1;
         file_status->retries = node_metadata.retries;
     }
 
-    LOG_TRACE(log, "File `{}` failed to process, try {}/{}",
-              path, node_metadata.retries, max_loading_retries);
+    LOG_TRACE(log, "File `{}` failed to process, try {}/{}, retries node exists: {} (failed node path: {})",
+              path, node_metadata.retries, max_loading_retries, has_failed_before, failed_node_path);
 
     if (node_metadata.retries >= max_loading_retries)
     {

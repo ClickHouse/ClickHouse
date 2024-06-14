@@ -57,7 +57,8 @@ bool StorageS3QueueSource::FileIterator::isFinished() const
      return iterator_finished
          && listed_keys_cache.end() == std::find_if(
              listed_keys_cache.begin(), listed_keys_cache.end(),
-             [](const auto & v) { return !v.second.keys.empty(); });
+             [](const auto & v) { return !v.second.keys.empty(); })
+         && objects_to_retry.empty();
 }
 
 size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
@@ -73,9 +74,21 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
     while (!shutdown_called)
     {
         if (metadata->useBucketsForProcessing())
+        {
             std::tie(object_info, bucket_info) = getNextKeyFromAcquiredBucket(processor);
+        }
         else
-            object_info = glob_iterator->next(processor);
+        {
+            if (objects_to_retry.empty())
+            {
+                object_info = glob_iterator->next(processor);
+            }
+            else
+            {
+                object_info = objects_to_retry.front();
+                objects_to_retry.pop_front();
+            }
+        }
 
         if (!object_info)
             return {};
@@ -92,6 +105,20 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
     }
     return {};
 }
+
+void StorageS3QueueSource::FileIterator::returnForRetry(ObjectInfoPtr object_info)
+{
+    if (metadata->useBucketsForProcessing())
+    {
+        const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+        listed_keys_cache[bucket].keys.emplace_front(object_info);
+    }
+    else
+    {
+        objects_to_retry.push_back(object_info);
+    }
+}
+
 
 std::pair<StorageS3QueueSource::ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr>
 StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
@@ -383,7 +410,10 @@ Chunk StorageS3QueueSource::generateImpl()
     while (true)
     {
         if (!reader)
+        {
+            LOG_TEST(log, "No reader");
             break;
+        }
 
         const auto * object_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
         auto file_metadata = object_info->file_metadata;
@@ -408,6 +438,7 @@ Chunk StorageS3QueueSource::generateImpl()
                 appendLogElement(reader.getObjectInfo().getPath(), *file_status, processed_rows_from_file, false);
             }
 
+            LOG_TEST(log, "Query is cancelled");
             break;
         }
 
@@ -415,6 +446,8 @@ Chunk StorageS3QueueSource::generateImpl()
 
         if (shutdown_called)
         {
+            LOG_TEST(log, "Shutdown called");
+
             if (processed_rows_from_file == 0)
                 break;
 
@@ -480,6 +513,12 @@ Chunk StorageS3QueueSource::generateImpl()
 
             if (processed_rows_from_file == 0)
             {
+                auto * file_iterator = dynamic_cast<FileIterator *>(internal_source->file_iterator.get());
+                chassert(file_iterator);
+
+                if (file_status->retries < file_metadata->getMaxTries())
+                    file_iterator->returnForRetry(reader.getObjectInfoPtr());
+
                 /// If we did not process any rows from the failed file,
                 /// commit all previously processed files,
                 /// not to loose the work already done.
@@ -491,7 +530,9 @@ Chunk StorageS3QueueSource::generateImpl()
 
         appendLogElement(path, *file_status, processed_rows_from_file, true);
 
+        file_status->onProcessed();
         file_status.reset();
+
         processed_rows_from_file = 0;
         processed_files.push_back(file_metadata);
 
@@ -551,7 +592,10 @@ Chunk StorageS3QueueSource::generateImpl()
         reader = reader_future.get();
 
         if (!reader)
+        {
+            LOG_TEST(log, "Reader finished");
             break;
+        }
 
         file_status = files_metadata->getFileStatus(reader.getObjectInfo().getPath());
 
@@ -569,7 +613,8 @@ Chunk StorageS3QueueSource::generateImpl()
 
 void StorageS3QueueSource::commit(bool success, const std::string & exception)
 {
-    LOG_TEST(log, "Having {} files to set as {}", processed_files.size(), success ? "Processed" : "Failed");
+    LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
+             processed_files.size(), success ? "Processed" : "Failed", failed_files.size());
 
     for (const auto & file_metadata : processed_files)
     {

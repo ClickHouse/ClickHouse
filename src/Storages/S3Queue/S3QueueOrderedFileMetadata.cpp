@@ -384,8 +384,11 @@ void S3QueueOrderedFileMetadata::setProcessedImpl()
         auto code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
-            if (max_loading_retries)
-                zk_client->tryRemove(failed_node_path + ".retriable", -1);
+            if (max_loading_retries
+                && zk_client->tryRemove(failed_node_path + ".retriable", -1) == Coordination::Error::ZOK)
+            {
+                LOG_TEST(log, "Removed node {}.retriable", failed_node_path);
+            }
             return;
         }
 

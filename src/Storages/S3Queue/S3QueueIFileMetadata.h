@@ -62,6 +62,7 @@ public:
 
     FileStatusPtr getFileStatus() { return file_status; }
     const std::string & getPath() { return path; }
+    size_t getMaxTries() const { return max_loading_retries; }
 
     struct NodeMetadata
     {

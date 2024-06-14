@@ -58,6 +58,8 @@ public:
 
         size_t estimatedKeysCount() override;
 
+        void returnForRetry(ObjectInfoPtr object_info);
+
     private:
         using Bucket = S3QueueMetadata::Bucket;
         using Processor = S3QueueMetadata::Processor;
@@ -78,6 +80,9 @@ public:
         std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
         bool iterator_finished = false;
         std::unordered_map<size_t, S3QueueOrderedFileMetadata::BucketHolderPtr> bucket_holders;
+
+        /// Only for processing without buckets.
+        std::deque<ObjectInfoPtr> objects_to_retry;
 
         std::pair<ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
     };
