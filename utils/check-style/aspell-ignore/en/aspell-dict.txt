@@ -222,6 +222,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -293,6 +294,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
@@ -473,6 +475,7 @@ Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineString
 Linf
 LinfDistance
 LinfNorm
@@ -1008,6 +1011,8 @@ Updatable
 Uppercased
 Uptime
 Uptrace
+UrlDecode
+UrlEncode
 UserID
 Util
 VARCHAR
@@ -1934,6 +1939,8 @@ london
 lookups
 loongarch
 lowcardinality
+lowCardinalityIndices
+lowCardinalityKeys
 lowerUTF
 lowercased
 lttb
@@ -2310,6 +2317,7 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKTLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon

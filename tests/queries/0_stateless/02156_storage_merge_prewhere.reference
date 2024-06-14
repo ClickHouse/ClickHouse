@@ -1,6 +1,3 @@
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
           Prewhere info
             Prewhere filter
             Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
@@ -8,8 +5,15 @@
             Prewhere filter
             Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2
-      Filter column: and(equals(k, 3), notEmpty(v)) (removed)
+        Filter column: and(equals(k, 3), notEmpty(v)) (removed)
+          Prewhere info
+            Prewhere filter
+            Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2
-          Filter column: and(equals(k, 3), notEmpty(v)) (removed)
-          Filter column: and(equals(k, 3), notEmpty(v)) (removed)
+              Prewhere info
+                Prewhere filter
+                Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+              Prewhere info
+                Prewhere filter
+                Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2
