@@ -88,7 +88,9 @@ def test_s3_resource_request_granularity():
     )
 
     write_requests = writes_after - writes_before
-    write_bytes = (write_bytes_after - write_bytes_before) - (write_budget_after - write_budget_before)
+    write_bytes = (write_bytes_after - write_bytes_before) - (
+        write_budget_after - write_budget_before
+    )
     assert write_bytes > 1.0 * total_bytes
     assert write_bytes < 1.05 * total_bytes
     assert write_bytes / write_requests < max_bytes_per_request
@@ -132,7 +134,9 @@ def test_s3_resource_request_granularity():
         ).strip()
     )
 
-    read_bytes = (read_bytes_after - read_bytes_before) - (read_budget_after - read_budget_before)
+    read_bytes = (read_bytes_after - read_bytes_before) - (
+        read_budget_after - read_budget_before
+    )
     read_requests = reads_after - reads_before
     assert read_bytes > 1.0 * total_bytes
     assert read_bytes < 1.05 * total_bytes
