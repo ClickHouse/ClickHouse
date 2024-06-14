@@ -532,8 +532,11 @@ Chunk StorageS3QueueSource::generateImpl()
             rows_or_bytes_or_time_limit_reached = true;
         }
 
-        if (rows_or_bytes_or_time_limit_reached && reader_future.valid())
+        if (rows_or_bytes_or_time_limit_reached)
         {
+            if (!reader_future.valid())
+                break;
+
             LOG_TRACE(log, "Rows or bytes limit reached, but we have one more file scheduled already, "
                       "will process it despite the limit");
         }
