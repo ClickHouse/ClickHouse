@@ -474,9 +474,17 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     else
         all_replicas_count = pools_to_use.size();
 
+    chassert(all_replicas_count == pools_to_use.size());
+
+    if (exclude_local_replica && !pools_to_use.empty())
+        pools_to_use.resize(all_replicas_count - 1);
+
+    if (pools_to_use.empty())
+        return;
+
     /// local replicas has number 0
     size_t offset = (exclude_local_replica ? 1 : 0);
-    for (size_t i = 0 + offset; i < all_replicas_count + offset; ++i)
+    for (size_t i = 0 + offset; i < all_replicas_count; ++i)
     {
         IConnections::ReplicaInfo replica_info{
             .all_replicas_count = all_replicas_count,
@@ -484,7 +492,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, shuffled_pool[i].pool, replica_info);
+        addPipeForSingeReplica(pipes, pools_to_use[i - offset], replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
