@@ -4,16 +4,6 @@ import pytest
 
 import pathlib
 
-# import os
-
-# import grpc
-# import pymysql.connections
-# import psycopg2 as py_psql
-# import sys
-# import threading
-
-# from helpers.cluster import ClickHouseCluster, run_and_check
-# from helpers.test_tools import assert_logs_contain_with_retry
 import subprocess
 import select
 import io
@@ -26,9 +16,27 @@ class ClickHouseDisksException(Exception):
     pass
 
 
-class LocalDisksClient(object):
+@pytest.fixture(scope="module")
+def started_cluster():
+    global cluster
+    try:
+        cluster = ClickHouseCluster(__file__)
+        cluster.add_instance(
+            "disks_app_test",
+            main_configs=["server_configs/config.xml"],
+            with_minio=True,
+        )
+
+        cluster.start()
+        yield cluster
+
+    finally:
+        cluster.shutdown()
+
+
+class DisksClient(object):
     SEPARATOR = b"\a\a\a\a\n"
-    client: Optional["LocalDisksClient"] = None  # static variable
+    local_client: Optional["DisksClient"] = None  # static variable
     default_disk_root_directory: str = "/var/lib/clickhouse"
 
     def __init__(self, bin_path: str, config_path: str, working_path: str):
@@ -170,24 +178,24 @@ class LocalDisksClient(object):
         self.execute_query(f"write {path_from_adding} {path_to}")
 
     @staticmethod
-    def getClient(refresh: bool):
-        if (LocalDisksClient.client is None) or refresh:
+    def getLocalDisksClient(refresh: bool):
+        if (DisksClient.local_client is None) or refresh:
             binary_file = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
             current_working_directory = str(pathlib.Path().resolve())
             config_file = f"{current_working_directory}/test_disks_app_interactive/configs/config.xml"
-            if not os.path.exists(LocalDisksClient.default_disk_root_directory):
-                os.mkdir(LocalDisksClient.default_disk_root_directory)
+            if not os.path.exists(DisksClient.default_disk_root_directory):
+                os.mkdir(DisksClient.default_disk_root_directory)
 
-            LocalDisksClient.client = LocalDisksClient(
+            DisksClient.local_client = DisksClient(
                 binary_file, config_file, current_working_directory
             )
-            return LocalDisksClient.client
+            return DisksClient.local_client
         else:
-            return LocalDisksClient.client
+            return DisksClient.local_client
 
 
 def test_disks_app_interactive_list_disks():
-    client = LocalDisksClient.getClient(True)
+    client = DisksClient.getLocalDisksClient(True)
     expected_disks_with_path = [
         ("default", "/"),
         ("local", client.working_path),
@@ -202,7 +210,7 @@ def test_disks_app_interactive_list_disks():
 
 
 def test_disks_app_interactive_list_files_local():
-    client = LocalDisksClient.getClient(True)
+    client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("local")
     excepted_listed_files = sorted(os.listdir("test_disks_app_interactive/"))
     listed_files = sorted(client.ls("test_disks_app_interactive/"))
@@ -210,7 +218,7 @@ def test_disks_app_interactive_list_files_local():
 
 
 def test_disks_app_interactive_list_directories_default():
-    client = LocalDisksClient.getClient(True)
+    client = DisksClient.getLocalDisksClient(True)
     traversed_dir = client.ls(".", recursive=True)
     client.mkdir("dir1")
     client.mkdir("dir2")
@@ -280,7 +288,7 @@ def test_disks_app_interactive_cp_and_read():
     initial_text = "File content"
     with open("a.txt", "w") as file:
         file.write(initial_text)
-    client = LocalDisksClient.getClient(True)
+    client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
     client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
     read_text = client.read("a.txt")
@@ -291,9 +299,7 @@ def test_disks_app_interactive_cp_and_read():
     assert "" == read_text
     read_text = client.read("/dir1/b.txt")
     assert read_text == initial_text
-    with open(
-        f"{LocalDisksClient.default_disk_root_directory}/dir1/b.txt", "r"
-    ) as file:
+    with open(f"{DisksClient.default_disk_root_directory}/dir1/b.txt", "r") as file:
         read_text = file.read()
         assert read_text == initial_text
     os.remove("a.txt")
@@ -305,7 +311,7 @@ def test_disks_app_interactive_test_move_and_write():
     initial_text = "File content"
     with open("a.txt", "w") as file:
         file.write(initial_text)
-    client = LocalDisksClient.getClient(True)
+    client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
     client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
     files = client.ls(".")

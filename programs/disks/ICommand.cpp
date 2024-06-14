@@ -7,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 CommandLineOptions ICommand::processCommandLineArguments(const Strings & commands)

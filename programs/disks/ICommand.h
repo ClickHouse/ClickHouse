@@ -29,7 +29,7 @@ using CommandLineOptions = po::variables_map;
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 class ICommand
