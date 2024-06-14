@@ -9,7 +9,7 @@ INSERT INTO y values (100, 1), (300, 3), (200, 2);
 
 CREATE DICTIONARY d1 (hash_id UInt64, user_result Decimal(3, 2) )
 PRIMARY KEY hash_id
-SOURCE(CLICKHOUSE(QUERY `select * from x`))
+SOURCE(CLICKHOUSE(TABLE 'x'))
 LIFETIME(0)
 LAYOUT(HASHED());
 
@@ -20,7 +20,7 @@ FROM y;
 
 CREATE DICTIONARY d2 (hash_id UInt64, user_result Decimal(3, 2) )
 PRIMARY KEY hash_id
-SOURCE(CLICKHOUSE(QUERY `select * from x`))
+SOURCE(CLICKHOUSE(TABLE 'x'))
 LIFETIME(0)
 LAYOUT(HASHED_ARRAY());
 
