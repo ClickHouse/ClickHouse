@@ -35,7 +35,7 @@ function check_refcnt_for_table()
     )
 
     # Notes:
-    # - query may sleep 0.1*(2000/4)=5 seconds maximum, it is enough to check system.parts
+    # - query may sleep 0.1*(2000/4)=50 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
     $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &
