@@ -2645,15 +2645,11 @@ void ClientBase::runInteractive()
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::USER_EXPIRED)
-            {
                 break;
-            }
-            else
-            {
-                /// We don't need to handle the test hints in the interactive mode.
-                std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-                client_exception.reset(e.clone());
-            }
+
+            /// We don't need to handle the test hints in the interactive mode.
+            std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+            client_exception.reset(e.clone());
         }
 
         if (client_exception)
