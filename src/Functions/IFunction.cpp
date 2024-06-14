@@ -50,43 +50,78 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
 ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
 {
-    size_t num_rows = input_rows_count;
+    /// We return the LC indexes so the LC can be reconstructed with the function result
     ColumnPtr indexes;
 
-    /// Find first LowCardinality column and replace it to nested dictionary.
-    for (auto & column : args)
+    size_t number_low_cardinality_columns = 0;
+    size_t last_low_cardinality = 0;
+    size_t number_const_columns = 0;
+    size_t number_full_columns = 0;
+
+    for (size_t i = 0; i < args.size(); i++)
     {
-        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+        auto const & arg = args[i];
+        if (checkAndGetColumn<ColumnLowCardinality>(arg.column.get()))
         {
-            /// Single LowCardinality column is supported now.
-            if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
-
-            const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Incompatible type for LowCardinality column: {}",
-                    column.type->getName());
-
-            if (can_be_executed_on_default_arguments)
-            {
-                /// Normal case, when function can be executed on values' default.
-                column.column = low_cardinality_column->getDictionary().getNestedColumn();
-                indexes = low_cardinality_column->getIndexesPtr();
-            }
-            else
-            {
-                /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
-                /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
-                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
-                column.column = dict_encoded.dictionary;
-                indexes = dict_encoded.indexes;
-            }
-
-            num_rows = column.column->size();
-            column.type = low_cardinality_type->getDictionaryType();
+            number_low_cardinality_columns++;
+            last_low_cardinality = i;
         }
+        else if (checkAndGetColumn<ColumnConst>(arg.column.get()))
+            number_const_columns++;
+        else
+            number_full_columns++;
+    }
+
+    if (!number_low_cardinality_columns && !number_const_columns)
+        return nullptr;
+
+    if (number_full_columns > 0 || number_low_cardinality_columns > 1)
+    {
+        /// If there is a single full column, we can't replace the LC column with its dictionary, as it won't match
+        /// the size or order of the full columns. Same if there are 2 or more low cardinality columns
+        for (auto & arg : args)
+        {
+            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(arg.column.get()))
+            {
+                arg.column = recursiveRemoveLowCardinality(arg.column);
+                chassert(arg.column->size() == input_rows_count);
+
+                const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(arg.type.get());
+                if (!low_cardinality_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", arg.type->getName());
+                arg.type = recursiveRemoveLowCardinality(arg.type);
+            }
+        }
+    }
+    else if (number_low_cardinality_columns == 1)
+    {
+        auto & lc_arg = args[last_low_cardinality];
+
+        const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(lc_arg.type.get());
+        if (!low_cardinality_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", lc_arg.type->getName());
+
+        const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(lc_arg.column.get());
+        chassert(low_cardinality_column);
+
+        if (can_be_executed_on_default_arguments)
+        {
+            /// Normal case, when function can be executed on values' default.
+            lc_arg.column = low_cardinality_column->getDictionary().getNestedColumn();
+            indexes = low_cardinality_column->getIndexesPtr();
+        }
+        else
+        {
+            /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+            /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
+            auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+            lc_arg.column = dict_encoded.dictionary;
+            indexes = dict_encoded.indexes;
+        }
+
+        /// The new column will have a different number of rows, normally less but occasionally it might be more (NULL)
+        input_rows_count = lc_arg.column->size();
+        lc_arg.type = low_cardinality_type->getDictionaryType();
     }
 
     /// Change size of constants.
@@ -94,7 +129,7 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
-            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), input_rows_count);
             column.type = recursiveRemoveLowCardinality(column.type);
         }
     }
