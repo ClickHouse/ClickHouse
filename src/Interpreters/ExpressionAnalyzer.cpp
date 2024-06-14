@@ -927,12 +927,15 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
 
-    auto tmp_actions = std::make_shared<ActionsDAG>(std::move(converting_join_columns->actions));
-    JoinPtr join = makeJoin(*syntax->ast_join, left_sample_columns, tmp_actions);
-    converting_join_columns->actions = std::move(*tmp_actions);
+    ActionsDAGPtr converting_actions;
+    if (converting_join_columns)
+        converting_actions = std::make_shared<ActionsDAG>(std::move(converting_join_columns->actions));
+
+    JoinPtr join = makeJoin(*syntax->ast_join, left_sample_columns, converting_actions);
 
     if (converting_join_columns)
     {
+        converting_join_columns->actions = std::move(*converting_actions);
         chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_join_columns));
         chain.addStep();
     }

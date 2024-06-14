@@ -2770,9 +2770,13 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
 void InterpreterSelectQuery::executeTotalsAndHaving(
     QueryPlan & query_plan, bool has_having, const ActionsAndFlagsPtr & expression, bool remove_filter, bool overflow_row, bool final)
 {
-    auto dag = expression->actions.clone();
-    if (expression->project_input)
-        dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+    ActionsDAGPtr dag;
+    if (expression)
+    {
+        dag = expression->actions.clone();
+        if (expression->project_input)
+            dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+    }
 
     const Settings & settings = context->getSettingsRef();
 
