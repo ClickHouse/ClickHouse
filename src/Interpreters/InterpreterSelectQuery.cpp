@@ -2374,49 +2374,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     return 0;
 }
 
-/** Storages can rely that filters that for storage will be available for analysis before
-  * plan is fully constructed and optimized.
-  *
-  * StorageMerge common header calculation and prewhere push-down relies on this.
-  *
-  * This is similar to Planner::collectFiltersForAnalysis
-  */
-void collectFiltersForAnalysis(
-    const ASTPtr & query_ptr,
-    const ContextPtr & query_context,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryOptions & options,
-    SelectQueryInfo & query_info)
-{
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-
-    auto dummy = std::make_shared<StorageDummy>(
-        storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)), storage_snapshot);
-
-    QueryPlan query_plan;
-    InterpreterSelectQuery(query_ptr, query_context, dummy, dummy->getInMemoryMetadataPtr(), options).buildQueryPlan(query_plan);
-
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
-    query_plan.optimize(optimization_settings);
-
-    std::vector<QueryPlan::Node *> nodes_to_process;
-    nodes_to_process.push_back(query_plan.getRootNode());
-
-    while (!nodes_to_process.empty())
-    {
-        const auto * node_to_process = nodes_to_process.back();
-        nodes_to_process.pop_back();
-        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
-
-        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
-        if (!read_from_dummy)
-            continue;
-
-        query_info.filter_actions_dag = read_from_dummy->getFilterActionsDAG();
-        query_info.optimized_prewhere_info = read_from_dummy->getPrewhereInfo();
-    }
-}
-
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
@@ -2546,10 +2503,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
-            && typeid_cast<const StorageMerge *>(storage.get()))
-            collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
-
         /// Table.
         if (max_streams == 0)
             max_streams = 1;
