@@ -129,8 +129,12 @@ public:
 
     AccessType getSourceAccessType(const String & table_engine) const;
 
-    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
-
+    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
+    {
+        if (storages.contains(storage_name))
+            return storages[storage_name].features.supports_schema_inference;
+        return false;
+    }
 private:
     Storages storages;
 };

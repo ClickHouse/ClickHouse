@@ -1,7 +1,6 @@
--- Tags: no-parallel, no-fasttest, no-shared-merge-tree
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel - due to static databases
 -- Tag no-fasttest - S3 is required
--- Tag no-shared-merge-tree - no reliable way to make SMT read-only in stateless test
 
 drop database if exists shard_0;
 drop database if exists shard_1;
