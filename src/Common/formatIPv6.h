@@ -96,7 +96,7 @@ inline const char * parseIPv4(const char * src, const char * end, unsigned char 
 /// returns true if whole buffer was parsed successfully
 inline bool parseIPv4whole(const char * src, const char * end, unsigned char * dst)
 {
-    return parseIPv4(src, end, dst) == end;
+    return parseIPv4(src, end, dst) == dst;
 }
 
 /// returns pointer to the right after parsed sequence or null on failed parsing
