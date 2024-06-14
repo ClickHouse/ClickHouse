@@ -68,9 +68,9 @@ if (OS_DARWIN)
 endif()
 
 set(MONGOC_ENABLE_COMPRESSION 1)
-set(MONGOC_ENABLE_COMPRESSION_ZLIB 1)
+set(MONGOC_ENABLE_COMPRESSION_ZLIB 0)
 set(MONGOC_ENABLE_COMPRESSION_SNAPPY 0)
-set(MONGOC_ENABLE_COMPRESSION_ZSTD 0)
+set(MONGOC_ENABLE_COMPRESSION_ZSTD 1)
 
 # SSL
 set(MONGOC_ENABLE_CRYPTO 0)
@@ -152,7 +152,7 @@ add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)
 target_include_directories(_libmongoc SYSTEM PUBLIC ${LIBMONGOC_SOURCE_DIR} ${COMMON_SOURCE_DIR} ${UTF8PROC_SOURCE_DIR})
 target_compile_definitions(_libmongoc PRIVATE MONGOC_COMPILATION)
-target_link_libraries(_libmongoc ch_contrib::libbson ch_contrib::c-ares ch_contrib::zlib resolv)
+target_link_libraries(_libmongoc ch_contrib::libbson ch_contrib::c-ares ch_contrib::zstd resolv)
 if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
     target_link_libraries(_libmongoc OpenSSL::SSL)
 endif()
