@@ -48,8 +48,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
     extern const int QUERY_NOT_ALLOWED;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int TOO_MANY_PARTS;
 }
 
 namespace

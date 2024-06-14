@@ -481,7 +481,7 @@ Chunk StorageS3QueueSource::generateImpl()
             if (processed_rows_from_file == 0)
             {
                 /// If we did not process any rows from the failed file,
-                /// commit all previosly processed files,
+                /// commit all previously processed files,
                 /// not to loose the work already done.
                 return {};
             }
