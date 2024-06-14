@@ -6,6 +6,18 @@
 #include <IO/NetUtils.h>
 
 
+namespace
+{
+
+template <typename T>
+const T & setValue(T * typed_ptr, std::type_identity_t<T> val)
+{
+    memcpy(typed_ptr, &val, sizeof(T));
+    return *typed_ptr;
+}
+
+}
+
 namespace DB
 {
 
@@ -40,7 +52,7 @@ public:
 
             chassert(reinterpret_cast<Position>(chunk_size_ptr) == working_buffer.begin());
 
-            *chunk_size_ptr = 0;
+            setValue(chunk_size_ptr, 0);
             /// Initialize next chunk
             chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(pos);
             pos += std::min(available(), sizeof(*chunk_size_ptr));
@@ -58,7 +70,7 @@ public:
         }
 
         /// Fill up current chunk size
-        *chunk_size_ptr = toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr)));
+        setValue(chunk_size_ptr, toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr))));
 
         if (!chunk_started)
             LOG_TEST(log, "{} -> {} Chunk send started. Message {}, size {}",
@@ -174,7 +186,7 @@ protected:
             pos -= sizeof(*chunk_size_ptr);
         else // fill up current chunk size
         {
-            *chunk_size_ptr = toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr)));
+            setValue(chunk_size_ptr, toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr))));
             if (!chunk_started)
             {
                 chunk_started = true;
