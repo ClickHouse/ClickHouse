@@ -408,16 +408,20 @@ IDisk & to_disk,
 const String & to_file_path,
 const ReadSettings & read_settings,
 const WriteSettings & write_settings,
-const std::function<void()> & cancellation_hook) {
-    if (&to_disk == this) {
+const std::function<void()> & cancellation_hook)
+{
+    if (&to_disk == this)
+    {
         disk_diff->copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
 
-        if (forward_metadata->exists(dataPath(from_file_path))) {
+        if (forward_metadata->exists(dataPath(from_file_path)))
+        {
             auto trans = forward_metadata->createTransaction();
             trans->writeInlineDataToFile(dataPath(to_file_path), forward_metadata->readInlineDataToString(dataPath(from_file_path)));
             trans->commit();
         }
-    } else {
+    } else
+    {
         IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
     }
 }
@@ -656,7 +660,8 @@ void DiskOverlay::setReadOnly(const String & path)
     disk_diff->setReadOnly(path);
 }
 
-void DiskOverlay::createHardLink(const String & src_path, const String & dst_path) {
+void DiskOverlay::createHardLink(const String & src_path, const String & dst_path)
+{
     // This doesn't work correctly for subsequent rewrite or deletion of the hardlinked file
     if (!exists(src_path) || !isFile(src_path))
     {
@@ -665,7 +670,8 @@ void DiskOverlay::createHardLink(const String & src_path, const String & dst_pat
     ensureHaveFile(src_path);
 
     disk_diff->createHardLink(src_path, dst_path);
-    if (forward_metadata->exists(dataPath(src_path))) {
+    if (forward_metadata->exists(dataPath(src_path)))
+    {
         auto trans = forward_metadata->createTransaction();
         auto str = forward_metadata->readInlineDataToString(dataPath(src_path));
         std::cout << str << std::endl;
