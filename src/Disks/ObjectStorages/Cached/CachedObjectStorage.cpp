@@ -39,6 +39,11 @@ ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string
     return object_storage->generateObjectKeyForPath(path);
 }
 
+ObjectStorageKey CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
+{
+    return object_storage->generateObjectKeyPrefixForDirectoryPath(path);
+}
+
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     ReadSettings modified_settings{read_settings};

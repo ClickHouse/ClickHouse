@@ -80,8 +80,8 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
-    LOG_TRACE(log, "Source description {}, desctionation description {}", data_source_description.description, destination_data_source_description.description);
-    if (destination_data_source_description.sameKind(data_source_description)
+    LOG_TRACE(log, "Source description {}, destination description {}", data_source_description.description, destination_data_source_description.description);
+    if (destination_data_source_description.object_storage_type == ObjectStorageType::Azure
         && destination_data_source_description.is_encrypted == encrypted_in_backup)
     {
         LOG_TRACE(log, "Copying {} from AzureBlobStorage to disk {}", path_in_backup, destination_disk->getName());
@@ -153,8 +153,8 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
 {
     /// Use the native copy as a more optimal way to copy a file from AzureBlobStorage to AzureBlobStorage if it's possible.
     auto source_data_source_description = src_disk->getDataSourceDescription();
-    LOG_TRACE(log, "Source description {}, desctionation description {}", source_data_source_description.description, data_source_description.description);
-    if (source_data_source_description.sameKind(data_source_description)
+    LOG_TRACE(log, "Source description {}, destination description {}", source_data_source_description.description, data_source_description.description);
+    if (source_data_source_description.object_storage_type == ObjectStorageType::Azure
         && source_data_source_description.is_encrypted == copy_encrypted)
     {
         /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in AzureBlobStorage container.

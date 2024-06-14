@@ -667,8 +667,6 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
         }
-
-        UNREACHABLE();
     }
 
     String dump() const;
@@ -1040,7 +1038,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx)
+    auto format(const DB::Field & x, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

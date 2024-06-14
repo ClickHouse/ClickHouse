@@ -13,6 +13,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionLoop(factory);
     registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);

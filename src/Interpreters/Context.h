@@ -117,7 +117,7 @@ struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
-class StorageS3Settings;
+class S3SettingsByEndpoint;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -760,6 +760,12 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
+    /// FIXME: for background operations (like Merge and Mutation) we also use the same Context object and even setup
+    /// query_id for it (table_uuid::result_part_name). We can distinguish queries from background operation in some way like
+    /// bool is_background = query_id.contains("::"), but it's much worse than just enum check with more clear purpose
+    void setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType setBackgroundOperationTypeForContextbackground_operation);
+    bool isBackgroundOperationContext() const;
+
     void killCurrentQuery() const;
     bool isCurrentQueryKilled() const;
 
@@ -1071,6 +1077,8 @@ public:
     void initializeSystemLogs();
 
     /// Call after initialization before using trace collector.
+    void createTraceCollector();
+
     void initializeTraceCollector();
 
     /// Call after unexpected crash happen.
@@ -1107,7 +1115,7 @@ public:
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DistributedSettings & getDistributedSettings() const;
-    const StorageS3Settings & getStorageS3Settings() const;
+    const S3SettingsByEndpoint & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);

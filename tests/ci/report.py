@@ -288,7 +288,7 @@ class JobReport:
     start_time: str
     duration: float
     additional_files: Union[Sequence[str], Sequence[Path]]
-    # clcikhouse version, build job only
+    # clickhouse version, build job only
     version: str = ""
     # checkname to set in commit status, set if differs from jjob name
     check_name: str = ""

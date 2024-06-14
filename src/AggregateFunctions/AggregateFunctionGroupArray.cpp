@@ -60,14 +60,13 @@ struct GroupArrayTrait
 template <typename Trait>
 constexpr const char * getNameByTrait()
 {
-    if (Trait::last)
+    if constexpr (Trait::last)
         return "groupArrayLast";
-    if (Trait::sampler == Sampler::NONE)
-        return "groupArray";
-    else if (Trait::sampler == Sampler::RNG)
-        return "groupArraySample";
-
-    UNREACHABLE();
+    switch (Trait::sampler)
+    {
+        case Sampler::NONE: return "groupArray";
+        case Sampler::RNG: return "groupArraySample";
+    }
 }
 
 template <typename T>
