@@ -955,7 +955,6 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
 
         if (element_index != -1)
         {
-            keys_found++;
             const auto & attribute_container = attribute_containers[shard];
 
             size_t found_element_index = static_cast<size_t>(element_index);
@@ -965,6 +964,8 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
                 set_value(keys_found, element, (*attribute.is_index_null)[shard][found_element_index]);
             else
                 set_value(keys_found, element, false);
+
+            keys_found++;
         }
     }
 
