@@ -10,6 +10,7 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -71,20 +72,6 @@ namespace CurrentMetrics
 
 namespace
 {
-    Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const DB::ProxyConfiguration & proxy_configuration)
-    {
-        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
-
-        poco_proxy_config.host = proxy_configuration.host;
-        poco_proxy_config.port = proxy_configuration.port;
-        poco_proxy_config.protocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.protocol);
-        poco_proxy_config.tunnel = proxy_configuration.tunneling;
-        poco_proxy_config.originalRequestProtocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
-
-        return poco_proxy_config;
-    }
-
-
     constexpr size_t roundUp(size_t x, size_t rounding)
     {
         chassert(rounding > 0);
@@ -756,7 +743,8 @@ struct EndpointPoolKey
                    proxy_config.port,
                    proxy_config.protocol,
                    proxy_config.tunneling,
-                   proxy_config.original_request_protocol)
+                   proxy_config.original_request_protocol,
+                   proxy_config.no_proxy_hosts)
             == std::tie(
                    rhs.connection_group,
                    rhs.target_host,
@@ -766,7 +754,8 @@ struct EndpointPoolKey
                    rhs.proxy_config.port,
                    rhs.proxy_config.protocol,
                    rhs.proxy_config.tunneling,
-                   rhs.proxy_config.original_request_protocol);
+                   rhs.proxy_config.original_request_protocol,
+                   rhs.proxy_config.no_proxy_hosts);
     }
 };
 
