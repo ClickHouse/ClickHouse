@@ -280,7 +280,7 @@ void DisksApp::addOptions()
     options_description.add_options()("help,h", "Print common help message")("config-file,C", po::value<String>(), "Set config file")(
         "disk", po::value<String>(), "Set disk name")("save-logs", "Save logs to a file")(
         "log-level", po::value<String>(), "Logging level")("query,q", po::value<String>(), "Query for a non-interactive mode")(
-        "test-mode", "Interface in test regyme");
+        "test-mode", "Interactive interface in test regyme");
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("copy", makeCommandCopy());

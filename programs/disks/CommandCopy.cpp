@@ -12,11 +12,12 @@ public:
     explicit CommandCopy() : ICommand()
     {
         command_name = "copy";
-        description = "Recursively copy data from `FROM_PATH` to `TO_PATH`";
-        options_description.add_options()("disk-from", po::value<String>(), "disk from which we copy")(
-            "disk-to", po::value<String>(), "disk to which we copy")(
-            "path-from", po::value<String>(), "path from which we copy (mandatory, positional)")(
-            "path-to", po::value<String>(), "path to which we copy (mandatory, positional)");
+        description = "Recursively copy data from `path-from` to `path-to`";
+        options_description.add_options()(
+            "disk-from", po::value<String>(), "disk from which we copy is executed (default value is a current disk)")(
+            "disk-to", po::value<String>(), "disk to which copy is executed (default value is a current disk)")(
+            "path-from", po::value<String>(), "path from which copy is executed (mandatory, positional)")(
+            "path-to", po::value<String>(), "path to which copy is executed (mandatory, positional)");
         positional_options_description.add("path-from", 1);
         positional_options_description.add("path-to", 1);
     }

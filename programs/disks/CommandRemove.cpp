@@ -17,7 +17,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        auto disk = getDiskWithPath(client, options, "disk");
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
         disk.getDisk()->removeRecursive(path);
     }

@@ -12,14 +12,14 @@ public:
         command_name = "move";
         description = "Move file or directory from `from_path` to `to_path`";
         options_description.add_options()("path-from", po::value<String>(), "path from which we copy (mandatory, positional)")(
-            "path-to", po::value<String>(), "path to which we copy (mandatory, positional)");
+            "path-to", po::value<String>(), "path to which we copy (mandatory, positional)")s;
         positional_options_description.add("path-from", 1);
         positional_options_description.add("path-to", 1);
     }
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        auto disk = getDiskWithPath(client, options, "disk");
 
         String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
