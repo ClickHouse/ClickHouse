@@ -328,8 +328,8 @@ def test_create_database():
 
 def test_table_functions():
     password = new_password()
-    azure_conn_string = cluster.env_variables['AZURITE_CONNECTION_STRING']
-    azure_storage_account_url = cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']
+    azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     azure_account_name = "devstoreaccount1"
     azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
