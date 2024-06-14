@@ -1,8 +1,8 @@
 ---
 slug: /en/sql-reference/data-types/geo
-sidebar_position: 62
+sidebar_position: 54
 sidebar_label: Geo
-title: "Geo Data Types"
+title: "Geometric"
 ---
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
@@ -33,7 +33,7 @@ Result:
 
 ## Ring
 
-`Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point-data-type)).
+`Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point)).
 
 **Example**
 
@@ -54,7 +54,7 @@ Result:
 
 ## Polygon
 
-`Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring-data-type)). First element of outer array is the outer shape of polygon and all the following elements are holes.
+`Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring)). First element of outer array is the outer shape of polygon and all the following elements are holes.
 
 **Example**
 
@@ -76,7 +76,7 @@ Result:
 
 ## MultiPolygon
 
-`MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon-data-type)).
+`MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon)).
 
 **Example**
 

@@ -79,7 +79,7 @@ void DatabaseMemory::dropTable(
         {
             fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
             if (fs::exists(table_data_dir))
-                fs::remove_all(table_data_dir);
+                (void)fs::remove_all(table_data_dir);
         }
     }
     catch (...)
@@ -135,7 +135,7 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr local_context)
 {
-    std::filesystem::remove_all(local_context->getPath() + data_path);
+    (void)std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)

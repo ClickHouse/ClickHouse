@@ -134,7 +134,7 @@ public:
 
     virtual String getName() const = 0;
 
-    enum class Status
+    enum class Status : uint8_t
     {
         /// Processor needs some data at its inputs to proceed.
         /// You need to run another processor to generate required input and then call 'prepare' again.

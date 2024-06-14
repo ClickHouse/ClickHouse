@@ -10,8 +10,10 @@
 #include <optional>
 #include <atomic>
 #include <stack>
+#include <random>
 
 #include <boost/heap/priority_queue.hpp>
+#include <pcg_random.hpp>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
@@ -172,10 +174,21 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
         size_t max_threads_,
         size_t max_free_threads_,
         size_t queue_size_,
-        bool shutdown_on_exception_);
+        bool shutdown_on_exception_,
+        UInt64 global_profiler_real_time_period_ns_,
+        UInt64 global_profiler_cpu_time_period_ns_);
 
 public:
-    static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
+    UInt64 global_profiler_real_time_period_ns;
+    UInt64 global_profiler_cpu_time_period_ns;
+
+    static void initialize(
+        size_t max_threads = 10000,
+        size_t max_free_threads = 1000,
+        size_t queue_size = 10000,
+        UInt64 global_profiler_real_time_period_ns_ = 0,
+        UInt64 global_profiler_cpu_time_period_ns_ = 0);
+
     static GlobalThreadPool & instance();
     static void shutdown();
 };
@@ -187,7 +200,7 @@ public:
   * NOTE: User code should use 'ThreadFromGlobalPool' declared below instead of directly using this class.
   *
   */
-template <bool propagate_opentelemetry_context = true>
+template <bool propagate_opentelemetry_context = true, bool global_trace_collector_allowed = true>
 class ThreadFromGlobalPoolImpl : boost::noncopyable
 {
 public:
@@ -197,11 +210,15 @@ public:
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
         : state(std::make_shared<State>())
     {
+        UInt64 global_profiler_real_time_period = GlobalThreadPool::instance().global_profiler_real_time_period_ns;
+        UInt64 global_profiler_cpu_time_period = GlobalThreadPool::instance().global_profiler_cpu_time_period_ns;
         /// NOTE:
         /// - If this will throw an exception, the destructor won't be called
         /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
         GlobalThreadPool::instance().scheduleOrThrow([
             my_state = state,
+            global_profiler_real_time_period,
+            global_profiler_cpu_time_period,
             my_func = std::forward<Function>(func),
             my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
@@ -220,6 +237,17 @@ public:
             /// Thread status holds raw pointer on query context, thus it always must be destroyed
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
+            if constexpr (global_trace_collector_allowed)
+            {
+                if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
+                    thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
+            }
+            else
+            {
+                UNUSED(global_profiler_real_time_period);
+                UNUSED(global_profiler_cpu_time_period);
+            }
+
             std::apply(function, arguments);
         },
         {}, // default priority
@@ -252,6 +280,10 @@ public:
         if (!initialized())
             abort();
 
+        /// Thread cannot join itself.
+        if (state->thread_id == std::this_thread::get_id())
+            abort();
+
         state->event.wait();
         state.reset();
     }
@@ -265,12 +297,7 @@ public:
 
     bool joinable() const
     {
-        if (!state)
-            return false;
-        /// Thread cannot join itself.
-        if (state->thread_id == std::this_thread::get_id())
-            return false;
-        return true;
+        return initialized();
     }
 
     std::thread::id get_id() const
@@ -305,11 +332,12 @@ protected:
 /// you need to use class, or you need to use ThreadFromGlobalPool below.
 ///
 /// See the comments of ThreadPool below to know how it works.
-using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
+using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false, true>;
 
 /// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
 /// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
-using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true, true>;
+using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true, false>;
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 ///
@@ -324,3 +352,21 @@ using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
+
+/// Enables fault injections globally for all thread pools
+class CannotAllocateThreadFaultInjector
+{
+    std::atomic_bool enabled = false;
+    std::mutex mutex;
+    pcg64_fast rndgen;
+    std::optional<std::bernoulli_distribution> random;
+
+    static thread_local bool block_fault_injections;
+
+    static CannotAllocateThreadFaultInjector & instance();
+public:
+    static void setFaultProbability(double probability);
+    static bool injectFault();
+
+    static scope_guard blockFaultInjections();
+};

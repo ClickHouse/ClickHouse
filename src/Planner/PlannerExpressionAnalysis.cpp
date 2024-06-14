@@ -1,6 +1,7 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -37,7 +38,7 @@ namespace
   * Actions before filter are added into into actions chain.
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
   */
-FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
+std::optional<FilterAnalysisResult> analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
@@ -45,10 +46,54 @@ FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_no
     FilterAnalysisResult result;
 
     result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context);
-    result.filter_column_name = result.filter_actions->getOutputs().at(0)->result_name;
+    const auto * output = result.filter_actions->getOutputs().at(0);
+    if (output->column && ConstantFilterDescription(*output->column).always_true)
+        return {};
+
+    result.filter_column_name = output->result_name;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
 
     return result;
+}
+
+bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
+{
+    const auto & source_expression = root.getSourceExpression();
+    if (!source_expression)
+        return true;
+
+    std::stack<const IQueryTreeNode *> nodes;
+    nodes.push(source_expression.get());
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            /// Allow removing constants from scalar subqueries. We send them to all the shards.
+            continue;
+
+        const auto * constant_node = node->as<ConstantNode>();
+        const auto * function_node = node->as<FunctionNode>();
+        if (constant_node)
+        {
+            if (!canRemoveConstantFromGroupByKey(*constant_node))
+                return false;
+        }
+        else if (function_node)
+        {
+            /// Do not allow removing constants like `hostName()`
+            if (!function_node->getFunctionOrThrow()->isDeterministic())
+                return false;
+
+            for (const auto & child : function_node->getArguments())
+                nodes.push(child.get());
+        }
+        else
+            return false;
+    }
+
+    return true;
 }
 
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
@@ -85,6 +130,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls &&
         (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
+    bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
+    bool check_constants_for_group_by_key = is_secondary_query || is_distributed_query;
+
     if (query_node.hasGroupBy())
     {
         if (query_node.isGroupByWithGroupingSets())
@@ -97,10 +146,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    auto is_constant_key = grouping_set_key_node->as<ConstantNode>() != nullptr;
-                    group_by_with_constant_keys |= is_constant_key;
+                    const auto * constant_key = grouping_set_key_node->as<ConstantNode>();
+                    group_by_with_constant_keys |= (constant_key != nullptr);
 
-                    if (is_constant_key && !aggregates_descriptions.empty())
+                    if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                         continue;
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
@@ -149,10 +198,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
-                auto is_constant_key = group_by_key_node->as<ConstantNode>() != nullptr;
-                group_by_with_constant_keys |= is_constant_key;
+                const auto * constant_key = group_by_key_node->as<ConstantNode>();
+                group_by_with_constant_keys |= (constant_key != nullptr);
 
-                if (is_constant_key && !aggregates_descriptions.empty())
+                if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                     continue;
 
                 auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, group_by_key_node);
@@ -405,7 +454,6 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getExpression());
             interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
         }
 
@@ -491,8 +539,11 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (query_node.hasWhere())
     {
         where_analysis_result_optional = analyzeFilter(query_node.getWhere(), current_output_columns, planner_context, actions_chain);
-        where_action_step_index_optional = actions_chain.getLastStepIndex();
-        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        if (where_analysis_result_optional)
+        {
+            where_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
     auto aggregation_analysis_result_optional = analyzeAggregation(query_tree, current_output_columns, planner_context, actions_chain);
@@ -505,13 +556,29 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (query_node.hasHaving())
     {
         having_analysis_result_optional = analyzeFilter(query_node.getHaving(), current_output_columns, planner_context, actions_chain);
-        having_action_step_index_optional = actions_chain.getLastStepIndex();
-        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        if (having_analysis_result_optional)
+        {
+            having_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
     auto window_analysis_result_optional = analyzeWindow(query_tree, current_output_columns, planner_context, actions_chain);
     if (window_analysis_result_optional)
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
+    std::optional<FilterAnalysisResult> qualify_analysis_result_optional;
+    std::optional<size_t> qualify_action_step_index_optional;
+
+    if (query_node.hasQualify())
+    {
+        qualify_analysis_result_optional = analyzeFilter(query_node.getQualify(), current_output_columns, planner_context, actions_chain);
+        if (qualify_analysis_result_optional)
+        {
+            qualify_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
+    }
 
     auto projection_analysis_result = analyzeProjection(query_node, current_output_columns, planner_context, actions_chain);
     current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
@@ -535,7 +602,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * otherwise coordinator does not find it in block.
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value() && !planner_query_processing_info.isSecondStage())
+        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->getOutputs())
@@ -604,7 +671,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     PlannerExpressionsAnalysisResult expressions_analysis_result(std::move(projection_analysis_result));
 
-    if (where_action_step_index_optional && where_analysis_result_optional)
+    if (where_analysis_result_optional && where_action_step_index_optional)
     {
         auto & where_analysis_result = *where_analysis_result_optional;
         auto & where_actions_chain_node = actions_chain.at(*where_action_step_index_optional);
@@ -615,7 +682,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (aggregation_analysis_result_optional)
         expressions_analysis_result.addAggregation(std::move(*aggregation_analysis_result_optional));
 
-    if (having_action_step_index_optional && having_analysis_result_optional)
+    if (having_analysis_result_optional && having_action_step_index_optional)
     {
         auto & having_analysis_result = *having_analysis_result_optional;
         auto & having_actions_chain_node = actions_chain.at(*having_action_step_index_optional);
@@ -625,6 +692,14 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (window_analysis_result_optional)
         expressions_analysis_result.addWindow(std::move(*window_analysis_result_optional));
+
+    if (qualify_analysis_result_optional && qualify_action_step_index_optional)
+    {
+        auto & qualify_analysis_result = *qualify_analysis_result_optional;
+        auto & qualify_actions_chain_node = actions_chain.at(*qualify_action_step_index_optional);
+        qualify_analysis_result.remove_filter_column = !qualify_actions_chain_node->getChildRequiredOutputColumnsNames().contains(qualify_analysis_result.filter_column_name);
+        expressions_analysis_result.addQualify(std::move(qualify_analysis_result));
+    }
 
     if (sort_analysis_result_optional)
         expressions_analysis_result.addSort(std::move(*sort_analysis_result_optional));

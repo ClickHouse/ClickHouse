@@ -126,17 +126,29 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const
+void ConstantNode::convertToNullable()
 {
-    const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
-    return *constant_value == *rhs_typed.constant_value && value_string == rhs_typed.value_string;
+    constant_value = std::make_shared<ConstantValue>(constant_value->getValue(), makeNullableSafe(constant_value->getType()));
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
-    auto type_name = constant_value->getType()->getName();
-    hash_state.update(type_name.size());
-    hash_state.update(type_name);
+    const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
+
+    if (value_string != rhs_typed.value_string || constant_value->getValue() != rhs_typed.constant_value->getValue())
+        return false;
+
+    return !compare_options.compare_types || constant_value->getType()->equals(*rhs_typed.constant_value->getType());
+}
+
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+{
+    if (compare_options.compare_types)
+    {
+        auto type_name = constant_value->getType()->getName();
+        hash_state.update(type_name.size());
+        hash_state.update(type_name);
+    }
 
     hash_state.update(value_string.size());
     hash_state.update(value_string);

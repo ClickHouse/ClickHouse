@@ -17,7 +17,7 @@ SET allow_prefetched_read_pool_for_local_filesystem=1;
 
 SYSTEM ENABLE FAILPOINT prefetched_reader_pool_failpoint;
 
-SELECT * FROM prefetched_table FORMAT Null; --{serverError 36}
+SELECT * FROM prefetched_table FORMAT Null; --{serverError BAD_ARGUMENTS}
 
 SYSTEM DISABLE FAILPOINT prefetched_reader_pool_failpoint;
 

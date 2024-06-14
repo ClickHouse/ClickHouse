@@ -8,10 +8,7 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-# isort: off
 from pip._vendor.packaging.version import Version
-
-# isort: on
 
 from build_download_helper import download_builds_filter
 from docker_images_helper import DockerImage, get_docker_image, pull_image

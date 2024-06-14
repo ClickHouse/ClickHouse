@@ -359,7 +359,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
                 throw Exception(ErrorCodes::TABLE_DIFFERS_TOO_MUCH, "Columns of local part {} are different from ZooKeeper", part_name);
 
-            zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
+            zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
 
             checkDataPart(
                 part,

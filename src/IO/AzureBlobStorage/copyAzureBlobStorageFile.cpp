@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -45,8 +46,7 @@ namespace
             const String & dest_container_for_logging_,
             const String & dest_blob_,
             std::shared_ptr<const AzureObjectStorageSettings> settings_,
-            ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_azure_blob_storage_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             const Poco::Logger * log_)
             : create_read_buffer(create_read_buffer_)
             , client(client_)
@@ -56,7 +56,6 @@ namespace
             , dest_blob(dest_blob_)
             , settings(settings_)
             , schedule(schedule_)
-            , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
         {
@@ -72,8 +71,7 @@ namespace
         const String & dest_container_for_logging;
         const String & dest_blob;
         std::shared_ptr<const AzureObjectStorageSettings> settings;
-        ThreadPoolCallbackRunner<void> schedule;
-        bool for_disk_azure_blob_storage;
+        ThreadPoolCallbackRunnerUnsafe<void> schedule;
         const Poco::Logger * log;
         size_t max_single_part_upload_size;
 
@@ -97,11 +95,56 @@ namespace
 
         void calculatePartSize()
         {
-            auto max_upload_part_size = settings->max_upload_part_size;
-            if (!max_upload_part_size)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be 0");
+            if (!total_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
+
+            auto max_part_number = settings->max_blocks_in_multipart_upload;
+            const auto min_upload_part_size = settings->min_upload_part_size;
+            const auto max_upload_part_size = settings->max_upload_part_size;
+
+            if (!max_part_number)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_blocks_in_multipart_upload must not be 0");
+            else if (!min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
+            else if (max_upload_part_size < min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
+
+            size_t part_size = min_upload_part_size;
+            auto num_parts = (total_size + part_size - 1) / part_size;
+
+            if (num_parts > max_part_number)
+            {
+                part_size = (total_size + max_part_number - 1) / max_part_number;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (part_size > max_upload_part_size)
+            {
+                part_size = max_upload_part_size;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            String error;
+            if (num_parts < 1)
+                error = "Number of parts is zero";
+            else if (num_parts > max_part_number)
+                error = fmt::format("Number of parts exceeds {}/{}", num_parts, max_part_number);
+            else if (part_size < min_upload_part_size)
+                error = fmt::format("Size of a part is less than {}/{}", part_size, min_upload_part_size);
+            else if (part_size > max_upload_part_size)
+                error = fmt::format("Size of a part exceeds {}/{}", part_size, max_upload_part_size);
+
+            if (!error.empty())
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "{} while writing {} bytes to Azure. Check max_part_number = {}, "
+                    "min_upload_part_size = {}, max_upload_part_size = {}",
+                    error, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+            }
+
             /// We've calculated the size of a normal part (the final part can be smaller).
-            normal_part_size = max_upload_part_size;
+            normal_part_size = part_size;
         }
 
     public:
@@ -217,26 +260,27 @@ namespace
         void processUploadPartRequest(UploadPartTask & task)
         {
             ProfileEvents::increment(ProfileEvents::AzureUploadPart);
-            if (for_disk_azure_blob_storage)
+            if (client->GetClickhouseOptions().IsClientForDisk)
                 ProfileEvents::increment(ProfileEvents::DiskAzureUploadPart);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
-            while (!read_buffer->eof())
-            {
-                  auto size = read_buffer->available();
-                  if (size > 0)
-                  {
-                      auto block_id = getRandomASCIIString(64);
-                      Azure::Core::IO::MemoryBodyStream memory(reinterpret_cast<const uint8_t *>(read_buffer->position()), size);
-                      block_blob_client.StageBlock(block_id, memory);
-                      task.block_ids.emplace_back(block_id);
-                      read_buffer->ignore(size);
-                      LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}", dest_container_for_logging, dest_blob, block_id);
-                  }
-            }
-            std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
-            LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, Parts: {}", dest_container_for_logging, dest_blob, bg_tasks.size());
+
+            /// task.part_size is already normalized according to min_upload_part_size and max_upload_part_size.
+            size_t size_to_stage = task.part_size;
+
+            PODArray<char> memory;
+            memory.resize(size_to_stage);
+            WriteBufferFromVector<PODArray<char>> wb(memory);
+
+            copyData(*read_buffer, wb, size_to_stage);
+            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
+
+            const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
+            block_blob_client.StageBlock(block_id, stream);
+
+            LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {}",
+                      dest_container_for_logging, dest_blob, block_id, size_to_stage);
         }
 
 
@@ -269,10 +313,9 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
-    ThreadPoolCallbackRunner<void> schedule,
-    bool for_disk_azure_blob_storage)
+    ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
     helper.performCopy();
 }
 
@@ -288,14 +331,14 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
-    ThreadPoolCallbackRunner<void> schedule,
-    bool for_disk_azure_blob_storage)
+    ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
 
     if (settings->use_native_copy)
     {
+        LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-        if (for_disk_azure_blob_storage)
+        if (dest_client->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
         auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
@@ -304,21 +347,32 @@ void copyAzureBlobStorageFile(
 
         if (size < settings->max_single_part_copy_size)
         {
+            LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copy blob sync {} -> {}", src_blob, dest_blob);
             block_blob_client_dest.CopyFromUri(source_uri);
         }
         else
         {
             Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri);
 
-            // Wait for the operation to finish, checking for status every 100 second.
             auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
             auto properties_model = copy_response.Value;
 
-            if (properties_model.CopySource.HasValue())
-            {
-                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy failed");
-            }
+            auto copy_status = properties_model.CopyStatus;
+            auto copy_status_description = properties_model.CopyStatusDescription;
 
+
+            if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+            {
+                LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+            }
+            else
+            {
+                if (copy_status.HasValue())
+                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                    src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
+                else
+                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with success status (operation is done {})", src_blob, dest_blob, operation.IsDone());
+            }
         }
     }
     else
@@ -326,11 +380,11 @@ void copyAzureBlobStorageFile(
         LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings, settings->max_single_read_retries,
-            settings->max_single_download_retries);
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(
+                src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};
+        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, &Poco::Logger::get("copyAzureBlobStorageFile")};
         helper.performCopy();
     }
 }

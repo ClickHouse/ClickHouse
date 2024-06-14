@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 static void replaceFilterToConstant(Block & block, const String & filter_column_name)
@@ -81,7 +82,11 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
             auto mutable_holder = ColumnUInt8::create(num_rows, 0);
             auto & data = mutable_holder->getData();
             for (auto idx : selected_by_indices)
+            {
+                if (idx >= num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range {}", idx, num_rows);
                 data[idx] = 1;
+            }
 
             /// AND two filters
             auto * begin = data.data();
@@ -174,26 +179,22 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
 }
 
 Block FilterTransform::transformHeader(
-    Block header,
-    const ActionsDAG * expression,
-    const String & filter_column_name,
-    bool remove_filter_column)
+    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
 {
-    if (expression)
-        header = expression->updateHeader(std::move(header));
+    Block result = expression ? expression->updateHeader(header) : header;
 
-    auto filter_type = header.getByName(filter_column_name).type;
+    auto filter_type = result.getByName(filter_column_name).type;
     if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
-        header.erase(filter_column_name);
+        result.erase(filter_column_name);
     else
-        replaceFilterToConstant(header, filter_column_name);
+        replaceFilterToConstant(result, filter_column_name);
 
-    return header;
+    return result;
 }
 
 FilterTransform::FilterTransform(

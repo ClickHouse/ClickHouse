@@ -18,6 +18,7 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -78,6 +79,8 @@ public:
     ~FileCache();
 
     void initialize();
+
+    bool isInitialized() const;
 
     const String & getBasePath() const;
 
@@ -186,6 +189,8 @@ public:
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
+    void freeSpaceRatioKeepingThreadFunc();
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -194,6 +199,11 @@ private:
     const size_t boundary_alignment;
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
+
+    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
+    const double keep_current_size_to_max_ratio;
+    const double keep_current_elements_to_max_ratio;
+    const size_t keep_up_free_space_remove_batch;
 
     LoggerPtr log;
 

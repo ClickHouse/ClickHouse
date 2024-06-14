@@ -113,7 +113,7 @@ namespace
     inline String toString(const std::vector<T> & vec)
     {
         size_t size = vec.size();
-        if (size > 50) size = 50;
+        size = std::min<size_t>(size, 50);
         return fmt::format("({})", fmt::join(vec.begin(), vec.begin() + size, ","));
     }
 }

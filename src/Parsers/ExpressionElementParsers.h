@@ -25,12 +25,15 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 public:
-    explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+    explicit ParserIdentifier(bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_) {}
+    Highlight highlight() const override { return highlight_type; }
 
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_query_parameter;
+    Highlight highlight_type;
 };
 
 
@@ -44,6 +47,7 @@ public:
 protected:
     const char * getName() const override { return "string literal table identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::identifier; }
 };
 
 
@@ -53,8 +57,8 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
     {
     }
 
@@ -63,6 +67,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
     bool allow_query_parameter;
+    Highlight highlight_type;
 };
 
 /** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
@@ -197,11 +202,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// STATISTIC(tdigest(200))
-class ParserStatisticType : public IParserBase
+/// STATISTICS(tdigest(200))
+class ParserStatisticsType : public IParserBase
 {
 protected:
-    const char * getName() const override { return "statistic"; }
+    const char * getName() const override { return "statistics"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -253,6 +258,7 @@ class ParserNumber : public IParserBase
 protected:
     const char * getName() const override { return "number"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::number; }
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -273,6 +279,7 @@ class ParserStringLiteral : public IParserBase
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::string; }
 };
 
 
@@ -385,6 +392,7 @@ class ParserSubstitution : public IParserBase
 protected:
     const char * getName() const override { return "substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::substitution; }
 };
 
 

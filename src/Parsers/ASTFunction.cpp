@@ -671,7 +671,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (written)
     {
-        return finishFormatWithWindow(settings, state, frame);
+        finishFormatWithWindow(settings, state, frame);
+        return;
     }
 
     settings.ostr << (settings.hilite ? hilite_function : "") << name;
@@ -753,8 +754,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_function : "") << ')';
 
     settings.ostr << (settings.hilite ? hilite_none : "");
-
-    return finishFormatWithWindow(settings, state, frame);
+    finishFormatWithWindow(settings, state, frame);
 }
 
 bool ASTFunction::hasSecretParts() const

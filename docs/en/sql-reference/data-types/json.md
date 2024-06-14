@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/json
-sidebar_position: 54
+sidebar_position: 26
 sidebar_label: JSON
 ---
 

@@ -19,14 +19,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+using namespace std::literals;
+static constexpr std::array boolean_functions{
+    "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
+    "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
+    "like"sv,     "notLike"sv,     "ilike"sv,  "notILike"sv,        "empty"sv,        "notEmpty"sv,        "not"sv,    "and"sv,
+    "or"sv};
+
+static bool isBooleanFunction(const String & func_name)
+{
+    return std::any_of(
+        boolean_functions.begin(), boolean_functions.end(), [&](const auto boolean_func) { return func_name == boolean_func; });
+}
+
 /// Visitor that optimizes logical expressions _only_ in JOIN ON section
 class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>;
 
-    explicit JoinOnLogicalExpressionOptimizerVisitor(ContextPtr context)
+    explicit JoinOnLogicalExpressionOptimizerVisitor(const JoinNode * join_node_, ContextPtr context)
         : Base(std::move(context))
+        , join_node(join_node_)
     {}
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -55,10 +69,11 @@ public:
     }
 
 private:
+    const JoinNode * join_node;
     bool need_rerun_resolve = false;
 
     /// Returns true if type of some operand is changed and parent function needs to be re-resolved
-    static bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
+    bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
     {
         auto & function_node = node->as<FunctionNode &>();
         chassert(function_node.getFunctionName() == "or");
@@ -93,6 +108,21 @@ private:
             const auto & func_name = argument_function->getFunctionName();
             if (func_name == "equals" || func_name == "isNotDistinctFrom")
             {
+                const auto & argument_nodes = argument_function->getArguments().getNodes();
+                if (argument_nodes.size() != 2)
+                    continue;
+                /// We can rewrite to a <=> b only if we are joining on a and b,
+                /// because the function is not yet implemented for other cases.
+                auto first_src = getExpressionSource(argument_nodes[0]);
+                auto second_src = getExpressionSource(argument_nodes[1]);
+                if (!first_src || !second_src)
+                    continue;
+                const auto & lhs_join = *join_node->getLeftTableExpression();
+                const auto & rhs_join = *join_node->getRightTableExpression();
+                bool arguments_from_both_sides = (first_src->isEqual(lhs_join) && second_src->isEqual(rhs_join)) ||
+                                                 (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
+                if (!arguments_from_both_sides)
+                    continue;
                 equals_functions_indices.push_back(or_operands.size() - 1);
             }
             else if (func_name == "and")
@@ -231,7 +261,7 @@ public:
             /// Operator <=> is not supported outside of JOIN ON section
             if (join_node->hasJoinExpression())
             {
-                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(getContext());
+                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
             return;
@@ -251,6 +281,12 @@ public:
         if (function_node->getFunctionName() == "and")
         {
             tryOptimizeAndEqualsNotEqualsChain(node);
+            return;
+        }
+
+        if (function_node->getFunctionName() == "equals")
+        {
+            tryOptimizeOutRedundantEquals(node);
             return;
         }
     }
@@ -515,14 +551,25 @@ private:
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
             in_function->resolveAsFunction(in_function_resolver);
+
+            DataTypePtr result_type = in_function->getResultType();
+            const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
+            if (type_low_cardinality)
+                result_type = type_low_cardinality->getDictionaryType();
             /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
               * is replaced with `k IN (1, NULL)` with result type UInt8.
               * Convert it back to Nullable(UInt8).
+              * And for `k :: LowCardinality(UInt8)`, the transformation of `k IN (1, NULL)` results in type LowCardinality(UInt8).
+              * Convert it to LowCardinality(Nullable(UInt8)).
               */
-            if (is_any_nullable && !in_function->getResultType()->isNullable())
+            if (is_any_nullable && !result_type->isNullable())
             {
-                auto nullable_result_type = std::make_shared<DataTypeNullable>(in_function->getResultType());
-                auto in_function_nullable = createCastFunction(std::move(in_function), std::move(nullable_result_type), getContext());
+                DataTypePtr new_result_type = std::make_shared<DataTypeNullable>(result_type);
+                if (type_low_cardinality)
+                {
+                    new_result_type = std::make_shared<DataTypeLowCardinality>(new_result_type);
+                }
+                auto in_function_nullable = createCastFunction(std::move(in_function), std::move(new_result_type), getContext());
                 or_operands.push_back(std::move(in_function_nullable));
             }
             else
@@ -551,6 +598,56 @@ private:
         auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
         function_node.getArguments().getNodes() = std::move(or_operands);
         function_node.resolveAsFunction(or_function_resolver);
+    }
+
+    void tryOptimizeOutRedundantEquals(QueryTreeNodePtr & node)
+    {
+        auto & function_node = node->as<FunctionNode &>();
+        assert(function_node.getFunctionName() == "equals");
+
+        const auto function_arguments = function_node.getArguments().getNodes();
+        if (function_arguments.size() != 2)
+            return;
+
+        const auto & lhs = function_arguments[0];
+        const auto & rhs = function_arguments[1];
+
+        UInt64 constant_value;
+        bool is_lhs_const;
+        if (const auto * lhs_constant = lhs->as<ConstantNode>())
+        {
+            if (!lhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
+                || isNullableOrLowCardinalityNullable(lhs_constant->getResultType()))
+                return;
+            is_lhs_const = true;
+        }
+        else if (const auto * rhs_constant = rhs->as<ConstantNode>())
+        {
+            if (!rhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
+                || isNullableOrLowCardinalityNullable(rhs_constant->getResultType()))
+                return;
+            is_lhs_const = false;
+        }
+        else
+            return;
+
+        const FunctionNode * child_function = is_lhs_const ? rhs->as<FunctionNode>() : lhs->as<FunctionNode>();
+        if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
+            return;
+
+        // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
+        if (constant_value == 0)
+        {
+            auto not_resolver = FunctionFactory::instance().get("not", getContext());
+            const auto not_node = std::make_shared<FunctionNode>("not");
+            auto & arguments = not_node->getArguments().getNodes();
+            arguments.reserve(1);
+            arguments.push_back(is_lhs_const ? rhs : lhs);
+            not_node->resolveAsFunction(not_resolver->build(not_node->getArgumentColumns()));
+            node = not_node;
+        }
+        else
+            node = is_lhs_const ? rhs : lhs;
     }
 };
 

@@ -34,6 +34,9 @@ struct QueryPlanOptimizationSettings
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
 
+    /// If convert OUTER JOIN to INNER JOIN optimization is enabled.
+    bool convert_outer_join_to_inner_join = true;
+
     /// If reorder-functions-after-sorting optimization is enabled.
     bool execute_functions_after_sorting = true;
 

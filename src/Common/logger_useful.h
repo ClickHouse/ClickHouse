@@ -2,6 +2,7 @@
 
 /// Macros for convenient usage of Poco logger.
 #include <unistd.h>
+#include <fmt/args.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
@@ -80,6 +81,7 @@ namespace impl
                                                                                                                     \
         std::string_view _format_string;                                                                            \
         std::string _formatted_message;                                                                             \
+        std::vector<std::string> _format_string_args;                                                               \
                                                                                                                     \
         if constexpr (LogTypeInfo::is_static)                                                                       \
         {                                                                                                           \
@@ -91,17 +93,17 @@ namespace impl
         if constexpr (is_preformatted_message)                                                                      \
         {                                                                                                           \
             static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
-            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string);  \
+            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : fmt::format(__VA_ARGS__);                   \
+             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
                                                                                                                     \
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
+            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
         _channel->log(_poco_message);                                                                               \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \

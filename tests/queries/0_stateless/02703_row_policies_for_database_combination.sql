@@ -73,7 +73,7 @@ SELECT * FROM 02703_db.02703_rptable;
 
 CREATE TABLE 02703_db.02703_unexpected_columns (xx UInt8, yy UInt8) ENGINE = MergeTree ORDER BY xx;
 SELECT 'Policy not applicable';
-SELECT * FROM 02703_db.02703_unexpected_columns; -- { serverError 47 } -- Missing columns: 'x' while processing query
+SELECT * FROM 02703_db.02703_unexpected_columns; -- { serverError UNKNOWN_IDENTIFIER } -- Missing columns: 'x' while processing query
 
 DROP ROW POLICY 02703_filter_5 ON 02703_db.*;
 SELECT 'None';

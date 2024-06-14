@@ -106,6 +106,9 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
 
 void BaseExternalTable::initSampleBlock()
 {
+    if (sample_block)
+        return;
+
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     for (const auto & elem : structure)

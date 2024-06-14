@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <deque>
-#include <set>
 
 #include <fmt/core.h>
 #include <fmt/format.h>

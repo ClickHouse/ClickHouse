@@ -1,11 +1,10 @@
 #include "ConnectionParameters.h"
-#include <fstream>
+
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/SSH/Wrappers.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
@@ -88,19 +87,19 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         }
         else
         {
-            std::string prompt{"Enter your private key passphrase (leave empty for no passphrase): "};
+            std::string prompt{"Enter your SSH private key passphrase (leave empty for no passphrase): "};
             char buf[1000] = {};
             if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
                 passphrase = result;
         }
 
-        ssh::SSHKey key = ssh::SSHKeyFactory::makePrivateFromFile(filename, passphrase);
+        SSHKey key = SSHKeyFactory::makePrivateKeyFromFile(filename, passphrase);
         if (!key.isPrivate())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found public key in file: {} but expected private", filename);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} did not contain a private key (is it a public key?)", filename);
 
         ssh_private_key = std::move(key);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
     }
 

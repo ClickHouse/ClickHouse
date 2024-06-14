@@ -1,7 +1,7 @@
 #include <Core/Defines.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -243,6 +243,18 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
+void readStringUntilAmpersand(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'&'>(s, buf);
+}
+
+void readStringUntilEquals(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'='>(s, buf);
+}
+
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
 template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 
@@ -340,7 +352,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         {
             return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
         }
-
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -596,13 +607,20 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
 }
 
 
-template <typename Vector, bool parse_complex_escape_sequence>
+template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
 void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
-
+        char * next_pos;
+        if constexpr (support_crlf)
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
+        }
+        else
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
+        }
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -629,25 +647,46 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
+
+        if constexpr (support_crlf)
+        {
+            if (*buf.position() == '\r')
+            {
+                ++buf.position();
+                if (!buf.eof() && *buf.position() != '\n')
+                {
+                    s.push_back('\r');
+                    continue;
+                }
+                return;
+            }
+        }
     }
 }
 
-template <typename Vector>
+template <typename Vector, bool support_crlf>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readEscapedStringIntoImpl<Vector, true>(s, buf);
+    readEscapedStringIntoImpl<Vector, true, support_crlf>(s, buf);
 }
 
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringInto(s, buf);
+    readEscapedStringInto<String,false>(s, buf);
 }
 
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+void readEscapedStringCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringInto<String,true>(s, buf);
+}
 
+template void readEscapedStringInto<PaddedPODArray<UInt8>,false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,false>(NullOutput & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArray<UInt8>,true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,true>(NullOutput & s, ReadBuffer & buf);
 
 /** If enable_sql_style_quoting == true,
   *  strings like 'abc''def' will be parsed as abc'def.
@@ -2057,7 +2096,14 @@ bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON &
 void readTSVField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringIntoImpl<String, false>(s, buf);
+    readEscapedStringIntoImpl<String, false, false>(s, buf);
 }
+
+void readTSVFieldCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false, true>(s, buf);
+}
+
 
 }

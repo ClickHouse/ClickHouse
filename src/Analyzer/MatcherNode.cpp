@@ -160,7 +160,7 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     }
 }
 
-bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const MatcherNode &>(rhs);
     if (matcher_type != rhs_typed.matcher_type ||
@@ -181,7 +181,7 @@ bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return columns_matcher->pattern() == rhs_columns_matcher->pattern();
 }
 
-void MatcherNode::updateTreeHashImpl(HashState & hash_state) const
+void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(matcher_type));
 

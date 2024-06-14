@@ -165,7 +165,11 @@ private:
 };
 
 
-enum class SettingFieldTimespanUnit { Millisecond, Second };
+enum class SettingFieldTimespanUnit : uint8_t
+{
+    Millisecond,
+    Second
+};
 
 template <SettingFieldTimespanUnit unit_>
 struct SettingFieldTimespan

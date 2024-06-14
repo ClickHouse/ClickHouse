@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 template <typename Distance>
 AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
-    : Base::AnnoyIndex(dimensions)
+    : Base::AnnoyIndex(static_cast<int>(dimensions))
 {
 }
 

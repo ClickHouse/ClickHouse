@@ -67,6 +67,23 @@ To manage named collections with DDL a user must have the `named_control_collect
 In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 :::
 
+### Storage for named collections
+
+Named collections can either be stored on local disk or in zookeeper/keeper. By default local storage is used.
+
+To configure named collections storage in keeper and a `type` (equal to either `keeper` or `zookeeper`) and `path` (path in keeper, where named collections will be stored) to `named_collections_storage` section in configuration file:
+```
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper</type>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>1000</update_timeout_ms>
+  </named_collections_storage>
+</clickhouse>
+```
+
+An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
+
 ## Storing named collections in configuration files
 
 ### XML example
@@ -442,4 +459,60 @@ SELECT dictGet('dict', 'b', 1);
 ┌─dictGet('dict', 'b', 1)─┐
 │ a                       │
 └─────────────────────────┘
+```
+
+## Named collections for accessing Kafka
+
+The description of parameters see [Kafka](../engines/table-engines/integrations/kafka.md).
+
+### DDL example
+
+```sql
+CREATE NAMED COLLECTION my_kafka_cluster AS
+kafka_broker_list = 'localhost:9092',
+kafka_topic_list = 'kafka_topic',
+kafka_group_name = 'consumer_group',
+kafka_format = 'JSONEachRow',
+kafka_max_block_size = '1048576';
+       
+```
+### XML example
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_kafka_cluster>
+            <kafka_broker_list>localhost:9092</kafka_broker_list>
+            <kafka_topic_list>kafka_topic</kafka_topic_list>
+            <kafka_group_name>consumer_group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_max_block_size>1048576</kafka_max_block_size>
+        </my_kafka_cluster>
+    </named_collections>
+</clickhouse>
+```
+
+### Example of using named collections with a Kafka table
+
+Both of the following examples use the same named collection `my_kafka_cluster`:
+
+
+```sql
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+SETTINGS kafka_num_consumers = 4,
+         kafka_thread_per_consumer = 1;
 ```

@@ -162,7 +162,7 @@ if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
     set (HARMFUL_LIB harmful)
 endif ()
 
-target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
+target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if (ENABLE_CLICKHOUSE_KEEPER)

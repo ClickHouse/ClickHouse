@@ -3,7 +3,10 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 import uuid
+import os
 
+
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -20,13 +23,127 @@ node = cluster.add_instance(
     ],
     with_minio=True,
     with_zookeeper=True,
+    stay_alive=True,
 )
+
+
+def setup_minio_users():
+    # create 2 extra users with restricted access
+    # miniorestricted1 - full access to bucket 'root', no access to other buckets
+    # miniorestricted2 - full access to bucket 'root2', no access to other buckets
+    # storage policy 'policy_s3_restricted' defines a policy for storing files inside bucket 'root' using 'miniorestricted1' user
+    for user, bucket in [("miniorestricted1", "root"), ("miniorestricted2", "root2")]:
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                [
+                    "mc",
+                    "alias",
+                    "set",
+                    "root",
+                    "http://minio1:9001",
+                    "minio",
+                    "minio123",
+                ],
+            )
+        )
+        policy = f"""
+{{
+  "Version": "2012-10-17",
+  "Statement": [
+    {{
+      "Effect": "Allow",
+      "Principal": {{
+        "AWS": [
+          "*"
+        ]
+      }},
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketMultipartUploads"
+      ],
+      "Resource": [
+        "arn:aws:s3:::{bucket}"
+      ]
+    }},
+    {{
+      "Effect": "Allow",
+      "Principal": {{
+        "AWS": [
+          "*"
+        ]
+      }},
+      "Action": [
+        "s3:AbortMultipartUpload",
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:ListMultipartUploadParts",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::{bucket}/*"
+      ]
+    }}
+  ]
+}}"""
+
+        cluster.exec_in_container(
+            cluster.minio_docker_id,
+            ["bash", "-c", f"cat >/tmp/{bucket}_policy.json <<EOL{policy}"],
+        )
+        cluster.exec_in_container(
+            cluster.minio_docker_id, ["cat", f"/tmp/{bucket}_policy.json"]
+        )
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                ["mc", "admin", "user", "add", "root", user, "minio123"],
+            )
+        )
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                [
+                    "mc",
+                    "admin",
+                    "policy",
+                    "create",
+                    "root",
+                    f"{bucket}only",
+                    f"/tmp/{bucket}_policy.json",
+                ],
+            )
+        )
+        print(
+            cluster.exec_in_container(
+                cluster.minio_docker_id,
+                [
+                    "mc",
+                    "admin",
+                    "policy",
+                    "attach",
+                    "root",
+                    f"{bucket}only",
+                    "--user",
+                    user,
+                ],
+            )
+        )
+
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "disk_s3_restricted_user.xml"),
+        "/etc/clickhouse-server/config.d/disk_s3_restricted_user.xml",
+    )
+    node.start_clickhouse()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
+        setup_minio_users()
         yield
     finally:
         cluster.shutdown()
@@ -137,6 +254,7 @@ def check_system_tables(backup_query_id=None):
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
+        ("disk_s3_restricted_user", "ObjectStorage", "S3", "Local"),
     )
     assert len(expected_disks) == len(disks)
     for expected_disk in expected_disks:
@@ -588,3 +706,22 @@ def test_user_specific_auth(start_cluster):
     )
 
     node.query("DROP TABLE IF EXISTS test.specific_auth")
+
+
+def test_backup_to_s3_different_credentials():
+    storage_policy = "policy_s3_restricted"
+
+    def check_backup_restore(allow_s3_native_copy):
+        backup_name = new_backup_name()
+        backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
+        settings = {"allow_s3_native_copy": allow_s3_native_copy}
+        (backup_events, _) = check_backup_and_restore(
+            storage_policy,
+            backup_destination,
+            backup_settings=settings,
+            restore_settings=settings,
+        )
+        check_system_tables(backup_events["query_id"])
+
+    check_backup_restore(False)
+    check_backup_restore(True)

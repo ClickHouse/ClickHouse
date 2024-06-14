@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/ipv4
-sidebar_position: 59
+sidebar_position: 28
 sidebar_label: IPv4
 ---
 
@@ -55,6 +55,18 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ┌─toTypeName(from)─┬─hex(from)─┐
 │ IPv4             │ B7F7E83A  │
 └──────────────────┴───────────┘
+```
+
+IPv4 addresses can be directly compared to IPv6 addresses:
+
+```sql
+SELECT toIPv4('127.0.0.1') = toIPv6('::ffff:127.0.0.1');
+```
+
+```text
+┌─equals(toIPv4('127.0.0.1'), toIPv6('::ffff:127.0.0.1'))─┐
+│                                                       1 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 **See Also**

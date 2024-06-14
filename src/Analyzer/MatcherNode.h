@@ -37,7 +37,7 @@ namespace DB
   * Additionally each matcher can contain transformers, check ColumnTransformers.h.
   * In query tree matchers column transformers are represended as ListNode.
   */
-enum class MatcherNodeType
+enum class MatcherNodeType : uint8_t
 {
     ASTERISK,
     COLUMNS_REGEXP,
@@ -135,9 +135,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

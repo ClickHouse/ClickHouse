@@ -43,7 +43,7 @@ def test_merge_load_marks(started_cluster, min_bytes_for_wide_part):
     )
 
     uuid = node.query(
-        "SELECT uuid FROM system.tables WHERE table = 't_prewarm_merge'"
+        "SELECT uuid FROM system.tables WHERE table = 't_load_marks'"
     ).strip()
 
     result = node.query(

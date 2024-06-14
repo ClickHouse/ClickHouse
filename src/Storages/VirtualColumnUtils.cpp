@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -111,7 +112,7 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return {"_path", "_file", "_size"};
+    return {"_path", "_file", "_size", "_time"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
@@ -129,6 +130,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
+    add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
 
     return desc;
 }
@@ -187,39 +189,47 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.path)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_file")
         {
-            if (filename)
+            if (virtual_values.filename)
             {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.filename))->convertToFullColumnIfConst());
             }
             else
             {
-                size_t last_slash_pos = path.find_last_of('/');
-                auto filename_from_path = path.substr(last_slash_pos + 1);
+                size_t last_slash_pos = virtual_values.path.find_last_of('/');
+                auto filename_from_path = virtual_values.path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
         else if (virtual_column.name == "_size")
         {
-            if (size)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
+            if (virtual_values.size)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.size)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_time")
+        {
+            if (virtual_values.last_modified)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
     }
 }
 
-static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allowed_inputs)
+static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -228,7 +238,10 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
         const auto * cur = nodes.top();
         nodes.pop();
 
-        if (cur->type == ActionsDAG::ActionType::INPUT && !allowed_inputs.has(cur->result_name))
+        if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
+        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs && !allowed_inputs->has(cur->result_name))
             return false;
 
         for (const auto * child : cur->children)
@@ -336,7 +349,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         }
     }
 
-    if (allowed_inputs && !canEvaluateSubtree(node, *allowed_inputs))
+    if (!canEvaluateSubtree(node, allowed_inputs))
         return nullptr;
 
     return node;

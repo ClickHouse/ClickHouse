@@ -6,7 +6,7 @@ SELECT '--';
 
 WITH (x -> x + 1) AS lambda SELECT lambda(1);
 
-WITH (x -> x + 1) AS lambda SELECT lambda.nested(1); -- { serverError 36 }
+WITH (x -> x + 1) AS lambda SELECT lambda.nested(1); -- { serverError BAD_ARGUMENTS }
 
 SELECT '--';
 
@@ -16,6 +16,6 @@ SELECT '--';
 
 SELECT * FROM t1 AS t2, (SELECT 1) AS t1;
 
-SELECT * FROM (SELECT 1) AS t1, t1.nested AS t2; -- { serverError 36 }
+SELECT * FROM (SELECT 1) AS t1, t1.nested AS t2; -- { serverError BAD_ARGUMENTS }
 
-SELECT * FROM t1.nested AS t2, (SELECT 1) AS t1; -- { serverError 36 }
+SELECT * FROM t1.nested AS t2, (SELECT 1) AS t1; -- { serverError BAD_ARGUMENTS }

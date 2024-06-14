@@ -86,6 +86,7 @@ struct QueryLogElement
     String exception;
     String stack_trace;
     std::string_view exception_format_string{};
+    std::vector<std::string> exception_format_string_args{};
 
     ClientInfo client_info;
 

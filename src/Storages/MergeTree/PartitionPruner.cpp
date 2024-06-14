@@ -4,27 +4,10 @@
 namespace DB
 {
 
-namespace
-{
-
-KeyCondition buildKeyCondition(const KeyDescription & partition_key, const SelectQueryInfo & query_info, ContextPtr context, bool strict)
-{
-    return {query_info.filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict};
-}
-
-}
-
-PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const SelectQueryInfo & query_info, ContextPtr context, bool strict)
-    : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
-    , partition_condition(buildKeyCondition(partition_key, query_info, context, strict))
-    , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
-{
-}
-
 PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAGPtr filter_actions_dag, ContextPtr context, bool strict)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
-    , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
-    , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
+    , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */)
+    , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
 

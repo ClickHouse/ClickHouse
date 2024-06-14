@@ -1,6 +1,5 @@
 <clickhouse>
     <kafka>
-        <auto_offset_reset>earliest</auto_offset_reset>
         <!-- Debugging of possible issues, like:
              - https://github.com/edenhill/librdkafka/issues/2077
              - https://github.com/edenhill/librdkafka/issues/1778
@@ -17,10 +16,43 @@
         <kafka_topic>
             <name>consumer_hang</name>
             <!-- default: 3000 -->
-            <heartbeat_interval_ms>300</heartbeat_interval_ms>
-            <!-- default: 10000 -->
-            <session_timeout_ms>6000</session_timeout_ms>
+            <heartbeat_interval_ms>301</heartbeat_interval_ms>
         </kafka_topic>
+        <kafka_separate_settings>
+            <!-- This is old syntax. This setting will be set for consumer and producer-->
+            <!-- default 3000 -->
+            <heartbeat_interval_ms>302</heartbeat_interval_ms>
+        </kafka_separate_settings>
+        <consumer>
+            <auto_offset_reset>earliest</auto_offset_reset>
+            <kafka_topic>
+                <!-- Setting for topic will be applied only for consumer -->
+                <name>consumer_hang</name>
+                <!-- default: 10000 -->
+                <session_timeout_ms>6000</session_timeout_ms>
+            </kafka_topic>
+            <kafka_topic>
+                <name>separate_settings</name>
+                <!-- default: 10000 -->
+                <session_timeout_ms>6001</session_timeout_ms>
+            </kafka_topic>
+        </consumer>
+        <producer>
+            <kafka_separate_settings>
+                <!-- This is old syntax. And doesn't work inside producer and consumer tags-->
+                <!-- default 300000 -->
+                <message_timeout_ms>300001</message_timeout_ms>
+            </kafka_separate_settings>
+            <kafka_topic>
+                <name>separate_settings</name>
+                <!-- This is only producer setting, if it was applied to consumer,
+                 it would create warning message in logs. -->
+                <!-- default 30000 -->
+                <request_timeout_ms>30001</request_timeout_ms> 
+            </kafka_topic>
+            <!-- default 60000 -->
+            <transaction_timeout_ms>60001</transaction_timeout_ms>
+        </producer>
     </kafka>
 
 </clickhouse>

@@ -21,5 +21,8 @@ template class ColumnUnique<ColumnFloat64>;
 template class ColumnUnique<ColumnString>;
 template class ColumnUnique<ColumnFixedString>;
 template class ColumnUnique<ColumnDateTime64>;
+template class ColumnUnique<ColumnIPv4>;
+template class ColumnUnique<ColumnIPv6>;
+template class ColumnUnique<ColumnUUID>;
 
 }

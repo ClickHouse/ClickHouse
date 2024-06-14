@@ -1,0 +1,13 @@
+<clickhouse>
+    <proxy>
+        <no_proxy>not_important_host,,  minio1  ,</no_proxy>
+        <http>
+            <uri>http://proxy1</uri>
+            <uri>http://proxy2</uri>
+        </http>
+        <https>
+            <uri>https://proxy1</uri>
+            <uri>https://proxy2</uri>
+        </https>
+    </proxy>
+</clickhouse>

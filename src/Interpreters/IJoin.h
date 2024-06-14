@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
@@ -22,7 +27,7 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-enum class JoinPipelineType
+enum class JoinPipelineType : uint8_t
 {
     /*
      * Right stream processed first, then when join data structures are ready, the left stream is processed using it.
@@ -51,6 +56,23 @@ public:
     virtual std::string getName() const = 0;
 
     virtual const TableJoin & getTableJoin() const = 0;
+
+    /// Returns true if clone is supported
+    virtual bool isCloneSupported() const
+    {
+        return false;
+    }
+
+    /// Clone underlyhing JOIN algorithm using table join, left sample block, right sample block
+    virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block & left_sample_block_,
+        const Block & right_sample_block_) const
+    {
+        (void)(table_join_);
+        (void)(left_sample_block_);
+        (void)(right_sample_block_);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
+    }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.

@@ -38,8 +38,15 @@ struct FileCacheSettings
     std::string cache_policy = "LRU";
     double slru_size_ratio = 0.5;
 
+    double keep_free_space_size_ratio = FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO;
+    double keep_free_space_elements_ratio = FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO;
+    size_t keep_free_space_remove_batch = FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH;
+
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     void loadFromCollection(const NamedCollection & collection);
+
+    std::string toString() const;
+    std::vector<std::string> getSettingsDiff(const FileCacheSettings & other) const;
 
     bool operator ==(const FileCacheSettings &) const = default;
 

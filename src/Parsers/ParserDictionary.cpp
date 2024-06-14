@@ -188,7 +188,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_settings;
 
     /// Primary is required to be the first in dictionary definition
-    if (primary_key_keyword.ignore(pos))
+    if (primary_key_keyword.ignore(pos, expected))
     {
         bool was_open = false;
 
@@ -208,13 +208,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ast_source && source_keyword.ignore(pos, expected))
         {
 
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!key_value_pairs_p.parse(pos, ast_source, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -222,13 +222,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_lifetime && lifetime_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!lifetime_p.parse(pos, ast_lifetime, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -236,13 +236,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_layout && layout_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!layout_p.parse(pos, ast_layout, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -250,13 +250,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_range && range_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!range_p.parse(pos, ast_range, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;
@@ -264,13 +264,13 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ast_settings && settings_keyword.ignore(pos, expected))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected))
                 return false;
 
             if (!settings_p.parse(pos, ast_settings, expected))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected))
                 return false;
 
             continue;

@@ -1,4 +1,4 @@
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/StringHelpers.h>

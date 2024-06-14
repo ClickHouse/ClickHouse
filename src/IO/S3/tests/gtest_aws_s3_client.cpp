@@ -159,7 +159,7 @@ void testServerSideEncryption(
         DB::S3::CredentialsConfiguration
         {
             .use_environment_credentials = use_environment_credentials,
-            .use_insecure_imds_request = use_insecure_imds_request
+            .use_insecure_imds_request = use_insecure_imds_request,
         }
     );
 

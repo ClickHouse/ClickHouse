@@ -10,7 +10,7 @@ INSERT INTO local_table SELECT number AS id, toString(number) AS val FROM number
 CREATE TABLE dist_table AS local_table
 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_table);
 
-SELECT uniq(d.val) FROM dist_table AS d GLOBAL LEFT JOIN numbers(100) AS t USING id; -- { serverError 47, 284 }
+SELECT uniq(d.val) FROM dist_table AS d GLOBAL LEFT JOIN numbers(100) AS t USING id; -- { serverError UNKNOWN_IDENTIFIER, 284 }
 SELECT uniq(d.val) FROM dist_table AS d GLOBAL LEFT JOIN local_table AS t USING id;
 
 DROP TABLE local_table;

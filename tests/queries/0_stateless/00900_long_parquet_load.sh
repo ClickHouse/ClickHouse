@@ -59,7 +59,6 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_A
 
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
     $CLICKHOUSE_CLIENT --multiquery <<EOF
-SET allow_experimental_map_type = 1;
 CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory;
 EOF
 

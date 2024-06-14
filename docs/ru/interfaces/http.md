@@ -434,16 +434,18 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[regex:/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
-            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
-            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
+            <query>
+                SELECT name, value FROM system.settings
+                WHERE name IN ({name_1:String}, {name_2:String})
+            </query>
         </handler>
     </rule>
     <defaults/>
@@ -451,13 +453,13 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
-1
-max_final_threads   2
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
+max_final_threads	2
+max_threads	1
 ```
 
 :::note Предупреждение
-В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
+В одном `predefined_query_handler` поддерживается только один запрос.
 :::
 ### dynamic_query_handler {#dynamic_query_handler}
 

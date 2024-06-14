@@ -68,9 +68,9 @@ public:
     String getName() const override
     {
         if constexpr (isMin)
-            return "ArgMin";
+            return nested_function->getName() + "ArgMin";
         else
-            return "ArgMax";
+            return nested_function->getName() + "ArgMax";
     }
 
     bool isState() const override { return nested_function->isState(); }

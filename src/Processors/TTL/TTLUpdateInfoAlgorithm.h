@@ -5,7 +5,7 @@
 namespace DB
 {
 
-enum class TTLUpdateField
+enum class TTLUpdateField : uint8_t
 {
     COLUMNS_TTL,
     TABLE_TTL,

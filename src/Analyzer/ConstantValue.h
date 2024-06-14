@@ -34,14 +34,4 @@ private:
     DataTypePtr data_type;
 };
 
-inline bool operator==(const ConstantValue & lhs, const ConstantValue & rhs)
-{
-    return lhs.getValue() == rhs.getValue() && lhs.getType()->equals(*rhs.getType());
-}
-
-inline bool operator!=(const ConstantValue & lhs, const ConstantValue & rhs)
-{
-    return !(lhs == rhs);
-}
-
 }

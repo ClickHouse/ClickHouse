@@ -33,6 +33,10 @@ name: Build ClickHouse
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
 
 jobs:
   Build:
@@ -54,6 +58,7 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
           DOCKER_TAG<<DOCKER_JSON
           ${{ toJson(fromJson(inputs.data).docker_data.images) }}
           DOCKER_JSON

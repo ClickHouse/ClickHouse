@@ -66,7 +66,6 @@ def test_ddl(started_cluster):
 def test_ddl_replicated(started_cluster):
     control_node.query(
         "CREATE DATABASE test_db ON CLUSTER 'external' ENGINE=Replicated('/replicated')",
-        settings={"allow_experimental_database_replicated": 1},
     )
     # Exception is expected
     assert "It's not initial query" in control_node.query_and_get_error(

@@ -52,12 +52,14 @@ public:
         };
 
         const DataTypeInterval * interval_type = nullptr;
-        enum class ResultType
+
+        enum class ResultType : uint8_t
         {
             Date,
             DateTime,
             DateTime64
         };
+
         ResultType result_type;
         auto check_second_argument = [&]
         {
@@ -164,7 +166,7 @@ private:
 
         if (isDateTime64(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(&time_column_col);
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
@@ -172,13 +174,13 @@ private:
         }
         else if (isDateTime(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(&time_column_col);
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
         else if (isDate(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(&time_column_col);
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }

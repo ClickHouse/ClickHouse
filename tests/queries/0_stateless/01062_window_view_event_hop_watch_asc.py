@@ -28,6 +28,8 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
+    client2.send("SET allow_experimental_analyzer = 0")
+    client2.expect(prompt)
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01062_window_view_event_hop_watch_asc")
     client1.expect(prompt)
@@ -47,7 +49,7 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01062_window_view_event_hop_watch_asc.wv")
     client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\)")
+    client1.expect("Progress: 0.00 rows.*\\)")
     client2.send(
         "INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
@@ -67,11 +69,11 @@ with client(name="client1>", log=log) as client1, client(
     client2.expect(prompt)
     client1.expect("1" + end_of_block)
     client1.expect("2" + end_of_block)
-    client1.expect("Progress: 3.00 rows.*\)")
+    client1.expect("Progress: 3.00 rows.*\\)")
 
     # send Ctrl-C
     client1.send("\x03", eol="")
-    match = client1.expect("(%s)|([#\$] )" % prompt)
+    match = client1.expect("(%s)|([#\\$] )" % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)

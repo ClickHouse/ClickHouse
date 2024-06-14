@@ -173,7 +173,10 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
+        {
+            writeSplitAsync(block);
+            return;
+        }
 
         writeAsyncImpl(block);
         ++inserted_blocks;
@@ -436,6 +439,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
@@ -537,6 +544,10 @@ void DistributedSink::onFinish()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
     if (insert_sync && pool && !pool->finished())
@@ -587,6 +598,7 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel()
 {
+    std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
     {
         try

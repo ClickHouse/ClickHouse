@@ -37,11 +37,7 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
-    add_contrib (openssl-cmake openssl)
-else ()
-    add_contrib (boringssl-cmake boringssl)
-endif ()
+add_contrib (openssl-cmake openssl)
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (pocketfft-cmake pocketfft)
@@ -222,6 +218,8 @@ else ()
 endif ()
 
 add_contrib (xxHash-cmake xxHash)
+
+add_contrib (expected-cmake expected)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 

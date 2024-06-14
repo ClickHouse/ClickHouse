@@ -56,6 +56,7 @@ public:
     enum ParameterType
     {
         NONE,
+        TABLE_ENGINE,
         NAMED_COLLECTION,
         USER_NAME,
     };
@@ -106,6 +107,9 @@ public:
 
     /// Returns all the flags related to a user.
     static AccessFlags allUserNameFlags();
+
+    /// Returns all the flags related to a table engine.
+    static AccessFlags allTableEngineFlags();
 
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().

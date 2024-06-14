@@ -21,16 +21,13 @@ S3QueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const S3
     auto it = metadata_by_path.find(zookeeper_path);
     if (it == metadata_by_path.end())
     {
-        it = metadata_by_path.emplace(zookeeper_path, std::make_shared<S3QueueFilesMetadata>(fs::path(zookeeper_path), settings)).first;
-    }
-    else if (it->second.metadata->checkSettings(settings))
-    {
-        it->second.ref_count += 1;
+        auto files_metadata = std::make_shared<S3QueueMetadata>(zookeeper_path, settings);
+        it = metadata_by_path.emplace(zookeeper_path, std::move(files_metadata)).first;
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with the same `s3queue_zookeeper_path` "
-                        "was already created but with different settings");
+        it->second.metadata->checkSettings(settings);
+        it->second.ref_count += 1;
     }
     return it->second.metadata;
 }

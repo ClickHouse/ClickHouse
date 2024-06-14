@@ -44,8 +44,6 @@ namespace DB
     private:
         bool wait_and_process(ares_channel channel);
 
-        void cancel_requests(ares_channel channel);
-
         void resolve(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel);
 
         void resolve_v6(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel);

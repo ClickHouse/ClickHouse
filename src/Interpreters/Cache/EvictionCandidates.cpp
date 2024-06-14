@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+EvictionCandidates::EvictionCandidates()
+    : log(getLogger("EvictionCandidates"))
+{
+}
+
 EvictionCandidates::~EvictionCandidates()
 {
     /// Here `queue_entries_to_invalidate` contains queue entries
@@ -30,6 +35,10 @@ EvictionCandidates::~EvictionCandidates()
         /// consistent state of cache.
         iterator->invalidate();
     }
+
+    /// We cannot reset evicting flag if we already removed queue entries.
+    if (removed_queue_entries)
+        return;
 
     /// Here `candidates` contain only those file segments
     /// which failed to be removed during evict()
@@ -58,13 +67,48 @@ void EvictionCandidates::add(
     ++candidates_size;
 }
 
+void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
+{
+    /// Remove queue entries of eviction candidates.
+    /// This will release space we consider to be hold for them.
+
+    LOG_TEST(log, "Will remove {} eviction candidates", size());
+
+    for (const auto & [key, key_candidates] : candidates)
+    {
+        auto locked_key = key_candidates.key_metadata->lock();
+        for (const auto & candidate : key_candidates.candidates)
+        {
+            auto queue_iterator = candidate->getQueueIterator();
+            queue_iterator->invalidate();
+
+            chassert(candidate->releasable());
+            candidate->file_segment->resetQueueIterator();
+            /// We need to set removed flag in file segment metadata,
+            /// because in dynamic cache resize we first remove queue entries,
+            /// then evict which also removes file segment metadata,
+            /// but we need to make sure that this file segment is not requested from cache in the meantime.
+            /// In ordinary eviction we use `evicting` flag for this purpose,
+            /// but here we cannot, because `evicting` is a property of a queue entry,
+            /// but at this point for dynamic cache resize we have already deleted all queue entries.
+            candidate->setRemovedFlag(*locked_key, lock);
+
+            queue_iterator->remove(lock);
+        }
+    }
+    removed_queue_entries = true;
+}
+
 void EvictionCandidates::evict()
 {
     if (candidates.empty())
         return;
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
-    queue_entries_to_invalidate.reserve(candidates_size);
+
+    /// If queue entries are already removed, then nothing to invalidate.
+    if (!removed_queue_entries)
+        queue_entries_to_invalidate.reserve(candidates_size);
 
     for (auto & [key, key_candidates] : candidates)
     {
@@ -79,11 +123,21 @@ void EvictionCandidates::evict()
         while (!key_candidates.candidates.empty())
         {
             auto & candidate = key_candidates.candidates.back();
-            chassert(candidate->releasable());
+            if (!candidate->releasable())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Eviction candidate is not releasable: {} (evicting or removed flag: {})",
+                                candidate->file_segment->getInfoForLog(), candidate->isEvictingOrRemoved(*locked_key));
+            }
 
             const auto segment = candidate->file_segment;
-            auto iterator = segment->getQueueIterator();
-            chassert(iterator);
+
+            IFileCachePriority::IteratorPtr iterator;
+            if (!removed_queue_entries)
+            {
+                iterator = segment->getQueueIterator();
+                chassert(iterator);
+            }
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
@@ -112,10 +166,36 @@ void EvictionCandidates::evict()
             ///   it was freed in favour of some reserver, so we can make it visibly
             ///   free only for that particular reserver.
 
-            queue_entries_to_invalidate.push_back(iterator);
+            if (iterator)
+                queue_entries_to_invalidate.push_back(iterator);
+
             key_candidates.candidates.pop_back();
         }
     }
+}
+
+bool EvictionCandidates::needFinalize() const
+{
+    /// finalize() does the following:
+    /// 1. Release space holder in case if exists.
+    ///    (Space holder is created if some space needs to be hold
+    ///    while were are doing eviction from filesystem without which is done without a lock)
+    ///    Note: this step is not needed in case of dynamic cache resize,
+    ///          because space holders are not used.
+    /// 2. Delete queue entries from IFileCachePriority queue.
+    ///    These queue entries were invalidated during lock-free eviction phase,
+    ///    so on finalize() we just remove them (not to let the queue grow too much).
+    ///    Note: this step can in fact be removed as we do this cleanup
+    ///    (removal of invalidated queue entries)
+    ///    when we iterate the queue and see such entries along the way.
+    ///    Note: this step is not needed in case of dynamic cache resize,
+    ///          because we remove queue entries in advance, before actual eviction.
+    /// 3. Execute on_finalize functions.
+    ///    These functions are set only for SLRU eviction policy,
+    ///    where we need to do additional work after eviction.
+    ///    Note: this step is not needed in case of dynamic cache resize even for SLRU.
+
+    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
 }
 
 void EvictionCandidates::finalize(

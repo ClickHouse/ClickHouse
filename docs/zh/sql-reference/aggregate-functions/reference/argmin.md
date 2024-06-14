@@ -7,7 +7,7 @@ sidebar_position: 105
 
 语法: `argMin(arg, val)` 或 `argMin(tuple(arg, val))`
 
-计算 `val` 最小值对应的 `arg` 值。 如果 `val` 最小值存在几个不同的 `arg` 值，输出遇到的第一个(`arg`)值。
+计算 `val` 最小值对应的 `arg` 值。
 
 **示例:**
 

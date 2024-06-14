@@ -32,7 +32,7 @@ namespace
 #endif
 
 
-    /// Get the host name. Is is constant on single server, but is not constant in distributed queries.
+    /// Get the host name. It is constant on single server, but is not constant in distributed queries.
     class FunctionHostName : public FunctionConstantBase<FunctionHostName, String, DataTypeString>
     {
     public:

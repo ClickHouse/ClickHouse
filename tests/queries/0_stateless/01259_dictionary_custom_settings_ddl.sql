@@ -36,7 +36,7 @@ LAYOUT(FLAT()) SETTINGS(max_result_bytes=1);
 
 SELECT 'INITIALIZING DICTIONARY';
 
-SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
+SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SELECT 'END';
 

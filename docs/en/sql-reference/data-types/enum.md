@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/enum
-sidebar_position: 50
+sidebar_position: 20
 sidebar_label: Enum
 ---
 

@@ -192,12 +192,12 @@ namespace JSONUtils
 
     void skipRowForJSONEachRow(ReadBuffer & in)
     {
-        return skipRowForJSONEachRowImpl<'{', '}'>(in);
+        skipRowForJSONEachRowImpl<'{', '}'>(in);
     }
 
     void skipRowForJSONCompactEachRow(ReadBuffer & in)
     {
-        return skipRowForJSONEachRowImpl<'[', ']'>(in);
+        skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
     NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
@@ -207,7 +207,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
-        String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
@@ -235,7 +234,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
-        String field;
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)

@@ -23,7 +23,7 @@ stem('language', word)
 ### Arguments
 
 - `language` — Language which rules will be applied. Use the two letter [ISO 639-1 code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
-- `word` — word that needs to be stemmed. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
+- `word` — word that needs to be stemmed. Must be in lowercase. [String](../data-types/string.md#string).
 
 ### Examples
 
@@ -88,8 +88,8 @@ lemmatize('language', word)
 
 ### Arguments
 
-- `language` — Language which rules will be applied. [String](../../sql-reference/data-types/string.md#string).
-- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../../sql-reference/data-types/string.md#string).
+- `language` — Language which rules will be applied. [String](../data-types/string.md#string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../data-types/string.md#string).
 
 ### Examples
 
@@ -139,8 +139,8 @@ synonyms('extension_name', word)
 
 ### Arguments
 
-- `extension_name` — Name of the extension in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
-- `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
+- `extension_name` — Name of the extension in which search will be performed. [String](../data-types/string.md#string).
+- `word` — Word that will be searched in extension. [String](../data-types/string.md#string).
 
 ### Examples
 
@@ -188,7 +188,7 @@ detectLanguage('text_to_be_analyzed')
 
 ### Arguments
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
 
 ### Returned value
 
@@ -226,7 +226,7 @@ detectLanguageMixed('text_to_be_analyzed')
 
 ### Arguments
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
 
 ### Returned value
 
@@ -262,7 +262,7 @@ detectLanguageUnknown('text_to_be_analyzed')
 
 ### Arguments
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
 
 ### Returned value
 
@@ -302,7 +302,7 @@ detectCharset('text_to_be_analyzed')
 
 ### Arguments
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
 
 ### Returned value
 

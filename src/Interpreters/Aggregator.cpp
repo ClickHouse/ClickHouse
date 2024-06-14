@@ -1056,7 +1056,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
     PrefetchingHelper prefetching;
-    size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1077,7 +1077,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    if (i == row_begin + prefetching.iterationsToMeasure())
+                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
                         prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                     if (i + prefetch_look_ahead < row_end)
@@ -1163,7 +1163,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
-                if (i == key_start + prefetching.iterationsToMeasure())
+                if (i == key_start + PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                 if (i + prefetch_look_ahead < row_end)
@@ -1803,10 +1803,8 @@ void Aggregator::writeToTemporaryFileImpl(
         size_t block_size_rows = block.rows();
         size_t block_size_bytes = block.bytes();
 
-        if (block_size_rows > max_temporary_block_size_rows)
-            max_temporary_block_size_rows = block_size_rows;
-        if (block_size_bytes > max_temporary_block_size_bytes)
-            max_temporary_block_size_bytes = block_size_bytes;
+        max_temporary_block_size_rows = std::max(block_size_rows, max_temporary_block_size_rows);
+        max_temporary_block_size_bytes = std::max(block_size_bytes, max_temporary_block_size_bytes);
     };
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
@@ -3160,7 +3158,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = [group = CurrentThread::getGroup(), bucket, &merge_bucket, aggregates_pool]{ return merge_bucket(bucket, aggregates_pool, group); };
+            auto task = [group = CurrentThread::getGroup(), bucket, &merge_bucket, aggregates_pool]{ merge_bucket(bucket, aggregates_pool, group); };
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError(task);

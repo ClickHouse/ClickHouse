@@ -13,9 +13,9 @@ sub process_stacktrace
     my $group = \$grouped_stacks;
     for my $frame (reverse @current_stack)
     {
+        $group = \$$group->{children}{$frame};
         $$group->{count} ||= 0;
         ++$$group->{count};
-        $group = \$$group->{children}{$frame};
     }
 
     @current_stack = ();
@@ -47,7 +47,7 @@ sub print_group
 
     for my $key (sort { $group->{children}{$b}{count} <=> $group->{children}{$a}{count} } keys %{$group->{children}})
     {
-        my $count = $group->{count};
+        my $count = $group->{children}{$key}{count};
         print(('| ' x $level) . $count . (' ' x (5 - (length $count))) . $key . "\n");
         print_group($group->{children}{$key}, $level + 1);
     }

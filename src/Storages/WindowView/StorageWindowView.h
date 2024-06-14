@@ -271,5 +271,9 @@ private:
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
+
+    bool disabled_due_to_analyzer = false;
+
+    void throwIfWindowViewIsDisabled(ContextPtr local_context = nullptr) const;
 };
 }

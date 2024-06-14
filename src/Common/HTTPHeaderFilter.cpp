@@ -1,5 +1,5 @@
 #include <Common/HTTPHeaderFilter.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
 

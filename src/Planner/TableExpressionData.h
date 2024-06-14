@@ -137,7 +137,7 @@ public:
         if (it == column_name_to_column.end())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column for column name {} does not exists. There are only column names: {}",
+                "Column for column name {} does not exist. There are only column names: {}",
                 column_name,
                 fmt::join(column_names.begin(), column_names.end(), ", "));
         }
@@ -154,7 +154,7 @@ public:
         if (it == column_name_to_column_identifier.end())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column identifier for column name {} does not exists. There are only column names: {}",
+                "Column identifier for column name {} does not exist. There are only column names: {}",
                 column_name,
                 fmt::join(column_names.begin(), column_names.end(), ", "));
         }

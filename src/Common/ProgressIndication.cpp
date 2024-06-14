@@ -163,8 +163,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
         WriteBufferFromOwnString profiling_msg_builder;
 
         /// We don't want -0. that can appear due to rounding errors.
-        if (cpu_usage <= 0)
-            cpu_usage = 0;
+        cpu_usage = std::max(cpu_usage, 0.);
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 

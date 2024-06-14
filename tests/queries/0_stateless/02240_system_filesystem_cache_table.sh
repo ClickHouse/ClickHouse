@@ -9,7 +9,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES"
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FILESYSTEM CACHE"
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.filesystem_cache"

@@ -9,10 +9,7 @@ import sys
 import traceback
 from pathlib import Path
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from build_download_helper import download_builds_filter
 from ci_config import CI_CONFIG

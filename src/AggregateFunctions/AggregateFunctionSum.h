@@ -463,7 +463,6 @@ public:
             return "sumWithOverflow";
         else if constexpr (Type == AggregateFunctionTypeSumKahan)
             return "sumKahan";
-        UNREACHABLE();
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)

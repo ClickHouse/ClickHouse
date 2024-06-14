@@ -27,6 +27,8 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
+    client2.send("SET allow_experimental_analyzer = 0")
+    client2.expect(prompt)
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01082_window_view_watch_limit")
     client1.expect(prompt)
@@ -47,7 +49,7 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01082_window_view_watch_limit.wv LIMIT 1")
     client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\)")
+    client1.expect("Progress: 0.00 rows.*\\)")
     client2.send(
         "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:00');"
     )
@@ -57,7 +59,7 @@ with client(name="client1>", log=log) as client1, client(
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
-    client1.expect("Progress: 1.00 rows.*\)")
+    client1.expect("Progress: 1.00 rows.*\\)")
     client1.expect("1 row" + end_of_block)
     client1.expect(prompt)
 

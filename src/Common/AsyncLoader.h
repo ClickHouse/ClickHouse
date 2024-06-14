@@ -44,7 +44,7 @@ class AsyncLoader;
 void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopwatch & watch);
 
 // Execution status of a load job.
-enum class LoadStatus
+enum class LoadStatus : uint8_t
 {
     PENDING,  // Load job is not started yet.
     OK,       // Load job executed and was successful.

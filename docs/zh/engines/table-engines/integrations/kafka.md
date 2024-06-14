@@ -120,17 +120,43 @@ Kafka 特性：
 与 `GraphiteMergeTree` 类似，Kafka 引擎支持使用ClickHouse配置文件进行扩展配置。可以使用两个配置键：全局 (`kafka`) 和 主题级别 (`kafka_*`)。首先应用全局配置，然后应用主题级配置（如果存在）。
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
-  <kafka>
+<kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
-    <auto_offset_reset>smallest</auto_offset_reset>
-  </kafka>
+    <statistics_interval_ms>3000</statistics_interval_ms>
 
-  <!-- Configuration specific for topic "logs" -->
-  <kafka_logs>
-    <retry_backoff_ms>250</retry_backoff_ms>
-    <fetch_min_bytes>100000</fetch_min_bytes>
-  </kafka_logs>
+    <kafka_topic>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
+    </kafka_topic>
+
+    <!-- Settings for consumer -->
+    <consumer>
+        <auto_offset_reset>smallest</auto_offset_reset>
+        <kafka_topic>
+            <name>logs</name>
+            <fetch_min_bytes>100000</fetch_min_bytes>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <fetch_min_bytes>50000</fetch_min_bytes>
+        </kafka_topic>
+    </consumer>
+
+    <!-- Settings for producer -->
+    <producer>
+        <kafka_topic>
+            <name>logs</name>
+            <retry_backoff_ms>250</retry_backoff_ms>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <retry_backoff_ms>400</retry_backoff_ms>
+        </kafka_topic>
+    </producer>
+</kafka>
 ```
 
 有关详细配置选项列表，请参阅 [librdkafka配置参考](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。

@@ -68,6 +68,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
+        MarkRanges * exact_ranges,
         const Settings & settings,
         LoggerPtr log);
 
@@ -166,6 +167,7 @@ public:
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
         const ActionsDAGPtr & filter_dag,
@@ -200,7 +202,8 @@ public:
         LoggerPtr log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
-        bool use_skip_indexes);
+        bool use_skip_indexes,
+        bool find_exact_ranges);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

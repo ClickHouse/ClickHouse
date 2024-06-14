@@ -401,7 +401,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
         {
             writeString("SELECT * FROM (", out);
             writeString(query, out);
-            writeString(") WHERE ", out);
+            writeString(") AS subquery WHERE ", out);
             composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
             writeString(";", out);
 

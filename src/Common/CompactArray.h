@@ -56,7 +56,7 @@ public:
 
 private:
     /// number of bytes in bitset
-    static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
+    static constexpr size_t BITSET_SIZE = (bucket_count * content_width + 7) / 8;
     UInt8 bitset[BITSET_SIZE] = { 0 };
 };
 
@@ -116,7 +116,7 @@ public:
 
     /** Return the current cell number and the corresponding content.
       */
-    inline std::pair<BucketIndex, UInt8> get() const
+    std::pair<BucketIndex, UInt8> get() const
     {
         if ((current_bucket_index == 0) || is_eof)
             throw Exception(ErrorCodes::NO_AVAILABLE_DATA, "No available data.");
@@ -246,4 +246,3 @@ private:
 };
 
 }
-

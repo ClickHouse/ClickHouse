@@ -82,4 +82,4 @@ ORDER BY name;
 
 DROP TABLE IF EXISTS t_json;
 
-CREATE TABLE t_json(id UInt64, data Object('JSON')) ENGINE = Log; -- { serverError 44 }
+CREATE TABLE t_json(id UInt64, data Object('JSON')) ENGINE = Log; -- { serverError ILLEGAL_COLUMN }

@@ -158,10 +158,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     }
 
     size_t size = current_data->size();
-
-    if (num_streams > size)
-        num_streams = size;
-
+    num_streams = std::min(num_streams, size);
     Pipes pipes;
 
     auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);

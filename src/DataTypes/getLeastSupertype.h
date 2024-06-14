@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class LeastSupertypeOnError
+enum class LeastSupertypeOnError : uint8_t
 {
     Throw,
     String,

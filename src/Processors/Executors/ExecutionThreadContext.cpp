@@ -64,11 +64,12 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             }
         }
     }
-    catch (Exception & exception)
+    catch (Exception exception) /// NOLINT
     {
+        /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
             exception.addMessage("While executing " + node->processor->getName());
-        throw;
+        throw exception;
     }
 }
 

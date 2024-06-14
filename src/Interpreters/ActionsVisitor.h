@@ -78,7 +78,7 @@ class ASTIdentifier;
 class ASTFunction;
 class ASTLiteral;
 
-enum class GroupByKind
+enum class GroupByKind : uint8_t
 {
     NONE,
     ORDINARY,

@@ -10,10 +10,7 @@ import multiprocessing
 import os
 from functools import reduce
 
-# isort: off
 from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
-
-# isort: on
 
 from connection import Engines, default_clickhouse_odbc_conn_str, setup_connection
 from test_runner import RequestType, Status, TestRunner

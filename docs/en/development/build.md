@@ -58,6 +58,23 @@ export CC=clang-18
 export CXX=clang++-18
 ```
 
+### Install Rust compiler
+
+First follow the steps in the official [rust documentation](https://www.rust-lang.org/tools/install) to install `rustup`.
+
+As with C++ dependencies, ClickHouse uses vendoring to control exactly what's installed and avoid depending on third
+party services (like the `crates.io` registry).
+
+Although in release mode any rust modern rustup toolchain version should work with this dependencies, if you plan to
+enable sanitizers you must use a version that matches the exact same `std` as the one used in CI (for which we vendor
+the crates):
+
+```bash
+rustup toolchain install nightly-2024-04-01
+rustup default nightly-2024-04-01
+rustup component add rust-src
+```
+
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
 ``` bash
@@ -92,11 +109,12 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: clang-17 or newer
+- Compiler: clang-18 or newer
 - Linker: lld-17 or newer
 - Ninja
 - Yasm
 - Gawk
+- rustc
 
 If all the components are installed, you may build it in the same way as the steps above.
 

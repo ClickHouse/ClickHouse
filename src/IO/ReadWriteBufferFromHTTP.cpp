@@ -345,7 +345,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (last_attempt || !is_retriable)
         {
             if (!mute_logging)
-                LOG_ERROR(log,
+                LOG_DEBUG(log,
                           "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
@@ -361,7 +361,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                 on_retry();
 
             if (!mute_logging)
-                LOG_INFO(log,
+                LOG_TRACE(log,
                          "Failed to make request to '{}'{}. "
                          "Error: {}. "
                          "Failed at try {}/{}. "

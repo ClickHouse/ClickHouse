@@ -200,7 +200,7 @@ private:
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
-    enum class Modificator
+    enum class Modificator : uint8_t
     {
         ROLLUP = 0,
         CUBE = 1,

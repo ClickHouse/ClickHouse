@@ -146,8 +146,6 @@ const char * errorMessage(Error code)
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
     }
-
-    UNREACHABLE();
 }
 
 bool isHardwareError(Error zk_return_code)

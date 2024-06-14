@@ -721,3 +721,11 @@ def test_binlog_client(started_cluster, started_mysql_8_0, replication):
     materialized_with_ddl.gtid_after_attach_test(
         node_db, started_mysql_8_0, replication
     )
+
+
+def test_create_database_without_mysql_connection(
+    started_cluster, started_mysql_8_0, clickhouse_node: ClickHouseInstance
+):
+    materialized_with_ddl.mysql_create_database_without_connection(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )

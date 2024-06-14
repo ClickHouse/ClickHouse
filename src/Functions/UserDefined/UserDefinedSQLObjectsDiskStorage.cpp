@@ -3,7 +3,7 @@
 #include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
 #include "Functions/UserDefined/UserDefinedSQLObjectType.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -56,7 +56,6 @@ UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const Context
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
 {
-    createDirectory();
 }
 
 
@@ -122,7 +121,12 @@ void UserDefinedSQLObjectsDiskStorage::reloadObjects()
 void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
 {
     LOG_INFO(log, "Loading user defined objects from {}", dir_path);
-    createDirectory();
+
+    if (!std::filesystem::exists(dir_path))
+    {
+        LOG_DEBUG(log, "The directory for user defined objects ({}) does not exist: nothing to load", dir_path);
+        return;
+    }
 
     std::vector<std::pair<String, ASTPtr>> function_names_and_queries;
 
@@ -157,7 +161,6 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
 
 void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
-    createDirectory();
     auto ast = tryLoadObject(object_type, object_name);
     if (ast)
         setObject(object_name, *ast);
@@ -185,6 +188,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     bool replace_if_exists,
     const Settings & settings)
 {
+    createDirectory();
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} to file {}", backQuote(object_name), file_path);
 

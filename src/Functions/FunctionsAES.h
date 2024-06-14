@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/safe_cast.h>
+#include <Common/MemorySanitizer.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -41,13 +42,13 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, Strin
 
 const EVP_CIPHER * getCipherByName(StringRef name);
 
-enum class CompatibilityMode
+enum class CompatibilityMode : uint8_t
 {
     MySQL,
     OpenSSL
 };
 
-enum class CipherMode
+enum class CipherMode : uint8_t
 {
     MySQLCompatibility,   // with key folding
     OpenSSLCompatibility, // just as regular openssl's enc application does (AEAD modes, like GCM and CCM are not supported)
@@ -58,7 +59,7 @@ enum class CipherMode
 template <CipherMode mode>
 struct KeyHolder
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key) const
+    StringRef setKey(size_t cipher_key_size, StringRef key) const
     {
         if (key.size != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -70,7 +71,7 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key)
+    StringRef setKey(size_t cipher_key_size, StringRef key)
     {
         if (key.size < cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -366,12 +367,14 @@ private:
                         reinterpret_cast<unsigned char*>(encrypted), &output_len,
                         reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
                     onError("Failed to encrypt");
+                __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 3: retrieve encrypted data (ciphertext)
                 if (EVP_EncryptFinal_ex(evp_ctx,
                         reinterpret_cast<unsigned char*>(encrypted), &output_len) != 1)
                     onError("Failed to fetch ciphertext");
+                __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 4: optionally retrieve a tag and append it to the ciphertext (RFC5116):
@@ -670,6 +673,7 @@ private:
                 }
                 else
                 {
+                    __msan_unpoison(decrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                     decrypted += output_len;
                     // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
                     if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -688,7 +692,10 @@ private:
                         decrypt_fail = true;
                     }
                     else
+                    {
+                        __msan_unpoison(decrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                         decrypted += output_len;
+                    }
                 }
             }
 

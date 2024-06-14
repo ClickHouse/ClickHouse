@@ -125,7 +125,7 @@ void SSLManager::initializeClient(PrivateKeyPassphraseHandlerPtr ptrPassphraseHa
 Context::Ptr SSLManager::defaultServerContext()
 {
 	Poco::FastMutex::ScopedLock lock(_mutex);
-	
+
 	if (!_ptrDefaultServerContext)
 		initDefaultContext(true);
 
@@ -150,7 +150,7 @@ Context::Ptr SSLManager::defaultClientContext()
 			_ptrDefaultClientContext->disableProtocols(Context::PROTO_SSLV2 | Context::PROTO_SSLV3);
 		}
 	}
-		
+
 	return _ptrDefaultClientContext;
 }
 
@@ -256,7 +256,7 @@ void SSLManager::initDefaultContext(bool server)
 	Context::Params params;
 	// mandatory options
 	params.privateKeyFile = config.getString(prefix + CFG_PRIV_KEY_FILE, "");
-	params.certificateFile = config.getString(prefix + CFG_CERTIFICATE_FILE, params.privateKeyFile);	
+	params.certificateFile = config.getString(prefix + CFG_CERTIFICATE_FILE, params.privateKeyFile);
 	params.caLocation = config.getString(prefix + CFG_CA_LOCATION, "");
 
 	if (server && params.certificateFile.empty() && params.privateKeyFile.empty())
@@ -283,7 +283,7 @@ void SSLManager::initDefaultContext(bool server)
 	params.ecdhCurve    = config.getString(prefix + CFG_ECDH_CURVE, "");
 
 	Context::Usage usage;
-	
+
 	if (server)
 	{
 		if (requireTLSv1_2)
@@ -308,7 +308,7 @@ void SSLManager::initDefaultContext(bool server)
 			usage = Context::CLIENT_USE;
 		_ptrDefaultClientContext = new Context(usage, params);
 	}
-	
+
 	std::string disabledProtocolsList = config.getString(prefix + CFG_DISABLE_PROTOCOLS, "");
 	Poco::StringTokenizer dpTok(disabledProtocolsList, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
 	int disabledProtocols = 0;
@@ -329,27 +329,28 @@ void SSLManager::initDefaultContext(bool server)
 		_ptrDefaultServerContext->disableProtocols(disabledProtocols);
 	else
 		_ptrDefaultClientContext->disableProtocols(disabledProtocols);
-		
-	bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
-	if (server)
-	{
-		std::string sessionIdContext = config.getString(prefix + CFG_SESSION_ID_CONTEXT, config.getString("application.name", ""));
-		_ptrDefaultServerContext->enableSessionCache(cacheSessions, sessionIdContext);
-		if (config.hasProperty(prefix + CFG_SESSION_CACHE_SIZE))
-		{
-			int cacheSize = config.getInt(prefix + CFG_SESSION_CACHE_SIZE);
-			_ptrDefaultServerContext->setSessionCacheSize(cacheSize);
-		}
-		if (config.hasProperty(prefix + CFG_SESSION_TIMEOUT))
-		{
-			int timeout = config.getInt(prefix + CFG_SESSION_TIMEOUT);
-			_ptrDefaultServerContext->setSessionTimeout(timeout);
-		}
-	}
-	else
-	{
-		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
-	}
+
+    /// Temporarily disabled during the transition from boringssl to OpenSSL due to tsan issues.
+	/// bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
+	/// if (server)
+	/// {
+	/// 	std::string sessionIdContext = config.getString(prefix + CFG_SESSION_ID_CONTEXT, config.getString("application.name", ""));
+	/// 	_ptrDefaultServerContext->enableSessionCache(cacheSessions, sessionIdContext);
+	/// 	if (config.hasProperty(prefix + CFG_SESSION_CACHE_SIZE))
+	/// 	{
+	/// 		int cacheSize = config.getInt(prefix + CFG_SESSION_CACHE_SIZE);
+	/// 		_ptrDefaultServerContext->setSessionCacheSize(cacheSize);
+	/// 	}
+	/// 	if (config.hasProperty(prefix + CFG_SESSION_TIMEOUT))
+	/// 	{
+	/// 		int timeout = config.getInt(prefix + CFG_SESSION_TIMEOUT);
+	/// 		_ptrDefaultServerContext->setSessionTimeout(timeout);
+	/// 	}
+	/// }
+	/// else
+	/// {
+	/// 	_ptrDefaultClientContext->enableSessionCache(cacheSessions);
+	/// }
 	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
@@ -378,7 +379,7 @@ void SSLManager::initPassphraseHandler(bool server)
 {
 	if (server && _ptrServerPassphraseHandler) return;
 	if (!server && _ptrClientPassphraseHandler) return;
-	
+
 	std::string prefix = server ? CFG_SERVER_PREFIX : CFG_CLIENT_PREFIX;
 	Poco::Util::AbstractConfiguration& config = appConfig();
 
@@ -399,7 +400,7 @@ void SSLManager::initPassphraseHandler(bool server)
 	}
 	else throw Poco::Util::UnknownOptionException(std::string("No passphrase handler known with the name ") + className);
 }
-	
+
 
 void SSLManager::initCertificateHandler(bool server)
 {

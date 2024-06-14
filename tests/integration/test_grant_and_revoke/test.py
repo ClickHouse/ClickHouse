@@ -5,9 +5,8 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    user_configs=[
-        "configs/users.d/users.xml",
-    ],
+    main_configs=["configs/config.xml"],
+    user_configs=["configs/users.d/users.xml"],
 )
 
 
@@ -186,7 +185,7 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.`table` TO B\n"
+        == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -370,6 +369,7 @@ def test_implicit_create_temporary_table_grant():
     )
 
     instance.query("GRANT CREATE TABLE ON test.* TO A")
+    instance.query("GRANT TABLE ENGINE ON Memory TO A")
     instance.query("CREATE TEMPORARY TABLE tmp(name String)", user="A")
 
     instance.query("REVOKE CREATE TABLE ON *.* FROM A")
@@ -718,3 +718,74 @@ def test_current_grants_override():
             "REVOKE SELECT ON test.* FROM B",
         ]
     )
+
+
+def test_table_engine_grant_and_revoke():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    instance.query("GRANT TABLE ENGINE ON TinyLog TO A")
+
+    instance.query("CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A")
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT TABLE ENGINE ON TinyLog TO A",
+            "GRANT CREATE TABLE ON test.table1 TO A",
+        ]
+    )
+
+    instance.query("REVOKE TABLE ENGINE ON TinyLog FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    instance.query("REVOKE CREATE TABLE ON test.table1 FROM A")
+    instance.query("DROP TABLE test.table1")
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV([])
+
+
+def test_table_engine_and_source_grant():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+
+    instance.query("GRANT TABLE ENGINE ON PostgreSQL TO A")
+
+    instance.query(
+        """
+        CREATE TABLE test.table1(a Integer)
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
+
+    instance.query("REVOKE TABLE ENGINE ON PostgreSQL FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        """
+        CREATE TABLE test.table1(a Integer)
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("GRANT SOURCES ON *.* TO A")
+
+    instance.query(
+        """
+        CREATE TABLE test.table1(a Integer)
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")

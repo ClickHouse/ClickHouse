@@ -300,11 +300,13 @@ def test_allowed_databases(test_cluster):
             "CREATE TABLE db2.t2 ON CLUSTER cluster (i Int8) ENGINE = Memory",
             settings={"user": "restricted_user"},
         )
+
     with pytest.raises(Exception):
         instance.query(
             "CREATE TABLE t3 ON CLUSTER cluster (i Int8) ENGINE = Memory",
             settings={"user": "restricted_user"},
         )
+
     with pytest.raises(Exception):
         instance.query(
             "DROP DATABASE db2 ON CLUSTER cluster", settings={"user": "restricted_user"}

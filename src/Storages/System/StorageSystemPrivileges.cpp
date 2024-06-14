@@ -30,6 +30,7 @@ namespace
         COLUMN,
         NAMED_COLLECTION,
         USER_NAME,
+        TABLE_ENGINE,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -43,6 +44,7 @@ namespace
         enum_values.emplace_back("COLUMN", static_cast<Int8>(COLUMN));
         enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
         enum_values.emplace_back("USER_NAME", static_cast<Int8>(USER_NAME));
+        enum_values.emplace_back("TABLE_ENGINE", static_cast<Int8>(TABLE_ENGINE));
         return enum_values;
     }
 }

@@ -40,7 +40,7 @@ Where:
 
 The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use the [`varPop()` function](./varpop#varpop) instead.
 
-This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varSampStable` function](#varSampStable).
+This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varSampStable`](#varsampstable) function.
 
 **Example**
 
@@ -82,11 +82,11 @@ varSampStable(expr)
 
 **Returned value**
 
-The `varSampStable()` function returns a Float64 value representing the sample variance of the input data set.
+The `varSampStable` function returns a Float64 value representing the sample variance of the input data set.
 
 **Implementation details**
 
-The `varSampStable()` function calculates the sample variance using the same formula as the [`varSamp()`](#varSamp function):
+The `varSampStable` function calculates the sample variance using the same formula as the [`varSamp`](#varsamp) function:
 
 ```plaintext
 ∑(x - mean(x))^2 / (n - 1)
@@ -97,9 +97,9 @@ Where:
 - `mean(x)` is the arithmetic mean of the data set.
 - `n` is the number of data points in the data set.
 
-The difference between `varSampStable()` and `varSamp()` is that `varSampStable()` is designed to provide a more deterministic and stable result when dealing with floating-point arithmetic. It uses an algorithm that minimizes the accumulation of rounding errors, which can be particularly important when dealing with large data sets or data with a wide range of values.
+The difference between `varSampStable` and `varSamp` is that `varSampStable` is designed to provide a more deterministic and stable result when dealing with floating-point arithmetic. It uses an algorithm that minimizes the accumulation of rounding errors, which can be particularly important when dealing with large data sets or data with a wide range of values.
 
-Like `varSamp()`, the `varSampStable()` function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use the [`varPopStable()` function](./varpop#varpopstable) instead.
+Like `varSamp`, the `varSampStable` function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use the [`varPopStable`](./varpop#varpopstable) function instead.
 
 **Example**
 
@@ -125,4 +125,4 @@ Response:
 0.865
 ```
 
-This query calculates the sample variance of the `value` column in the `example_table` using the `varSampStable()` function. The result shows that the sample variance of the values `[10.5, 12.3, 9.8, 11.2, 10.7]` is approximately 0.865, which may differ slightly from the result of `varSamp()` due to the more precise handling of floating-point arithmetic.
+This query calculates the sample variance of the `value` column in the `example_table` using the `varSampStable()` function. The result shows that the sample variance of the values `[10.5, 12.3, 9.8, 11.2, 10.7]` is approximately 0.865, which may differ slightly from the result of `varSamp` due to the more precise handling of floating-point arithmetic.

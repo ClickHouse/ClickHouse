@@ -3,8 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <double-conversion/double-conversion.h>
+#include <Common/StringUtils.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
@@ -321,10 +320,12 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 
 
 template <typename T, typename ReturnType, bool allow_exponent = true>
-ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
+ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
+
+    has_fractional = false;
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -378,6 +379,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     if (checkChar('.', in))
     {
+        has_fractional = true;
         auto after_point_count = in.count();
 
         while (!in.eof() && *in.position() == '0')
@@ -395,6 +397,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     {
         if (checkChar('e', in) || checkChar('E', in))
         {
+            has_fractional = true;
             if (in.eof())
             {
                 if constexpr (throw_exception)
@@ -421,10 +424,14 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     }
 
     if (after_point)
+    {
         x += static_cast<T>(shift10(after_point, after_point_exponent));
+    }
 
     if (exponent)
+    {
         x = static_cast<T>(shift10(x, exponent));
+    }
 
     if (negative)
         x = -x;
@@ -591,8 +598,16 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
 
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
+template <typename T> void readFloatTextFast(T & x, ReadBuffer & in)
+{
+    bool has_fractional;
+    readFloatTextFastImpl<T, void>(x, in, has_fractional);
+}
+template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in)
+{
+    bool has_fractional;
+    return readFloatTextFastImpl<T, bool>(x, in, has_fractional);
+}
 
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
@@ -604,6 +619,21 @@ template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatText
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
 
 /// Don't read exponent part of the number.
-template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool, false>(x, in); }
+template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in)
+{
+    bool has_fractional;
+    return readFloatTextFastImpl<T, bool, false>(x, in, has_fractional);
+}
+
+/// With a @has_fractional flag
+/// Used for input_format_try_infer_integers
+template <typename T> bool tryReadFloatTextExt(T & x, ReadBuffer & in, bool & has_fractional)
+{
+    return readFloatTextFastImpl<T, bool>(x, in, has_fractional);
+}
+template <typename T> bool tryReadFloatTextExtNoExponent(T & x, ReadBuffer & in, bool & has_fractional)
+{
+    return readFloatTextFastImpl<T, bool, false>(x, in, has_fractional);
+}
 
 }

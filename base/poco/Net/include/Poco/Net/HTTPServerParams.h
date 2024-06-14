@@ -44,7 +44,7 @@ namespace Net
         ///   - timeout:              60 seconds
         ///   - keepAlive:            true
         ///   - maxKeepAliveRequests: 0
-        ///   - keepAliveTimeout:     10 seconds
+        ///   - keepAliveTimeout:     15 seconds
 
         void setServerName(const std::string & serverName);
         /// Sets the name and port (name:port) that the server uses to identify itself.
