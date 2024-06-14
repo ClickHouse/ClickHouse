@@ -1994,7 +1994,7 @@ Result:
 
 ## stringJaccardIndexUTF8
 
-Like [stringJaccardIndex](#stringJaccardIndex) but for UTF8-encoded strings.
+Like [stringJaccardIndex](#stringjaccardindex) but for UTF8-encoded strings.
 
 ## editDistance
 
