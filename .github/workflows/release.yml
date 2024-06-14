@@ -29,7 +29,9 @@ jobs:
     - name: Deploy packages and assets
       run: |
         curl --silent --data '' --no-buffer \
-          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true'
+          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true' | \
+          tee deployment.log
+        grep -q 'Mark the release as finished with status `success`' deployment.log || { echo 'The deploymen failed'; exit 1; }
   ############################################################################################
   ##################################### Docker images  #######################################
   ############################################################################################
