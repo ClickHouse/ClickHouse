@@ -58,7 +58,7 @@ function check_refcnt_for_table()
     $CLICKHOUSE_CLIENT -q "select table, name, refcount>=6 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 3"
 
     # Kill the query gracefully.
-    kill -INT $PID ||:
+    kill -INT $PID
     wait $PID
     grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED
     rm -f "${log_file:?}"
