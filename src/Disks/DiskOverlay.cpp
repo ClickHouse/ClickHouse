@@ -412,6 +412,7 @@ const std::function<void()> & cancellation_hook)
 {
     if (&to_disk == this)
     {
+        ensureHaveFile(from_file_path);
         disk_diff->copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
 
         if (forward_metadata->exists(dataPath(from_file_path)))

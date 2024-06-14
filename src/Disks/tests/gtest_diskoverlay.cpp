@@ -220,9 +220,14 @@ TEST_F(OverlayTest, hardlink) {
 
 TEST_F(OverlayTest, copy) {
     writeToFileBase("file.txt", "test data");
+    writeToFileBase("file2.txt", "other data");
+
     writeToFileOver("file.txt", " more data", true);
 
     over->copyFile("file.txt", *over, "file1.txt");
 
     EXPECT_EQ(readFromFileOver("file1.txt"), "test data more data");
+
+    over->copyFile("file2.txt", *over, "file3.txt");
+    EXPECT_EQ(readFromFileOver("file3.txt"), "other data");
 }
