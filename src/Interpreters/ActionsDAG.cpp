@@ -1552,9 +1552,6 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     actions_dag->outputs.swap(projection);
     actions_dag->removeUnusedActions(false);
 
-    if (mode == MatchColumnsMode::Name)
-        appendInputsFromNamesMap(*actions_dag, source, inputs);
-
     return actions_dag;
 }
 

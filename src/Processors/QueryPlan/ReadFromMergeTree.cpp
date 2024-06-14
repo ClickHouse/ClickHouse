@@ -2010,7 +2010,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     Block cur_header = pipe.getHeader();
 
-    bool project_inputs = result_projection != nullptr;
     auto append_actions = [&result_projection](ActionsDAGPtr actions)
     {
         if (!result_projection)
@@ -2036,9 +2035,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (result_projection)
     {
-        if (project_inputs)
-            result_projection->appendInputsForUnusedColumns(pipe.getHeader());
-
         auto projection_actions = std::make_shared<ExpressionActions>(result_projection);
         pipe.addSimpleTransform([&](const Block & header)
         {
