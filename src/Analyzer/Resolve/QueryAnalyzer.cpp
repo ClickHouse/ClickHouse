@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -4505,8 +4506,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
+        NameToNameMap param_values = analyzeFunctionParamValues(function_ast, &scope.aliases);
         auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(
-            function_ast, database_name, table_name, scope.aliases);
+            database_name,
+            table_name,
+            param_values);
 
         if (parametrized_view_storage)
         {

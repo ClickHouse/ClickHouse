@@ -25,7 +25,7 @@ namespace ErrorCodes
 class FunctionParameterValuesVisitor
 {
 public:
-    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, const ScopeAliases & aliases_)
+    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, const ScopeAliases * aliases_)
         : parameter_values(parameter_values_), aliases(aliases_)
     {
     }
@@ -41,7 +41,7 @@ public:
 
 private:
     NameToNameMap & parameter_values;
-    const ScopeAliases & aliases;
+    const ScopeAliases * aliases;
 
     std::string tryGetParameterValueAsString(const ASTPtr & ast)
     {
@@ -51,10 +51,13 @@ private:
         }
         else if (const auto * value_identifier = ast->as<ASTIdentifier>())
         {
-            auto it = aliases.alias_name_to_expression_node_before_group_by.find(value_identifier->name());
-            if (it != aliases.alias_name_to_expression_node_before_group_by.end())
+            if (aliases)
             {
-                return tryGetParameterValueAsString(it->second->toAST());
+                auto it = aliases->alias_name_to_expression_node_before_group_by.find(value_identifier->name());
+                if (it != aliases->alias_name_to_expression_node_before_group_by.end())
+                {
+                    return tryGetParameterValueAsString(it->second->toAST());
+                }
             }
         }
         else if (const auto * function = ast->as<ASTFunction>())
@@ -93,7 +96,7 @@ private:
     }
 };
 
-NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, const ScopeAliases & scope_aliases)
+NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, const ScopeAliases * scope_aliases)
 {
     NameToNameMap parameter_values;
     FunctionParameterValuesVisitor(parameter_values, scope_aliases).visit(ast);
