@@ -14,6 +14,10 @@ on: # yamllint disable-line rule:truthy
         required: true
         type: string
 
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 jobs:
   ReleasePublish:
     runs-on: [self-hosted, style-checker]
