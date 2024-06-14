@@ -61,6 +61,11 @@ namespace
         {
             user.authentication_methods.push_back(*auth_data);
         }
+        else if (user.authentication_methods.empty())
+        {
+            // previously, a user always had a default constructed auth method.. maybe I should put this somewhere else
+            user.authentication_methods.emplace_back();
+        }
 
         if (reset_authentication_methods)
         {
