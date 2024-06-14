@@ -89,9 +89,28 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
 
 void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
-    std::unique_lock<std::mutex> lock(data_mutex);
+    std::lock_guard lock{data_mutex};
     tryLoadImpl(config, ctx, prefix);
 }
+
+
+std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrInsert(SSL_CTX * ctx, const std::string & prefix)
+{
+    auto it = data.end();
+    auto i = data_index.find(prefix);
+    if (i != data_index.end())
+        it = i->second;
+    else
+    {
+        if (!ctx)
+            ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+        data.push_back(MultiData(ctx));
+        --it;
+        data_index[prefix] = it;
+    }
+    return it;
+}
+
 
 void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
@@ -109,24 +128,15 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
     else
     {
-        auto it = data.end();
-        auto i = data_index.find(prefix);
-        if (i != data_index.end())
-            it = i->second;
-        else
-        {
-            data.push_back(MultiData(ctx));
-            --it;
-            data_index[prefix] = it;
-        }
+        auto it = findOrInsert(ctx, prefix);
 
         bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
         bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
-        std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
 
         if (cert_file_changed || key_file_changed)
         {
             LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+            std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
             it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
             LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
         }
@@ -134,12 +144,6 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
         /// If callback is not set yet
         try
         {
-            if (!ctx)
-            {
-                ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
-                it->ctx = ctx;
-            }
-
             if (it->init_was_not_made)
                 init(&*it);
         }
@@ -154,7 +158,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 
 void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration & config)
 {
-    std::unique_lock<std::mutex> lock(data_mutex);
+    std::lock_guard lock{data_mutex};
     for (auto & item : data_index)
         tryLoadImpl(config, item.second->ctx, item.first);
 }

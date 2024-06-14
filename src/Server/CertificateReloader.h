@@ -90,16 +90,18 @@ private:
     CertificateReloader() = default;
 
     /// Initialize the callback and perform the initial cert loading
-    void init(MultiData * pdata);
+    void init(MultiData * pdata) TSA_REQUIRES(data_mutex);
 
     /// Unsafe implementation
-    void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
+    void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+
+    std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
     LoggerPtr log = getLogger("CertificateReloader");
 
-    std::mutex data_mutex;
-    std::list<MultiData> data;
-    std::unordered_map<std::string, std::list<MultiData>::iterator> data_index;
+    std::list<MultiData> data TSA_GUARDED_BY(data_mutex);
+    std::unordered_map<std::string, std::list<MultiData>::iterator> data_index TSA_GUARDED_BY(data_mutex);
+    mutable std::mutex data_mutex;
 };
 
 }
