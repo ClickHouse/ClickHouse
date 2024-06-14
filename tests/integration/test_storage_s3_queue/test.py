@@ -1651,3 +1651,103 @@ def test_exception_during_insert(started_cluster):
             break
         time.sleep(1)
     assert expected_rows == get_count()
+
+
+def test_commit_on_limit(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_commit_on_limit"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 1,
+            "s3queue_max_processed_files_before_commit": 10,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    incorrect_values = [
+        ["failed", 1, 1],
+    ]
+    incorrect_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
+    ).encode()
+
+    correct_values = [
+        [1, 1, 1],
+    ]
+    correct_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in correct_values)) + "\n"
+    ).encode()
+
+    put_s3_file_content(
+        started_cluster, f"{files_path}/test_99.csv", correct_values_csv
+    )
+    put_s3_file_content(
+        started_cluster, f"{files_path}/test_999.csv", correct_values_csv
+    )
+    put_s3_file_content(
+        started_cluster, f"{files_path}/test_9999.csv", incorrect_values_csv
+    )
+    put_s3_file_content(
+        started_cluster, f"{files_path}/test_99999.csv", correct_values_csv
+    )
+    put_s3_file_content(
+        started_cluster, f"{files_path}/test_999999.csv", correct_values_csv
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_processed_files():
+        return (
+            node.query(
+                f"SELECT file_name FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 "
+            )
+            .strip()
+            .split("\n")
+        )
+
+    def get_failed_files():
+        return (
+            node.query(
+                f"SELECT file_name FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and status = 'Failed'"
+            )
+            .strip()
+            .split("\n")
+        )
+
+    for _ in range(30):
+        if "test_999999.csv" in get_processed_files():
+            break
+        time.sleep(1)
+    assert "test_999999.csv" in get_processed_files()
+
+    assert 1 == int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+
+    expected_processed = ["test_" + str(i) + ".csv" for i in range(files_to_generate)]
+    processed = get_processed_files()
+    for value in expected_processed:
+        assert value in processed
+
+    expected_failed = ["test_9999.csv"]
+    failed = get_failed_files()
+    for value in expected_failed:
+        assert value not in processed
+        assert value in failed

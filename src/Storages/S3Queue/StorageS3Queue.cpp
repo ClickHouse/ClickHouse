@@ -371,6 +371,9 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         s3_queue_log,
         getStorageID(),
         log,
+        s3queue_settings->s3queue_max_processed_files_before_commit,
+        s3queue_settings->s3queue_max_processed_rows_before_commit,
+        s3queue_settings->s3queue_max_processed_bytes_before_commit,
         commit_once_processed);
 }
 
@@ -446,84 +449,80 @@ void StorageS3Queue::threadFunc()
 
 bool StorageS3Queue::streamToViews()
 {
+    // Create a stream for each consumer and join them in a union stream
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
-
-    // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto s3queue_context = Context::createCopy(getContext());
     s3queue_context->makeQueryContext();
 
-    // Create a stream for each consumer and join them in a union stream
-    // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
-    auto block_io = interpreter.execute();
     auto file_iterator = createFileIterator(s3queue_context, nullptr);
+    size_t total_rows = 0;
 
-    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context));
-
-    Pipes pipes;
-    std::vector<std::shared_ptr<StorageS3QueueSource>> sources;
-
-    pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
-    sources.reserve(s3queue_settings->s3queue_processing_threads_num);
-
-    for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
+    while (!file_iterator->isFinished())
     {
-        auto source = createSource(
-            i/* processor_id */,
-            read_from_format_info,
-            file_iterator,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            s3queue_context,
-            false/* commit_once_processed */);
+        InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
+        auto block_io = interpreter.execute();
+        auto read_from_format_info = prepareReadingFromFormat(
+            block_io.pipeline.getHeader().getNames(),
+            storage_snapshot,
+            supportsSubsetOfColumns(s3queue_context));
 
-        pipes.emplace_back(source);
-        sources.emplace_back(source);
-    }
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+        Pipes pipes;
+        std::vector<std::shared_ptr<StorageS3QueueSource>> sources;
 
-    block_io.pipeline.complete(std::move(pipe));
-    block_io.pipeline.setNumThreads(s3queue_settings->s3queue_processing_threads_num);
-    block_io.pipeline.setConcurrencyControl(s3queue_context->getSettingsRef().use_concurrency_control);
+        pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
+        sources.reserve(s3queue_settings->s3queue_processing_threads_num);
 
-    std::atomic_size_t rows = 0;
-    block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+        for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
+        {
+            auto source = createSource(
+                i/* processor_id */,
+                read_from_format_info,
+                file_iterator,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                s3queue_context,
+                false/* commit_once_processed */);
 
-    try
-    {
-        CompletedPipelineExecutor executor(block_io.pipeline);
-        executor.execute();
-    }
-    catch (const Exception & e)
-    {
-        bool always_retriable_exception = e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-            || e.code() == ErrorCodes::TOO_MANY_PARTS;
+            pipes.emplace_back(source);
+            sources.emplace_back(source);
+        }
+        auto pipe = Pipe::unitePipes(std::move(pipes));
 
-        /// May be we should just split errors into retriable and non-retriable,
-        /// and always retry retriable for any number of tried needed? (so deprecating s3queue_loading_retries setting)
+        block_io.pipeline.complete(std::move(pipe));
+        block_io.pipeline.setNumThreads(s3queue_settings->s3queue_processing_threads_num);
+        block_io.pipeline.setConcurrencyControl(s3queue_context->getSettingsRef().use_concurrency_control);
+
+        std::atomic_size_t rows = 0;
+        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+
+        try
+        {
+            CompletedPipelineExecutor executor(block_io.pipeline);
+            executor.execute();
+        }
+        catch (...)
+        {
+            for (auto & source : sources)
+                source->commit(/* success */false, getCurrentExceptionMessage(true));
+            throw;
+        }
 
         for (auto & source : sources)
-            source->setFailed(getCurrentExceptionMessage(true), /* reduce_retry_count */!always_retriable_exception);
-        throw;
-    }
-    catch (...)
-    {
-        for (auto & source : sources)
-            source->setFailed(getCurrentExceptionMessage(true), /* reduce_retry_count */true);
-        throw;
+            source->commit(/* success */true);
+
+        total_rows += rows;
     }
 
-    for (auto & source : sources)
-        source->setProcessed();
-
-    return rows > 0;
+    return total_rows > 0;
 }
 
 zkutil::ZooKeeperPtr StorageS3Queue::getZooKeeper() const

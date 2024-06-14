@@ -31,6 +31,9 @@ class ASTStorage;
     M(UInt32, s3queue_cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     M(UInt32, s3queue_cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     M(UInt32, s3queue_buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
+    M(UInt32, s3queue_max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
+    M(UInt32, s3queue_max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
+    M(UInt32, s3queue_max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
 
 #define LIST_OF_S3QUEUE_SETTINGS(M, ALIAS) \
     S3QUEUE_RELATED_SETTINGS(M, ALIAS) \

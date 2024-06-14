@@ -49,6 +49,8 @@ public:
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
+        bool isFinished() const;
+
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
@@ -95,6 +97,9 @@ public:
         std::shared_ptr<S3QueueLog> s3_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_,
+        size_t max_processed_files_before_commit_,
+        size_t max_processed_rows_before_commit_,
+        size_t max_processed_bytes_before_commit_,
         bool commit_once_processed_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -103,9 +108,7 @@ public:
 
     Chunk generate() override;
 
-    void setProcessed();
-
-    void setFailed(const std::string & exception, bool reduce_retry_count);
+    void commit(bool success, const std::string & exception = {});
 
 private:
     const String name;
@@ -118,17 +121,24 @@ private:
     const std::atomic<bool> & table_is_being_dropped;
     const std::shared_ptr<S3QueueLog> s3_queue_log;
     const StorageID storage_id;
+    const size_t max_processed_files_before_commit;
+    const size_t max_processed_rows_before_commit;
+    const size_t max_processed_bytes_before_commit;
     const bool commit_once_processed;
 
     RemoveFileFunc remove_file_func;
     LoggerPtr log;
 
-    std::vector<Metadata::FileMetadataPtr> started_files;
+    std::vector<Metadata::FileMetadataPtr> processed_files;
+    std::vector<Metadata::FileMetadataPtr> failed_files;
 
     ReaderHolder reader;
     std::future<ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
+
     size_t processed_rows_from_file = 0;
+    size_t total_processed_rows = 0;
+    size_t total_processed_bytes = 0;
 
     S3QueueOrderedFileMetadata::BucketHolderPtr current_bucket_holder;
 

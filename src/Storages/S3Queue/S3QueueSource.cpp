@@ -52,6 +52,14 @@ StorageS3QueueSource::FileIterator::FileIterator(
 {
 }
 
+bool StorageS3QueueSource::FileIterator::isFinished() const
+{
+     return iterator_finished
+         && listed_keys_cache.end() == std::find_if(
+             listed_keys_cache.begin(), listed_keys_cache.end(),
+             [](const auto & v) { return !v.second.keys.empty(); });
+}
+
 size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
@@ -302,6 +310,9 @@ StorageS3QueueSource::StorageS3QueueSource(
     std::shared_ptr<S3QueueLog> s3_queue_log_,
     const StorageID & storage_id_,
     LoggerPtr log_,
+    size_t max_processed_files_before_commit_,
+    size_t max_processed_rows_before_commit_,
+    size_t max_processed_bytes_before_commit_,
     bool commit_once_processed_)
     : ISource(header_)
     , WithContext(context_)
@@ -315,6 +326,9 @@ StorageS3QueueSource::StorageS3QueueSource(
     , table_is_being_dropped(table_is_being_dropped_)
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
+    , max_processed_files_before_commit(max_processed_files_before_commit_)
+    , max_processed_rows_before_commit(max_processed_rows_before_commit_)
+    , max_processed_bytes_before_commit(max_processed_bytes_before_commit_)
     , commit_once_processed(commit_once_processed_)
     , remove_file_func(remove_file_func_)
     , log(log_)
@@ -348,14 +362,14 @@ Chunk StorageS3QueueSource::generate()
     catch (...)
     {
         if (commit_once_processed)
-            setFailed(getCurrentExceptionMessage(true), true);
+            commit(false, getCurrentExceptionMessage(true));
 
         throw;
     }
 
     if (!chunk && commit_once_processed)
     {
-        setProcessed();
+        commit(true);
     }
     return chunk;
 }
@@ -444,6 +458,8 @@ Chunk StorageS3QueueSource::generateImpl()
 
                 file_status->processed_rows += chunk.getNumRows();
                 processed_rows_from_file += chunk.getNumRows();
+                total_processed_rows += chunk.getNumRows();
+                total_processed_bytes += chunk.bytes();
 
                 VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
                     chunk, requested_virtual_columns, path, reader.getObjectInfo().metadata->size_bytes);
@@ -454,20 +470,64 @@ Chunk StorageS3QueueSource::generateImpl()
         {
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
-            file_status->onFailed(getCurrentExceptionMessage(true));
+
             appendLogElement(path, *file_status, processed_rows_from_file, false);
-            started_files.push_back(file_metadata);
+
+            failed_files.push_back(file_metadata);
+            file_status->onFailed(getCurrentExceptionMessage(true));
+
+            if (processed_rows_from_file == 0)
+            {
+                /// If we did not process any rows from the failed file,
+                /// commit all previosly processed files,
+                /// not to loose the work already done.
+                return {};
+            }
+
             throw;
         }
 
         appendLogElement(path, *file_status, processed_rows_from_file, true);
+
         file_status.reset();
         processed_rows_from_file = 0;
-        started_files.push_back(file_metadata);
+        processed_files.push_back(file_metadata);
+
+        if (processed_files.size() == max_processed_files_before_commit)
+        {
+            LOG_TRACE(log, "Number of max processed files before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
+            break;
+        }
+
+        bool rows_or_bytes_limit_reached = false;
+        if (total_processed_rows == max_processed_rows_before_commit)
+        {
+            LOG_TRACE(log, "Number of max processed rows before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
+
+            rows_or_bytes_limit_reached = true;
+        }
+        else if (total_processed_bytes == max_processed_bytes_before_commit)
+        {
+            LOG_TRACE(log, "Number of max processed bytes before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
+
+            rows_or_bytes_limit_reached = true;
+        }
+
+        if (rows_or_bytes_limit_reached && reader_future.valid())
+        {
+            LOG_TRACE(log, "Rows or bytes limit reached, but we have one more file scheduled already, "
+                      "will process it despite the limit");
+        }
 
         if (shutdown_called)
         {
-            LOG_INFO(log, "Shutdown was called, stopping sync");
+            LOG_TRACE(log, "Shutdown was called, stopping sync");
             break;
         }
 
@@ -479,33 +539,38 @@ Chunk StorageS3QueueSource::generateImpl()
 
         file_status = files_metadata->getFileStatus(reader.getObjectInfo().getPath());
 
-        /// Even if task is finished the thread may be not freed in pool.
-        /// So wait until it will be freed before scheduling a new task.
-        internal_source->create_reader_pool->wait();
-        reader_future = internal_source->createReaderAsync(processor_id);
+        if (!rows_or_bytes_limit_reached && processed_files.size() + 1 < max_processed_files_before_commit)
+        {
+            /// Even if task is finished the thread may be not freed in pool.
+            /// So wait until it will be freed before scheduling a new task.
+            internal_source->create_reader_pool->wait();
+            reader_future = internal_source->createReaderAsync(processor_id);
+        }
     }
 
     return {};
 }
 
-void StorageS3QueueSource::setProcessed()
+void StorageS3QueueSource::commit(bool success, const std::string & exception)
 {
-    LOG_TEST(log, "Having {} files to set as processed", started_files.size());
+    LOG_TEST(log, "Having {} files to set as {}", processed_files.size(), success ? "Processed" : "Failed");
 
-    for (const auto & file_metadata : started_files)
+    for (const auto & file_metadata : processed_files)
     {
-        file_metadata->setProcessed();
-        applyActionAfterProcessing(file_metadata->getPath());
+        if (success)
+        {
+            file_metadata->setProcessed();
+            applyActionAfterProcessing(file_metadata->getPath());
+        }
+        else
+            file_metadata->setFailed(exception, /* reduce_retry_count */false);
     }
-}
 
-void StorageS3QueueSource::setFailed(const std::string & exception, bool reduce_retry_count)
-{
-    LOG_TEST(log, "Having {} files to set as failed", started_files.size());
-
-    for (const auto & file_metadata : started_files)
+    for (const auto & file_metadata : failed_files)
     {
-        file_metadata->setFailed(exception, reduce_retry_count);
+        /// `exception` from commit args is from insertion to storage.
+        /// Here we do not used it as failed_files were not inserted into storage, but skipped.
+        file_metadata->setFailed(file_metadata->getFileStatus()->getException(), /* reduce_retry_count */true);
     }
 }
 
