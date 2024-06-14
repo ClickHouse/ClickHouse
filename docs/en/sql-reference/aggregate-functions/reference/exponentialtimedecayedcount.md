@@ -6,18 +6,17 @@ sidebar_title: exponentialTimeDecayedCount
 
 ## exponentialTimeDecayedCount
 
-Calculates the exponential moving average of values for the determined time.
+Returns the cumulative exponential decay over a time series at the index `t` in time.
 
 **Syntax**
 
 ```sql
-exponentialTimeDecayedCount(x)(value, timeunit)
+exponentialTimeDecayedCount(x)(t)
 ```
 
 **Arguments**
 
-- `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md), [DateTime](../../data-types/datetime.md), [DateTime64](../../data-types/datetime64.md).
+- `t` — Time. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md), [DateTime](../../data-types/datetime.md), [DateTime64](../../data-types/datetime64.md).
 
 **Parameters**
 
@@ -25,7 +24,7 @@ exponentialTimeDecayedCount(x)(value, timeunit)
 
 **Returned values**
 
-- Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
+- Returns the cumulative exponential decay at the given point in time. [Float64](../../data-types/float.md).
 
 **Example**
 
