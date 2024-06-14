@@ -134,11 +134,14 @@ ReadBufferFromPocoSocketBase::ReadBufferFromPocoSocketBase(Poco::Net::Socket & s
 
 bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
 {
-    if (available())
+    /// For secure socket it is important to check if any remaining data available in underlying decryption buffer -
+    /// read always retrives the whole encrypted frame from the wire and puts it into underlying buffer while returning only requested size -
+    /// further poll() can block though there is still data to read in the underlying decryption buffer.
+    if (available() || socket.impl()->available())
         return true;
 
     Stopwatch watch;
-    bool res = socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    bool res = socket.impl()->poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
     ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
     return res;
 }
