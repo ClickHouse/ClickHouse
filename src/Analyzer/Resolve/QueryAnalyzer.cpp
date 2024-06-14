@@ -1484,7 +1484,11 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
     /// Build additional column qualification parts array
     std::vector<std::string> additional_column_qualification_parts;
 
-    if (table_expression_node->hasAlias())
+    auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
+    bool is_cte = (query_node && query_node->isCTE()) || (union_node && union_node->isCTE());
+
+    if (!is_cte && table_expression_node->hasAlias())
         additional_column_qualification_parts = {table_expression_node->getAlias()};
     else if (auto * table_node = table_expression_node->as<TableNode>())
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
