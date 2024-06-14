@@ -415,7 +415,7 @@ Chunk StorageS3QueueSource::generateImpl()
             break;
         }
 
-        const auto * object_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
+        const auto * object_info = dynamic_cast<const S3QueueObjectInfo *>(reader.getObjectInfo().get());
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
 
@@ -435,14 +435,14 @@ Chunk StorageS3QueueSource::generateImpl()
                              object_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(reader.getObjectInfo().getPath(), *file_status, processed_rows_from_file, false);
+                appendLogElement(reader.getObjectInfo()->getPath(), *file_status, processed_rows_from_file, false);
             }
 
             LOG_TEST(log, "Query is cancelled");
             break;
         }
 
-        const auto & path = reader.getObjectInfo().getPath();
+        const auto & path = reader.getObjectInfo()->getPath();
 
         if (shutdown_called)
         {
@@ -497,7 +497,7 @@ Chunk StorageS3QueueSource::generateImpl()
                 total_processed_bytes += chunk.bytes();
 
                 VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                    chunk, requested_virtual_columns, path, reader.getObjectInfo().metadata->size_bytes);
+                    chunk, requested_virtual_columns, path, reader.getObjectInfo()->metadata->size_bytes);
                 return chunk;
             }
         }
@@ -517,7 +517,7 @@ Chunk StorageS3QueueSource::generateImpl()
                 chassert(file_iterator);
 
                 if (file_status->retries < file_metadata->getMaxTries())
-                    file_iterator->returnForRetry(reader.getObjectInfoPtr());
+                    file_iterator->returnForRetry(reader.getObjectInfo());
 
                 /// If we did not process any rows from the failed file,
                 /// commit all previously processed files,
@@ -597,7 +597,7 @@ Chunk StorageS3QueueSource::generateImpl()
             break;
         }
 
-        file_status = files_metadata->getFileStatus(reader.getObjectInfo().getPath());
+        file_status = files_metadata->getFileStatus(reader.getObjectInfo()->getPath());
 
         if (!rows_or_bytes_or_time_limit_reached && processed_files.size() + 1 < max_processed_files_before_commit)
         {
