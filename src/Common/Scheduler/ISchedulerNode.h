@@ -31,6 +31,7 @@ namespace ErrorCodes
 
 class ISchedulerNode;
 class EventQueue;
+using EventId = UInt64;
 
 inline const Poco::Util::AbstractConfiguration & emptyConfig()
 {
@@ -180,7 +181,7 @@ public:
     String basename;
     SchedulerNodeInfo info;
     ISchedulerNode * parent = nullptr;
-    UInt64 activation_event_id = 0; // Valid for `ISchedulerNode` placed in EventQueue::activations
+    EventId activation_event_id = 0; // Valid for `ISchedulerNode` placed in EventQueue::activations
 
     /// Introspection
     std::atomic<UInt64> dequeued_requests{0};
@@ -201,7 +202,6 @@ class EventQueue
 public:
     using Task = std::function<void()>;
 
-    using EventId = UInt64;
     static constexpr EventId not_postponed = 0;
 
     using TimePoint = std::chrono::system_clock::time_point;
@@ -210,9 +210,9 @@ public:
     struct Event
     {
         const EventId event_id;
-        std::function<void()> task;
+        Task task;
 
-        Event(EventId event_id_, std::function<void()> && task_)
+        Event(EventId event_id_, Task && task_)
             : event_id(event_id_)
             , task(std::move(task_))
         {}
