@@ -51,7 +51,7 @@ def insert_data(cluster, row_num):
 
 
 @pytest.mark.parametrize("custom_key", ["sipHash64(key)", "key"])
-@pytest.mark.parametrize("filter_type", ["default", "range"])
+@pytest.mark.parametrize("filter_type", ["key_hash", "key_range"])
 @pytest.mark.parametrize(
     "cluster",
     ["test_multiple_shards_multiple_replicas", "test_single_shard_multiple_replicas"],
@@ -75,7 +75,7 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
                 "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 4,
                 "parallel_replicas_custom_key": custom_key,
-                "parallel_replicas_custom_key_filter_type": filter_type,
+                "parallel_replicas_mode": filter_type,
             },
         )
         == expected_result

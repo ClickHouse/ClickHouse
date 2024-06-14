@@ -218,13 +218,13 @@ private:
                 /// We don't enable parallel replicas for IN (subquery)
                 if (!settings.parallel_replicas_allow_in_with_subquery && ast->as<ASTSubquery>())
                 {
-                    if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                    if (settings.use_parallel_replicas == 1)
                     {
                         LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "IN with subquery is not supported with parallel replicas");
-                        data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        data.getContext()->getQueryContext()->setSetting("use_parallel_replicas", Field(0));
                         return;
                     }
-                    else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+                    else if (settings.use_parallel_replicas >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
                 }
             }
@@ -276,13 +276,13 @@ private:
 
                 if (!is_subquery)
                 {
-                    if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                    if (settings.use_parallel_replicas == 1)
                     {
                         LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "JOIN with parallel replicas is only supported with subqueries");
-                        data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        data.getContext()->getQueryContext()->setSetting("use_parallel_replicas", Field(0));
                         return;
                     }
-                    else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+                    else if (settings.use_parallel_replicas >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOIN with parallel replicas is only supported with subqueries");
                 }
             }

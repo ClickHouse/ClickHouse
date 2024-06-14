@@ -3,6 +3,7 @@
 #include <Core/Joins.h>
 #include <Core/LogsLevel.h>
 #include <Core/SettingsFields.h>
+#include <Core/ParallelReplicasMode.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
@@ -331,13 +332,9 @@ enum class Dialect : uint8_t
 
 DECLARE_SETTING_ENUM(Dialect)
 
-enum class ParallelReplicasCustomKeyFilterType : uint8_t
-{
-    DEFAULT,
-    RANGE,
-};
-
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+
+DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 

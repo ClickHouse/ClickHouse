@@ -1275,13 +1275,6 @@ public:
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey(const Cluster & cluster) const;
 
-    enum class ParallelReplicasMode : uint8_t
-    {
-        SAMPLE_KEY,
-        CUSTOM_KEY,
-        READ_TASKS,
-    };
-
     ParallelReplicasMode getParallelReplicasMode() const;
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);

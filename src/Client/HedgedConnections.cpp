@@ -187,9 +187,12 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+        const bool enable_sampling_key_parallel_replicas =
+            settings.use_parallel_replicas > 0
+            && settings.max_parallel_replicas > 0
+            && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLING_KEY;
 
-        if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
+        if (offset_states.size() > 1 && enable_sampling_key_parallel_replicas)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;

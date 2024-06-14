@@ -52,7 +52,7 @@ def create_tables(cluster, table_name):
 
 @pytest.mark.parametrize("use_hedged_requests", [1, 0])
 @pytest.mark.parametrize("custom_key", ["sipHash64(key)", "key"])
-@pytest.mark.parametrize("filter_type", ["default", "range"])
+@pytest.mark.parametrize("filter_type", ["key_hash", "key_range"])
 @pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
 def test_parallel_replicas_custom_key_failover(
     start_cluster,
@@ -79,7 +79,7 @@ def test_parallel_replicas_custom_key_failover(
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": 4,
                 "parallel_replicas_custom_key": custom_key,
-                "parallel_replicas_custom_key_filter_type": filter_type,
+                "parallel_replicas_mode": filter_type,
                 "use_hedged_requests": use_hedged_requests,
                 # avoid considering replica delay on connection choice
                 # otherwise connection can be not distributed evenly among available nodes

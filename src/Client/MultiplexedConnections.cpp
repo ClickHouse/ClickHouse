@@ -1,6 +1,7 @@
 #include <Client/MultiplexedConnections.h>
 
 #include <Common/thread_local_rng.h>
+#include "Core/ParallelReplicasMode.h"
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
@@ -150,18 +151,21 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+    const bool enable_sampling_key_parallel_replicas =
+        settings.use_parallel_replicas > 0
+        && settings.max_parallel_replicas > 0
+        && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLING_KEY;
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
     {
-        if (enable_sample_offset_parallel_processing)
+        if (enable_sampling_key_parallel_replicas)
             /// Use multiple replicas for parallel query processing.
             modified_settings.parallel_replicas_count = num_replicas;
 
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            if (enable_sample_offset_parallel_processing)
+            if (enable_sampling_key_parallel_replicas)
                 modified_settings.parallel_replica_offset = i;
 
             replica_states[i].connection->sendQuery(
