@@ -705,6 +705,7 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
+        UNREACHABLE();
     }
 }
 
@@ -869,7 +870,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
             block_to_save = block_to_save.compress();
-            have_compressed = true;
         }
 
         data->blocks_allocated_size += block_to_save.allocatedBytes();
@@ -2318,19 +2318,14 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             }
         };
 
-        for (const Block & block_right : data->blocks)
+        for (const Block & compressed_block_right : data->blocks)
         {
             ++block_number;
             if (block_number < start_right_block)
                 continue;
 
-            /// The following statement cannot be substituted with `process_right_block(!have_compressed ? block_right : block_right.decompress())`
-            /// because it will lead to copying of `block_right` even if its branch is taken (because common type of `block_right` and `block_right.decompress()` is `Block`).
-            if (!have_compressed)
-                process_right_block(block_right);
-            else
-                process_right_block(block_right.decompress());
-
+            auto block_right = compressed_block_right.decompress();
+            process_right_block(block_right);
             if (rows_added > max_joined_block_rows)
             {
                 break;
@@ -2646,6 +2641,8 @@ private:
             default:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type);
         }
+
+        UNREACHABLE();
     }
 
     template <typename Map>

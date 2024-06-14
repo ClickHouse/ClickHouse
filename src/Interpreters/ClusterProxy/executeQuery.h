@@ -24,12 +24,6 @@ struct StorageID;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-
-class PlannerContext;
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
-
 namespace ClusterProxy
 {
 
@@ -66,29 +60,13 @@ void executeQuery(
     AdditionalShardFilterGenerator shard_filter_generator,
     bool is_remote_function);
 
+
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
     const Block & header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    QueryProcessingStage::Enum processed_stage,
-    const QueryTreeNodePtr & query_tree,
-    const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);
 }

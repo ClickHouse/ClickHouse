@@ -13,7 +13,7 @@
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Storages/StorageAzureBlob.h>
 
 namespace Poco
 {
@@ -48,13 +48,8 @@ public:
 private:
     struct PartData;
 
-    void writeMultipartUpload();
-    void writePart(PartData && part_data);
-    void detachBuffer();
-    void reallocateFirstBuffer();
+    void writePart();
     void allocateBuffer();
-    void hidePartialData();
-    void setFakeBufferWhenPreFinalized();
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
@@ -82,16 +77,9 @@ private:
 
     MemoryBufferPtr allocateBuffer() const;
 
-    char fake_buffer_when_prefinalized[1] = {};
-
     bool first_buffer=true;
 
-    size_t total_size = 0;
-    size_t hidden_size = 0;
-
     std::unique_ptr<TaskTracker> task_tracker;
-
-    std::deque<PartData> detached_part_data;
 };
 
 }

@@ -20,12 +20,12 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr bool is_leap_year(int32_t year)
+    inline constexpr bool is_leap_year(int32_t year)
     {
         return (year % 4 == 0) && ((year % 400 == 0) || (year % 100 != 0));
     }
 
-    constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
+    inline constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
     {
         switch (month)
         {
@@ -49,7 +49,7 @@ namespace
     /** Integer division truncated toward negative infinity.
       */
     template <typename I, typename J>
-    constexpr I div(I x, J y)
+    inline constexpr I div(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         if (x > 0 && y_cast < 0)
@@ -63,7 +63,7 @@ namespace
     /** Integer modulus, satisfying div(x, y)*y + mod(x, y) == x.
       */
     template <typename I, typename J>
-    constexpr I mod(I x, J y)
+    inline constexpr I mod(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         const auto r = x % y_cast;
@@ -76,7 +76,7 @@ namespace
     /** Like std::min(), but the type of operands may differ.
       */
     template <typename I, typename J>
-    constexpr I min(I x, J y)
+    inline constexpr I min(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         return x < y_cast ? x : y_cast;

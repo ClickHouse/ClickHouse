@@ -54,16 +54,16 @@ namespace VolnitskyTraits
     /// min haystack size to use main algorithm instead of fallback
     static constexpr size_t min_haystack_size_for_algorithm = 20000;
 
-    static bool isFallbackNeedle(const size_t needle_size, size_t haystack_size_hint = 0)
+    static inline bool isFallbackNeedle(const size_t needle_size, size_t haystack_size_hint = 0)
     {
         return needle_size < 2 * sizeof(Ngram) || needle_size >= std::numeric_limits<Offset>::max()
             || (haystack_size_hint && haystack_size_hint < min_haystack_size_for_algorithm);
     }
 
-    static Ngram toNGram(const UInt8 * const pos) { return unalignedLoad<Ngram>(pos); }
+    static inline Ngram toNGram(const UInt8 * const pos) { return unalignedLoad<Ngram>(pos); }
 
     template <typename Callback>
-    static bool putNGramASCIICaseInsensitive(const UInt8 * pos, int offset, Callback && putNGramBase)
+    static inline bool putNGramASCIICaseInsensitive(const UInt8 * pos, int offset, Callback && putNGramBase)
     {
         struct Chars
         {
@@ -115,7 +115,7 @@ namespace VolnitskyTraits
     }
 
     template <typename Callback>
-    static bool putNGramUTF8CaseInsensitive(
+    static inline bool putNGramUTF8CaseInsensitive(
         const UInt8 * pos, int offset, const UInt8 * begin, size_t size, Callback && putNGramBase)
     {
         const UInt8 * end = begin + size;
@@ -349,7 +349,7 @@ namespace VolnitskyTraits
     }
 
     template <bool CaseSensitive, bool ASCII, typename Callback>
-    static bool putNGram(const UInt8 * pos, int offset, [[maybe_unused]] const UInt8 * begin, size_t size, Callback && putNGramBase)
+    static inline bool putNGram(const UInt8 * pos, int offset, [[maybe_unused]] const UInt8 * begin, size_t size, Callback && putNGramBase)
     {
         if constexpr (CaseSensitive)
         {
@@ -580,7 +580,7 @@ public:
         return true;
     }
 
-    bool searchOne(const UInt8 * haystack, const UInt8 * haystack_end) const
+    inline bool searchOne(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();
         for (size_t i = 0; i < fallback_size; ++i)
@@ -609,7 +609,7 @@ public:
         return false;
     }
 
-    size_t searchOneFirstIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
+    inline size_t searchOneFirstIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();
 
@@ -647,7 +647,7 @@ public:
     }
 
     template <typename CountCharsCallback>
-    UInt64 searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & count_chars) const
+    inline UInt64 searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & count_chars) const
     {
         const size_t fallback_size = fallback_needles.size();
 
@@ -682,7 +682,7 @@ public:
     }
 
     template <typename CountCharsCallback, typename AnsType>
-    void searchOneAll(const UInt8 * haystack, const UInt8 * haystack_end, AnsType * answer, const CountCharsCallback & count_chars) const
+    inline void searchOneAll(const UInt8 * haystack, const UInt8 * haystack_end, AnsType * answer, const CountCharsCallback & count_chars) const
     {
         const size_t fallback_size = fallback_needles.size();
         for (size_t i = 0; i < fallback_size; ++i)
