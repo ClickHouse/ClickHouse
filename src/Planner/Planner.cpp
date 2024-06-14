@@ -99,7 +99,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace
@@ -336,7 +335,7 @@ void addExpressionStep(QueryPlan & query_plan,
 {
     auto actions = expression_actions->actions.clone();
     if (expression_actions->project_input)
-        actions->appendInputsForUnusedColumns( query_plan.getCurrentDataStream().header);
+        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
     result_actions_to_execute.push_back(actions);
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions);

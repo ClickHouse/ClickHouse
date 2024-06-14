@@ -124,7 +124,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.

@@ -81,7 +81,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace
@@ -1133,7 +1132,7 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
         }
     }
 
-    cast_actions_dag->appendInputsForUnusedColumns( plan_to_add_cast.getCurrentDataStream().header);
+    cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
     auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
     cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
