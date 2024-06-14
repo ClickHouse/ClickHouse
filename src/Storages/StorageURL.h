@@ -295,8 +295,6 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
-
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     struct Configuration : public StatelessTableEngineConfiguration

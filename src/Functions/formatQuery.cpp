@@ -20,13 +20,13 @@ namespace ErrorCodes
 namespace
 {
 
-enum class OutputFormatting : uint8_t
+enum class OutputFormatting
 {
     SingleLine,
     MultiLine
 };
 
-enum class ErrorHandling : uint8_t
+enum class ErrorHandling
 {
     Exception,
     Null

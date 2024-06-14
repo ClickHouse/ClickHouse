@@ -440,6 +440,9 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
     const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
+    bool a_is_short = src_a.getColumnSize() < condition.size();
+    bool b_is_short = src_b.getColumnSize() < condition.size();
+
     while (cond_pos < cond_end)
     {
         if (*cond_pos)
@@ -447,8 +450,10 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
         else
             writeSlice(src_b.getWhole(), sink);
 
-        src_a.next();
-        src_b.next();
+        if (!a_is_short || *cond_pos)
+            src_a.next();
+        if (!b_is_short || !*cond_pos)
+            src_b.next();
 
         ++cond_pos;
         sink.next();

@@ -45,14 +45,14 @@ private:
     bool initialized = false;
     bool is_reading_started = false;
 
-    enum class OutputStatus : uint8_t
+    enum class OutputStatus
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    enum class InputStatus : uint8_t
+    enum class InputStatus
     {
         NotActive,
         HasData,
@@ -107,14 +107,14 @@ private:
     std::queue<UInt64> waiting_outputs;
     bool initialized = false;
 
-    enum class OutputStatus : uint8_t
+    enum class OutputStatus
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    enum class InputStatus : uint8_t
+    enum class InputStatus
     {
         NotActive,
         NeedData,
