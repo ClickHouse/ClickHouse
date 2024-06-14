@@ -157,7 +157,6 @@ def test_replicated_table_ddl(started_cluster):
     )
 
     node2.query("insert into test_stat values(1,2,3), (2,3,4)")
-    # check_stat_file_on_disk(node2, "test_stat", "all_0_0_0", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0", "c", True)
     node1.query(
