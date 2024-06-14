@@ -24,6 +24,7 @@ node3 = cluster.add_instance(
     with_minio=True,
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
