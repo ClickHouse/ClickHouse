@@ -18,9 +18,12 @@ namespace
                       << quoteString(new_name);
     }
 
-    void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data, const IAST::FormatSettings & settings)
     {
-        auth_data.format(settings);
+        for (const auto & authentication_method : auth_data)
+        {
+            authentication_method->format(settings);
+        }
     }
 
     void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
@@ -180,10 +183,13 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    if (auth_data)
+    if (!auth_data.empty())
     {
-        res->auth_data = std::static_pointer_cast<ASTAuthenticationData>(auth_data->clone());
-        res->children.push_back(res->auth_data);
+        for (const auto & authentication_method : auth_data)
+        {
+            res->auth_data.push_back(std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone()));
+            res->children.push_back(res->auth_data.back());
+        }
     }
 
     return res;
@@ -222,8 +228,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (new_name)
         formatRenameTo(*new_name, format);
 
-    if (auth_data)
-        formatAuthenticationData(*auth_data, format);
+    if (!auth_data.empty())
+        formatAuthenticationData(auth_data, format);
 
     if (valid_until)
         formatValidUntil(*valid_until, format);

@@ -455,7 +455,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
-    std::shared_ptr<ASTAuthenticationData> auth_data;
+    std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
@@ -467,12 +467,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (!auth_data)
+        if (auth_data.empty())
         {
             std::shared_ptr<ASTAuthenticationData> new_auth_data;
             if (parseAuthenticationData(pos, expected, new_auth_data))
             {
-                auth_data = std::move(new_auth_data);
+                auth_data.push_back(new_auth_data);
                 continue;
             }
         }
@@ -582,8 +582,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
 
-    if (query->auth_data)
-        query->children.push_back(query->auth_data);
+    if (!query->auth_data.empty())
+    {
+        // as of now, this will always have a single element, but looping just in case.
+        for (const auto & authentication_method : query->auth_data)
+        {
+            query->children.push_back(authentication_method);
+        }
+    }
 
     if (query->valid_until)
         query->children.push_back(query->valid_until);

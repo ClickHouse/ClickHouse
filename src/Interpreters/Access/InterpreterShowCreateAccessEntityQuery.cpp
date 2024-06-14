@@ -64,11 +64,13 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        // todo arthur
-        // to fix this, I'll need to turn `query->auth_data` into a list
-        // that also means creating a user with multiple authentication methods should be allowed
-        if (user.authentication_methods[0].getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.authentication_methods[0].toAST();
+        for (const auto & authentication_method : user.authentication_methods)
+        {
+            if (authentication_method.getType() != AuthenticationType::NO_PASSWORD)
+            {
+                query->auth_data.push_back(authentication_method.toAST());
+            }
+        }
 
         if (user.valid_until)
         {

@@ -161,7 +161,7 @@ namespace
     {
         auto basic_credentials_authentication_methods = getAuthenticationMethodsOfType(
             authentication_methods,
-            {AuthenticationType::PLAINTEXT_PASSWORD, AuthenticationType::SHA256_PASSWORD,
+            {AuthenticationType::NO_PASSWORD, AuthenticationType::PLAINTEXT_PASSWORD, AuthenticationType::SHA256_PASSWORD,
              AuthenticationType::DOUBLE_SHA1_PASSWORD, AuthenticationType::LDAP, AuthenticationType::BCRYPT_PASSWORD,
              AuthenticationType::HTTP});
 
@@ -169,6 +169,10 @@ namespace
         {
             switch (auth_method.getType())
             {
+                case AuthenticationType::NO_PASSWORD:
+                {
+                    return true;
+                }
                 case AuthenticationType::PLAINTEXT_PASSWORD:
                     if (checkPasswordPlainText(basic_credentials->getPassword(), auth_method.getPasswordHashBinary()))
                     {

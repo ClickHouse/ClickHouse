@@ -1903,11 +1903,11 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && create_user_query->auth_data)
+        if (!create_user_query->attach && !create_user_query->auth_data.empty())
         {
-            if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
+            for (const auto & authentication_method : create_user_query->auth_data)
             {
-                auto password = auth_data->getPassword();
+                auto password = authentication_method->getPassword();
 
                 if (password)
                     global_context->getAccessControl().checkPasswordComplexityRules(*password);
