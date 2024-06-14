@@ -37,8 +37,10 @@ namespace ErrorCodes
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
 {
 public:
-    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
-        : DatabaseTablesSnapshotIterator(std::move(base)) {}
+    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base) noexcept
+        : DatabaseTablesSnapshotIterator(std::move(base))
+    {
+    }
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
@@ -101,6 +103,8 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
     DatabaseOrdinary::attachTableUnlocked(name, table);
+    detached_tables.erase(table_id.uuid);
+
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
@@ -108,11 +112,11 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 {
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
-    auto table = DatabaseOrdinary::detachTableUnlocked(name);
+    auto detached_table = DatabaseOrdinary::detachTableUnlocked(name);
     table_name_to_path.erase(name);
-    detached_tables.emplace(table->getStorageID().uuid, table);
+    detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
     not_in_use = cleanupDetachedTables();
-    return table;
+    return detached_table;
 }
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
@@ -431,6 +435,12 @@ DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::Fil
 {
     auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
+}
+
+DatabaseDetachedTablesSnapshotIteratorPtr DatabaseAtomic::getDetachedTablesIterator(
+    ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, const bool skip_not_loaded) const
+{
+    return DatabaseOrdinary::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const

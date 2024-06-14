@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabasesCommon.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
@@ -48,6 +49,9 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    DatabaseDetachedTablesSnapshotIteratorPtr
+    getDetachedTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
@@ -81,6 +85,7 @@ protected:
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
+
     NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
 
     DetachedTables detached_tables TSA_GUARDED_BY(mutex);

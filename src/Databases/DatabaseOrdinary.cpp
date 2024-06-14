@@ -187,7 +187,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name) mutable
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -195,7 +195,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
         try
         {
-            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, local_context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 FunctionNameNormalizer::visit(ast.get());
@@ -226,6 +226,33 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     permanently_detached_tables.push_back(table_name);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+
+                    // @TODO refactoring
+                    auto parsed_table_metadata = ParsedTableMetadata{full_path.string(), ast};
+                    const auto & query = parsed_table_metadata.ast->as<const ASTCreateQuery &>();
+
+                    std::lock_guard lock(mutex);
+
+                    auto [detached_table_name, table] = createTableFromAST(
+                        query,
+                        database_name,
+                        getTableDataPath(query),
+                        std::const_pointer_cast<Context>(local_context),
+                        LoadingStrictnessLevel::CREATE);
+
+                    const auto storage_id = table->getStorageID();
+
+                    SnapshotDetachedTable snapshot_detached_table;
+                    snapshot_detached_table.detabase = storage_id.getDatabaseName();
+                    snapshot_detached_table.table = detached_table_name;
+                    snapshot_detached_table.uuid = storage_id.uuid;
+                    snapshot_detached_table.is_permanently = true;
+                    snapshot_detached_table.metadata_path = getObjectMetadataPath(snapshot_detached_table.table);
+
+
+                    snapshot_detached_tables.emplace(detached_table_name, std::move(snapshot_detached_table));
+
+                    LOG_TRACE(log, "Add detached table {} to system.detached_tables", detached_table_name);
                     return;
                 }
 
@@ -485,6 +512,12 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
         waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
     }
     return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+}
+
+DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIterator(
+    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
 Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const

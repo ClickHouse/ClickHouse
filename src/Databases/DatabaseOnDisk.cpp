@@ -307,6 +307,9 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     try
     {
         FS::createFile(detached_permanently_flag);
+
+        std::lock_guard lock(mutex);
+        snapshot_detached_tables.at(table_name).is_permanently = true;
     }
     catch (Exception & e)
     {
