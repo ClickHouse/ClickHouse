@@ -1172,6 +1172,16 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
 
+        if (allow_experimental_analyzer)
+        {
+            auto ast = modified_query_info.query_tree->toAST();
+            InterpreterSelectQueryAnalyzer interpreter(ast,
+                modified_context,
+                SelectQueryOptions(processed_stage));
+
+            modified_query_info.query_tree = interpreter.getQueryTree();
+        }
+
         storage->read(plan,
             real_column_names,
             storage_snapshot_,
@@ -1200,7 +1210,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         {
             /// Converting query to AST because types might be different in the source table.
             /// Need to resolve types again.
-            InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree->toAST(),
+            auto ast = modified_query_info.query_tree->toAST();
+            InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
                 SelectQueryOptions(processed_stage));
 
