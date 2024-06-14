@@ -24,7 +24,7 @@ from report import (
     BuildResult,
     JobReport,
     create_build_html_report,
-    get_worst_status,
+    get_worst_status, FAILURE,
 )
 from stopwatch import Stopwatch
 from ci_config import CI
@@ -134,17 +134,16 @@ def main():
     # Check if there are no builds at all, do not override bad status
     if summary_status == SUCCESS:
         if missing_builds:
-            summary_status = PENDING
+            summary_status = FAILURE
         elif ok_groups == 0:
             summary_status = ERROR
 
-    addition = ""
-    if missing_builds:
-        addition = (
-            f" ({required_builds - missing_builds} of {required_builds} builds are OK)"
-        )
+    description = ""
 
-    description = f"{ok_groups}/{total_groups} artifact groups are OK{addition}"
+    if missing_builds:
+        description = f"{missing_builds} of {required_builds} builds are missing."
+
+    description += f" {ok_groups}/{total_groups} artifact groups are OK"
 
     JobReport(
         description=description,
