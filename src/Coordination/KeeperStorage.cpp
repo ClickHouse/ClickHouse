@@ -885,6 +885,10 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid)
                     session_and_auth[operation.session_id].emplace_back(std::move(operation.auth_id));
                     return Coordination::Error::ZOK;
                 }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
+                {
+                    return Coordination::Error::ZOK;
+                }
                 else
                 {
                     // shouldn't be called in any process functions
