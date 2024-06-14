@@ -2754,8 +2754,8 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
     std::unordered_set<const Node *> used_inputs;
     for (const auto * input : inputs)
     {
-        if (removes_filter && input == predicate)
-            continue;
+        // if (removes_filter && input == predicate)
+        //     continue;
         used_inputs.insert(input);
     }
 

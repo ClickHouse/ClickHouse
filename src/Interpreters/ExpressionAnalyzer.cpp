@@ -928,13 +928,11 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
 
     ActionsDAGPtr converting_actions;
-    if (converting_join_columns)
-        converting_actions = std::make_shared<ActionsDAG>(std::move(converting_join_columns->actions));
-
     JoinPtr join = makeJoin(*syntax->ast_join, left_sample_columns, converting_actions);
 
-    if (converting_join_columns)
+    if (converting_actions)
     {
+        converting_join_columns = std::make_shared<ActionsAndFlags>();
         converting_join_columns->actions = std::move(*converting_actions);
         chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_join_columns));
         chain.addStep();
@@ -1720,9 +1718,9 @@ ActionsAndFlagsPtr SelectQueryExpressionAnalyzer::appendProjectResult(Expression
         for (const auto & column : required_result_columns)
             result_columns.emplace_back(column, std::string{});
         actions->actions.project(result_columns);
-        actions->project_input = actions->projected_output = true;
     }
 
+    actions->project_input = actions->projected_output = true;
     return actions;
 }
 
@@ -1878,6 +1876,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             auto dag = std::make_shared<ActionsDAG>(std::move(prewhere_dag_and_flags->actions));
             prewhere_info = std::make_shared<PrewhereInfo>(std::move(dag), query.prewhere()->getColumnName());
+            prewhere_dag_and_flags.reset();
         }
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
