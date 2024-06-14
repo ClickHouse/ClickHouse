@@ -96,7 +96,7 @@ public:
             chassert(state == Finished);
             state = Enqueued;
             ResourceRequest::reset(cost_);
-            link_.queue->enqueueRequestUsingBudget(this);
+            estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
         // This function is executed inside scheduler thread and wakes thread issued this `request`.
@@ -124,8 +124,8 @@ public:
             // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
             chassert(state == Dequeued);
             state = Finished;
-            if (cost != real_cost_)
-                link_.adjust(cost, real_cost_);
+            if (estimated_cost != real_cost_)
+                link_.queue->adjustBudget(estimated_cost, real_cost_);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);
@@ -149,6 +149,7 @@ public:
         const Metrics * metrics = nullptr; // Must be initialized before use
 
     private:
+        ResourceCost estimated_cost = 0; // Stores initial `cost` value in case budget was used to modify it
         std::mutex mutex;
         std::condition_variable dequeued_cv;
         RequestState state = Finished;

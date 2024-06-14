@@ -17,10 +17,6 @@ struct ResourceLink
     bool operator==(const ResourceLink &) const = default;
     explicit operator bool() const { return queue != nullptr; }
 
-    void adjust(ResourceCost estimated_cost, ResourceCost real_cost) const;
-    void consumed(ResourceCost cost) const;
-    void accumulate(ResourceCost cost) const;
-
     void reset()
     {
         queue = nullptr;
