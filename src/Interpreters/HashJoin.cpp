@@ -1276,7 +1276,7 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
-        for (auto & row_ref_i : lazy_output.row_refs)
+        for (auto row_ref_i : lazy_output.row_refs)
         {
             if (!row_ref_i)
             {
