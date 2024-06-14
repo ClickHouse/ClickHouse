@@ -855,6 +855,54 @@ static ActionsDAGPtr createProjection(const Block & header)
     return projection;
 }
 
+MarkRanges ReadFromMergeTree::splitRanges(const MarkRanges & ranges, int direction)
+{
+    const auto data_settings = data.getSettings();
+    const auto rows_granularity = data_settings->index_granularity;
+    const auto my_max_block_size = block_size.max_block_size_rows;
+
+    MarkRanges new_ranges;
+    const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
+    size_t marks_in_range = 1;
+
+    if (direction == 1)
+    {
+        /// Split first few ranges to avoid reading much data.
+        bool split = false;
+        for (auto range : ranges)
+        {
+            while (!split && range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
+                range.begin += marks_in_range;
+                marks_in_range *= 2;
+
+                if (marks_in_range > max_marks_in_range)
+                    split = true;
+            }
+            new_ranges.emplace_back(range.begin, range.end);
+        }
+    }
+    else
+    {
+        /// Split all ranges to avoid reading much data, because we have to
+        ///  store whole range in memory to reverse it.
+        for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+        {
+            auto range = *it;
+            while (range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_front(range.end - marks_in_range, range.end);
+                range.end -= marks_in_range;
+                marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
+            }
+            new_ranges.emplace_front(range.begin, range.end);
+        }
+    }
+
+    return new_ranges;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     size_t num_streams,
@@ -887,53 +935,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         have_input_columns_removed_after_prewhere = restorePrewhereInputs(*prewhere_info, sorting_columns);
     }
-
-    /// Let's split ranges to avoid reading much data.
-    auto split_ranges
-        = [rows_granularity = data_settings->index_granularity, my_max_block_size = block_size.max_block_size_rows]
-        (const auto & ranges, int direction)
-    {
-        MarkRanges new_ranges;
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
-        size_t marks_in_range = 1;
-
-        if (direction == 1)
-        {
-            /// Split first few ranges to avoid reading much data.
-            bool split = false;
-            for (auto range : ranges)
-            {
-                while (!split && range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
-                    range.begin += marks_in_range;
-                    marks_in_range *= 2;
-
-                    if (marks_in_range > max_marks_in_range)
-                        split = true;
-                }
-                new_ranges.emplace_back(range.begin, range.end);
-            }
-        }
-        else
-        {
-            /// Split all ranges to avoid reading much data, because we have to
-            ///  store whole range in memory to reverse it.
-            for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
-            {
-                auto range = *it;
-                while (range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_front(range.end - marks_in_range, range.end);
-                    range.end -= marks_in_range;
-                    marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
-                }
-                new_ranges.emplace_front(range.begin, range.end);
-            }
-        }
-
-        return new_ranges;
-    };
 
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
@@ -1017,7 +1018,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     parts_with_ranges.emplace_back(part);
                 }
 
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
+                ranges_to_get_from_part = splitRanges(ranges_to_get_from_part, input_order_info->direction);
                 new_parts.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
             }
 
@@ -1092,7 +1093,8 @@ static void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
     size_t max_block_size_rows,
-    bool enable_vertical_final)
+    bool enable_vertical_final,
+    ReadFromMergeTree::ReadType read_type)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1120,8 +1122,12 @@ static void addMergingFinal(
                             sort_description, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Replacing:
+                if (read_type == ReadFromMergeTree::ReadType::InReverseOrder)
+                    return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), /* read_direction */ -1);
+
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final, /* read_direction */ 1);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1173,7 +1179,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection, const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
@@ -1181,6 +1187,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     assert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings.max_final_threads);
+
+    auto split_ranges_in_parts = [this](const auto & parts)
+    {
+        RangesInDataParts parts_with_split_ranges;
+        for (const auto & part: parts)
+        {
+            auto ranges_to_get_from_part = this->splitRanges(part.ranges, -1);
+            parts_with_split_ranges.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
+        }
+
+        return parts_with_split_ranges;
+    };
 
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
@@ -1224,6 +1242,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         restorePrewhereInputs(*prewhere_info, sorting_columns);
     }
 
+    auto read_type = ReadType::InOrder;
+    if (input_order_info && input_order_info->direction == -1)
+        read_type = ReadType::InReverseOrder;
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
@@ -1253,12 +1275,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
-                auto in_order_reading_step_getter = [this, &column_names, &info](auto parts)
+                auto in_order_reading_step_getter = [this, &split_ranges_in_parts, &column_names, &read_type, &info](auto parts)
                 {
+                    if (read_type == ReadType::InReverseOrder)
+                        parts = split_ranges_in_parts(parts);
+
                     return this->read(
                         std::move(parts),
                         column_names,
-                        ReadType::InOrder,
+                        read_type,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -1287,8 +1312,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             }
             else
             {
+                if (read_type == ReadType::InReverseOrder)
+                    new_parts = split_ranges_in_parts(new_parts);
+
                 pipes.emplace_back(read(
-                    std::move(new_parts), column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+                    std::move(new_parts), column_names, read_type, num_streams, 0, info.use_uncompressed_cache));
 
                 pipes.back().addSimpleTransform([sorting_expr](const Block & header)
                                                 { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
@@ -1313,7 +1341,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
         for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(sort_columns[i], 1, 1);
+            read_type == ReadType::InReverseOrder
+                ? sort_description.emplace_back(sort_columns[i], -1)
+                : sort_description.emplace_back(sort_columns[i], 1, 1);
 
         for (auto & pipe : pipes)
             addMergingFinal(
@@ -1322,9 +1352,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 partition_key_columns,
                 block_size.max_block_size_rows,
-                enable_vertical_final);
-
-        merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
+                enable_vertical_final,
+                read_type);
     }
 
     if (!non_intersecting_parts_by_primary_key.empty())
@@ -1678,11 +1707,6 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (!direction)
         direction = getSortDirection();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (direction != 1 && query_info.isFinal())
-        return false;
-
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
     reader_settings.read_in_order = true;
 
@@ -1877,7 +1901,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
             column_names_to_read.push_back(data.merging_params.version_column);
 
-        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection, query_info.input_order_info);
     }
     else if (query_info.input_order_info)
     {
