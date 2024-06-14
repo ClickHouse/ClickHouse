@@ -1,6 +1,5 @@
 #include "DiskOverlay.h"
 
-#include <iostream>
 #include <Disks/DiskFactory.h>
 #include <Disks/DirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -675,7 +674,6 @@ void DiskOverlay::createHardLink(const String & src_path, const String & dst_pat
     {
         auto trans = forward_metadata->createTransaction();
         auto str = forward_metadata->readInlineDataToString(dataPath(src_path));
-        std::cout << str << std::endl;
         trans->writeInlineDataToFile(dataPath(dst_path), str);
         trans->commit();
     }
