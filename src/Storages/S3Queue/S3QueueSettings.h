@@ -34,6 +34,7 @@ class ASTStorage;
     M(UInt32, s3queue_max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
     M(UInt32, s3queue_max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
     M(UInt32, s3queue_max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
+    M(UInt32, s3queue_max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper", 0) \
 
 #define LIST_OF_S3QUEUE_SETTINGS(M, ALIAS) \
     S3QUEUE_RELATED_SETTINGS(M, ALIAS) \

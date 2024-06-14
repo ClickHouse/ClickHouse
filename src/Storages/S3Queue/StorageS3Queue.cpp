@@ -374,6 +374,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         s3queue_settings->s3queue_max_processed_files_before_commit,
         s3queue_settings->s3queue_max_processed_rows_before_commit,
         s3queue_settings->s3queue_max_processed_bytes_before_commit,
+        s3queue_settings->s3queue_max_processing_time_sec_before_commit,
         commit_once_processed);
 }
 

@@ -100,6 +100,7 @@ public:
         size_t max_processed_files_before_commit_,
         size_t max_processed_rows_before_commit_,
         size_t max_processed_bytes_before_commit_,
+        size_t max_processing_time_sec_before_commit_,
         bool commit_once_processed_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -124,6 +125,7 @@ private:
     const size_t max_processed_files_before_commit;
     const size_t max_processed_rows_before_commit;
     const size_t max_processed_bytes_before_commit;
+    const size_t max_processing_time_sec_before_commit;
     const bool commit_once_processed;
 
     RemoveFileFunc remove_file_func;
@@ -139,6 +141,8 @@ private:
     size_t processed_rows_from_file = 0;
     size_t total_processed_rows = 0;
     size_t total_processed_bytes = 0;
+
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     S3QueueOrderedFileMetadata::BucketHolderPtr current_bucket_holder;
 

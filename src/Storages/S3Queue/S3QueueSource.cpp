@@ -313,6 +313,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     size_t max_processed_files_before_commit_,
     size_t max_processed_rows_before_commit_,
     size_t max_processed_bytes_before_commit_,
+    size_t max_processing_time_sec_before_commit_,
     bool commit_once_processed_)
     : ISource(header_)
     , WithContext(context_)
@@ -329,6 +330,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , max_processed_files_before_commit(max_processed_files_before_commit_)
     , max_processed_rows_before_commit(max_processed_rows_before_commit_)
     , max_processed_bytes_before_commit(max_processed_bytes_before_commit_)
+    , max_processing_time_sec_before_commit(max_processing_time_sec_before_commit_)
     , commit_once_processed(commit_once_processed_)
     , remove_file_func(remove_file_func_)
     , log(log_)
@@ -501,25 +503,36 @@ Chunk StorageS3QueueSource::generateImpl()
             break;
         }
 
-        bool rows_or_bytes_limit_reached = false;
-        if (total_processed_rows == max_processed_rows_before_commit)
+        bool rows_or_bytes_or_time_limit_reached = false;
+        if (max_processed_rows_before_commit
+            && total_processed_rows == max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
 
-            rows_or_bytes_limit_reached = true;
+            rows_or_bytes_or_time_limit_reached = true;
         }
-        else if (total_processed_bytes == max_processed_bytes_before_commit)
+        else if (max_processed_bytes_before_commit
+                 && total_processed_bytes == max_processed_bytes_before_commit)
         {
             LOG_TRACE(log, "Number of max processed bytes before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
 
-            rows_or_bytes_limit_reached = true;
+            rows_or_bytes_or_time_limit_reached = true;
+        }
+        else if (max_processing_time_sec_before_commit
+                 && total_stopwatch.elapsedSeconds() >= max_processing_time_sec_before_commit)
+        {
+            LOG_TRACE(log, "Max processing time before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
+
+            rows_or_bytes_or_time_limit_reached = true;
         }
 
-        if (rows_or_bytes_limit_reached && reader_future.valid())
+        if (rows_or_bytes_or_time_limit_reached && reader_future.valid())
         {
             LOG_TRACE(log, "Rows or bytes limit reached, but we have one more file scheduled already, "
                       "will process it despite the limit");
@@ -539,7 +552,7 @@ Chunk StorageS3QueueSource::generateImpl()
 
         file_status = files_metadata->getFileStatus(reader.getObjectInfo().getPath());
 
-        if (!rows_or_bytes_limit_reached && processed_files.size() + 1 < max_processed_files_before_commit)
+        if (!rows_or_bytes_or_time_limit_reached && processed_files.size() + 1 < max_processed_files_before_commit)
         {
             /// Even if task is finished the thread may be not freed in pool.
             /// So wait until it will be freed before scheduling a new task.
