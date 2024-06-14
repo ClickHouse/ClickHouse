@@ -65,6 +65,8 @@ namespace
         }
 
         // todo arthur
+        // to fix this, I'll need to turn `query->auth_data` into a list
+        // that also means creating a user with multiple authentication methods should be allowed
         if (user.authentication_methods[0].getType() != AuthenticationType::NO_PASSWORD)
             query->auth_data = user.authentication_methods[0].toAST();
 

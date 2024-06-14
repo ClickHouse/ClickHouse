@@ -72,8 +72,8 @@ namespace
 
         if (auth_data || !query.alter)
         {
-            // todo arthur
-            auto auth_type = user.authentication_methods[0].getType();
+            // I suppose it is guaranteed a user will always have at least one authentication method
+            auto auth_type = user.authentication_methods.back().getType();
             if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                 ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
             {

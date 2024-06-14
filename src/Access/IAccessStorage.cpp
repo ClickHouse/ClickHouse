@@ -514,8 +514,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
     bool throw_if_user_not_exists,
-    bool ,
-    bool ) const
+    bool allow_no_password,
+    bool allow_plaintext_password) const
 {
     if (auto id = find<User>(credentials.getUserName()))
     {
@@ -526,10 +526,16 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 throwAddressNotAllowed(address);
 
             // todo arthur
-//            auto auth_type = user->auth_data.getType();
-//            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-//                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-//                throwAuthenticationTypeNotAllowed(auth_type);
+            // for now, just throw exception in case a user exists with invalid auth method
+            // back in the day, it would also throw an exception. There might be a smarter alternative
+            // like a user scan during startup.
+            for (const auto & auth_method : user->authentication_methods)
+            {
+                auto auth_type = auth_method.getType();
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                    throwAuthenticationTypeNotAllowed(auth_type);
+            }
 
             if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
                 throwInvalidCredentials();

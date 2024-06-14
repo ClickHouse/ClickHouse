@@ -254,8 +254,26 @@ bool Authentication::areCredentialsValid(
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO arthur, list possible types");
-//    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "areCredentialsValid(): authentication type {} not supported", toString(auth_data.getType()));
+
+    // below code sucks, but works for now I guess.
+    std::string possible_authentication_types;
+    bool first = true;
+
+    for (const auto & authentication_method : authentication_methods)
+    {
+        if (first)
+        {
+            possible_authentication_types += ", ";
+            first = false;
+        }
+        possible_authentication_types += toString(authentication_method.getType());
+    }
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "areCredentialsValid(): Invalid credentials provided, available authentication methods are {}",
+        possible_authentication_types);
+
 }
 
 }
