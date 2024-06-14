@@ -285,6 +285,11 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     assert batch in config_.pending_batches
 
+            for _, config_ in ci_cache.jobs_to_do.items():
+                # jobs to do must have batches to run before/after await
+                #  if it's an empty list after await - apparently job has not been removed after await
+                assert config_.batches
+
         _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 0)
         # check all one-batch jobs are in jobs_to_skip
         for job in all_jobs_in_wf:
