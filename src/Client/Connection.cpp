@@ -73,7 +73,7 @@ namespace ErrorCodes
 Connection::~Connection()
 {
     if (connected)
-        disconnect();
+        Connection::disconnect();
 }
 
 Connection::Connection(const String & host_, UInt16 port_,

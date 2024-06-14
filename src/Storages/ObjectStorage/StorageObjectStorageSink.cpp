@@ -51,8 +51,8 @@ void StorageObjectStorageSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
     cancelBuffers();
-    cancelled = true;
     releaseBuffers();
+    cancelled = true;
 }
 
 void StorageObjectStorageSink::onException(std::exception_ptr)

@@ -147,7 +147,8 @@ void WriteBufferFromHDFS::finalizeImpl()
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
-    finalize();
+    if (!canceled)
+        finalize();
 }
 
 }
