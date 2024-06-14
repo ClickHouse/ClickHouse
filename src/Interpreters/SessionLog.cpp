@@ -207,6 +207,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
+// todo arthur fix this method
 void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const String & session_id,
                                  const Settings & settings,

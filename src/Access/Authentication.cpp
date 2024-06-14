@@ -16,7 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -256,6 +256,7 @@ bool Authentication::areCredentialsValid(
 
 
     // below code sucks, but works for now I guess.
+    // might be a problem if no auth method has been registered
     std::string possible_authentication_types;
     bool first = true;
 
