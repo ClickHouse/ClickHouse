@@ -28,6 +28,13 @@ def test_table_db_limit(started_cluster):
         node1.query("create database db_exp".format(i))
 
     assert "TOO_MANY_DATABASES" in str(exp_info)
+
+    for i in range(10):
+        node1.query("create table t{} (a Int32) Engine = Log".format(i))
+
+    node1.query("system flush logs");
+    for i in range(10):
+        node1.query("drop table t{}".format(i))
     for i in range(10):
         node1.query("create table t{} (a Int32) Engine = Log".format(i))
 
