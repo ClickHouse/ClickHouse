@@ -24,7 +24,8 @@ from report import (
     BuildResult,
     JobReport,
     create_build_html_report,
-    get_worst_status, FAILURE,
+    get_worst_status,
+    FAILURE,
 )
 from stopwatch import Stopwatch
 from ci_config import CI
