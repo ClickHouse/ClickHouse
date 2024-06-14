@@ -434,14 +434,11 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             shard.getAllNodeCount());
         all_replicas_count = shard.getAllNodeCount();
     }
-    if (exclude_local_replica)
-        --all_replicas_count;
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
     if (all_replicas_count < shard.getAllNodeCount())
     {
         shuffled_pool = shard.pool->getShuffledPools(current_settings);
-        shuffled_pool.resize(all_replicas_count);
     }
     else
     {
@@ -451,10 +448,37 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
     }
 
-    for (size_t i=0; i < all_replicas_count; ++i)
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    if (exclude_local_replica)
     {
-        IConnections::ReplicaInfo replica_info
+        std::vector<size_t> local_addr_possitions;
+        for (auto & pool : shuffled_pool)
         {
+            const auto & hostname = pool.pool->getHost();
+            auto it = std::find_if(
+                begin(shard.local_addresses),
+                end(shard.local_addresses),
+                [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
+            if (it != shard.local_addresses.end())
+                pool.pool.reset();
+        }
+    }
+    for (const auto & pool : shuffled_pool)
+    {
+        if (pool.pool)
+            pools_to_use.push_back(pool.pool);
+    }
+
+    if (pools_to_use.size() > all_replicas_count)
+        pools_to_use.resize(all_replicas_count);
+    else
+        all_replicas_count = pools_to_use.size();
+
+    /// local replicas has number 0
+    size_t offset = (exclude_local_replica ? 1 : 0);
+    for (size_t i = 0 + offset; i < all_replicas_count + offset; ++i)
+    {
+        IConnections::ReplicaInfo replica_info{
             .all_replicas_count = all_replicas_count,
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
