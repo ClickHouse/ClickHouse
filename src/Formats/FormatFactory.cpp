@@ -76,6 +76,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
+    format_settings.csv.serialize_tuple_into_separate_columns = settings.output_format_csv_serialize_tuple_into_separate_columns;
+    format_settings.csv.deserialize_separate_columns_into_tuple = settings.input_format_csv_deserialize_separate_columns_into_tuple;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.csv.allow_cr_end_of_line = settings.input_format_csv_allow_cr_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
@@ -93,6 +95,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
     format_settings.csv.use_default_on_bad_values = settings.input_format_csv_use_default_on_bad_values;
     format_settings.csv.try_infer_numbers_from_strings = settings.input_format_csv_try_infer_numbers_from_strings;
+    format_settings.csv.try_infer_strings_from_quoted_tuples = settings.input_format_csv_try_infer_strings_from_quoted_tuples;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
