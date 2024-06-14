@@ -141,22 +141,22 @@ private:
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard = false>
     bool checkAccessImpl(const AccessFlags & flags) const;
 
-    template <bool throw_if_denied, bool grant_option, typename... Args>
+    template <bool throw_if_denied, bool grant_option, bool wildcard = false, typename... Args>
     bool checkAccessImpl(const AccessFlags & flags, std::string_view database, const Args &... args) const;
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard = false>
     bool checkAccessImpl(const AccessRightsElement & element) const;
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const AccessRightsElements & elements) const;
 
-    template <bool throw_if_denied, bool grant_option, typename... Args>
+    template <bool throw_if_denied, bool grant_option, bool wildcard = false, typename... Args>
     bool checkAccessImplHelper(AccessFlags flags, const Args &... args) const;
 
-    template <bool throw_if_denied, bool grant_option>
+    template <bool throw_if_denied, bool grant_option, bool wildcard = false>
     bool checkAccessImplHelper(const AccessRightsElement & element) const;
 
     template <bool throw_if_denied>
