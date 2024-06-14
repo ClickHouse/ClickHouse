@@ -15,6 +15,7 @@ A utility providing filesystem-like operations for ClickHouse disks. It can work
 * `--log-level` -- What [type](../server-configuration-parameters/settings#server_configuration_parameters-logger) of events to log, defaults to `none`.
 * `--disk` -- what disk to use for `mkdir, move, read, write, remove` commands. Defaults to `default`.
 * `--query, -q` -- single query that can be executed without launching interactive mode
+* `--help, -h` -- print all the options and commamds with description
 
 ## Default Disks
 After the launch two disks are initialized. The first one is a disk `local` that is supposed to imitate local file system from which clickhouse-disks utility was launched. The second one is a disk `default` that is mounted to the local filesystem in the directory that can be found in config as a parameter `clickhouse/path` (default value is `/var/lib/clickhouse`).
@@ -36,6 +37,8 @@ In these documentation file all mandatory positional arguments are referred as `
 * `current_disk_with_path (current, current_disk, current_path)`
   Print current state in format: 
     `Disk: "current_disk" Path: "current path on current disk"`
+* `help [<command>]`
+  Print help message about command `command`. If `command` is not specified print information about all commands.
 * `move (mv) <path-from> <path-to>`.
   Move file or directory from `path-from` to `path-to` within current disk.
 * `remove (rm, delete) <path>`.

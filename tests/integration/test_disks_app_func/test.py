@@ -10,7 +10,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "disks_app_test",
-            main_configs=["server_configs/config.xml"],
+            main_configs=["config.xml"],
             with_minio=True,
         )
 
