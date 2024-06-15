@@ -496,8 +496,13 @@ Chunk StorageS3QueueSource::generateImpl()
                 total_processed_rows += chunk.getNumRows();
                 total_processed_bytes += chunk.bytes();
 
-                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                    chunk, requested_virtual_columns, path, reader.getObjectInfo()->metadata->size_bytes);
+                VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                    chunk, requested_virtual_columns,
+                    {
+                        .path = path,
+                        .size = reader.getObjectInfo()->metadata->size_bytes
+                    });
+
                 return chunk;
             }
         }
