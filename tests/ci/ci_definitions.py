@@ -212,6 +212,14 @@ class StatusNames(metaclass=WithIter):
     PR_CHECK = "PR Check"
 
 
+class SyncState(metaclass=WithIter):
+    PENDING = "awaiting merge"
+    MERGE_FAILED = "merge failed"
+    TESTING = "awaiting test results"
+    TESTS_FAILED = "tests failed"
+    COMPLETED = "completed"
+
+
 @dataclass
 class DigestConfig:
     # all files, dirs to include into digest, glob supported

@@ -913,7 +913,7 @@ def _set_pending_statuses(pr_info: PRInfo) -> None:
         commit.create_status(
             state=PENDING,
             target_url="",
-            description="",
+            description=CI.SyncState.PENDING,
             context=CI.StatusNames.SYNC,
         )
     except Exception as ex:

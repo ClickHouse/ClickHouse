@@ -12,7 +12,7 @@ from ci_utils import normalize_string
 
 _TEST_EVENT_JSON = {"dummy": "dummy"}
 
-# pylint:disable=protected-access
+# pylint:disable=protected-access,union-attr
 
 
 class TestCIConfig(unittest.TestCase):
