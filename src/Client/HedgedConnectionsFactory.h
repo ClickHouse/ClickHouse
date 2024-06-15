@@ -27,7 +27,7 @@ public:
     using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    enum class State
+    enum class State : uint8_t
     {
         READY,
         NOT_READY,

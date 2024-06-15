@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class IFunction;
 
 /// Methods, that helps dispatching over real column types.
@@ -23,6 +28,13 @@ template <typename Type>
 const Type * checkAndGetDataType(const IDataType * data_type)
 {
     return typeid_cast<const Type *>(data_type);
+}
+
+/// Throws on mismatch.
+template <typename Type>
+const Type & checkAndGetDataType(const IDataType & data_type)
+{
+    return typeid_cast<const Type &>(data_type);
 }
 
 template <typename... Types>
@@ -34,13 +46,27 @@ bool checkDataTypes(const IDataType * data_type)
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column || !isColumnConst(*column))
+    if (!column)
         return {};
 
-    const ColumnConst * res = assert_cast<const ColumnConst *>(column);
+    const ColumnConst * res = checkAndGetColumn<ColumnConst>(column);
+    if (!res)
+        return {};
 
     if (!checkColumn<Type>(&res->getDataColumn()))
         return {};
+
+    return res;
+}
+
+template <typename Type>
+const ColumnConst & checkAndGetColumnConst(const IColumn & column)
+{
+    const ColumnConst & res = checkAndGetColumn<ColumnConst>(column);
+
+    const auto & data_column = res.getDataColumn();
+    if (!checkColumn<Type>(&data_column))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected const column type: expected {}, got {}", demangle(typeid(Type).name()), demangle(typeid(data_column).name()));
 
     return res;
 }
@@ -171,4 +197,6 @@ struct NullPresence
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
+
+void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 }

@@ -99,8 +99,7 @@ namespace DB
                     ReadBufferFromString in(string_value);
                     time_t time = 0;
                     readDateTimeText(time, in);
-                    if (time < 0)
-                        time = 0;
+                    time = std::max<time_t>(time, 0);
                     assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                     break;
                 }

@@ -204,7 +204,7 @@ public:
     bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
-    void write(const char * from, size_t size, size_t offset);
+    void write(char * from, size_t size, size_t offset);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().

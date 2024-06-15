@@ -4,8 +4,10 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Common/re2.h>
+
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -83,6 +85,8 @@ public:
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+
+    void truncateFile(const String & path, size_t size) override;
 
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
@@ -207,6 +211,10 @@ public:
 
     bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override;
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() const override;
+#endif
 
 private:
 

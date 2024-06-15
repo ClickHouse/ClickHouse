@@ -1829,6 +1829,8 @@ target_link_libraries(grpc_plugin_support
   ${_gRPC_PROTOBUF_PROTOC_LIBRARIES}
 )
 
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
+    AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
 
 add_executable(grpc_cpp_plugin
   ${_gRPC_SOURCE_DIR}/src/compiler/cpp_plugin.cc
@@ -1852,3 +1854,5 @@ target_link_libraries(grpc_cpp_plugin
   ${_gRPC_ALLTARGETS_LIBRARIES}
   grpc_plugin_support
 )
+
+endif()

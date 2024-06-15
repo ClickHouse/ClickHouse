@@ -60,6 +60,7 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
 
     if (constant_node.requiresCastCall())
     {
+        /// Projection name for constants is <value>_<type> so for _cast(1, 'String') we will have _cast(1_Uint8, 'String'_String)
         buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
     }
 
@@ -243,8 +244,34 @@ public:
             }
             case QueryTreeNodeType::LAMBDA:
             {
-                auto lambda_hash = node->getTreeHash();
-                result = "__lambda_" + toString(lambda_hash);
+                /// Initially, the action name was `"__lambda_" + toString(node->getTreeHash());`.
+                /// This is not a good idea because:
+                ///   * hash is different on initiator and shard if the default database is changed in cluster
+                ///   * hash is reliable only within one node; any change will break queries in between versions
+                ///
+                /// Now, we calculate execution name as (names + types) for lambda arguments + action name (expression)
+                /// and this should be more reliable (as long as we trust the calculation of action name for functions)
+
+                WriteBufferFromOwnString buffer;
+
+                const auto & lambda_node = node->as<LambdaNode &>();
+                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+
+                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+                for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
+                {
+                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
+                    buffer << calculateActionNodeName(lambda_argument_node);
+                    buffer << ' ';
+                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
+
+                    if (i + 1 != lambda_arguments_nodes_size)
+                        buffer << ", ";
+                }
+
+                buffer << " -> " << calculateActionNodeName(lambda_node.getExpression());
+
+                result = buffer.str();
                 break;
             }
             default:

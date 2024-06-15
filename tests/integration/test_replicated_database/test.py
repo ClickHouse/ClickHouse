@@ -24,7 +24,7 @@ main_node = cluster.add_instance(
 dummy_node = cluster.add_instance(
     "dummy_node",
     main_configs=["configs/config.xml"],
-    user_configs=["configs/settings.xml"],
+    user_configs=["configs/settings2.xml"],
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
@@ -59,6 +59,14 @@ all_nodes = [
     snapshot_recovering_node,
 ]
 
+bad_settings_node = cluster.add_instance(
+    "bad_settings_node",
+    main_configs=["configs/config2.xml"],
+    user_configs=["configs/inconsistent_settings.xml"],
+    with_zookeeper=True,
+    macros={"shard": 1, "replica": 4},
+)
+
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
@@ -77,6 +85,29 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def test_flatten_nested(started_cluster):
+    main_node.query(
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica' || '1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica2');"
+    )
+
+    main_node.query(
+        "CREATE TABLE create_replicated_table.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
+    )
+
+    main_node.query(
+        "CREATE MATERIALIZED VIEW create_replicated_table.mv ENGINE=ReplicatedMergeTree ORDER BY tuple() AS select d, cast([(k, toString(i32))] as Nested(a UInt64, b String)) from create_replicated_table.replicated_table"
+    )
+
+    assert main_node.query(
+        "show create create_replicated_table.mv"
+    ) == dummy_node.query("show create create_replicated_table.mv")
+    main_node.query("DROP DATABASE create_replicated_table SYNC")
+    dummy_node.query("DROP DATABASE create_replicated_table SYNC")
 
 
 def test_create_replicated_table(started_cluster):
@@ -373,6 +404,8 @@ def test_alter_detach_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_detach VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
+    else:
+        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
@@ -1443,3 +1476,72 @@ def test_table_metadata_corruption(started_cluster):
 
     main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
     dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+
+
+def test_auto_recovery(started_cluster):
+    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery")
+    bad_settings_node.query("DROP DATABASE IF EXISTS auto_recovery")
+
+    dummy_node.query(
+        "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica1');"
+    )
+    bad_settings_node.query(
+        "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica2') SETTINGS max_retries_before_automatic_recovery=3;"
+    )
+
+    dummy_node.query(
+        "CREATE TABLE auto_recovery.t1 (n int) ENGINE=ReplicatedMergeTree ORDER BY n"
+    )
+    dummy_node.query("INSERT INTO auto_recovery.t1 SELECT 42")
+    # dummy_node has <throw_on_unsupported_query_inside_transaction>0</throw_on_unsupported_query_inside_transaction> (default is 1),
+    # so it will consider that the setting is changed, and will write it to the DDL entry
+    # bad_settings_node has implicit_transaction=1, so it will fail and recover from snapshot
+    dummy_node.query(
+        "CREATE TABLE auto_recovery.t2 (n int) ENGINE=ReplicatedMergeTree ORDER BY tuple()",
+        settings={
+            "throw_on_unsupported_query_inside_transaction": 1,
+            "distributed_ddl_task_timeout": 0,
+        },
+    )
+    dummy_node.query("INSERT INTO auto_recovery.t2 SELECT 137")
+    dummy_node.query(
+        "EXCHANGE TABLES auto_recovery.t1 AND auto_recovery.t2",
+        settings={"distributed_ddl_task_timeout": 0},
+    )
+
+    bad_settings_node.query(
+        "SYSTEM SYNC DATABASE REPLICA auto_recovery", settings={"receive_timeout": 60}
+    )
+    assert bad_settings_node.contains_in_log(
+        "Unexpected error (3 times in a row), will try to restart main thread"
+    )
+    assert bad_settings_node.contains_in_log("Cannot begin an implicit transaction")
+    bad_settings_node.query("SYSTEM SYNC REPLICA auto_recovery.t1")
+    bad_settings_node.query("SYSTEM SYNC REPLICA auto_recovery.t2")
+
+    assert "42\n" == dummy_node.query("SELECT * FROM auto_recovery.t2")
+    assert "137\n" == dummy_node.query("SELECT * FROM auto_recovery.t1")
+
+    assert "42\n" == bad_settings_node.query("SELECT * FROM auto_recovery.t2")
+    assert "137\n" == bad_settings_node.query("SELECT * FROM auto_recovery.t1")
+
+
+def test_all_groups_cluster(started_cluster):
+    dummy_node.query("DROP DATABASE IF EXISTS db_cluster")
+    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster")
+    dummy_node.query(
+        "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica1');"
+    )
+    bad_settings_node.query(
+        "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica2');"
+    )
+
+    assert "dummy_node\n" == dummy_node.query(
+        "select host_name from system.clusters where name='db_cluster' order by host_name"
+    )
+    assert "bad_settings_node\n" == bad_settings_node.query(
+        "select host_name from system.clusters where name='db_cluster' order by host_name"
+    )
+    assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
+        "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
+    )

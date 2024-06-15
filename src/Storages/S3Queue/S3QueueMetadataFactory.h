@@ -1,7 +1,7 @@
 #pragma once
 #include <boost/noncopyable.hpp>
 #include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#include <Storages/S3Queue/S3QueueMetadata.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace DB
 class S3QueueMetadataFactory final : private boost::noncopyable
 {
 public:
-    using FilesMetadataPtr = std::shared_ptr<S3QueueFilesMetadata>;
+    using FilesMetadataPtr = std::shared_ptr<S3QueueMetadata>;
 
     static S3QueueMetadataFactory & instance();
 
@@ -22,9 +22,9 @@ public:
 private:
     struct Metadata
     {
-        explicit Metadata(std::shared_ptr<S3QueueFilesMetadata> metadata_) : metadata(metadata_), ref_count(1) {}
+        explicit Metadata(std::shared_ptr<S3QueueMetadata> metadata_) : metadata(metadata_), ref_count(1) {}
 
-        std::shared_ptr<S3QueueFilesMetadata> metadata;
+        std::shared_ptr<S3QueueMetadata> metadata;
         /// TODO: the ref count should be kept in keeper, because of the case with distributed processing.
         size_t ref_count = 0;
     };

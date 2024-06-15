@@ -51,7 +51,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    const S3Settings::RequestSettings & request_settings_,
+    const S3::RequestSettings & request_settings_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
@@ -191,9 +191,13 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             result = sendRequest(attempt, range_begin, range_begin + n - 1);
             std::istream & istr = result->GetBody();
 
-            copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied);
+            bool cancelled = false;
+            copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
+
+            if (cancelled)
+                return initial_n - n + bytes_copied;
 
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
@@ -314,7 +318,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, request_settings, /* for_disk_s3= */ read_settings.for_object_storage);
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
 
     file_size = object_size;
     return *file_size;
@@ -415,7 +419,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     }
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (read_settings.for_object_storage)
+    if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);

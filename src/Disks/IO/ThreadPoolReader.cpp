@@ -36,6 +36,8 @@
         #define SYS_preadv2 380
     #elif defined(__riscv)
         #define SYS_preadv2 286
+    #elif defined(__loongarch64)
+        #define SYS_preadv2 286
     #else
         #error "Unsupported architecture"
     #endif

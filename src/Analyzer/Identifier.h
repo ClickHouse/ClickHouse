@@ -149,12 +149,12 @@ public:
 
     void popFirst()
     {
-        return popFirst(1);
+        popFirst(1);
     }
 
     void pop_front() /// NOLINT
     {
-        return popFirst();
+        popFirst();
     }
 
     void popLast(size_t parts_to_remove_size)
@@ -172,7 +172,7 @@ public:
 
     void popLast()
     {
-        return popLast(1);
+        popLast(1);
     }
 
     void pop_back() /// NOLINT
@@ -406,7 +406,7 @@ struct fmt::formatter<DB::Identifier>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Identifier & identifier, FormatContext & ctx)
+    auto format(const DB::Identifier & identifier, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", identifier.getFullName());
     }
@@ -428,7 +428,7 @@ struct fmt::formatter<DB::IdentifierView>
     }
 
     template <typename FormatContext>
-    auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx)
+    auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", identifier_view.getFullName());
     }

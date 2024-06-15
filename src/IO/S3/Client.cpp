@@ -384,7 +384,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
+    return enrichErrorMessage(
+        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
@@ -404,7 +405,8 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
+    return enrichErrorMessage(
+        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
@@ -652,14 +654,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 if constexpr (IsReadMethod)
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
                 }
                 else
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
@@ -687,6 +689,23 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     };
 
     return doRequest(request, with_retries);
+}
+
+template <typename RequestResult>
+RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
+{
+    if (outcome.IsSuccess() || !isClientForDisk())
+        return std::forward<RequestResult>(outcome);
+
+    String enriched_message = fmt::format(
+        "{} {}",
+        outcome.GetError().GetMessage(),
+        "This error happened for S3 disk.");
+
+    auto error = outcome.GetError();
+    error.SetMessage(enriched_message);
+
+    return RequestResult(error);
 }
 
 bool Client::supportsMultiPartCopy() const

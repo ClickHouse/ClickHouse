@@ -1,0 +1,8 @@
+Expression ((Project names + Projection))
+Header: sum(id) UInt64
+  Aggregating
+  Header: sum(__table1.id) UInt64
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))
+    Header: __table1.id UInt64
+      ReadFromPreparedSource (Read from NullSource)
+      Header: id UInt64
