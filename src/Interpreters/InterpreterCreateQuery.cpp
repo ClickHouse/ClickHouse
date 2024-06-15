@@ -756,7 +756,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_full_text_index')");
                 /// ----
                 /// Temporary check during a transition period. Please remove at the end of 2024.
-                if (index_desc.type == INVERTED_INDEX_NAME && settings.allow_experimental_inverted_index) /// The funny condition is not a mistake, see 02346_fulltext_index_old_name.sql
+                if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
                 /// ----
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
