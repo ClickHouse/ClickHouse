@@ -54,8 +54,9 @@ size_t getCompoundTypeDepth(const IDataType & type)
 }
 
 template <typename Collection>
-Block createBlockFromCollection(const Collection & collection, const DataTypes & block_types, bool transform_null_in)
+Block createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
 {
+    assert(collection.size() == value_types.size());
     size_t columns_size = block_types.size();
     MutableColumns columns(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
@@ -65,19 +66,24 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
     }
 
     Row tuple_values;
+    size_t value_types_index = 0;
 
     for (const auto & value : collection)
     {
         if (columns_size == 1)
         {
-            auto field = convertFieldToTypeStrict(value, *block_types[0]);
-            if (!field)
+            DataTypePtr data_type = value_types[value_types_index];
+            auto field = convertFieldToTypeStrict(value, *data_type, *block_types[0]);
+            if (!field) {
+                value_types_index += 1;
                 continue;
+            }
 
             bool need_insert_null = transform_null_in && block_types[0]->isNullable();
             if (!field->isNull() || need_insert_null)
                 columns[0]->insert(*field);
-
+            
+            value_types_index += 1;
             continue;
         }
 
@@ -87,6 +93,9 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
                 value.getTypeName());
 
         const auto & tuple = value.template get<const Tuple &>();
+        DataTypePtr value_type = value_types[value_types_index];
+        DataTypes tuple_value_type = typeid_cast<const DataTypeTuple*>(value_type.get())->getElements();
+
         size_t tuple_size = tuple.size();
 
         if (tuple_size != columns_size)
@@ -101,7 +110,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
         size_t i = 0;
         for (; i < tuple_size; ++i)
         {
-            auto converted_field = convertFieldToTypeStrict(tuple[i], *block_types[i]);
+            auto converted_field = convertFieldToTypeStrict(tuple[i], *tuple_value_type[i], *block_types[i]);
             if (!converted_field)
                 break;
             tuple_values[i] = std::move(*converted_field);
@@ -114,6 +123,8 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
         if (i == tuple_size)
             for (i = 0; i < tuple_size; ++i)
                 columns[i]->insert(tuple_values[i]);
+        
+        value_types_index += 1;
     }
 
     Block res;
@@ -149,7 +160,8 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
 
         Array array{value};
-        result_block = createBlockFromCollection(array, set_element_types, transform_null_in);
+        DataTypes value_types{value_type};
+        result_block = createBlockFromCollection(array, value_types, set_element_types, transform_null_in);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
@@ -157,10 +169,22 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
 
         WhichDataType rhs_which_type(value_type);
 
-        if (rhs_which_type.isArray())
-            result_block = createBlockFromCollection(value.get<const Array &>(), set_element_types, transform_null_in);
-        else if (rhs_which_type.isTuple())
-            result_block = createBlockFromCollection(value.get<const Tuple &>(), set_element_types, transform_null_in);
+        if (rhs_which_type.isArray()) {
+            const DataTypeArray* value_array_type = typeid_cast<const DataTypeArray *>(value_type.get());
+            size_t value_array_size = value.get<const Array &>().size();
+            DataTypes value_types;
+            value_types.reserve(value_array_size);
+
+            for(size_t i = 0; i < value_array_size; ++i) {
+                value_types.push_back(value_array_type->getNestedType());
+            }
+            result_block = createBlockFromCollection(value.get<const Array &>(), value_types, set_element_types, transform_null_in);
+        }
+        else if (rhs_which_type.isTuple()) {
+            const DataTypeTuple* value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+            DataTypes value_types = value_tuple_type->getElements();
+            result_block = createBlockFromCollection(value.get<const Tuple &>(), value_types, set_element_types, transform_null_in);
+        }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Unsupported type at the right-side of IN. Expected Array or Tuple. Actual {}",
