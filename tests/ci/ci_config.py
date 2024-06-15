@@ -24,6 +24,7 @@ class CI:
     from ci_definitions import BuildNames as BuildNames
     from ci_definitions import StatusNames as StatusNames
     from ci_definitions import CHECK_DESCRIPTIONS as CHECK_DESCRIPTIONS
+    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
     from ci_definitions import Runners as Runners

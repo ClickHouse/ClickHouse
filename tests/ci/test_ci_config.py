@@ -21,9 +21,16 @@ class TestCIConfig(unittest.TestCase):
         for job in CI.JobNames:
             self.assertIn(CI.JOB_CONFIGS[job].runner_type, CI.Runners)
 
+    def test_required_checks(self):
+        for job in CI.REQUIRED_CHECKS:
+            if job in (CI.StatusNames.PR_CHECK, CI.StatusNames.SYNC):
+                continue
+            self.assertTrue(job in CI.JOB_CONFIGS, f"Job [{job}] not in job config")
+
     def test_builds_configs(self):
         """build name in the build config must match the job name"""
         for job in CI.JobNames:
+            self.assertTrue(job in CI.JOB_CONFIGS)
             self.assertTrue(CI.JOB_CONFIGS[job].runner_type in CI.Runners)
             if job in CI.BuildNames:
                 self.assertTrue(CI.JOB_CONFIGS[job].build_config.name == job)
