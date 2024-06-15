@@ -64,8 +64,8 @@ _TEST_JOB_LIST = [
     "fuzzers",
     "Docker server image",
     "Docker keeper image",
-    "Install packages (amd64)",
-    "Install packages (arm64)",
+    "Install packages (release)",
+    "Install packages (aarch64)",
     "Stateless tests (debug)",
     "Stateless tests (release)",
     "Stateless tests (coverage)",
@@ -120,15 +120,15 @@ _TEST_JOB_LIST = [
     "AST fuzzer (ubsan)",
     "ClickHouse Keeper Jepsen",
     "ClickHouse Server Jepsen",
-    "Performance Comparison",
-    "Performance Comparison Aarch64",
+    "Performance Comparison (release)",
+    "Performance Comparison (aarch64)",
     "Sqllogic test (release)",
     "SQLancer (release)",
     "SQLancer (debug)",
     "SQLTest",
-    "Compatibility check (amd64)",
+    "Compatibility check (release)",
     "Compatibility check (aarch64)",
-    "ClickBench (amd64)",
+    "ClickBench (release)",
     "ClickBench (aarch64)",
     "libFuzzer tests",
     "ClickHouse build check",
@@ -170,14 +170,10 @@ class TestCIOptions(unittest.TestCase):
             job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
             for job in _TEST_JOB_LIST
         }
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = (
+        jobs_configs["fuzzers"].run_by_label = (
             "TEST_LABEL"  # check "fuzzers" appears in the result due to the label
         )
-        jobs_configs[
-            "Integration tests (asan)"
-        ].release_only = (
+        jobs_configs["Integration tests (asan)"].release_only = (
             True  # still must be included as it's set with include keywords
         )
         filtered_jobs = list(
@@ -309,9 +305,9 @@ class TestCIOptions(unittest.TestCase):
             job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
             for job in _TEST_JOB_LIST
         }
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        jobs_configs["fuzzers"].run_by_label = (
+            "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        )
         jobs_configs["Integration tests (asan)"].release_only = True
         filtered_jobs = list(
             ci_options.apply(

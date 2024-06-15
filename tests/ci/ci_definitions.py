@@ -98,7 +98,7 @@ class JobNames(metaclass=WithIter):
     FAST_TEST = "Fast test"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
-    INSTALL_TEST_AMD = "Install packages (amd64)"
+    INSTALL_TEST_AMD = "Install packages (release)"
     INSTALL_TEST_ARM = "Install packages (aarch64)"
 
     STATELESS_TEST_DEBUG = "Stateless tests (debug)"
@@ -167,8 +167,8 @@ class JobNames(metaclass=WithIter):
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
 
-    PERFORMANCE_TEST_AMD64 = "Performance Comparison"
-    PERFORMANCE_TEST_ARM64 = "Performance Comparison Aarch64"
+    PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
+    PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
     SQL_LOGIC_TEST = "Sqllogic test (release)"
 
@@ -176,10 +176,10 @@ class JobNames(metaclass=WithIter):
     SQLANCER_DEBUG = "SQLancer (debug)"
     SQLTEST = "SQLTest"
 
-    COMPATIBILITY_TEST = "Compatibility check (amd64)"
+    COMPATIBILITY_TEST = "Compatibility check (release)"
     COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
-    CLICKBENCH_TEST = "ClickBench (amd64)"
+    CLICKBENCH_TEST = "ClickBench (release)"
     CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
