@@ -427,6 +427,8 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
+                c.execute("SYSTEM JEMALLOC PURGE")
+
                 res = c.execute(
                     q,
                     query_id=run_id,
