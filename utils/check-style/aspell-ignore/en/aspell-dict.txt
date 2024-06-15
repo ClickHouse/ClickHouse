@@ -2847,7 +2847,9 @@ variantElement
 variantType
 varint
 varpop
+varpopstable
 varsamp
+varsampstable
 vectorized
 vectorscan
 vendoring
