@@ -42,10 +42,8 @@ def test_profiler(started_cluster):
         "CREATE TABLE t (key UInt32, value String) Engine = ReplicatedMergeTree('/clickhouse-tables/test1', 'r1') ORDER BY key"
     )
 
-    node.query("INSERT INTO t SELECT number, toString(number) from numbers(100)")
-    node.query("INSERT INTO t SELECT number, toString(number) from numbers(100)")
-    node.query("INSERT INTO t SELECT number, toString(number) from numbers(100)")
-    node.query("INSERT INTO t SELECT number, toString(number) from numbers(100)")
+    for _ in range(50):
+        node.query("INSERT INTO t SELECT number, toString(number) from numbers(100)")
 
     node.query("system flush logs")
     assert int(node.query("exists system.trace_log"))
