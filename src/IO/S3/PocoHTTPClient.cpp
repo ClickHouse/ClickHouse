@@ -1,4 +1,5 @@
 #include <Poco/Timespan.h>
+#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -110,7 +111,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , error_report(error_report_)
 {
     /// This is used to identify configurations created by us.
-    userAgent = "ClickHouse";
+    userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
