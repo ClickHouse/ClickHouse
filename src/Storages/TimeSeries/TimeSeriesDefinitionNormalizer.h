@@ -31,10 +31,10 @@ private:
     void addMissingColumns(ASTCreateQuery & create, const TimeSeriesSettings & time_series_settings) const;
 
     /// Adds the DEFAULT expression for the 'id' column if it isn't specified yet.
-    void addMissingDefaultForIDColumn(ASTCreateQuery & create) const;
+    void addMissingDefaultForIDColumn(ASTCreateQuery & create, const TimeSeriesSettings & time_series_settings) const;
 
     /// Generates a formulae for calculating the identifier of a time series from the metric name and all the tags.
-    ASTPtr chooseIDAlgorithm(const ASTColumnDeclaration & id_column) const;
+    ASTPtr chooseIDAlgorithm(const ASTColumnDeclaration & id_column, const TimeSeriesSettings & time_series_settings) const;
 
     /// Copies the definitions of inner engines from "CREATE AS <table>" if this is that kind of query.
     void addMissingInnerEnginesFromAsTable(ASTCreateQuery & create, const ASTCreateQuery & as_create_query) const;

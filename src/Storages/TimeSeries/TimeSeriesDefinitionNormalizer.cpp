@@ -27,7 +27,7 @@ void TimeSeriesDefinitionNormalizer::normalize(ASTCreateQuery & create_query,
 {
     reorderColumns(create_query, time_series_settings);
     addMissingColumns(create_query, time_series_settings);
-    addMissingDefaultForIDColumn(create_query);
+    addMissingDefaultForIDColumn(create_query, time_series_settings);
 
     if (as_create_query)
         addMissingInnerEnginesFromAsTable(create_query, *as_create_query);
@@ -214,7 +214,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create, 
 }
 
 
-void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery & create) const
+void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery & create, const TimeSeriesSettings & time_series_settings) const
 {
     /// Find the 'id' column and make a default expression for it.
     if (!create.columns_list || !create.columns_list->columns)
@@ -235,18 +235,33 @@ void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery
     if (column_declaration.default_specifier.empty() && !column_declaration.default_expression)
     {
         column_declaration.default_specifier = "DEFAULT";
-        column_declaration.default_expression = chooseIDAlgorithm(column_declaration);
+        column_declaration.default_expression = chooseIDAlgorithm(column_declaration, time_series_settings);
     }
 }
 
 
-ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclaration & id_column) const
+ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclaration & id_column, const TimeSeriesSettings & time_series_settings) const
 {
     /// Build a list of arguments for a hash function.
     /// All hash functions below allow multiple arguments, so we use two arguments: metric_name, all_tags.
     ASTs arguments_for_hash_function;
     arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-    arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
+
+    if (time_series_settings.use_all_tags_column_for_calculating_id)
+    {
+        arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
+    }
+    else
+    {
+        const Map & tags_to_columns = time_series_settings.tags_to_columns;
+        for (const auto & tag_name_and_column_name : tags_to_columns)
+        {
+            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & column_name = tuple.at(1).safeGet<String>();
+            arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(column_name));
+        }
+        arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+    }
 
     auto make_hash_function = [&](const String & function_name)
     {

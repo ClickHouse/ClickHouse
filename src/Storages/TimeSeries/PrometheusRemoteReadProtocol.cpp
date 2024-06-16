@@ -243,6 +243,7 @@ namespace
             }
 
             exp_list->children.push_back(makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags));
+
             select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, exp_list);
         }
 
