@@ -74,7 +74,8 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
         {
             DataTypePtr data_type = value_types[value_types_index];
             auto field = convertFieldToTypeStrict(value, *data_type, *block_types[0]);
-            if (!field) {
+            if (!field)
+            {
                 value_types_index += 1;
                 continue;
             }
@@ -94,7 +95,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
 
         const auto & tuple = value.template get<const Tuple &>();
         DataTypePtr value_type = value_types[value_types_index];
-        DataTypes tuple_value_type = typeid_cast<const DataTypeTuple*>(value_type.get())->getElements();
+        DataTypes tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
         size_t tuple_size = tuple.size();
 
@@ -169,19 +170,22 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
 
         WhichDataType rhs_which_type(value_type);
 
-        if (rhs_which_type.isArray()) {
-            const DataTypeArray* value_array_type = typeid_cast<const DataTypeArray *>(value_type.get());
+        if (rhs_which_type.isArray())
+        {
+            const DataTypeArray * value_array_type = typeid_cast<const DataTypeArray *>(value_type.get());
             size_t value_array_size = value.get<const Array &>().size();
             DataTypes value_types;
             value_types.reserve(value_array_size);
 
-            for(size_t i = 0; i < value_array_size; ++i) {
+            for (size_t i = 0; i < value_array_size; ++i)
+            {
                 value_types.push_back(value_array_type->getNestedType());
             }
             result_block = createBlockFromCollection(value.get<const Array &>(), value_types, set_element_types, transform_null_in);
         }
-        else if (rhs_which_type.isTuple()) {
-            const DataTypeTuple* value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+        else if (rhs_which_type.isTuple())
+        {
+            const DataTypeTuple * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             DataTypes value_types = value_tuple_type->getElements();
             result_block = createBlockFromCollection(value.get<const Tuple &>(), value_types, set_element_types, transform_null_in);
         }

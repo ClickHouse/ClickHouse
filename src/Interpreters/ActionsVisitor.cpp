@@ -102,7 +102,7 @@ static size_t getTypeDepth(const DataTypePtr & type)
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
 template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & types, bool transform_null_in)
+static Block createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -140,7 +140,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
                 tuple_values.resize(tuple_size);
         
             DataTypePtr value_type = value_types[value_type_index];
-            DataTypes tuple_value_type = typeid_cast<const DataTypeTuple*>(value_type.get())->getElements();
+            DataTypes tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
             size_t i = 0;
             for (; i < tuple_size; ++i)
@@ -329,16 +329,19 @@ Block createBlockForSet(
     else if (left_type_depth + 1 == right_type_depth)
     {
         auto type_index = right_arg_type->getTypeId();
-        if (type_index == TypeIndex::Tuple) {
+        if (type_index == TypeIndex::Tuple)
+        {
             DataTypes data_types = typeid_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
             block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), data_types, set_element_types, tranform_null_in);
         }
-        else if (type_index == TypeIndex::Array) {
+        else if (type_index == TypeIndex::Array)
+        {
             const auto* right_arg_array_type =  typeid_cast<const DataTypeArray *>(right_arg_type.get());
             size_t right_arg_array_size = right_arg_value.get<const Array &>().size();
             DataTypes data_types;
             data_types.reserve(right_arg_array_size);
-            for(size_t i = 0; i < right_arg_array_size; ++i) {
+            for(size_t i = 0; i < right_arg_array_size; ++i)
+            {
                 data_types.push_back(right_arg_array_type->getNestedType());
             }
             block = createBlockFromCollection(right_arg_value.get<const Array &>(), data_types, set_element_types, tranform_null_in);
