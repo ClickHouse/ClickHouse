@@ -52,9 +52,6 @@ if (USE_S2N)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DUSE_S2N")
 endif()
 
-list(APPEND AWS_PRIVATE_COMPILE_DEFS "-O0")
-
-
 # Directories.
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
 SET(AWS_SDK_CORE_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-core")
@@ -374,6 +371,7 @@ target_include_directories(_aws SYSTEM BEFORE PUBLIC ${AWS_PUBLIC_INCLUDES})
 target_include_directories(_aws SYSTEM BEFORE PRIVATE ${AWS_PRIVATE_INCLUDES})
 target_compile_definitions(_aws PUBLIC ${AWS_PUBLIC_COMPILE_DEFS})
 target_compile_definitions(_aws PRIVATE ${AWS_PRIVATE_COMPILE_DEFS})
+target_compile_options(_aws PRIVATE "-O0")
 target_link_libraries(_aws PRIVATE ${AWS_PRIVATE_LIBS})
 
 aws_set_thread_affinity_method(_aws)
