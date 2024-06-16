@@ -31,7 +31,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    BreakLinePosInTable break_line_pos_in_table;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, break_line_pos_in_table, 1);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
         writeString(String(row_number_width, ' '), out);
@@ -70,6 +71,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     }
     writeCString("\n\n", out);
 
+    bool has_transferred_row = false;
+
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
         if (format_settings.pretty.output_format_pretty_row_numbers)
@@ -85,19 +88,27 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 writeCString("\033[0m", out);
 
         }
+        size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 1 : 1;
         for (size_t column = 0; column < num_columns; ++column)
         {
             if (column != 0)
                 writeCString(" ", out);
 
             const auto & type = *header.getByPosition(column).type;
-            auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            const auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
+
+            writeValueWithPadding(*columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width,
+                type.shouldAlignRightInPrettyFormats(), isNumber(type), break_line_pos_in_table[row][column], prefix, false);
+
+            has_transferred_row |= !break_line_pos_in_table[row][column].empty();
+            prefix += max_widths[column] + 3;
         }
 
         writeReadableNumberTip(chunk);
         writeChar('\n', out);
+
+        if (has_transferred_row)
+            writeTransferredRow(columns, header, widths, max_widths, break_line_pos_in_table[row], row, cut_to_width, true);
     }
 
     total_rows += num_rows;

@@ -24,7 +24,8 @@ private:
         const Block & header,
         const Chunk & chunk,
         const WidthsPerColumn & widths,
-        const Widths & max_widths);
+        const Widths & max_widths,
+        BreakLinePosInRow & break_line_pos_in_row);
 
     void writeChunk(const Chunk & chunk, PortKind port_kind) override;
 };

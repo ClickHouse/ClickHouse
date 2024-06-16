@@ -140,7 +140,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
     const Block & header,
     const Chunk & chunk,
     const WidthsPerColumn & widths,
-    const Widths & max_widths)
+    const Widths & max_widths,
+    BreakLinePosInRow & break_line_pos_in_row)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
@@ -168,6 +169,9 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
     writeCString(grid_symbols.bar, out);
 
+    bool has_transferred_row = false;
+    size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 2 : 2;
+
     for (size_t j = 0; j < num_columns; ++j)
     {
         if (j != 0)
@@ -175,12 +179,20 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width,
+            type.shouldAlignRightInPrettyFormats(), isNumber(type), break_line_pos_in_row[j], prefix, false);
+
+        has_transferred_row |= !break_line_pos_in_row[j].empty();
+        prefix += max_widths[j] + 3;
     }
 
     writeCString(grid_symbols.bar, out);
     writeReadableNumberTip(chunk);
     writeCString("\n", out);
+
+    if (has_transferred_row)
+        writeTransferredRow(columns, header, widths, max_widths, break_line_pos_in_row, row_num, cut_to_width, false);
 }
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
@@ -193,12 +205,13 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    BreakLinePosInTable break_line_pos_in_table;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, break_line_pos_in_table, 2);
 
     writeHeader(header, max_widths, name_widths);
 
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, chunk, widths, max_widths);
+        writeRow(i, header, chunk, widths, max_widths, break_line_pos_in_table[i]);
 
 
     writeBottom(max_widths);
