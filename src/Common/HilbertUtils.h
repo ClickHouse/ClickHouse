@@ -59,7 +59,7 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
         return;
 
     const auto next_bits = current_bits - 2;
-    const auto history = (start >> current_bits) << current_bits;
+    const auto history = current_bits == 64 ? 0 : (start >> current_bits) << current_bits;
 
     const auto chunk_mask = 0b11;
     const auto start_chunk = (start >> next_bits) & chunk_mask;
@@ -117,10 +117,10 @@ inline std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1
     UInt64 dist_x = x1 > x2 ? x1 - x2 : x2 - x1;
     UInt64 dist_y = y1 > y2 ? y1 - y2 : y2 - y1;
     UInt64 range_size = std::max(dist_x, dist_y);
-    bool containsMinimumVertice = x1 % (range_size + 1) == 0;
-    if (containsMinimumVertice)
+    UInt64 x_min = std::min(x1, x2);
+    bool contains_minimum_vertice = x_min % (range_size + 1) == 0;
+    if (contains_minimum_vertice)
     {
-        UInt64 x_min = std::min(x1, x2);
         UInt64 y_min = std::min(y1, y2);
         return {
             std::pair<UInt64, UInt64>{x_min, x_min + range_size},
