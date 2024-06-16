@@ -280,12 +280,18 @@ namespace
         auto & tags_offsets = tags_column.getNestedColumn().getOffsets();
 
         /// Column "all_tags".
-        const auto & all_tags_description = get_column_description(TimeSeriesColumnNames::AllTags);
-        validator.validateColumnForTagsMap(all_tags_description);
-        auto & all_tags_column = typeid_cast<ColumnMap &>(make_column_for_tags_block(all_tags_description));
-        IColumn & all_tags_names = all_tags_column.getNestedData().getColumn(0);
-        IColumn & all_tags_values = all_tags_column.getNestedData().getColumn(1);
-        auto & all_tags_offsets = all_tags_column.getNestedColumn().getOffsets();
+        IColumn * all_tags_names = nullptr;
+        IColumn * all_tags_values = nullptr;
+        IColumn::Offsets * all_tags_offsets = nullptr;
+        if (time_series_settings.use_all_tags_column_to_generate_id)
+        {
+            const auto & all_tags_description = get_column_description(TimeSeriesColumnNames::AllTags);
+            validator.validateColumnForTagsMap(all_tags_description);
+            auto & all_tags_column = typeid_cast<ColumnMap &>(make_column_for_tags_block(all_tags_description));
+            all_tags_names = &all_tags_column.getNestedData().getColumn(0);
+            all_tags_values = &all_tags_column.getNestedData().getColumn(1);
+            all_tags_offsets = &all_tags_column.getNestedColumn().getOffsets();
+        }
 
         /// Columns "min_time" and "max_time".
         IColumn * min_time_column = nullptr;
@@ -327,8 +333,11 @@ namespace
                 }
                 else
                 {
-                    all_tags_names.insertData(tag_name.data(), tag_name.length());
-                    all_tags_values.insertData(tag_value.data(), tag_value.length());
+                    if (time_series_settings.use_all_tags_column_to_generate_id)
+                    {
+                        all_tags_names->insertData(tag_name.data(), tag_name.length());
+                        all_tags_values->insertData(tag_value.data(), tag_value.length());
+                    }
 
                     auto it = columns_by_tag_name.find(tag_name);
                     bool has_column_for_tag_value = (it != columns_by_tag_name.end());
@@ -345,8 +354,10 @@ namespace
                 }
             }
 
-            all_tags_offsets.push_back(all_tags_names.size());
             tags_offsets.push_back(tags_names.size());
+
+            if (time_series_settings.use_all_tags_column_to_generate_id)
+                all_tags_offsets->push_back(all_tags_names->size());
 
             if (time_series_settings.store_min_time_and_max_time)
             {

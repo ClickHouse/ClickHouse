@@ -3,6 +3,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -80,15 +82,18 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
             columns.add(time_series_columns.get(TimeSeriesColumnNames::Tags));
 
             /// Column "all_tags".
-            ColumnDescription all_tags_column = time_series_columns.get(TimeSeriesColumnNames::AllTags);
-            /// Column "all_tags" is here only to calculate the identifier of a time series for the "id" column, so it can be ephemeral.
-            all_tags_column.default_desc.kind = ColumnDefaultKind::Ephemeral;
-            if (!all_tags_column.default_desc.expression)
+            if (time_series_settings.use_all_tags_column_to_generate_id)
             {
-                all_tags_column.default_desc.ephemeral_default = true;
-                all_tags_column.default_desc.expression = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>(all_tags_column.type->getName()));
+                ColumnDescription all_tags_column = time_series_columns.get(TimeSeriesColumnNames::AllTags);
+                /// Column "all_tags" is here only to calculate the identifier of a time series for the "id" column, so it can be ephemeral.
+                all_tags_column.default_desc.kind = ColumnDefaultKind::Ephemeral;
+                if (!all_tags_column.default_desc.expression)
+                {
+                    all_tags_column.default_desc.ephemeral_default = true;
+                    all_tags_column.default_desc.expression = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>(all_tags_column.type->getName()));
+                }
+                columns.add(std::move(all_tags_column));
             }
-            columns.add(std::move(all_tags_column));
 
             /// Columns "min_time" and "max_time".
             if (time_series_settings.store_min_time_and_max_time)
