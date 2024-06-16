@@ -1,13 +1,14 @@
 #pragma once
 
+#include <Compression/CompressedWriteBuffer.h>
 #include <Core/Names.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <Interpreters/executeQuery.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
 
 namespace CurrentMetrics
@@ -41,7 +42,13 @@ public:
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
-    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
+    virtual std::string getQuery(HTTPServerRequest & /* request */, HTMLForm & /* params */, ContextMutablePtr /* context */) { return ""; }
+
+    virtual std::shared_ptr<QueryData>
+    getQueryAST(HTTPServerRequest & /* request */, HTMLForm & /* params */, ContextMutablePtr /* context */)
+    {
+        return nullptr;
+    }
 
 private:
     struct Output

@@ -41,6 +41,12 @@
 
 #include "config.h"
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/formatAST.h>
+#include <Server/HTTP/HTTPQuery.h>
+
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -553,6 +559,77 @@ bool HTTPHandler::authenticateUser(
     return true;
 }
 
+void combineWhereExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> & where_expressions)
+{
+    ASTPtr where_expression;
+    if (auto where = select_query->where())
+        where_expression = where;
+
+    for (auto expression : where_expressions)
+        if (!where_expression)
+            where_expression = expression;
+        else
+            where_expression = makeASTFunction("and", std::move(where_expression), std::move(expression));
+
+    select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+}
+
+void combineSelectExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> & select_expressions)
+{
+    ASTPtr select_expression = std::make_shared<ASTExpressionList>();
+    if (auto select = select_query->select())
+        for (auto child : select->children)
+            select_expression->children.push_back(child);
+
+    for (auto expression : select_expressions)
+        for (auto child : expression->children)
+            select_expression->children.push_back(child);
+
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression));
+}
+
+void combineOrderExpressions(ASTSelectQuery * select_query, std::vector<ASTPtr> & order_expressions)
+{
+    ASTPtr order_expression = std::make_shared<ASTExpressionList>();
+    if (auto order_by = select_query->orderBy())
+        for (auto child : order_by->children)
+            order_expression->children.push_back(child);
+
+    for (auto expression : order_expressions)
+        for (auto child : expression->children)
+            order_expression->children.push_back(child);
+
+    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression));
+}
+
+void combineSelectQuery(ASTSelectQuery * select_query, HTTPQueryAST & http_query_ast)
+{
+    if (!http_query_ast.where_expressions.empty())
+        combineWhereExpressions(select_query, http_query_ast.where_expressions);
+
+    if (!http_query_ast.select_expressions.empty())
+        combineSelectExpressions(select_query, http_query_ast.select_expressions);
+
+    if (!http_query_ast.order_expressions.empty())
+        combineOrderExpressions(select_query, http_query_ast.order_expressions);
+}
+
+void combineQueryWithParams(QueryData & query_data, const std::map<std::string, std::string> & params)
+{
+    auto http_query_ast = getHTTPQueryAST(params);
+
+    if (auto * select_query = query_data.ast->as<ASTSelectQuery>())
+    {
+        combineSelectQuery(select_query, http_query_ast);
+    }
+    else if (auto * select_union_query = query_data.ast->as<ASTSelectWithUnionQuery>())
+    {
+        for (auto child : select_union_query->list_of_selects->children)
+            if (auto * child_select_query = child->as<ASTSelectQuery>())
+                combineSelectQuery(child_select_query, http_query_ast);
+    }
+}
+
 
 void HTTPHandler::processQuery(
     HTTPServerRequest & request,
@@ -600,6 +677,10 @@ void HTTPHandler::processQuery(
         UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
         context->setClientProtocolVersion(version_param);
     }
+
+    /// this parameter is used to execute the request
+    /// if the value is false, the request will not be executed and will be returned in text form
+    bool execute = params.getParsed<bool>("execute", true);
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -715,41 +796,17 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsed<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
         is_in_post_compressed = true;
     }
     else
         in_post_maybe_compressed = std::move(in_post);
 
-    std::unique_ptr<ReadBuffer> in;
-
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
-
-    Names reserved_param_suffixes;
-
-    auto param_could_be_skipped = [&] (const String & name)
-    {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
-            return true;
-
-        if (reserved_param_names.contains(name))
-            return true;
-
-        for (const String & suffix : reserved_param_suffixes)
-        {
-            if (endsWith(name, suffix))
-                return true;
-        }
-
-        return false;
-    };
+    const auto & access_control = context->getAccessControl();
 
     auto roles = params.getAll("role");
     if (!roles.empty())
     {
-        const auto & access_control = context->getAccessControl();
         const auto & user = context->getUser();
         std::vector<UUID> roles_ids(roles.size());
         for (size_t i = 0; i < roles.size(); i++)
@@ -785,20 +842,14 @@ void HTTPHandler::processQuery(
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
-    if (has_external_data)
-    {
-        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-        reserved_param_suffixes.reserve(3);
-        /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
-        reserved_param_suffixes.emplace_back("_format");
-        reserved_param_suffixes.emplace_back("_types");
-        reserved_param_suffixes.emplace_back("_structure");
-    }
-
     std::string database = request.get("X-ClickHouse-Database", "");
     std::string default_format = request.get("X-ClickHouse-Format", "");
 
     SettingsChanges settings_changes;
+
+    /// Using std::map is used instead of std::unordered_map for consistency in the output order
+    std::map<std::string, std::string> additional_params;
+
     for (const auto & [key, value] : params)
     {
         if (key == "database")
@@ -811,14 +862,12 @@ void HTTPHandler::processQuery(
             if (default_format.empty())
                 default_format = value;
         }
-        else if (param_could_be_skipped(key))
+        else if (!customizeQueryParam(context, key, value))
         {
-        }
-        else
-        {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
+            if (access_control.isSettingNameAllowed(key))
                 settings_changes.push_back({key, value});
+            else
+                additional_params.insert({key, value});
         }
     }
 
@@ -842,8 +891,6 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
-    std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings.send_progress_in_http_headers);
     used_output.out_holder->setSendProgressInterval(settings.http_headers_progress_interval_ms);
@@ -889,9 +936,6 @@ void HTTPHandler::processQuery(
                 context->killCurrentQuery();
         });
     }
-
-    customizeContext(request, context, *in_post_maybe_compressed);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     auto set_query_result = [&response, this] (const QueryResultDetails & details)
     {
@@ -939,15 +983,42 @@ void HTTPHandler::processQuery(
         }
     };
 
-    executeQuery(
-        *in,
-        *used_output.out_maybe_delayed_and_compressed,
-        /* allow_into_outfile = */ false,
-        context,
-        set_query_result,
-        QueryFlags{},
-        {},
-        handle_exception_in_output_format);
+    customizeContext(request, context, *in_post_maybe_compressed);
+
+    std::shared_ptr<QueryData> query_data;
+
+    auto query = getQuery(request, params, context);
+    std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
+    std::unique_ptr<ReadBuffer> in;
+
+    in = has_external_data ? std::move(in_param)
+                           : std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
+
+    if (!in->eof())
+        query_data = std::make_shared<QueryData>(*in, context);
+    else if (auto query_ast = getQueryAST(request, params, context))
+        query_data = query_ast;
+    else
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Empty request");
+
+    combineQueryWithParams(*query_data, additional_params);
+
+    if (execute)
+    {
+        executeQuery(
+            *query_data,
+            *used_output.out_maybe_delayed_and_compressed,
+            /* allow_into_outfile = */ false,
+            context,
+            set_query_result,
+            QueryFlags{},
+            {},
+            handle_exception_in_output_format);
+    }
+    else
+    {
+        formatAST(*query_data->ast, *used_output.out_maybe_delayed_and_compressed, /*hilite=*/false, /*one_line=*/true);
+    }
 
     session->releaseSessionID();
 

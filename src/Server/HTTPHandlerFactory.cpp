@@ -14,6 +14,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "PrometheusRequestHandler.h"
 #include "WebUIRequestHandler.h"
+#include "TabularHandler.h"
 
 
 namespace DB
@@ -255,6 +256,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
+
+    auto tabular_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<TabularHandler>>(server);
+    tabular_handler->attachNonStrictPath("/tabular");
+    tabular_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/tabular");
+    factory.addHandler(tabular_handler);
 }
 
 void addDefaultHandlersFactory(
