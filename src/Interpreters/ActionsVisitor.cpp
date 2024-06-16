@@ -138,9 +138,9 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
-        
-            DataTypePtr value_type = value_types[value_type_index];
-            DataTypes tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
+
+            const DataTypePtr & value_type = value_types[value_type_index];
+            const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
             size_t i = 0;
             for (; i < tuple_size; ++i)
@@ -331,7 +331,7 @@ Block createBlockForSet(
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
         {
-            DataTypes data_types = typeid_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
+            const DataTypes & data_types = typeid_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
             block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), data_types, set_element_types, tranform_null_in);
         }
         else if (type_index == TypeIndex::Array)
@@ -340,7 +340,7 @@ Block createBlockForSet(
             size_t right_arg_array_size = right_arg_value.get<const Array &>().size();
             DataTypes data_types;
             data_types.reserve(right_arg_array_size);
-            for(size_t i = 0; i < right_arg_array_size; ++i)
+            for (size_t i = 0; i < right_arg_array_size; ++i)
             {
                 data_types.push_back(right_arg_array_type->getNestedType());
             }

@@ -72,7 +72,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
     {
         if (columns_size == 1)
         {
-            DataTypePtr data_type = value_types[value_types_index];
+            const DataTypePtr & data_type = value_types[value_types_index];
             auto field = convertFieldToTypeStrict(value, *data_type, *block_types[0]);
             if (!field)
             {
@@ -83,7 +83,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
             bool need_insert_null = transform_null_in && block_types[0]->isNullable();
             if (!field->isNull() || need_insert_null)
                 columns[0]->insert(*field);
-            
+
             value_types_index += 1;
             continue;
         }
@@ -94,8 +94,8 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
                 value.getTypeName());
 
         const auto & tuple = value.template get<const Tuple &>();
-        DataTypePtr value_type = value_types[value_types_index];
-        DataTypes tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
+        const DataTypePtr & value_type = value_types[value_types_index];
+        const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
         size_t tuple_size = tuple.size();
 
@@ -124,7 +124,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
         if (i == tuple_size)
             for (i = 0; i < tuple_size; ++i)
                 columns[i]->insert(tuple_values[i]);
-        
+
         value_types_index += 1;
     }
 
@@ -159,7 +159,6 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
     if (lhs_type_depth == rhs_type_depth)
     {
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-
         Array array{value};
         DataTypes value_types{value_type};
         result_block = createBlockFromCollection(array, value_types, set_element_types, transform_null_in);
@@ -167,7 +166,6 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
         /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4))
-
         WhichDataType rhs_which_type(value_type);
 
         if (rhs_which_type.isArray())
@@ -186,7 +184,7 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
         else if (rhs_which_type.isTuple())
         {
             const DataTypeTuple * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
-            DataTypes value_types = value_tuple_type->getElements();
+            const DataTypes & value_types = value_tuple_type->getElements();
             result_block = createBlockFromCollection(value.get<const Tuple &>(), value_types, set_element_types, transform_null_in);
         }
         else
