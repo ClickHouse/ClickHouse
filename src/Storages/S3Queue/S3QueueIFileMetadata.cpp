@@ -251,13 +251,15 @@ void S3QueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
-void S3QueueIFileMetadata::setFailed(const std::string & exception, bool reduce_retry_count)
+void S3QueueIFileMetadata::setFailed(const std::string & exception, bool reduce_retry_count, bool overwrite_status)
 {
     LOG_TRACE(log, "Setting file {} as failed (path: {}, reduce retry count: {}, exception: {})",
               path, failed_node_path, reduce_retry_count, exception);
 
     ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
-    chassert(file_status->state == FileStatus::State::Failed);
+    if (overwrite_status || file_status->state != FileStatus::State::Failed)
+        file_status->onFailed(exception);
+
     node_metadata.last_exception = exception;
 
     if (reduce_retry_count)

@@ -793,8 +793,8 @@ def test_max_set_age(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_tracked_file_ttl_sec": max_age,
-            "s3queue_cleanup_interval_min_ms": 0,
-            "s3queue_cleanup_interval_max_ms": 0,
+            "s3queue_cleanup_interval_min_ms": max_age / 3,
+            "s3queue_cleanup_interval_max_ms": max_age / 3,
             "s3queue_loading_retries": 0,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 0,
@@ -822,7 +822,7 @@ def test_max_set_age(started_cluster):
     assert expected_rows == get_count()
     assert 10 == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
 
-    time.sleep(max_age + 1)
+    time.sleep(max_age + 5)
 
     expected_rows = 20
 
@@ -1671,7 +1671,7 @@ def test_commit_on_limit(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
-            "s3queue_loading_retries": 1,
+            "s3queue_loading_retries": 0,
             "s3queue_max_processed_files_before_commit": 10,
         },
     )

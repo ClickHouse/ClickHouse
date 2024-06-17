@@ -72,7 +72,12 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings, bool is_attach, const LoggerPtr & log)
+    void checkAndAdjustSettings(
+        S3QueueSettings & s3queue_settings,
+        const Settings & settings,
+        bool is_attach,
+        const LoggerPtr & log,
+        ASTStorage * engine_args)
     {
         if (!is_attach && !s3queue_settings.mode.changed)
         {
@@ -100,6 +105,10 @@ namespace
         if (!is_attach && !s3queue_settings.s3queue_processing_threads_num.changed)
         {
             s3queue_settings.s3queue_processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+            engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
+                "s3queue_processing_threads_num",
+                s3queue_settings.s3queue_processing_threads_num.value);
+
             LOG_TRACE(log, "Set `processing_threads_num` to {}", s3queue_settings.s3queue_processing_threads_num);
         }
     }
@@ -114,7 +123,7 @@ StorageS3Queue::StorageS3Queue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * /* engine_args */,
+    ASTStorage * engine_args,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -138,7 +147,7 @@ StorageS3Queue::StorageS3Queue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), mode > LoadingStrictnessLevel::CREATE, log);
+    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), mode > LoadingStrictnessLevel::CREATE, log, engine_args);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);

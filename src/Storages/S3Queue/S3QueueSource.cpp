@@ -54,6 +54,7 @@ StorageS3QueueSource::FileIterator::FileIterator(
 
 bool StorageS3QueueSource::FileIterator::isFinished() const
 {
+     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished, objects_to_retry.size());
      return iterator_finished
          && listed_keys_cache.end() == std::find_if(
              listed_keys_cache.begin(), listed_keys_cache.end(),
@@ -82,6 +83,8 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
             if (objects_to_retry.empty())
             {
                 object_info = glob_iterator->next(processor);
+                if (!object_info)
+                    iterator_finished = true;
             }
             else
             {
@@ -91,7 +94,10 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
         }
 
         if (!object_info)
+        {
+            LOG_TEST(log, "No object left");
             return {};
+        }
 
         if (shutdown_called)
         {
@@ -108,6 +114,7 @@ StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl
 
 void StorageS3QueueSource::FileIterator::returnForRetry(ObjectInfoPtr object_info)
 {
+    chassert(object_info);
     if (metadata->useBucketsForProcessing())
     {
         const auto bucket = metadata->getBucketForPath(object_info->relative_path);
@@ -374,10 +381,13 @@ void StorageS3QueueSource::lazyInitialize(size_t processor)
     if (initialized)
         return;
 
+    LOG_TEST(log, "Initializing a new reader");
+
     internal_source->lazyInitialize(processor);
     reader = std::move(internal_source->reader);
     if (reader)
         reader_future = std::move(internal_source->reader_future);
+
     initialized = true;
 }
 
@@ -427,7 +437,7 @@ Chunk StorageS3QueueSource::generateImpl()
             {
                 try
                 {
-                    file_metadata->setFailed("Cancelled");
+                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
                 }
                 catch (...)
                 {
@@ -459,7 +469,7 @@ Chunk StorageS3QueueSource::generateImpl()
 
                 try
                 {
-                    file_metadata->setFailed("Table is dropped");
+                    file_metadata->setFailed("Table is dropped", /* reduce_retry_count */true, /* overwrite_status */false);
                 }
                 catch (...)
                 {
@@ -511,10 +521,9 @@ Chunk StorageS3QueueSource::generateImpl()
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
-            appendLogElement(path, *file_status, processed_rows_from_file, false);
-
-            failed_files.push_back(file_metadata);
+            failed_during_read_files.push_back(file_metadata);
             file_status->onFailed(getCurrentExceptionMessage(true));
+            appendLogElement(path, *file_status, processed_rows_from_file, false);
 
             if (processed_rows_from_file == 0)
             {
@@ -619,7 +628,7 @@ Chunk StorageS3QueueSource::generateImpl()
 void StorageS3QueueSource::commit(bool success, const std::string & exception)
 {
     LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
-             processed_files.size(), success ? "Processed" : "Failed", failed_files.size());
+             processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
 
     for (const auto & file_metadata : processed_files)
     {
@@ -629,14 +638,20 @@ void StorageS3QueueSource::commit(bool success, const std::string & exception)
             applyActionAfterProcessing(file_metadata->getPath());
         }
         else
-            file_metadata->setFailed(exception, /* reduce_retry_count */false);
+            file_metadata->setFailed(
+                exception,
+                /* reduce_retry_count */false,
+                /* overwrite_status */true);
     }
 
-    for (const auto & file_metadata : failed_files)
+    for (const auto & file_metadata : failed_during_read_files)
     {
         /// `exception` from commit args is from insertion to storage.
-        /// Here we do not used it as failed_files were not inserted into storage, but skipped.
-        file_metadata->setFailed(file_metadata->getFileStatus()->getException(), /* reduce_retry_count */true);
+        /// Here we do not used it as failed_during_read_files were not inserted into storage, but skipped.
+        file_metadata->setFailed(
+            file_metadata->getFileStatus()->getException(),
+            /* reduce_retry_count */true,
+            /* overwrite_status */false);
     }
 }
 

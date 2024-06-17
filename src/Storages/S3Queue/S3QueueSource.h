@@ -85,6 +85,7 @@ public:
         std::deque<ObjectInfoPtr> objects_to_retry;
 
         std::pair<ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
+        bool hasKeysForProcessor(const Processor & processor) const;
     };
 
     StorageS3QueueSource(
@@ -137,7 +138,7 @@ private:
     LoggerPtr log;
 
     std::vector<Metadata::FileMetadataPtr> processed_files;
-    std::vector<Metadata::FileMetadataPtr> failed_files;
+    std::vector<Metadata::FileMetadataPtr> failed_during_read_files;
 
     ReaderHolder reader;
     std::future<ReaderHolder> reader_future;
