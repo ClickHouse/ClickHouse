@@ -609,7 +609,6 @@ void StorageURLSink::finalize()
     {
         writer->finalize();
         writer->flush();
-        write_buf->finalize();
     }
     catch (...)
     {
@@ -617,12 +616,14 @@ void StorageURLSink::finalize()
         release();
         throw;
     }
+
+    write_buf->finalize();
 }
 
 void StorageURLSink::release()
 {
     writer.reset();
-    write_buf->finalize();
+    write_buf.reset();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
