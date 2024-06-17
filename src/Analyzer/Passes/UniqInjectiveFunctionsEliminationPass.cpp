@@ -44,10 +44,10 @@ public:
             return;
 
         bool replaced_argument = false;
-        auto & uniq_function_arguments_nodes = function_node->getArguments().getNodes();
+        auto replaced_uniq_function_arguments_nodes = function_node->getArguments().getNodes();
 
-        auto new_arguments_nodes = std::make_shared<ListNode>();
         DataTypes new_argument_types;
+        new_argument_types.reserve(replaced_uniq_function_arguments_nodes.size());
 
         auto remove_injective_function = [&replaced_argument](QueryTreeNodePtr & arg) -> bool
         {
@@ -67,12 +67,11 @@ public:
             return replaced_argument = true;
         };
 
-        for (auto uniq_function_argument_node : uniq_function_arguments_nodes)
+        for (auto & uniq_function_argument_node : replaced_uniq_function_arguments_nodes)
         {
             while (remove_injective_function(uniq_function_argument_node))
                 ;
-            new_arguments_nodes->getNodes().push_back(uniq_function_argument_node);
-            new_argument_types.push_back(uniq_function_argument_node->getResultType());
+            new_argument_types.emplace_back(uniq_function_argument_node->getResultType());
         }
 
         if (!replaced_argument)
@@ -87,12 +86,12 @@ public:
             current_aggregate_function->getParameters(),
             properties);
 
-        /// Enforce that new aggregate function does not change the result type
-        if (current_aggregate_function->getResultType()->equals(*new_aggregate_function->getResultType()))
-        {
-            function_node->getArgumentsNode() = new_arguments_nodes->clone();
-            function_node->resolveAsAggregateFunction(std::move(new_aggregate_function));
-        }
+        /// uniqCombined returns nullable with nullable arguments so the result type might change which breaks the pass
+        if (!new_aggregate_function->getResultType()->equals(*current_aggregate_function->getResultType()))
+            return;
+
+        function_node->getArguments().getNodes() = std::move(replaced_uniq_function_arguments_nodes);
+        function_node->resolveAsAggregateFunction(std::move(new_aggregate_function));
     }
 };
 
