@@ -37,7 +37,7 @@ struct fmt::formatter<DB::RowNumber>
     }
 
     template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx)
+    auto format(const DB::RowNumber & x, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
     }
@@ -1630,15 +1630,14 @@ struct StatefulWindowFunction : public WindowFunction
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
-        auto * const state = static_cast<State *>(static_cast<void *>(place));
-        state->~State();
+        reinterpret_cast<State *>(place)->~State();
     }
 
     bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
 
     State & getState(const WindowFunctionWorkspace & workspace) const
     {
-        return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
+        return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
     }
 };
 

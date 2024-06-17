@@ -328,7 +328,7 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
@@ -363,7 +363,7 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }

@@ -8,8 +8,8 @@ namespace DB
 class Exception;
 struct BackupFileInfo;
 using BackupFileInfos = std::vector<BackupFileInfo>;
-enum class AccessEntityType;
-enum class UserDefinedSQLObjectType;
+enum class AccessEntityType : uint8_t;
+enum class UserDefinedSQLObjectType : uint8_t;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
 /// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.

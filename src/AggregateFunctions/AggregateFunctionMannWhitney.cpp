@@ -39,7 +39,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
      *the probability of X being greater than Y is equal to the probability of Y being greater than X".
      *Or "the distribution F of first sample equals to the distribution G of second sample".
      *Then alternative for this hypothesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,

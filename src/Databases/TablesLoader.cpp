@@ -199,7 +199,7 @@ void TablesLoader::removeUnresolvableDependencies()
         return true; /// Exclude this dependency.
     };
 
-    all_loading_dependencies.removeTablesIf(need_exclude_dependency);
+    all_loading_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
     if (all_loading_dependencies.getNumberOfTables() != metadata.parsed_tables.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be loaded is not as expected. It's a bug");

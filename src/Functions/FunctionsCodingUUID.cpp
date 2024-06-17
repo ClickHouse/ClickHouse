@@ -30,7 +30,7 @@ namespace DB::ErrorCodes
 
 namespace
 {
-enum class Representation
+enum class Representation : uint8_t
 {
     BigEndian,
     LittleEndian
@@ -66,7 +66,7 @@ void parseHex(const UInt8 * __restrict src, const std::span<UInt8> dst, Represen
 class UUIDSerializer
 {
 public:
-    enum class Variant
+    enum class Variant : uint8_t
     {
         Default = 1,
         Microsoft = 2

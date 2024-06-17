@@ -50,6 +50,8 @@ TRUSTED_CONTRIBUTORS = {
 
 
 class Labels:
+    PR_BUGFIX = "pr-bugfix"
+    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     MUST_BACKPORT = "pr-must-backport"
@@ -68,8 +70,8 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
-    # pr-bugfix autoport can lead to issues in releases, let's do ci fixes only
-    AUTO_BACKPORT = {"pr-ci"}
+    # automatic backport for critical bug fixes
+    AUTO_BACKPORT = {"pr-critical-bugfix"}
 
 
 # Descriptions are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
@@ -84,6 +86,7 @@ LABEL_CATEGORIES = {
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
+    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
         "Build Improvement",

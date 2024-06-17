@@ -616,7 +616,7 @@ void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntit
 void ReplicatedAccessStorage::removeEntityNoLock(const UUID & id)
 {
     LOG_DEBUG(getLogger(), "Removing entity with id {}", toString(id));
-    memory_storage.remove(id, /* throw_if_not_exists= */ false);
+    memory_storage.remove(id, /* throw_if_not_exists= */ false); // NOLINT
 }
 
 
@@ -654,7 +654,7 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;

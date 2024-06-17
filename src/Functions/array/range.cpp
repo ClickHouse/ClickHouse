@@ -119,7 +119,7 @@ private:
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
                 for (T elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = static_cast<T>(elem_idx);
+                    out_data[offset + elem_idx] = elem_idx;
 
                 offset += in_data[row_idx];
                 out_offsets[row_idx] = offset;

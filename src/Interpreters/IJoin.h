@@ -27,7 +27,7 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-enum class JoinPipelineType
+enum class JoinPipelineType : uint8_t
 {
     /*
      * Right stream processed first, then when join data structures are ready, the left stream is processed using it.

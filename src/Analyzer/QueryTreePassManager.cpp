@@ -85,9 +85,9 @@ public:
     void visitImpl(QueryTreeNodePtr & node) const
     {
         if (auto * column = node->as<ColumnNode>())
-            return visitColumn(column);
+            visitColumn(column);
         else if (auto * function = node->as<FunctionNode>())
-            return visitFunction(function);
+            visitFunction(function);
     }
 private:
     void visitColumn(ColumnNode * column) const
@@ -147,7 +147,7 @@ private:
                     continue;
 
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} expects {} argument to have {} type but receives {} after running {} pass",
+                    "Function {} expects argument {} to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
                     expected_argument_type->getName(),
@@ -192,7 +192,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
 {
     // Run only QueryAnalysisPass and GroupingFunctionsResolvePass passes.
-    run(query_tree_node, 2);
+    run(query_tree_node, 3);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
@@ -249,6 +249,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+    manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
 
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
@@ -290,17 +291,14 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 
-
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
-    manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
-
 }
 
 }
