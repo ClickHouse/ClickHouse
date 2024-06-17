@@ -11,7 +11,7 @@
 #include <Analyzer/Resolve/ScopeAliases.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
-#include <iostream>
+#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
@@ -25,8 +25,8 @@ namespace ErrorCodes
 class FunctionParameterValuesVisitor
 {
 public:
-    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, const ScopeAliases * aliases_)
-        : parameter_values(parameter_values_), aliases(aliases_)
+    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, ContextPtr context_, const ScopeAliases * aliases_)
+        : parameter_values(parameter_values_), aliases(aliases_), context(context_)
     {
     }
 
@@ -42,6 +42,7 @@ public:
 private:
     NameToNameMap & parameter_values;
     const ScopeAliases * aliases;
+    ContextPtr context;
 
     std::string tryGetParameterValueAsString(const ASTPtr & ast)
     {
@@ -73,6 +74,11 @@ private:
                     return convertFieldToString(cast_literal->value);
                 }
             }
+            else
+            {
+                ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(expression_list->children[1], context);
+                parameter_values[identifier->name()] = convertFieldToString(res->as<ASTLiteral>()->value);
+            }
         }
         return "";
     }
@@ -96,10 +102,10 @@ private:
     }
 };
 
-NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, const ScopeAliases * scope_aliases)
+NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, const ContextPtr & context, const ScopeAliases * scope_aliases)
 {
     NameToNameMap parameter_values;
-    FunctionParameterValuesVisitor(parameter_values, scope_aliases).visit(ast);
+    FunctionParameterValuesVisitor(parameter_values, context, scope_aliases).visit(ast);
     return parameter_values;
 }
 
