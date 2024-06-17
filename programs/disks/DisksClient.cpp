@@ -14,7 +14,6 @@ namespace ErrorCodes
 
 namespace DB
 {
-
 DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(disk_)
 {
     if (path_.has_value())

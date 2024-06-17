@@ -68,6 +68,8 @@ private:
     static String word_break_characters;
 
     // General command line arguments parsing fields
+
+    SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     ProgramOptionsDescription options_description;
     CommandLineOptions options;

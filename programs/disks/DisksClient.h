@@ -32,7 +32,10 @@ public:
 
     String getCurrentPath() const { return path; }
 
-    bool isDirectory(const String & any_path) const { return disk->isDirectory(getRelativeFromRoot(any_path)); }
+    bool isDirectory(const String & any_path) const
+    {
+        return disk->isDirectory(getRelativeFromRoot(any_path)) || disk->isDirectory(getAbsolutePath(any_path));
+    }
 
     std::vector<String> listAllFilesByPath(const String & any_path) const;
 

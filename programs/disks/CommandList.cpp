@@ -56,12 +56,9 @@ private:
 
         std::cout << relative_path << ":\n";
 
-        if (!file_names.empty())
-        {
-            for (const auto & file_name : file_names)
-                if (show_hidden || (!file_name.starts_with('.')))
-                    selected_and_sorted_file_names.push_back(file_name);
-        }
+        for (const auto & file_name : file_names)
+            if (show_hidden || (!file_name.starts_with('.')))
+                selected_and_sorted_file_names.push_back(file_name);
 
         std::sort(selected_and_sorted_file_names.begin(), selected_and_sorted_file_names.end());
         for (const auto & file_name : selected_and_sorted_file_names)
@@ -84,7 +81,9 @@ private:
                 }
             }();
             if (disk.isDirectory(path))
+            {
                 listRecursive(disk, path, show_hidden);
+            }
         }
     }
 };

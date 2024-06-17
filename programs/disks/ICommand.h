@@ -53,7 +53,7 @@ protected:
         {
             return options[name].as<T>();
         }
-        catch (boost::bad_any_cast)
+        catch (boost::bad_any_cast &)
         {
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' has wrong type and can't be parsed", name);
         }

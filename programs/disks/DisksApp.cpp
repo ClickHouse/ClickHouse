@@ -49,17 +49,15 @@ CommandPtr DisksApp::getCommandByName(const String & command) const
 std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
 {
     auto command_ptr = command_descriptions.at(command_name);
-    auto answer = [&]() -> std::vector<String>
+    std::vector<String> answer{};
+    if (multidisk_commands.contains(command_ptr->command_name))
     {
-        if (multidisk_commands.contains(command_ptr->command_name))
-        {
-            return client->getAllFilesByPatternFromAllDisks("");
-        }
-        else
-        {
-            return client->getCurrentDiskWithPath().getAllFilesByPattern("");
-        }
-    }();
+        answer = client->getAllFilesByPatternFromAllDisks("");
+    }
+    else
+    {
+        answer = client->getCurrentDiskWithPath().getAllFilesByPattern("");
+    }
     for (const auto & disk_name : client->getAllDiskNames())
     {
         answer.push_back(disk_name);
@@ -211,7 +209,7 @@ bool DisksApp::processQueryText(const String & text)
         int code = getCurrentExceptionCode();
         if (code == ErrorCodes::LOGICAL_ERROR)
         {
-            throw err;
+            throw std::move(err);
         }
         else if (code == ErrorCodes::BAD_ARGUMENTS)
         {
@@ -467,7 +465,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
-    auto shared_context = Context::createShared();
+    shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
 
     global_context->makeGlobalContext();
