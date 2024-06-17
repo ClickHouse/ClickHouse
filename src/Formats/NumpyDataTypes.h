@@ -1,15 +1,13 @@
 #pragma once
 #include <cstddef>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <IO/WriteBufferFromString.h>
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
-enum class NumpyDataTypeIndex : uint8_t
+enum class NumpyDataTypeIndex
 {
     Int8,
     Int16,
@@ -31,9 +29,9 @@ class NumpyDataType
 public:
     enum Endianness
     {
-        LITTLE = '<',
-        BIG = '>',
-        NONE = '|',
+        LITTLE,
+        BIG,
+        NONE,
     };
     NumpyDataTypeIndex type_index;
 
@@ -43,18 +41,15 @@ public:
     Endianness getEndianness() const { return endianness; }
 
     virtual NumpyDataTypeIndex getTypeIndex() const = 0;
-    virtual size_t getSize() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function getSize() is not implemented"); }
-    virtual void setSize(size_t) { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function setSize() is not implemented"); }
-    virtual String str() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function str() is not implemented"); }
 
-protected:
+private:
     Endianness endianness;
 };
 
 class NumpyDataTypeInt : public NumpyDataType
 {
 public:
-    NumpyDataTypeInt(Endianness endianness_, size_t size_, bool is_signed_) : NumpyDataType(endianness_), size(size_), is_signed(is_signed_)
+    NumpyDataTypeInt(Endianness endianness, size_t size_, bool is_signed_) : NumpyDataType(endianness), size(size_), is_signed(is_signed_)
     {
         switch (size)
         {
@@ -72,14 +67,6 @@ public:
         return type_index;
     }
     bool isSigned() const { return is_signed; }
-    String str() const override
-    {
-        DB::WriteBufferFromOwnString buf;
-        writeChar(static_cast<char>(endianness), buf);
-        writeChar(is_signed ? 'i' : 'u', buf);
-        writeIntText(size, buf);
-        return buf.str();
-    }
 
 private:
     size_t size;
@@ -89,7 +76,7 @@ private:
 class NumpyDataTypeFloat : public NumpyDataType
 {
 public:
-    NumpyDataTypeFloat(Endianness endianness_, size_t size_) : NumpyDataType(endianness_), size(size_)
+    NumpyDataTypeFloat(Endianness endianness, size_t size_) : NumpyDataType(endianness), size(size_)
     {
         switch (size)
         {
@@ -105,14 +92,6 @@ public:
     {
         return type_index;
     }
-    String str() const override
-    {
-        DB::WriteBufferFromOwnString buf;
-        writeChar(static_cast<char>(endianness), buf);
-        writeChar('f', buf);
-        writeIntText(size, buf);
-        return buf.str();
-    }
 private:
     size_t size;
 };
@@ -120,22 +99,13 @@ private:
 class NumpyDataTypeString : public NumpyDataType
 {
 public:
-    NumpyDataTypeString(Endianness endianness_, size_t size_) : NumpyDataType(endianness_), size(size_)
+    NumpyDataTypeString(Endianness endianness, size_t size_) : NumpyDataType(endianness), size(size_)
     {
         type_index = NumpyDataTypeIndex::String;
     }
 
     NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    size_t getSize() const override { return size; }
-    void setSize(size_t size_) override { size = size_; }
-    String str() const override
-    {
-        DB::WriteBufferFromOwnString buf;
-        writeChar(static_cast<char>(endianness), buf);
-        writeChar('S', buf);
-        writeIntText(size, buf);
-        return buf.str();
-    }
+    size_t getSize() const { return size; }
 private:
     size_t size;
 };
@@ -143,13 +113,13 @@ private:
 class NumpyDataTypeUnicode : public NumpyDataType
 {
 public:
-    NumpyDataTypeUnicode(Endianness endianness_, size_t size_) : NumpyDataType(endianness_), size(size_)
+    NumpyDataTypeUnicode(Endianness endianness, size_t size_) : NumpyDataType(endianness), size(size_)
     {
         type_index = NumpyDataTypeIndex::Unicode;
     }
 
     NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    size_t getSize() const override { return size * 4; }
+    size_t getSize() const { return size * 4; }
 private:
     size_t size;
 };

@@ -8,7 +8,6 @@
 #include <optional>
 #include <functional>
 #include <csignal>
-#include <csetjmp>
 
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
@@ -45,14 +44,14 @@ public:
     using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
-    StackTrace() { tryCapture(); }
+    inline StackTrace() { tryCapture(); }
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
     explicit StackTrace(const ucontext_t & signal_context);
 
     /// Creates empty object for deferred initialization
-    explicit StackTrace(NoCapture) {}
+    explicit inline StackTrace(NoCapture) {}
 
     constexpr size_t getSize() const { return size; }
     constexpr size_t getOffset() const { return offset; }
@@ -88,8 +87,3 @@ protected:
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
-
-/// Special handling for errors during asynchronous stack unwinding,
-/// Which is used in Query Profiler
-extern thread_local bool asynchronous_stack_unwinding;
-extern thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

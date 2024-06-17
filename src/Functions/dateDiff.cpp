@@ -177,10 +177,10 @@ public:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
             Int64 adjust_value;
-            auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-            auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+            auto x_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            auto y_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
 
-            if (x_nanoseconds <= y_nanoseconds)
+            if (x_microseconds <= y_microseconds)
             {
                 a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
                 b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
@@ -193,6 +193,7 @@ public:
                 adjust_value = 1;
             }
 
+
             if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((a_comp.date.month > b_comp.date.month)
@@ -201,8 +202,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
@@ -215,8 +215,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
@@ -226,8 +225,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
@@ -239,8 +237,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
@@ -249,8 +246,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeHourNumImpl<ResultPrecision::Extended>>>)
@@ -258,34 +254,25 @@ public:
                 if ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))
                     res += adjust_value;
             }
-            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<millisecond_multiplier>>>)
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<1000>>>)
             {
-                if ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))
-                    res += adjust_value;
-            }
-            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>>)
-            {
-                if (a_comp.nanosecond > b_comp.nanosecond)
+                if (a_comp.microsecond > b_comp.microsecond)
                     res += adjust_value;
             }
             return res;
@@ -414,8 +401,6 @@ public:
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<millisecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "microsecond" || unit == "microseconds" || unit == "us" || unit == "u")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "nanosecond" || unit == "nanoseconds" || unit == "ns")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);

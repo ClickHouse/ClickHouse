@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-enum class Status : uint8_t
+enum class Status
 {
     INACTIVE,
     ACTIVE,
@@ -183,10 +183,7 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 {
     auto maybe_finished_status = finished_data_future.get();
     if (maybe_finished_status.error == Coordination::Error::ZNONODE)
-    {
-        fillStatusColumnsWithNulls(res_columns, col, Status::REMOVING);
-        return;
-    }
+        return fillStatusColumnsWithNulls(res_columns, col, Status::REMOVING);
 
     /// asyncTryGet should throw on other error codes
     assert(maybe_finished_status.error == Coordination::Error::ZOK);
@@ -202,9 +199,9 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
     UInt64 query_finish_time_ms = maybe_finished_status.stat.ctime;
     /// query_finish_time
-    res_columns[col++]->insert(query_finish_time_ms / 1000);
+    res_columns[col++]->insert(static_cast<UInt64>(query_finish_time_ms / 1000));
     /// query_duration_ms
-    res_columns[col++]->insert(query_finish_time_ms - query_create_time_ms);
+    res_columns[col++]->insert(static_cast<UInt64>(query_finish_time_ms - query_create_time_ms));
 }
 
 

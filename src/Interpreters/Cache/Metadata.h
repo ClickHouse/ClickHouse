@@ -19,10 +19,6 @@ using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 class CacheMetadata;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 struct FileSegmentMetadata : private boost::noncopyable
 {
@@ -34,48 +30,12 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator || removed)
-            return false;
-        return iterator->getEntry()->isEvicting(lock);
-    }
-
-    bool isEvictingOrRemoved(const LockedKey & lock) const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator || removed)
-            return false;
-        return iterator->getEntry()->isEvicting(lock);
-    }
-
-    void setEvictingFlag(const LockedKey & locked_key, const CachePriorityGuard::Lock & lock) const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->setEvictingFlag(locked_key, lock);
-    }
-
-    void setRemovedFlag(const LockedKey &, const CachePriorityGuard::Lock &)
-    {
-        removed = true;
-    }
-
-    void resetEvictingFlag() const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->resetEvictingFlag();
-    }
+    bool evicting() const { return removal_candidate.load(); }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
-private:
-    bool removed = false;
+    std::atomic<bool> removal_candidate{false};
 };
 
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
@@ -99,7 +59,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
-    enum class KeyState : uint8_t
+    enum class KeyState
     {
         ACTIVE,
         REMOVING,
@@ -178,7 +138,7 @@ public:
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
-    enum class KeyNotFoundPolicy : uint8_t
+    enum class KeyNotFoundPolicy
     {
         THROW,
         THROW_LOGICAL,
@@ -309,16 +269,8 @@ struct LockedKey : private boost::noncopyable
 
     bool removeAllFileSegments(bool if_releasable = true);
 
-    KeyMetadata::iterator removeFileSegment(
-        size_t offset,
-        const FileSegmentGuard::Lock &,
-        bool can_be_broken = false,
-        bool invalidate_queue_entry = true);
-
-    KeyMetadata::iterator removeFileSegment(
-        size_t offset,
-        bool can_be_broken = false,
-        bool invalidate_queue_entry = true);
+    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, bool can_be_broken = false);
+    KeyMetadata::iterator removeFileSegment(size_t offset, bool can_be_broken = false);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
@@ -337,11 +289,7 @@ struct LockedKey : private boost::noncopyable
     std::string toString() const;
 
 private:
-    KeyMetadata::iterator removeFileSegmentImpl(
-        KeyMetadata::iterator it,
-        const FileSegmentGuard::Lock &,
-        bool can_be_broken = false,
-        bool invalidate_queue_entry = true);
+    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &, bool can_be_broken = false);
 
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.

@@ -308,7 +308,7 @@ void AllowedClientHosts::removeAddress(const IPAddress & address)
     if (address.isLoopback())
         local_host = false;
     else
-        std::erase(addresses, address);
+        boost::range::remove_erase(addresses, address);
 }
 
 void AllowedClientHosts::addSubnet(const IPSubnet & subnet)
@@ -328,7 +328,7 @@ void AllowedClientHosts::removeSubnet(const IPSubnet & subnet)
     else if (subnet.isMaskAllBitsOne())
         removeAddress(subnet.getPrefix());
     else
-        std::erase(subnets, subnet);
+        boost::range::remove_erase(subnets, subnet);
 }
 
 void AllowedClientHosts::addName(const String & name)
@@ -344,7 +344,7 @@ void AllowedClientHosts::removeName(const String & name)
     if (boost::iequals(name, "localhost"))
         local_host = false;
     else
-        std::erase(names, name);
+        boost::range::remove_erase(names, name);
 }
 
 void AllowedClientHosts::addNameRegexp(const String & name_regexp)
@@ -364,7 +364,7 @@ void AllowedClientHosts::removeNameRegexp(const String & name_regexp)
     else if (name_regexp == ".*")
         any_host = false;
     else
-        std::erase(name_regexps, name_regexp);
+        boost::range::remove_erase(name_regexps, name_regexp);
 }
 
 void AllowedClientHosts::addLikePattern(const String & pattern)
@@ -384,7 +384,7 @@ void AllowedClientHosts::removeLikePattern(const String & pattern)
     else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = false;
     else
-        std::erase(like_patterns, pattern);
+        boost::range::remove_erase(like_patterns, pattern);
 }
 
 void AllowedClientHosts::addLocalHost()

@@ -194,7 +194,7 @@ ColumnsDescription getConcreteObjectColumns(
     /// dummy column will be removed.
     for (const auto & column : storage_columns)
     {
-        if (column.type->hasDynamicSubcolumnsDeprecated())
+        if (column.type->hasDynamicSubcolumns())
             types_in_entries[column.name].push_back(createConcreteEmptyDynamicColumn(column.type));
     }
 
@@ -204,7 +204,7 @@ ColumnsDescription getConcreteObjectColumns(
         for (const auto & column : entry_columns)
         {
             auto storage_column = storage_columns.tryGetPhysical(column.name);
-            if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
+            if (storage_column && storage_column->type->hasDynamicSubcolumns())
                 types_in_entries[column.name].push_back(column.type);
         }
     }

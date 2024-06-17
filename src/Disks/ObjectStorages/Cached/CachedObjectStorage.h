@@ -80,7 +80,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -91,20 +91,13 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context,
-        const ApplyNewSettingsOptions & options) override;
+        ContextPtr context) override;
 
     String getObjectsNamespace() const override;
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
-
-    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
-
-    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
-
-    bool isPlain() const override { return object_storage->isPlain(); }
 
     bool isRemote() const override { return object_storage->isRemote(); }
 

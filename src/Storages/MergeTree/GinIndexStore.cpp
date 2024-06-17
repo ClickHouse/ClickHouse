@@ -1,5 +1,3 @@
-// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
-
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
@@ -242,7 +240,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         readBinary(version, *istr);
 
         if (version > static_cast<std::underlying_type_t<Format>>(CURRENT_GIN_FILE_FORMAT_VERSION))
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported full-text index version {}", version);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported inverted index version {}", version);
 
         readVarUInt(result, *istr);
     }
@@ -506,5 +504,3 @@ void GinIndexStoreFactory::remove(const String & part_path)
 }
 
 }
-
-// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
