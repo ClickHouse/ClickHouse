@@ -849,7 +849,7 @@ void StorageDistributed::read(
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed->toAST(), local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
           */
