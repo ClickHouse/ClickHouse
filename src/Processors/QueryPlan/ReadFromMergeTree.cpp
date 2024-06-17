@@ -1092,8 +1092,7 @@ static void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
     size_t max_block_size_rows,
-    bool enable_vertical_final,
-    bool can_merge_final_indices_to_next_step_filter)
+    bool enable_vertical_final)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1135,7 +1134,7 @@ static void addMergingFinal(
     };
 
     pipe.addTransform(get_merging_processor());
-    if (enable_vertical_final && !can_merge_final_indices_to_next_step_filter)
+    if (enable_vertical_final)
         pipe.addSimpleTransform([](const Block & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
 }
@@ -1323,8 +1322,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 partition_key_columns,
                 block_size.max_block_size_rows,
-                enable_vertical_final,
-                query_info.has_filters_and_no_array_join_before_filter);
+                enable_vertical_final);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
