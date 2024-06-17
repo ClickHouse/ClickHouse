@@ -37,7 +37,7 @@ def started_cluster():
 
 def test_profiler(started_cluster):
     node = cluster.instances["node1"]
-    if node1.is_built_with_sanitizer():
+    if node.is_built_with_sanitizer():
         return
 
     node.query(
