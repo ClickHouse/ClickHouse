@@ -1824,7 +1824,6 @@ private:
         {
             writer->finalize();
             writer->flush();
-            write_buf->finalize();
         }
         catch (...)
         {
@@ -1832,6 +1831,8 @@ private:
             releaseBuffers();
             throw;
         }
+
+        write_buf->finalize();
     }
 
     void releaseBuffers()
