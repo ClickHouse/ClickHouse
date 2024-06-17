@@ -40,23 +40,12 @@ namespace
 }
 
 
-ColumnsDescription StorageSystemQuotaLimits::getColumnsDescription()
+NamesAndTypesList StorageSystemQuotaLimits::getNamesAndTypes()
 {
-    ColumnsDescription result
-    {
-        {"quota_name", std::make_shared<DataTypeString>(), "Quota name."},
-        {"duration", std::make_shared<DataTypeUInt32>(), "Length of the time interval for calculating resource consumption, in seconds."},
-        {"is_randomized_interval", std::make_shared<DataTypeUInt8>(),
-            "Boolean value. It shows whether the interval is randomized. "
-            "Interval always starts at the same time if it is not randomized. "
-            "For example, an interval of 1 minute always starts at an integer number of minutes "
-            "(i.e. it can start at 11:20:00, but it never starts at 11:20:01), "
-            "an interval of one day always starts at midnight UTC. "
-            "If interval is randomized, the very first interval starts at random time, "
-            "and subsequent intervals starts one by one. Values: "
-            "0 — Interval is not randomized, "
-            "1 — Interval is randomized."
-        },
+    NamesAndTypesList names_and_types{
+        {"quota_name", std::make_shared<DataTypeString>()},
+        {"duration", std::make_shared<DataTypeUInt32>()},
+        {"is_randomized_interval", std::make_shared<DataTypeUInt8>()},
     };
 
     for (auto quota_type : collections::range(QuotaType::MAX))
@@ -68,15 +57,14 @@ ColumnsDescription StorageSystemQuotaLimits::getColumnsDescription()
             data_type = std::make_shared<DataTypeFloat64>();
         else
             data_type = std::make_shared<DataTypeUInt64>();
-
-        result.add({column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
+        names_and_types.push_back({column_name, std::make_shared<DataTypeNullable>(data_type)});
     }
 
-    return result;
+    return names_and_types;
 }
 
 
-void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

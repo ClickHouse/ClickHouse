@@ -19,7 +19,7 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
-    explicit MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+    MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
 
     struct Info
     {

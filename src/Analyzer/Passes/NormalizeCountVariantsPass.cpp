@@ -7,7 +7,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -33,11 +32,6 @@ public:
         if (function_node->getArguments().getNodes().size() != 1)
             return;
 
-        /// forbid the optimization if return value of sum() and count() differs:
-        /// count() returns only UInt64 type, while sum() could return Nullable().
-        if (!function_node->getResultType()->equals(DataTypeUInt64()))
-            return;
-
         auto & first_argument = function_node->getArguments().getNodes()[0];
         auto * first_argument_constant_node = first_argument->as<ConstantNode>();
         if (!first_argument_constant_node)
@@ -59,10 +53,10 @@ public:
         }
     }
 private:
-    static void resolveAsCountAggregateFunction(FunctionNode & function_node)
+    static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
@@ -70,7 +64,7 @@ private:
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     NormalizeCountVariantsVisitor visitor(context);
     visitor.visit(query_tree_node);

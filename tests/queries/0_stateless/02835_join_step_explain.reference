@@ -3,31 +3,31 @@ Header: id UInt64
         value_1 String
         rhs.id UInt64
         rhs.value_1 String
-Actions: INPUT : 0 -> __table1.id UInt64 : 0
-         INPUT : 1 -> __table1.value_1 String : 1
-         INPUT : 2 -> __table2.value_1 String : 2
-         INPUT : 3 -> __table2.id UInt64 : 3
-         ALIAS __table1.id :: 0 -> id UInt64 : 4
-         ALIAS __table1.value_1 :: 1 -> value_1 String : 0
-         ALIAS __table2.value_1 :: 2 -> rhs.value_1 String : 1
-         ALIAS __table2.id :: 3 -> rhs.id UInt64 : 2
+Actions: INPUT : 0 -> id_0 UInt64 : 0
+         INPUT : 1 -> value_1_1 String : 1
+         INPUT : 2 -> value_1_3 String : 2
+         INPUT : 3 -> id_2 UInt64 : 3
+         ALIAS id_0 :: 0 -> id UInt64 : 4
+         ALIAS value_1_1 :: 1 -> value_1 String : 0
+         ALIAS value_1_3 :: 2 -> rhs.value_1 String : 1
+         ALIAS id_2 :: 3 -> rhs.id UInt64 : 2
 Positions: 4 0 2 1
   Join (JOIN FillRightFirst)
-  Header: __table1.id UInt64
-          __table1.value_1 String
-          __table2.value_1 String
-          __table2.id UInt64
+  Header: id_0 UInt64
+          value_1_1 String
+          value_1_3 String
+          id_2 UInt64
   Type: INNER
   Strictness: ALL
   Algorithm: HashJoin
-  Clauses: [(__table1.id) = (__table2.id)]
+  Clauses: [(id_0) = (id_2)]
     Expression ((JOIN actions + Change column names to column identifiers))
-    Header: __table1.id UInt64
-            __table1.value_1 String
+    Header: id_0 UInt64
+            value_1_1 String
     Actions: INPUT : 0 -> id UInt64 : 0
              INPUT : 1 -> value_1 String : 1
-             ALIAS id :: 0 -> __table1.id UInt64 : 2
-             ALIAS value_1 :: 1 -> __table1.value_1 String : 0
+             ALIAS id :: 0 -> id_0 UInt64 : 2
+             ALIAS value_1 :: 1 -> value_1_1 String : 0
     Positions: 2 0
       ReadFromMergeTree (default.test_table_1)
       Header: id UInt64
@@ -36,12 +36,12 @@ Positions: 4 0 2 1
       Parts: 1
       Granules: 1
     Expression ((JOIN actions + Change column names to column identifiers))
-    Header: __table2.id UInt64
-            __table2.value_1 String
+    Header: id_2 UInt64
+            value_1_3 String
     Actions: INPUT : 0 -> id UInt64 : 0
              INPUT : 1 -> value_1 String : 1
-             ALIAS id :: 0 -> __table2.id UInt64 : 2
-             ALIAS value_1 :: 1 -> __table2.value_1 String : 0
+             ALIAS id :: 0 -> id_2 UInt64 : 2
+             ALIAS value_1 :: 1 -> value_1_3 String : 0
     Positions: 2 0
       ReadFromMergeTree (default.test_table_2)
       Header: id UInt64
@@ -55,39 +55,39 @@ Header: id UInt64
         value_1 String
         rhs.id UInt64
         rhs.value_1 String
-Actions: INPUT : 0 -> __table1.id UInt64 : 0
-         INPUT : 1 -> __table1.value_1 String : 1
-         INPUT :: 2 -> __table1.value_2 UInt64 : 2
-         INPUT : 3 -> __table2.value_1 String : 3
-         INPUT :: 4 -> __table2.value_2 UInt64 : 4
-         INPUT : 5 -> __table2.id UInt64 : 5
-         ALIAS __table1.id :: 0 -> id UInt64 : 6
-         ALIAS __table1.value_1 :: 1 -> value_1 String : 0
-         ALIAS __table2.value_1 :: 3 -> rhs.value_1 String : 1
-         ALIAS __table2.id :: 5 -> rhs.id UInt64 : 3
+Actions: INPUT : 0 -> id_0 UInt64 : 0
+         INPUT : 1 -> value_1_1 String : 1
+         INPUT :: 2 -> value_2_4 UInt64 : 2
+         INPUT : 3 -> value_1_3 String : 3
+         INPUT :: 4 -> value_2_5 UInt64 : 4
+         INPUT : 5 -> id_2 UInt64 : 5
+         ALIAS id_0 :: 0 -> id UInt64 : 6
+         ALIAS value_1_1 :: 1 -> value_1 String : 0
+         ALIAS value_1_3 :: 3 -> rhs.value_1 String : 1
+         ALIAS id_2 :: 5 -> rhs.id UInt64 : 3
 Positions: 6 0 3 1
   Join (JOIN FillRightFirst)
-  Header: __table1.id UInt64
-          __table1.value_1 String
-          __table1.value_2 UInt64
-          __table2.value_1 String
-          __table2.value_2 UInt64
-          __table2.id UInt64
+  Header: id_0 UInt64
+          value_1_1 String
+          value_2_4 UInt64
+          value_1_3 String
+          value_2_5 UInt64
+          id_2 UInt64
   Type: INNER
   Strictness: ASOF
   Algorithm: HashJoin
   ASOF inequality: LESS
-  Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
+  Clauses: [(id_0, value_2_4) = (id_2, value_2_5)]
     Expression ((JOIN actions + Change column names to column identifiers))
-    Header: __table1.id UInt64
-            __table1.value_1 String
-            __table1.value_2 UInt64
+    Header: id_0 UInt64
+            value_1_1 String
+            value_2_4 UInt64
     Actions: INPUT : 0 -> id UInt64 : 0
              INPUT : 1 -> value_1 String : 1
              INPUT : 2 -> value_2 UInt64 : 2
-             ALIAS id :: 0 -> __table1.id UInt64 : 3
-             ALIAS value_1 :: 1 -> __table1.value_1 String : 0
-             ALIAS value_2 :: 2 -> __table1.value_2 UInt64 : 1
+             ALIAS id :: 0 -> id_0 UInt64 : 3
+             ALIAS value_1 :: 1 -> value_1_1 String : 0
+             ALIAS value_2 :: 2 -> value_2_4 UInt64 : 1
     Positions: 3 0 1
       ReadFromMergeTree (default.test_table_1)
       Header: id UInt64
@@ -97,15 +97,15 @@ Positions: 6 0 3 1
       Parts: 1
       Granules: 1
     Expression ((JOIN actions + Change column names to column identifiers))
-    Header: __table2.id UInt64
-            __table2.value_1 String
-            __table2.value_2 UInt64
+    Header: id_2 UInt64
+            value_1_3 String
+            value_2_5 UInt64
     Actions: INPUT : 0 -> id UInt64 : 0
              INPUT : 1 -> value_1 String : 1
              INPUT : 2 -> value_2 UInt64 : 2
-             ALIAS id :: 0 -> __table2.id UInt64 : 3
-             ALIAS value_1 :: 1 -> __table2.value_1 String : 0
-             ALIAS value_2 :: 2 -> __table2.value_2 UInt64 : 1
+             ALIAS id :: 0 -> id_2 UInt64 : 3
+             ALIAS value_1 :: 1 -> value_1_3 String : 0
+             ALIAS value_2 :: 2 -> value_2_5 UInt64 : 1
     Positions: 3 0 1
       ReadFromMergeTree (default.test_table_2)
       Header: id UInt64

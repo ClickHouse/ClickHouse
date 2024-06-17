@@ -1,6 +1,5 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -15,34 +14,27 @@
 namespace DB
 {
 
-ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
+NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
 {
     auto span_kind_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::SpanKind::INTERNAL)},
-            {"SERVER",      static_cast<Int8>(OpenTelemetry::SpanKind::SERVER)},
-            {"CLIENT",      static_cast<Int8>(OpenTelemetry::SpanKind::CLIENT)},
-            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::SpanKind::PRODUCER)},
-            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::SpanKind::CONSUMER)}
+            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::INTERNAL)},
+            {"SERVER",      static_cast<Int8>(OpenTelemetry::SERVER)},
+            {"CLIENT",      static_cast<Int8>(OpenTelemetry::CLIENT)},
+            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::PRODUCER)},
+            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::CONSUMER)}
         }
     );
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    return ColumnsDescription
-    {
-        {"hostname", low_cardinality_string, "The hostname where this span was captured."},
-        {"trace_id", std::make_shared<DataTypeUUID>(), "ID of the trace for executed query."},
-        {"span_id", std::make_shared<DataTypeUInt64>(), "ID of the trace span."},
-        {"parent_span_id", std::make_shared<DataTypeUInt64>(), "ID of the parent trace span."},
-        {"operation_name", low_cardinality_string, "The name of the operation."},
-        {"kind", std::move(span_kind_type), "The SpanKind of the span. "
-            "INTERNAL — Indicates that the span represents an internal operation within an application. "
-            "SERVER — Indicates that the span covers server-side handling of a synchronous RPC or other remote request. "
-            "CLIENT — Indicates that the span describes a request to some remote service. "
-            "PRODUCER — Indicates that the span describes the initiators of an asynchronous request. This parent span will often end before the corresponding child CONSUMER span, possibly even before the child span starts. "
-            "CONSUMER - Indicates that the span describes a child of an asynchronous PRODUCER request."},
+    return {
+        {"trace_id", std::make_shared<DataTypeUUID>()},
+        {"span_id", std::make_shared<DataTypeUInt64>()},
+        {"parent_span_id", std::make_shared<DataTypeUInt64>()},
+        {"operation_name", low_cardinality_string},
+        {"kind", std::move(span_kind_type)},
         // DateTime64 is really unwieldy -- there is no "normal" way to convert
         // it to an UInt64 count of microseconds, except:
         // 1) reinterpretAsUInt64(reinterpretAsFixedString(date)), which just
@@ -53,10 +45,10 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         // Also subtraction of two DateTime64 points doesn't work, so you can't
         // get duration.
         // It is much less hassle to just use UInt64 of microseconds.
-        {"start_time_us", std::make_shared<DataTypeUInt64>(), "The start time of the trace span (in microseconds)."},
-        {"finish_time_us", std::make_shared<DataTypeUInt64>(), "The finish time of the trace span (in microseconds)."},
-        {"finish_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
-        {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Attribute depending on the trace span. They are filled in according to the recommendations in the OpenTelemetry standard."},
+        {"start_time_us", std::make_shared<DataTypeUInt64>()},
+        {"finish_time_us", std::make_shared<DataTypeUInt64>()},
+        {"finish_date", std::make_shared<DataTypeDate>()},
+        {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>())},
     };
 }
 
@@ -75,7 +67,6 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(trace_id);
     columns[i++]->insert(span_id);
     columns[i++]->insert(parent_span_id);

@@ -35,7 +35,7 @@ public:
         reader->resetParser();
     }
 
-    Chunk read() override
+    Chunk generate() override
     {
         block_missing_values.clear();
         size_t block_start = getDataOffsetMaybeCompressed(*in);
@@ -82,7 +82,7 @@ public:
 
     std::string getContentType() const override
     {
-        return NativeWriter::getContentType();
+        return writer.getContentType();
     }
 
 protected:

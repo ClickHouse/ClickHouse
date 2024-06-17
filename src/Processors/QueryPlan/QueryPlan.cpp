@@ -275,14 +275,6 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
         }
         else
         {
-            auto child_plans = frame.node->step->getChildPlans();
-
-            if (!frame.children_array && !child_plans.empty())
-                frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
-
-            for (const auto & child_plan : child_plans)
-                frame.children_array->add(child_plan->explainPlan(options));
-
             if (frame.children_array)
                 frame.node_map->add("Plans", std::move(frame.children_array));
 
@@ -368,7 +360,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();
 
@@ -390,7 +382,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
         if (!frame.is_description_printed)
         {
-            settings.offset = (indent + stack.size() - 1) * settings.indent;
+            settings.offset = (stack.size() - 1) * settings.indent;
             explainStep(*frame.node->step, settings, options);
             frame.is_description_printed = true;
         }
@@ -401,14 +393,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
             ++frame.next_child;
         }
         else
-        {
-            auto child_plans = frame.node->step->getChildPlans();
-
-            for (const auto & child_plan : child_plans)
-                child_plan->explainPlan(buffer, options, indent + stack.size());
-
             stack.pop();
-        }
     }
 }
 
@@ -470,24 +455,16 @@ static void updateDataStreams(QueryPlan::Node & root)
 
         static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
 
-        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
+        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
         {
-            auto & current_step = *current_node->step;
-            if (!current_step.canUpdateInputStream() || current_node->children.empty())
+            if (!parent_node || parent_node->children.size() != 1)
                 return;
 
-            for (const auto * child : current_node->children)
-            {
-                if (!child->step->hasOutputStream())
-                    return;
-            }
+            if (!current_node->step->hasOutputStream())
+                return;
 
-            DataStreams streams;
-            streams.reserve(current_node->children.size());
-            for (const auto * child : current_node->children)
-                streams.emplace_back(child->step->getOutputStream());
-
-            current_step.updateInputStreams(std::move(streams));
+            if (auto * parent_transform_step = dynamic_cast<ITransformingStep *>(parent_node->step.get()); parent_transform_step)
+                parent_transform_step->updateInputStream(current_node->step->getOutputStream());
         }
     };
 
@@ -520,6 +497,10 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
+
+        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
+        {
+        }
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;

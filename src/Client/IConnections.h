@@ -1,5 +1,7 @@
 #pragma once
 
+#include <compare>
+
 #include <Client/Connection.h>
 #include <Storages/MergeTree/RequestResponse.h>
 

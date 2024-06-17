@@ -3,16 +3,10 @@
 #include <Common/JSONBuilder.h>
 #include <Core/InterpolateDescription.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Core/SettingsEnums.h>
-#include <Common/IntervalKind.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
-#include <Interpreters/Aliases.h>
-#include <Interpreters/ActionsDAG.h>
-
 
 namespace DB
 {
+
     InterpolateDescription::InterpolateDescription(ActionsDAGPtr actions_, const Aliases & aliases)
         : actions(actions_)
     {
@@ -34,4 +28,5 @@ namespace DB
             result_columns_order.push_back(name);
         }
     }
+
 }

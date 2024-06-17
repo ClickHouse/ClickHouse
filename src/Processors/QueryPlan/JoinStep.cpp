@@ -15,29 +15,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
-{
-    std::vector<std::pair<String, String>> description;
-    const auto & table_join = join->getTableJoin();
-
-    description.emplace_back("Type", toString(table_join.kind()));
-    description.emplace_back("Strictness", toString(table_join.strictness()));
-    description.emplace_back("Algorithm", join->getName());
-
-    if (table_join.strictness() == JoinStrictness::Asof)
-        description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
-
-    if (!table_join.getClauses().empty())
-        description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
-
-    return description;
-}
-
-}
-
 JoinStep::JoinStep(
     const DataStream & left_stream_,
     const DataStream & right_stream_,
@@ -47,7 +24,11 @@ JoinStep::JoinStep(
     bool keep_left_read_in_order_)
     : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
-    updateInputStreams(DataStreams{left_stream_, right_stream_});
+    input_streams = {left_stream_, right_stream_};
+    output_stream = DataStream
+    {
+        .header = JoiningTransform::transformHeader(left_stream_.header, join),
+    };
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -88,22 +69,46 @@ void JoinStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
 
-    for (const auto & [name, value] : describeJoinActions(join))
-        settings.out << prefix << name << ": " << value << '\n';
+    const auto & table_join = join->getTableJoin();
+    settings.out << prefix << "Type: " << toString(table_join.kind()) << '\n';
+    settings.out << prefix << "Strictness: " << toString(table_join.strictness()) << '\n';
+    settings.out << prefix << "Algorithm: " << join->getName() << '\n';
+
+    if (table_join.strictness() == JoinStrictness::Asof)
+        settings.out << prefix << "ASOF inequality: " << toString(table_join.getAsofInequality()) << '\n';
+
+    if (!table_join.getClauses().empty())
+        settings.out << prefix << "Clauses: " << table_join.formatClauses(table_join.getClauses(), true /*short_format*/) << '\n';
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    for (const auto & [name, value] : describeJoinActions(join))
-        map.add(name, value);
+    const auto & table_join = join->getTableJoin();
+    map.add("Type", toString(table_join.kind()));
+    map.add("Strictness", toString(table_join.strictness()));
+    map.add("Algorithm", join->getName());
+
+    if (table_join.strictness() == JoinStrictness::Asof)
+        map.add("ASOF inequality", toString(table_join.getAsofInequality()));
+
+    if (!table_join.getClauses().empty())
+        map.add("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
 }
 
-void JoinStep::updateOutputStream()
+void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t idx)
 {
-    output_stream = DataStream
+    if (idx == 0)
     {
-        .header = JoiningTransform::transformHeader(input_streams[0].header, join),
-    };
+        input_streams = {new_input_stream_, input_streams.at(1)};
+        output_stream = DataStream
+        {
+            .header = JoiningTransform::transformHeader(new_input_stream_.header, join),
+        };
+    }
+    else
+    {
+        input_streams = {input_streams.at(0), new_input_stream_};
+    }
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -156,20 +161,6 @@ void FilledJoinStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
-}
-
-void FilledJoinStep::describeActions(FormatSettings & settings) const
-{
-    String prefix(settings.offset, ' ');
-
-    for (const auto & [name, value] : describeJoinActions(join))
-        settings.out << prefix << name << ": " << value << '\n';
-}
-
-void FilledJoinStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    for (const auto & [name, value] : describeJoinActions(join))
-        map.add(name, value);
 }
 
 }

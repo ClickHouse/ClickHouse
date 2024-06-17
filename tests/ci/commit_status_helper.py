@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
 
-import csv
-import json
-import logging
-import time
 from collections import defaultdict
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+import csv
+import logging
+import time
 
 from github import Github
+from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
-from github.GithubException import GithubException
-from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
+from github.PullRequest import PullRequest
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, CIConfig
-from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
-from lambda_shared_package.lambda_shared.pr import Labels
-from pr_info import PRInfo
+from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
+from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 from report import (
     ERROR,
     FAILURE,
     PENDING,
-    SUCCESS,
     StatusType,
+    SUCCESS,
     TestResult,
     TestResults,
-    get_status,
     get_worst_status,
 )
 from s3_helper import S3Helper
@@ -37,8 +33,9 @@ from upload_result_helper import upload_results
 
 RETRY = 5
 CommitStatuses = List[CommitStatus]
+MERGEABLE_NAME = "Mergeable Check"
 GH_REPO = None  # type: Optional[Repository]
-STATUS_FILE_PATH = Path(TEMP_PATH) / "status.json"
+CI_STATUS_NAME = "CI running"
 
 
 class RerunHelper:
@@ -64,6 +61,19 @@ class RerunHelper:
         return None
 
 
+def override_status(status: str, check_name: str, invert: bool = False) -> str:
+    test_config = CI_CONFIG.test_configs.get(check_name)
+    if test_config and test_config.force_tests:
+        return SUCCESS
+
+    if invert:
+        if status == SUCCESS:
+            return ERROR
+        return SUCCESS
+
+    return status
+
+
 def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
     for i in range(retry_count):
         try:
@@ -80,23 +90,22 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: StatusType,  # do not change it, it MUST be StatusType and nothing else
-    report_url: Optional[str] = None,
-    description: Optional[str] = None,
-    check_name: Optional[str] = None,
+    state: str,
+    report_url: Union[_NotSetType, str] = NotSet,
+    description: Union[_NotSetType, str] = NotSet,
+    check_name: Union[_NotSetType, str] = NotSet,
     pr_info: Optional[PRInfo] = None,
-    dump_to_file: bool = False,
-) -> CommitStatus:
+) -> None:
     """The parameters are given in the same order as for commit.create_status,
     if an optional parameter `pr_info` is given, the `set_status_comment` functions
     is invoked to add or update the comment with statuses overview"""
     for i in range(RETRY):
         try:
-            commit_status = commit.create_status(
+            commit.create_status(
                 state=state,
-                target_url=report_url if report_url is not None else NotSet,
-                description=description if description is not None else NotSet,
-                context=check_name if check_name is not None else NotSet,
+                target_url=report_url,
+                description=description,
+                context=check_name,
             )
             break
         except Exception as ex:
@@ -119,17 +128,6 @@ def post_commit_status(
 
         if not status_updated:
             logging.error("Failed to update the status comment, continue anyway")
-    if dump_to_file:
-        assert pr_info
-        CommitStatusData(
-            status=state,
-            description=description or "",
-            report_url=report_url or "",
-            sha=pr_info.sha,
-            pr_num=pr_info.number,
-        ).dump_status()
-
-    return commit_status
 
 
 STATUS_ICON_MAP = defaultdict(
@@ -147,11 +145,6 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
-
-    if pr_info.is_merge_queue:
-        # skip report creation for the MQ
-        return
-
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
@@ -160,16 +153,16 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     if not statuses:
         return
 
-    if not [status for status in statuses if status.context == StatusNames.CI]:
+    if not [status for status in statuses if status.context == CI_STATUS_NAME]:
         # This is the case, when some statuses already exist for the check,
-        # but not the StatusNames.CI. We should create it as pending.
+        # but not the CI_STATUS_NAME. We should create it as pending.
         # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
         post_commit_status(
             commit,
             PENDING,
             create_ci_report(pr_info, statuses),
             "The report for running CI",
-            StatusNames.CI,
+            CI_STATUS_NAME,
         )
 
     # We update the report in generate_status_comment function, so do it each
@@ -247,16 +240,9 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     hidden_table_rows = []  # type: List[str]
     for desc, gs in grouped_statuses.items():
         state = get_worst_state(gs)
-        state_text = f"{STATUS_ICON_MAP[state]} {state}"
-        # take the first target_url with the worst state
-        for status in gs:
-            if status.target_url and status.state == state:
-                state_text = f'<a href="{status.target_url}">{state_text}</a>'
-                break
-
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{state_text}</td></tr>\n"
+            f"<td>{STATUS_ICON_MAP[state]} {state}</td></tr>\n"
         )
         if state == SUCCESS:
             hidden_table_rows.append(table_row)
@@ -264,12 +250,6 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             visible_table_rows.append(table_row)
 
     result = [comment_body]
-
-    if visible_table_rows:
-        visible_table_rows.sort()
-        result.append(table_header)
-        result.extend(visible_table_rows)
-        result.append(table_footer)
 
     if hidden_table_rows:
         hidden_table_rows.sort()
@@ -279,10 +259,16 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         result.append(table_footer)
         result.append(details_footer)
 
+    if visible_table_rows:
+        visible_table_rows.sort()
+        result.append(table_header)
+        result.extend(visible_table_rows)
+        result.append(table_footer)
+
     return "".join(result)
 
 
-def get_worst_state(statuses: CommitStatuses) -> StatusType:
+def get_worst_state(statuses: CommitStatuses) -> str:
     return get_worst_status(status.state for status in statuses)
 
 
@@ -301,7 +287,7 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], StatusNames.CI
+        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI_STATUS_NAME
     )
 
 
@@ -309,73 +295,21 @@ def post_commit_status_to_file(
     file_path: Path, description: str, state: str, report_url: str
 ) -> None:
     if file_path.exists():
-        raise FileExistsError(f'File "{file_path}" already exists!')
+        raise Exception(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])
 
 
-@dataclass
-class CommitStatusData:
-    """
-    if u about to add/remove fields in this class be causious that it dumps/loads to/from files (see it's method)
-    - you might want to add default values for new fields so that it won't break with old files
-    """
-
-    status: str
-    report_url: str
-    description: str
-    sha: str = "deadbeaf"
-    pr_num: int = -1
-
-    @classmethod
-    def _filter_dict(cls, data: dict) -> Dict:
-        return {k: v for k, v in data.items() if k in cls.__annotations__.keys()}
-
-    @classmethod
-    def load_from_file(cls, file_path: Union[Path, str]):  # type: ignore
-        res = {}
-        with open(file_path, "r", encoding="utf-8") as json_file:
-            res = json.load(json_file)
-        return CommitStatusData(**cls._filter_dict(res))
-
-    @classmethod
-    def load_status(cls):  # type: ignore
-        return cls.load_from_file(STATUS_FILE_PATH)
-
-    @classmethod
-    def exist(cls) -> bool:
-        return STATUS_FILE_PATH.is_file()
-
-    def dump_status(self) -> None:
-        STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self.dump_to_file(STATUS_FILE_PATH)
-
-    def dump_to_file(self, file_path: Union[Path, str]) -> None:
-        file_path = Path(file_path) or STATUS_FILE_PATH
-        with open(file_path, "w", encoding="utf-8") as json_file:
-            json.dump(asdict(self), json_file)
-
-    def is_ok(self):
-        return self.status == SUCCESS
-
-    def is_failure(self):
-        return self.status == FAILURE
-
-    @staticmethod
-    def cleanup():
-        STATUS_FILE_PATH.unlink(missing_ok=True)
-
-
 def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
     """
     Squash statuses to latest state
-    1. context="first", state=SUCCESS, update_time=1
-    2. context="second", state=SUCCESS, update_time=2
-    3. context="first", stat=FAILURE, update_time=3
+    1. context="first", state="success", update_time=1
+    2. context="second", state="success", update_time=2
+    3. context="first", stat="failure", update_time=3
     =========>
-    1. context="second", state=SUCCESS
-    2. context="first", stat=FAILURE
+    1. context="second", state="success"
+    2. context="first", stat="failure"
     """
     filtered = {}
     for status in sorted(commit.get_statuses(), key=lambda x: x.updated_at):
@@ -395,18 +329,7 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     repo = get_repo(gh)
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
-        try:
-            pull_request.remove_from_labels(label)
-        except GithubException as exc:
-            if not (
-                exc.status == 404
-                and isinstance(exc.data, dict)
-                and exc.data.get("message", "") == "Label does not exist"
-            ):
-                raise
-            logging.warning(
-                "The label '%s' does not exist in PR #%s", pr_info.number, label
-            )
+        pull_request.remove_from_labels(label)
         pr_info.labels.remove(label)
 
 
@@ -427,139 +350,58 @@ def format_description(description: str) -> str:
 def set_mergeable_check(
     commit: Commit,
     description: str = "",
-    state: StatusType = SUCCESS,
-) -> CommitStatus:
-    report_url = ""
-    return post_commit_status(
-        commit,
-        state,
-        report_url,
-        format_description(description),
-        StatusNames.MERGEABLE,
+    state: StatusType = "success",
+) -> None:
+    commit.create_status(
+        context=MERGEABLE_NAME,
+        description=description,
+        state=state,
+        target_url=GITHUB_RUN_URL,
     )
 
 
-def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
-    "check if the check_name in REQUIRED_CHECKS and then trigger update"
+def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None:
     not_run = (
-        pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
-        or not CIConfig.is_required(check_name)
+        pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
+        or check_name not in REQUIRED_CHECKS
         or pr_info.release_pr
         or pr_info.number == 0
     )
-
     if not_run:
         # Let's avoid unnecessary work
         return
 
     logging.info("Update Mergeable Check by %s", check_name)
 
+    commit = get_commit(gh, pr_info.sha)
     statuses = get_commit_filtered_statuses(commit)
-    trigger_mergeable_check(commit, statuses)
 
-
-def trigger_mergeable_check(
-    commit: Commit,
-    statuses: CommitStatuses,
-    set_if_green: bool = False,
-    workflow_failed: bool = False,
-) -> StatusType:
-    """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
-        status for status in statuses if CIConfig.is_required(status.context)
+        status for status in statuses if status.context in REQUIRED_CHECKS
     ]
 
     mergeable_status = None
     for status in statuses:
-        if status.context == StatusNames.MERGEABLE:
+        if status.context == MERGEABLE_NAME:
             mergeable_status = status
             break
 
     success = []
     fail = []
-    pending = []
     for status in required_checks:
         if status.state == SUCCESS:
             success.append(status.context)
-        elif status.state == PENDING:
-            pending.append(status.context)
         else:
             fail.append(status.context)
 
-    state: StatusType = SUCCESS
-
     if fail:
         description = "failed: " + ", ".join(fail)
-        state = FAILURE
-    elif workflow_failed:
-        description = "check workflow failures"
-        state = FAILURE
-    elif pending:
-        description = "pending: " + ", ".join(pending)
-        state = PENDING
-    else:
-        # all good
-        description = ", ".join(success)
-
-    description = format_description(description)
-
-    if not set_if_green and state == SUCCESS:
-        # do not set green Mergeable Check status
-        pass
-    else:
+        description = format_description(description)
         if mergeable_status is None or mergeable_status.description != description:
-            set_mergeable_check(commit, description, state)
+            set_mergeable_check(commit, description, FAILURE)
+        return
 
-    return state
-
-
-def update_upstream_sync_status(
-    upstream_pr_number: int,
-    sync_pr_number: int,
-    gh: Github,
-    state: StatusType,
-    can_set_green_mergeable_status: bool = False,
-) -> None:
-    upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-    upstream_pr = upstream_repo.get_pull(upstream_pr_number)
-    sync_repo = gh.get_repo(GITHUB_REPOSITORY)
-    sync_pr = sync_repo.get_pull(sync_pr_number)
-    # Find the commit that is in both repos, upstream and cloud
-    sync_commits = sync_pr.get_commits().reversed
-    upstream_commits = upstream_pr.get_commits().reversed
-    # Github objects are compared by _url attribute. We can't compare them directly and
-    # should compare commits by SHA1
-    upstream_shas = [c.sha for c in upstream_commits]
-    logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
-    sync_shas = [c.sha for c in sync_commits]
-    logging.info("Commits in sync PR:\n %s", ", ".join(reversed(sync_shas)))
-
-    # find latest synced commit
-    last_synced_upstream_commit = None
-    for commit in upstream_commits:
-        if commit.sha in sync_shas:
-            last_synced_upstream_commit = commit
-            break
-
-    assert last_synced_upstream_commit
-
-    sync_status = get_status(state)
-    logging.info(
-        "Using commit %s to post the %s status `%s`: [%s]",
-        last_synced_upstream_commit.sha,
-        sync_status,
-        StatusNames.SYNC,
-        "",
-    )
-    post_commit_status(
-        last_synced_upstream_commit,
-        sync_status,
-        "",
-        "",
-        StatusNames.SYNC,
-    )
-    trigger_mergeable_check(
-        last_synced_upstream_commit,
-        get_commit_filtered_statuses(last_synced_upstream_commit),
-        set_if_green=can_set_green_mergeable_status,
-    )
+    description = ", ".join(success)
+    description = format_description(description)
+    if mergeable_status is None or mergeable_status.description != description:
+        set_mergeable_check(commit, description)

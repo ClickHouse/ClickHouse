@@ -1,1 +1,1 @@
-SELECT caseWithExpr(arrayReduce(NULL, []), []); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT caseWithExpr(arrayReduce(NULL, []), []); -- { serverError BAD_ARGUMENTS }

@@ -25,6 +25,4 @@
             </shard>
         </test_cluster>
     </remote_servers>
-
-    <allow_zookeeper_write>1</allow_zookeeper_write>
 </clickhouse>

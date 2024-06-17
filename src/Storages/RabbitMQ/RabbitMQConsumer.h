@@ -32,14 +32,13 @@ public:
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        LoggerPtr log_,
+        Poco::Logger * log_,
         uint32_t queue_size_);
 
     struct CommitInfo
     {
         UInt64 delivery_tag = 0;
         String channel_id;
-        std::vector<UInt64> failed_delivery_tags;
     };
 
     struct MessageData
@@ -92,13 +91,13 @@ private:
     const String channel_base;
     const size_t channel_id_base;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     std::atomic<bool> stopped;
 
     String channel_id;
     UInt64 channel_id_counter = 0;
 
-    enum class State : uint8_t
+    enum class State
     {
         NONE,
         INITIALIZING,
@@ -111,7 +110,7 @@ private:
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
 
-    UInt64 last_commited_delivery_tag = 0;
+    UInt64 last_commited_delivery_tag;
 
     std::condition_variable cv;
     std::mutex mutex;

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 IFS=$'\t'

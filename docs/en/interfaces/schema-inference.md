@@ -13,7 +13,7 @@ can control it.
 
 Schema inference is used when ClickHouse needs to read the data in a specific data format and the structure is unknown.
 
-## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md).
+## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md).
 
 These table functions have the optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -55,7 +55,7 @@ DESCRIBE file('hobbies.jsonl')
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md)
+## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md)
 
 If the list of columns is not specified in `CREATE TABLE` query, the structure of the table will be inferred automatically from the data.
 
@@ -389,25 +389,9 @@ DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Named tuples:
+Tuples:
 
-When setting `input_format_json_try_infer_named_tuples_from_objects` is enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
-The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
-
-```sql
-SET input_format_json_try_infer_named_tuples_from_objects = 1;
-DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
-```
-
-```response
-┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
-└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-Unnamed Tuples:
-
-In JSON formats we treat Arrays with elements of different types as Unnamed Tuples.
+In JSON formats we treat Arrays with elements of different types as Tuples.
 ```sql
 DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 ```
@@ -434,10 +418,7 @@ DESC format(JSONEachRow, $$
 Maps:
 
 In JSON we can read objects with values of the same type as Map type.
-Note: it will work only when settings `input_format_json_read_objects_as_strings` and `input_format_json_try_infer_named_tuples_from_objects` are disabled.
-
 ```sql
-SET input_format_json_read_objects_as_strings = 0, input_format_json_try_infer_named_tuples_from_objects = 0;
 DESC format(JSONEachRow, '{"map" : {"key1" : 42, "key2" : 24, "key3" : 4}}')
 ```
 ```response
@@ -467,22 +448,14 @@ Nested complex types:
 DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}]}')
 ```
 ```response
-┌─name──┬─type─────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ value │ Tuple(Array(Array(Nullable(String))), Tuple(key1 Nullable(Int64), key2 Nullable(Int64))) │              │                    │         │                  │                │
-└───────┴──────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name──┬─type───────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Tuple(Array(Array(Nullable(Int64))), Map(String, Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-If ClickHouse cannot determine the type for some key, because the data contains only nulls/empty objects/empty arrays, type `String` will be used if setting `input_format_json_infer_incomplete_types_as_strings` is enabled or an exception will be thrown otherwise:
+If ClickHouse cannot determine the type, because the data contains only nulls, an exception will be thrown:
 ```sql
-DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 1;
-```
-```response
-┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ arr  │ Array(Nullable(String)) │              │                    │         │                  │                │
-└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-```sql
-DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 0;
+DESC format(JSONEachRow, '{"arr" : [null, null]}')
 ```
 ```response
 Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
@@ -493,11 +466,31 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 
 #### JSON settings {#json-settings}
 
+##### input_format_json_read_objects_as_strings
+
+Enabling this setting allows reading nested JSON objects as strings.
+This setting can be used to read nested JSON objects without using JSON object type.
+
+This setting is enabled by default.
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+DESC format(JSONEachRow, $$
+                             {"obj" : {"key1" : 42, "key2" : [1,2,3,4]}}
+                             {"obj" : {"key3" : {"nested_key" : 1}}}
+                         $$)
+```
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
 ##### input_format_json_try_infer_numbers_from_strings
 
 Enabling this setting allows inferring numbers from string values.
 
-This setting is disabled by default.
+This setting is enabled by default.
 
 **Example:**
 
@@ -514,111 +507,11 @@ DESC format(JSONEachRow, $$
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_try_infer_named_tuples_from_objects
-
-Enabling this setting allows inferring named Tuples from JSON objects. The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
-It can be useful when JSON data is not sparse so the sample of data will contain all possible object keys.
-
-This setting is enabled by default.
-
-**Example**
-
-```sql
-SET input_format_json_try_infer_named_tuples_from_objects = 1;
-DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
-```
-
-Result:
-
-```
-┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
-└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-```sql
-SET input_format_json_try_infer_named_tuples_from_objects = 1;
-DESC format(JSONEachRow, '{"array" : [{"a" : 42, "b" : "Hello"}, {}, {"c" : [1,2,3]}, {"d" : "2020-01-01"}]}')
-```
-
-Result:
-
-```
-┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
-└───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
-
-Enabling this setting allows to use String type for ambiguous paths during named tuples inference from JSON objects (when `input_format_json_try_infer_named_tuples_from_objects` is enabled) instead of an exception.
-It allows to read JSON objects as named Tuples even if there are ambiguous paths.
-
-Disabled by default.
-
-**Examples**
-
-With disabled setting:
-```sql
-SET input_format_json_try_infer_named_tuples_from_objects = 1;
-SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 0;
-DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
-```
-Result:
-
-```text
-Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
-Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
-You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
-```
-
-With enabled setting:
-```sql
-SET input_format_json_try_infer_named_tuples_from_objects = 1;
-SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 1;
-DESC format(JSONEachRow, '{"obj" : "a" : 42}, {"obj" : {"a" : {"b" : "Hello"}}}');
-SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
-```
-
-Result:
-```text
-┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
-└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-┌─obj─────────────────┐
-│ ('42')              │
-│ ('{"b" : "Hello"}') │
-└─────────────────────┘
-```
-
-##### input_format_json_read_objects_as_strings
-
-Enabling this setting allows reading nested JSON objects as strings.
-This setting can be used to read nested JSON objects without using JSON object type.
-
-This setting is enabled by default.
-
-Note: enabling this setting will take effect only if setting `input_format_json_try_infer_named_tuples_from_objects` is disabled.
-
-```sql
-SET input_format_json_read_objects_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 0;
-DESC format(JSONEachRow, $$
-                             {"obj" : {"key1" : 42, "key2" : [1,2,3,4]}}
-                             {"obj" : {"key3" : {"nested_key" : 1}}}
-                         $$)
-```
-```response
-┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Nullable(String) │              │                    │         │                  │                │
-└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-
 ##### input_format_json_read_numbers_as_strings
 
 Enabling this setting allows reading numeric values as strings.
 
-This setting is enabled by default.
+This setting is disabled by default.
 
 **Example**
 
@@ -654,69 +547,6 @@ DESC format(JSONEachRow, $$
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-##### input_format_json_read_bools_as_strings
-
-Enabling this setting allows reading Bool values as strings.
-
-This setting is enabled by default.
-
-**Example:**
-
-```sql
-SET input_format_json_read_bools_as_strings = 1;
-DESC format(JSONEachRow, $$
-                                {"value" : true}
-                                {"value" : "Hello, World"}
-                         $$)
-```
-```response
-┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ value │ Nullable(String) │              │                    │         │                  │                │
-└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-##### input_format_json_read_arrays_as_strings
-
-Enabling this setting allows reading JSON array values as strings.
-
-This setting is enabled by default.
-
-**Example**
-
-```sql
-SET input_format_json_read_arrays_as_strings = 1;
-SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
-```
-```response
-┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
-│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
-└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
-```
-
-##### input_format_json_infer_incomplete_types_as_strings
-
-Enabling this setting allows to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
-In JSON formats any value can be read as String if all corresponding settings are enabled (they are all enabled by default), and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types.
-
-Example:
-
-```sql
-SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
-DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
-SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
-```
-
-Result:
-```
-┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
-└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-┌─obj────────────────────────────┐
-│ ([1,2,3],'hello',NULL,'{}',[]) │
-└────────────────────────────────┘
 ```
 
 ### CSV {#csv}
@@ -894,27 +724,6 @@ $$)
 │ Hello        │ World         │
 │ World        │ Hello         │
 └──────────────┴───────────────┘
-```
-
-#### CSV settings {#csv-settings}
-
-##### input_format_csv_try_infer_numbers_from_strings
-
-Enabling this setting allows inferring numbers from string values.
-
-This setting is disabled by default.
-
-**Example:**
-
-```sql
-SET input_format_json_try_infer_numbers_from_strings = 1;
-DESC format(CSV, '"42","42.42"');
-```
-```reponse
-┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
-│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
-└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 ### TSV/TSKV {#tsv-tskv}
@@ -1103,7 +912,7 @@ $$)
 └──────────────┴───────────────┘
 ```
 
-### Values {#values}
+## Values {#values}
 
 In Values format ClickHouse extracts column value from the row and then parses it using
 the recursive parser similar to how literals are parsed.
@@ -1596,28 +1405,6 @@ DESC format(JSONEachRow, $$
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_exponent_floats
-
-If enabled, ClickHouse will try to infer floats in exponential form for text formats (except JSON where numbers in exponential form are always inferred).
-
-Disabled by default.
-
-**Example**
-
-```sql
-SET input_format_try_infer_exponent_floats = 1;
-DESC format(CSV,
-$$1.1E10
-2.3e-12
-42E00
-$$)
-```
-```response
-┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ c1   │ Nullable(Float64) │              │                    │         │                  │                │
-└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
 ## Self describing formats {#self-describing-formats}
 
 Self-describing formats contain information about the structure of the data in the data itself,
@@ -1951,145 +1738,3 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 │ json │ Object('json') │              │                    │         │                  │                │
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
-## Schema inference modes {#schema-inference-modes}
-
-Schema inference from the set of data files can work in 2 different modes: `default` and `union`.
-The mode is controlled by the setting `schema_inference_mode`. 
-
-### Default mode {#default-schema-inference-mode}
-
-In default mode, ClickHouse assumes that all files have the same schema and tries to infer the schema by reading files one by one until it succeeds.
-
-Example:
-
-Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
-
-`data1.jsonl`:
-```json
-{"field1" :  1, "field2" :  null}
-{"field1" :  2, "field2" :  null}
-{"field1" :  3, "field2" :  null}
-```
-
-`data2.jsonl`:
-```json
-{"field1" :  4, "field2" :  "Data4"}
-{"field1" :  5, "field2" :  "Data5"}
-{"field1" :  6, "field2" :  "Data5"}
-```
-
-`data3.jsonl`:
-```json
-{"field1" :  7, "field2" :  "Data7", "field3" :  [1, 2, 3]}
-{"field1" :  8, "field2" :  "Data8", "field3" :  [4, 5, 6]}
-{"field1" :  9, "field2" :  "Data9", "field3" :  [7, 8, 9]}
-```
-
-Let's try to use schema inference on these 3 files:
-```sql
-:) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='default'
-```
-
-Result:
-```text
-┌─name───┬─type─────────────┐
-│ field1 │ Nullable(Int64)  │
-│ field2 │ Nullable(String) │
-└────────┴──────────────────┘
-```
-
-As we can see, we don't have `field3` from file `data3.jsonl`. 
-It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
-and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
-
-### Union mode {#default-schema-inference-mode}
-
-In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
-
-Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
-
-`data1.jsonl`:
-```json
-{"field1" :  1}
-{"field1" :  2}
-{"field1" :  3}
-```
-
-`data2.jsonl`:
-```json
-{"field2" :  "Data4"}
-{"field2" :  "Data5"}
-{"field2" :  "Data5"}
-```
-
-`data3.jsonl`:
-```json
-{"field3" :  [1, 2, 3]}
-{"field3" :  [4, 5, 6]}
-{"field3" :  [7, 8, 9]}
-```
-
-Let's try to use schema inference on these 3 files:
-```sql
-:) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='union'
-```
-
-Result:
-```text
-┌─name───┬─type───────────────────┐
-│ field1 │ Nullable(Int64)        │
-│ field2 │ Nullable(String)       │
-│ field3 │ Array(Nullable(Int64)) │
-└────────┴────────────────────────┘
-```
-
-As we can see, we have all fields from all files.
-
-Note:
-- As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
-- If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
-- If you have a lot of files, reading schema from all of them can take a lot of time.
-
-
-## Automatic format detection {#automatic-format-detection}
-
-If data format is not specified and cannot be determined by the file extension, ClickHouse will try to detect the file format by its content.
-
-**Examples:**
-
-Let's say we have `data` with the following content:
-```
-"a","b"
-1,"Data1"
-2,"Data2"
-3,"Data3"
-```
-
-We can inspect and query this file without specifying format or structure:
-```sql
-:) desc file(data);
-```
-
-```text
-┌─name─┬─type─────────────┐
-│ a    │ Nullable(Int64)  │
-│ b    │ Nullable(String) │
-└──────┴──────────────────┘
-```
-
-```sql
-:) select * from file(data);
-```
-
-```text
-┌─a─┬─b─────┐
-│ 1 │ Data1 │
-│ 2 │ Data2 │
-│ 3 │ Data3 │
-└───┴───────┘
-```
-
-:::note
-ClickHouse can detect only some subset of formats and this detection takes some time, it's always better to specify the format explicitly.
-:::

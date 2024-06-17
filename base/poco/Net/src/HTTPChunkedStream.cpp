@@ -49,12 +49,10 @@ HTTPChunkedStreamBuf::~HTTPChunkedStreamBuf()
 
 void HTTPChunkedStreamBuf::close()
 {
-	if (_mode & std::ios::out && _chunk != std::char_traits<char>::eof())
+	if (_mode & std::ios::out)
 	{
 		sync();
 		_session.write("0\r\n\r\n", 5);
-
-        _chunk = std::char_traits<char>::eof();
 	}
 }
 

@@ -44,13 +44,6 @@
 
     <substitutions>
         <substitution>
-            <name>num_unique_sessions</name>
-            <values>
-                <value>1000</value>
-                <value>1000000</value>
-            </values>
-        </substitution>
-        <substitution>
             <name>num_rows</name>
             <values>
                 <value>1000000</value>
@@ -63,15 +56,15 @@
         FROM
         (
             SELECT
-                (number % {num_unique_sessions}) AS visitor_id,
-                number AS id
+                number AS id,
+                number AS visitor_id
             FROM system.numbers
             LIMIT {num_rows}
         ) AS sessions
         ASOF LEFT JOIN
         (
             SELECT
-                (number % {num_unique_sessions}) AS visitor_id,
+                number AS visitor_id,
                 number AS starting_session_id
             FROM system.numbers
             LIMIT {num_rows}

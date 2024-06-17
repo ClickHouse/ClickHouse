@@ -58,6 +58,7 @@ private:
 
     void cancelWithExceptionHandling(CancelFunc && cancel_func);
 
+private:
     QueryPipeline & pipeline;
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;

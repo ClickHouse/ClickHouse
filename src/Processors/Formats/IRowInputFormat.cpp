@@ -73,7 +73,7 @@ void IRowInputFormat::logError()
         diagnostic = "Cannot get diagnostic: " + exception.message();
         raw_data = "Cannot get raw data: " + exception.message();
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
         /// Error while trying to obtain verbose diagnostic. Ok to ignore.
     }
@@ -85,7 +85,7 @@ void IRowInputFormat::logError()
     errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
-Chunk IRowInputFormat::read()
+Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
     {
@@ -95,6 +95,10 @@ Chunk IRowInputFormat::read()
         }
         catch (Exception & e)
         {
+            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+            if (!file_name.empty())
+                e.addMessage(fmt::format("(in file/uri {})", file_name));
+
             e.addMessage("(while reading header)");
             throw;
         }
@@ -126,10 +130,12 @@ Chunk IRowInputFormat::read()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
+        for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
         {
             try
             {
+                ++total_rows;
+
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -143,8 +149,6 @@ Chunk IRowInputFormat::read()
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
-
-                ++total_rows;
 
                 /// Some formats may read row AND say the read is finished.
                 /// For such a case, get the number or rows from first column.
@@ -160,8 +164,6 @@ Chunk IRowInputFormat::read()
             }
             catch (Exception & e)
             {
-                ++total_rows;
-
                 /// Logic for possible skipping of errors.
 
                 if (!isParseError(e.code()))
@@ -204,6 +206,27 @@ Chunk IRowInputFormat::read()
             }
         }
     }
+    catch (ParsingException & e)
+    {
+        String verbose_diagnostic;
+        try
+        {
+            verbose_diagnostic = getDiagnosticInfo();
+        }
+        catch (const Exception & exception)
+        {
+            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
+        }
+        catch (...)
+        {
+            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+        }
+
+        e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
+        e.setLineNumber(static_cast<int>(total_rows));
+        e.addMessage(verbose_diagnostic);
+        throw;
+    }
     catch (Exception & e)
     {
         if (!isParseError(e.code()))
@@ -218,10 +241,14 @@ Chunk IRowInputFormat::read()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
+
+        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+        if (!file_name.empty())
+            e.addMessage(fmt::format("(in file/uri {})", file_name));
 
         e.addMessage(fmt::format("(at row {})\n", total_rows));
         e.addMessage(verbose_diagnostic);
@@ -232,7 +259,7 @@ Chunk IRowInputFormat::read()
     {
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
-            LoggerPtr log = getLogger("IRowInputFormat");
+            Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
             LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 

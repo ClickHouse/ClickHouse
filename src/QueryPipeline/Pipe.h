@@ -69,12 +69,7 @@ public:
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
-    void addTransform(
-        ProcessorPtr transform,
-        InputPort * totals_in, InputPort * extremes_in,
-        OutputPort * totals_out, OutputPort * extremes_out);
-
-    enum class StreamType : uint8_t
+    enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
         Totals,  /// Stream for totals. No more than one.

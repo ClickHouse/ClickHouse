@@ -7,8 +7,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/ProcessList.h>
-
 #include <base/hex.h>
 
 
@@ -27,7 +25,7 @@ namespace
         return std::nullopt;
     }
 
-    enum class CheckBackupResult : uint8_t
+    enum class CheckBackupResult
     {
         HasPrefix,
         HasFull,
@@ -91,8 +89,6 @@ String BackupFileInfo::describe() const
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
-    if (!reference_target.empty())
-        result += fmt::format("reference_target: {};\n", reference_target);
     return result;
 }
 
@@ -102,20 +98,12 @@ BackupFileInfo buildFileInfoForBackupEntry(
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
-    LoggerPtr log)
+    Poco::Logger * log)
 {
     auto adjusted_path = removeLeadingSlash(file_name);
 
     BackupFileInfo info;
     info.file_name = adjusted_path;
-
-    /// If it's a "reference" just set the target to a concrete file
-    if (backup_entry->isReference())
-    {
-        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
-        return info;
-    }
-
     info.size = backup_entry->getSize();
     info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
@@ -129,7 +117,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     }
 
     if (!log)
-        log = getLogger("FileInfoFromBackupEntry");
+        log = &Poco::Logger::get("FileInfoFromBackupEntry");
 
     std::optional<SizeAndChecksum> base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
 
@@ -205,44 +193,75 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool)
 {
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    std::atomic_bool failed = false;
+    size_t num_active_jobs = 0;
+    std::mutex mutex;
+    std::condition_variable event;
+    std::exception_ptr exception;
 
-    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
+    auto thread_group = CurrentThread::getGroup();
+    Poco::Logger * log = &Poco::Logger::get("FileInfosFromBackupEntries");
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        if (failed)
-            break;
-
-        runner([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
         {
-            if (failed)
-                return;
+            std::lock_guard lock{mutex};
+            if (exception)
+                break;
+            ++num_active_jobs;
+        }
+
+        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log](bool async)
+        {
+            SCOPE_EXIT_SAFE({
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+                if (async)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            });
+
             try
             {
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                if (process_list_element)
-                    process_list_element->checkTimeLimit();
+                if (async && thread_group)
+                    CurrentThread::attachToGroup(thread_group);
+
+                if (async)
+                    setThreadName("BackupWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }
             catch (...)
             {
-                failed = true;
-                throw;
+                std::lock_guard lock{mutex};
+                if (!exception)
+                    exception = std::current_exception();
             }
-        });
+        };
+
+        if (!thread_pool.trySchedule([job] { job(true); }))
+            job(false);
     }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+        if (exception)
+            std::rethrow_exception(exception);
+    }
 
     return infos;
 }

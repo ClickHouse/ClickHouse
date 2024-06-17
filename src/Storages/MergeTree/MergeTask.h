@@ -15,7 +15,6 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -24,7 +23,13 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
+
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Common/filesystemHelpers.h>
+
 
 
 namespace DB
@@ -114,13 +119,6 @@ public:
         return global_ctx->promise.get_future();
     }
 
-    MergeTreeData::MutableDataPartPtr getUnfinishedPart()
-    {
-        if (global_ctx)
-            return global_ctx->new_data_part;
-        return nullptr;
-    }
-
     bool execute();
 
 private:
@@ -165,13 +163,14 @@ private:
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
+        Names gathering_column_names{};
+        Names merging_column_names{};
         NamesAndTypesList storage_columns{};
+        Names all_column_names{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
 
-        IndicesDescription merging_skip_indexes;
-        std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
-
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
+        size_t gathering_column_names_size{0};
 
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
@@ -228,10 +227,11 @@ private:
         size_t sum_compressed_bytes_upper_bound{0};
         bool blocks_are_granules_size{false};
 
-        LoggerPtr log{getLogger("MergeTask::PrepareStage")};
+        Poco::Logger * log{&Poco::Logger::get("MergeTask::PrepareStage")};
 
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        size_t column_num_for_vertical_merge{0};
         bool need_sync{false};
     };
 
@@ -245,28 +245,25 @@ private:
         bool prepare();
         bool executeImpl();
 
-        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 2>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<std::function<bool()>, 2>;
 
-        const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
+        ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
-            &ExecuteAndFinalizeHorizontalPart::prepare,
-            &ExecuteAndFinalizeHorizontalPart::executeImpl
+            [this] () { return prepare(); },
+            [this] () { return executeImpl(); }
         };
 
-        ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        ExecuteAndFinalizeHorizontalPartSubtasks::iterator subtasks_iterator = subtasks.begin();
 
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
-        void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<ExecuteAndFinalizeHorizontalPartRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
-
         StageRuntimeContextPtr getContextForNextStage() override;
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
@@ -285,11 +282,12 @@ private:
         CompressionCodecPtr compression_codec;
         TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        size_t column_num_for_vertical_merge{0};
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
 
-        enum class State : uint8_t
+        enum class State
         {
             NEED_PREPARE,
             NEED_EXECUTE,
@@ -299,9 +297,7 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::optional<Pipe> prepared_pipe;
         size_t max_delayed_streams = 0;
-        bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
@@ -326,23 +322,20 @@ private:
         bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
-        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
+        using VerticalMergeStageSubtasks = std::array<std::function<bool()>, 3>;
 
-        const VerticalMergeStageSubtasks subtasks
+        VerticalMergeStageSubtasks subtasks
         {
-            &VerticalMergeStage::prepareVerticalMergeForAllColumns,
-            &VerticalMergeStage::executeVerticalMergeForAllColumns,
-            &VerticalMergeStage::finalizeVerticalMergeForAllColumns
+            [this] () { return prepareVerticalMergeForAllColumns(); },
+            [this] () { return executeVerticalMergeForAllColumns(); },
+            [this] () { return finalizeVerticalMergeForAllColumns(); }
         };
 
-        VerticalMergeStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        VerticalMergeStageSubtasks::iterator subtasks_iterator = subtasks.begin();
 
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
-
-        Pipe createPipeForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -360,7 +353,7 @@ private:
         MergeTasks tasks_for_projections;
         MergeTasks::iterator projections_iterator;
 
-        LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
+        Poco::Logger * log{&Poco::Logger::get("MergeTask::MergeProjectionsStage")};
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
@@ -379,17 +372,16 @@ private:
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
-        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using MergeProjectionsStageSubtasks = std::array<bool(MergeProjectionsStage::*)()const, 3>;
+        using MergeProjectionsStageSubtasks = std::array<std::function<bool()>, 3>;
 
-        const MergeProjectionsStageSubtasks subtasks
+        MergeProjectionsStageSubtasks subtasks
         {
-            &MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections,
-            &MergeProjectionsStage::executeProjections,
-            &MergeProjectionsStage::finalizeProjectionsAndWholeMerge
+            [this] () { return mergeMinMaxIndexAndPrepareProjections(); },
+            [this] () { return executeProjections(); },
+            [this] () { return finalizeProjectionsAndWholeMerge(); }
         };
 
-        MergeProjectionsStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        MergeProjectionsStageSubtasks::iterator subtasks_iterator = subtasks.begin();
 
         MergeProjectionsRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -399,26 +391,15 @@ private:
 
     using Stages = std::array<StagePtr, 3>;
 
-    const Stages stages
+    Stages stages
     {
         std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
         std::make_shared<VerticalMergeStage>(),
         std::make_shared<MergeProjectionsStage>()
     };
 
-    Stages::const_iterator stages_iterator = stages.begin();
+    Stages::iterator stages_iterator = stages.begin();
 
-    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
-
-    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
-
-    static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };
 
 /// FIXME

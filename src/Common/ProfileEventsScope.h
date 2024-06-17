@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Common/ProfileEvents.h>
-
-#include <boost/noncopyable.hpp>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
