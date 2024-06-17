@@ -142,6 +142,34 @@ SELECT readWKTPoint('POINT (1.2 3.4)');
 (1.2,3.4)
 ```
 
+## readWKTLineString
+
+Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax
+
+```sql
+readWKTLineString(wkt_string)
+```
+
+### Arguments
+
+- `wkt_string`: The input WKT string representing a LineString geometry.
+
+### Returned value
+
+The function returns a ClickHouse internal representation of the linestring geometry.
+
+### Example
+
+```sql
+SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');
+```
+
+```response
+[(1,1),(2,2),(3,3),(1,1)]
+```
+
 ## readWKTRing
 
 Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
@@ -163,7 +191,7 @@ The function returns a ClickHouse internal representation of the ring (closed li
 ### Example
 
 ```sql
-SELECT readWKTRing('LINESTRING (1 1, 2 2, 3 3, 1 1)');
+SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');
 ```
 
 ```response

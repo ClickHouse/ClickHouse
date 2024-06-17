@@ -21,11 +21,17 @@ class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterWide(
-        const MergeTreeMutableDataPartPtr & data_part,
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
+        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -33,14 +39,14 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) final;
+    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove);
+    void fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove);
     void finishDataSerialization(bool sync);
 
     /// Write data of one column.
