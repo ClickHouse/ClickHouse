@@ -52,7 +52,7 @@ struct FixedHashTableCell
 template <typename Cell>
 struct FixedHashTableStoredSize
 {
-    size_t m_size = 0;
+    std::atomic<size_t> m_size = 0;
 
     size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
     bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size == 0; }
@@ -113,9 +113,9 @@ struct FixedHashTableCalculatedSize
 template <typename Key, typename Cell, typename Size, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
+protected:
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
 
-protected:
     friend class const_iterator;
     friend class iterator;
     friend class Reader;
@@ -163,6 +163,8 @@ protected:
 
         bool operator==(const iterator_base & rhs) const { return ptr == rhs.ptr; }
         bool operator!=(const iterator_base & rhs) const { return ptr != rhs.ptr; }
+        bool operator<(const iterator_base & rhs) const { return ptr < rhs.ptr; }
+        bool operator>(const iterator_base & rhs) const { return ptr > rhs.ptr; }
 
         Derived & operator++()
         {
@@ -334,6 +336,32 @@ public:
     iterator end()
     {
         return iterator(this, buf ? buf + NUM_CELLS : buf);
+    }
+
+    const_iterator getIteratorWithOffset(size_t offset)
+    {
+        if (!buf)
+            return cend();
+
+        Cell * ptr = std::min(buf + offset, buf + NUM_CELLS);
+
+        return const_iterator(this, ptr);
+    }
+
+    const_iterator getIteratorWithOffsetAndLimit(size_t offset, size_t limit)
+    {
+        if (!buf)
+            return cend();
+
+        Cell * ptr = buf;
+        auto buf_end = std::min(buf + offset + limit, buf + NUM_CELLS);
+
+        ptr = std::min(buf + offset, buf + NUM_CELLS);
+
+        while (ptr < buf_end && ptr->isZero(*this))
+            ++ptr;
+
+        return const_iterator(this, ptr);
     }
 
 
