@@ -24,6 +24,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
@@ -198,6 +199,7 @@ MySQLHandler::~MySQLHandler() = default;
 void MySQLHandler::run()
 {
     setThreadName("MySQLHandler");
+    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });

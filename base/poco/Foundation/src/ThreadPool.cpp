@@ -20,15 +20,12 @@
 #include "Poco/ErrorHandler.h"
 #include <sstream>
 #include <ctime>
-#if USE_CLICKHOUSE_THREADS
-#include <Common/ThreadPool.h>
-#endif
 
 
 namespace Poco {
 
 
-class PooledThread : public Runnable
+class PooledThread: public Runnable
 {
 public:
 	PooledThread(const std::string& name, int stackSize = POCO_THREAD_STACK_SIZE);
@@ -49,11 +46,7 @@ private:
 	volatile std::time_t _idleTime;
 	Runnable*            _pTarget;
 	std::string          _name;
-#if USE_CLICKHOUSE_THREADS
-	ThreadFromGlobalPool _thread;
-#else
 	Thread               _thread;
-#endif
 	Event                _targetReady;
 	Event                _targetCompleted;
 	Event                _started;
@@ -61,20 +54,16 @@ private:
 };
 
 
-PooledThread::PooledThread(const std::string& name, [[maybe_unused]] int stackSize):
-	_idle(true),
-	_idleTime(0),
-	_pTarget(0),
-	_name(name),
-#if !USE_CLICKHOUSE_THREADS
+PooledThread::PooledThread(const std::string& name, int stackSize): 
+	_idle(true), 
+	_idleTime(0), 
+	_pTarget(0), 
+	_name(name), 
 	_thread(name),
-#endif
 	_targetCompleted(false)
 {
 	poco_assert_dbg (stackSize >= 0);
-#if !USE_CLICKHOUSE_THREADS
 	_thread.setStackSize(stackSize);
-#endif
 	_idleTime = std::time(NULL);
 }
 
@@ -86,32 +75,24 @@ PooledThread::~PooledThread()
 
 void PooledThread::start()
 {
-#if USE_CLICKHOUSE_THREADS
-	_thread = ThreadFromGlobalPool([this]() { run(); });
-#else
 	_thread.start(*this);
-#endif
 	_started.wait();
 }
 
 
-void PooledThread::start([[maybe_unused]] Thread::Priority priority, Runnable& target)
+void PooledThread::start(Thread::Priority priority, Runnable& target)
 {
 	FastMutex::ScopedLock lock(_mutex);
-
+	
 	poco_assert (_pTarget == 0);
 
 	_pTarget = &target;
-
-#if !USE_CLICKHOUSE_THREADS
 	_thread.setPriority(priority);
-#endif
-
 	_targetReady.set();
 }
 
 
-void PooledThread::start([[maybe_unused]] Thread::Priority priority, Runnable& target, const std::string& name)
+void PooledThread::start(Thread::Priority priority, Runnable& target, const std::string& name)
 {
 	FastMutex::ScopedLock lock(_mutex);
 
@@ -126,12 +107,9 @@ void PooledThread::start([[maybe_unused]] Thread::Priority priority, Runnable& t
 		fullName.append(_name);
 		fullName.append(")");
 	}
-
-#if !USE_CLICKHOUSE_THREADS
 	_thread.setName(fullName);
 	_thread.setPriority(priority);
-#endif
-
+	
 	poco_assert (_pTarget == 0);
 
 	_pTarget = &target;
@@ -167,7 +145,7 @@ void PooledThread::join()
 void PooledThread::activate()
 {
 	FastMutex::ScopedLock lock(_mutex);
-
+	
 	poco_assert (_idle);
 	_idle = false;
 	_targetCompleted.reset();
@@ -176,30 +154,21 @@ void PooledThread::activate()
 
 void PooledThread::release()
 {
+	const long JOIN_TIMEOUT = 10000;
+	
 	_mutex.lock();
 	_pTarget = 0;
 	_mutex.unlock();
-
 	// In case of a statically allocated thread pool (such
 	// as the default thread pool), Windows may have already
 	// terminated the thread before we got here.
-#if USE_CLICKHOUSE_THREADS
-	if (_thread.joinable())
-#else
 	if (_thread.isRunning())
-#endif
 		_targetReady.set();
 
-#if USE_CLICKHOUSE_THREADS
-	if (_thread.joinable())
-		_thread.join();
-#else
-	const long JOIN_TIMEOUT = 10000;
 	if (_thread.tryJoin(JOIN_TIMEOUT))
 	{
 		delete this;
 	}
-#endif
 }
 
 
@@ -236,10 +205,8 @@ void PooledThread::run()
 			_idle     = true;
 			_targetCompleted.set();
 			ThreadLocalStorage::clear();
-#if !USE_CLICKHOUSE_THREADS
 			_thread.setName(_name);
 			_thread.setPriority(Thread::PRIO_NORMAL);
-#endif
 		}
 		else
 		{
@@ -253,9 +220,9 @@ void PooledThread::run()
 ThreadPool::ThreadPool(int minCapacity,
 	int maxCapacity,
 	int idleTime,
-	int stackSize):
-	_minCapacity(minCapacity),
-	_maxCapacity(maxCapacity),
+	int stackSize): 
+	_minCapacity(minCapacity), 
+	_maxCapacity(maxCapacity), 
 	_idleTime(idleTime),
 	_serial(0),
 	_age(0),
@@ -278,8 +245,8 @@ ThreadPool::ThreadPool(const std::string& name,
 	int idleTime,
 	int stackSize):
 	_name(name),
-	_minCapacity(minCapacity),
-	_maxCapacity(maxCapacity),
+	_minCapacity(minCapacity), 
+	_maxCapacity(maxCapacity), 
 	_idleTime(idleTime),
 	_serial(0),
 	_age(0),
@@ -426,15 +393,15 @@ void ThreadPool::housekeep()
 	ThreadVec activeThreads;
 	idleThreads.reserve(_threads.size());
 	activeThreads.reserve(_threads.size());
-
+	
 	for (ThreadVec::iterator it = _threads.begin(); it != _threads.end(); ++it)
 	{
 		if ((*it)->idle())
 		{
 			if ((*it)->idleTime() < _idleTime)
 				idleThreads.push_back(*it);
-			else
-				expiredThreads.push_back(*it);
+			else 
+				expiredThreads.push_back(*it);	
 		}
 		else activeThreads.push_back(*it);
 	}
@@ -514,7 +481,7 @@ public:
 	ThreadPool* pool()
 	{
 		FastMutex::ScopedLock lock(_mutex);
-
+		
 		if (!_pPool)
 		{
 			_pPool = new ThreadPool("default");
@@ -523,7 +490,7 @@ public:
 		}
 		return _pPool;
 	}
-
+	
 private:
 	ThreadPool* _pPool;
 	FastMutex   _mutex;

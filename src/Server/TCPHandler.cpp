@@ -246,6 +246,7 @@ TCPHandler::~TCPHandler()
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     extractConnectionSettingsFromContext(server.context());
 
