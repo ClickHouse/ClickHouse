@@ -1932,10 +1932,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     {
         /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
+        Settings old_settings = global_context->getSettings();
         SCOPE_EXIT_SAFE({
-            if (old_settings)
-                global_context->setSettings(*old_settings);
+            global_context->setSettings(old_settings);
         });
 
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, global_context);
