@@ -394,7 +394,7 @@ Block createBlockForSet(
 
 ScopeStack::Level::Level() = default;
 ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level(Level &&) = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)

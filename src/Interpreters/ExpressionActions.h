@@ -288,8 +288,13 @@ struct ExpressionActionsChain : WithContext
     Step & lastStep(const NamesAndTypesList & columns)
     {
         if (steps.empty())
-            steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndFlags>(ActionsDAG(columns), false, false)));
+            return addStep(columns);
         return *steps.back();
+    }
+
+    Step & addStep(const NamesAndTypesList & columns)
+    {
+        return *steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndFlags>(ActionsDAG(columns), false, false)));
     }
 
     std::string dumpChain() const;

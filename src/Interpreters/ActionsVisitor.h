@@ -51,7 +51,7 @@ struct ScopeStack : WithContext
 
         ~Level();
         Level();
-        Level(Level &&);
+        Level(Level &&) noexcept;
     };
 
     using Levels = std::deque<Level>;

@@ -1466,7 +1466,9 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAG & before_a
         else
             result_columns.push_back(source_column);
     }
-    ExpressionActionsChain::Step & step = chain.lastStep(before_aggregation.getNamesAndTypesList());
+    auto required_output = chain.getLastStep().required_output;
+    ExpressionActionsChain::Step & step = chain.addStep(before_aggregation.getNamesAndTypesList());
+    step.required_output = std::move(required_output);
 
     step.actions()->actions = std::move(*ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position));
 }
