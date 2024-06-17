@@ -6,6 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 username="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 dictname="dict_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+dicttablename="dict_table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DICTIONARY IF NOT EXISTS ${dictname}
@@ -18,9 +19,13 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     LAYOUT(FLAT())
     LIFETIME(MIN 0 MAX 1000);
     CREATE USER IF NOT EXISTS ${username} NOT IDENTIFIED;
-    GRANT CREATE TEMPORARY TABLE ON *.* to ${username};
+    GRANT SELECT, CREATE TEMPORARY TABLE ON *.* to ${username};
     SELECT * FROM dictionary(${dictname});
+    SELECT * FROM ${dictname};
     SELECT dictGet(${dictname}, 'value', 1);
+    CREATE TABLE ${dicttablename} (id UInt64, value UInt64)
+    ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.${dictname});
+    SELECT * FROM ${dicttablename};
 "
 
 $CLICKHOUSE_CLIENT -nm --user="${username}" --query "
@@ -31,7 +36,16 @@ $CLICKHOUSE_CLIENT -nm --user="${username}" --query "
     SELECT dictGet(${dictname}, 'value', 1);
 " 2>&1 | grep -o ACCESS_DENIED | uniq
 
+$CLICKHOUSE_CLIENT -nm --user="${username}" --query "
+    SELECT * FROM ${dictname};
+" 2>&1 | grep -o ACCESS_DENIED | uniq
+
+$CLICKHOUSE_CLIENT -nm --user="${username}" --query "
+    SELECT * FROM ${dicttablename};
+" 2>&1 | grep -o ACCESS_DENIED | uniq
+
 ${CLICKHOUSE_CLIENT} -nm --query "
+    DROP TABLE IF EXISTS ${dicttablename} SYNC;
     DROP DICTIONARY IF EXISTS ${dictname};
     DROP USER IF EXISTS ${username};
 "
