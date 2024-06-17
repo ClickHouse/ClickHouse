@@ -150,7 +150,7 @@ The function also works for [Arrays](array-functions.md#function-empty) and [Str
 
 **Example**
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#generateuuidv4) function.
 
 Query:
 
@@ -190,7 +190,7 @@ The function also works for [Arrays](array-functions.md#function-notempty) or [S
 
 **Example**
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#generateuuidv4) function.
 
 Query:
 
