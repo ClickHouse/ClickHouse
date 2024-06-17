@@ -285,6 +285,8 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    Expected expected;
+
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
       * But there are certain cases when invalid tokens are permitted:
       * 1. INSERT queries can have arbitrary data after the FORMAT clause, that is parsed by a different parser.
@@ -293,9 +295,9 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
-    IParser::Pos lookahead = token_iterator;
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (!ParserKeyword(Keyword::INSERT_INTO).check(token_iterator, expected))
     {
+        IParser::Pos lookahead(token_iterator);
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
             if (lookahead->isError())
@@ -306,9 +308,11 @@ ASTPtr tryParseQuery(
 
             ++lookahead;
         }
+
+        /// We should not spoil the info about maximum parsed position in the original iterator.
+        tokens.reset();
     }
 
-    Expected expected;
     ASTPtr res;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
