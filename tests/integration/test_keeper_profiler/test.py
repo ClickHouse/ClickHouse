@@ -69,7 +69,7 @@ from system.trace_log where trace_type = ‘Real’ and trace ilike '%KeeperTCPH
                 """
     set allow_introspection_functions=1;
     system flush logs;
-    select cnt from (
+    select sum(cnt) from (
         select count() as cnt, formatReadableSize(sum(size)),
                 arrayStringConcat(
                     arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)),
