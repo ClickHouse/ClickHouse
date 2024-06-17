@@ -250,7 +250,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         {
             pipeline.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_bytes, limit_);
+                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
             });
         }
 
