@@ -68,6 +68,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -1951,49 +1952,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
-static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated)
-{
-    auto * storage = create_query.storage;
-    auto args = std::make_shared<ASTExpressionList>();
-    auto engine = std::make_shared<ASTFunction>();
-    String engine_name;
-
-    if (replicated)
-    {
-        const auto & server_settings = context->getServerSettings();
-        String replica_path = server_settings.default_replica_path;
-        String replica_name = server_settings.default_replica_name;
-
-        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
-        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
-
-        /// Add old engine's arguments
-        if (storage->engine->arguments)
-        {
-            for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
-                args->children.push_back(storage->engine->arguments->children[i]->clone());
-        }
-
-        engine_name = "Replicated" + storage->engine->name;
-    }
-    else
-    {
-        /// Add old engine's arguments without first two
-        if (storage->engine->arguments)
-        {
-            for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
-                args->children.push_back(storage->engine->arguments->children[i]->clone());
-        }
-
-        engine_name = storage->engine->name.substr(strlen("Replicated"));
-    }
-
-    /// Set new engine for the old query
-    engine->name = engine_name;
-    engine->arguments = args;
-    create_query.storage->set(create_query.storage->engine, engine->clone());
-}
-
 void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
 {
     /// Check engine can be changed
@@ -2015,7 +1973,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Table is already not replicated");
 
     /// Set new engine
-    setMergeTreeEngine(create, getContext(), to_replicated);
+    DatabaseOrdinary::setReplicatedMergeTreeEngine(create, getContext(), to_replicated);
 
     /// Save new metadata
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
