@@ -108,6 +108,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 - `_path` — Path to the `URL`. Type: `LowCardinalty(String)`.
 - `_file` — Resource name of the `URL`. Type: `LowCardinalty(String)`.
 - `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Storage Settings {#storage-settings}
 

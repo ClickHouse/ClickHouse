@@ -108,7 +108,7 @@ ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](partition.md/#how-to-set-partition-expression).
+Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](../alter/partition.md/#how-to-set-partition-expression).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
@@ -173,7 +173,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
-The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description, but column type is mandatory in this case.
+The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#add-column) description, but column type is mandatory in this case.
 
 Example:
 
