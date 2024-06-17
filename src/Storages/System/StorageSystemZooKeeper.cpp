@@ -104,7 +104,7 @@ struct ZkNodeCache
             auto request = zkutil::makeSetRequest(path, value, -1);
             requests.push_back(request);
         }
-        for (auto [_, child] : children)
+        for (const auto & [_, child] : children)
             child->generateRequests(requests);
     }
 };
@@ -166,7 +166,7 @@ public:
 };
 
 /// Type of path to be fetched
-enum class ZkPathType
+enum class ZkPathType : uint8_t
 {
     Exact, /// Fetch all nodes under this path
     Prefix, /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
@@ -474,7 +474,8 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 
 void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(added_filter_nodes);
+
     paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 }
 

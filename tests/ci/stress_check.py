@@ -12,18 +12,23 @@ from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import ERROR, JobReport, TestResult, TestResults, read_test_results
+from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 
-def get_additional_envs() -> List[str]:
+def get_additional_envs(check_name: str) -> List[str]:
     result = []
+    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
+    if "azure" in check_name:
+        result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
 
     return result
 
@@ -143,7 +148,7 @@ def run_stress_test(docker_image_name: str) -> None:
         pr_info, stopwatch.start_time_str, check_name
     )
 
-    additional_envs = get_additional_envs()
+    additional_envs = get_additional_envs(check_name)
 
     run_command = get_run_command(
         packages_path,
@@ -156,14 +161,9 @@ def run_stress_test(docker_image_name: str) -> None:
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    timeout_expired = False
-    timeout = 60 * 150
-    with TeePopen(run_command, run_log_path, timeout=timeout) as process:
+    with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_command)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -174,11 +174,6 @@ def run_stress_test(docker_image_name: str) -> None:
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
-
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(timeout))
-        state = "failure"
-        description = test_results[-1].name
 
     JobReport(
         description=description,

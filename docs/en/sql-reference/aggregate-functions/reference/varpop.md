@@ -27,9 +27,11 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable` function](#varPopStable).
+This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable`](#varpopstable) function.
 
 **Example**
+
+Query:
 
 ```sql
 DROP TABLE IF EXISTS test_data;
@@ -46,6 +48,8 @@ SELECT
     covarPop(x, y) AS covar_pop
 FROM test_data;
 ```
+
+Result:
 
 ```response
 3
@@ -72,7 +76,7 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-Unlike [`varPop()`](#varPop), this function uses a stable, numerically accurate algorithm to calculate the population variance to avoid issues like catastrophic cancellation or loss of precision. This function also handles `NaN` and `Inf` values correctly, excluding them from calculations.
+Unlike [`varPop`](#varpop), this function uses a stable, numerically accurate algorithm to calculate the population variance to avoid issues like catastrophic cancellation or loss of precision. This function also handles `NaN` and `Inf` values correctly, excluding them from calculations.
 
 **Example**
 
@@ -93,6 +97,8 @@ SELECT
     covarPopStable(x, y) AS covar_pop_stable
 FROM test_data;
 ```
+
+Result:
 
 ```response
 0.5999999999999999

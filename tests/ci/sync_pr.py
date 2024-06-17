@@ -5,10 +5,11 @@
 import argparse
 import sys
 
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from github_helper import GitHub
+from ci_config import StatusNames
 from commit_status_helper import get_commit, post_commit_status
+from get_robot_token import get_best_robot_token
+from github_helper import GitHub
+from pr_info import PRInfo
 from report import SUCCESS
 
 
@@ -56,7 +57,7 @@ def set_sync_status(gh, pr_info, sync_pr):
     # FIXME: uncomment posting red Sync status to prohibit merge in MQ if PR state fetching works good
     if not sync_pr:
         # post_commit_status(
-        #     get_commit(gh, pr_info.sha), FAILURE, "", "Sync PR not found", "A Sync"
+        #     get_commit(gh, pr_info.sha), FAILURE, "", "Sync PR not found", StatusNames.SYNC
         # )
         return
 
@@ -73,7 +74,9 @@ def set_sync_status(gh, pr_info, sync_pr):
 
     if sync_pr.mergeable_state == "clean":
         print(f"Sync PR [{sync_pr.number}] is clean")
-        post_commit_status(get_commit(gh, pr_info.sha), SUCCESS, "", "", "A Sync")
+        post_commit_status(
+            get_commit(gh, pr_info.sha), SUCCESS, "", "", StatusNames.SYNC
+        )
     else:
         print(
             f"Sync PR [{sync_pr}] is not mergeable, state [{sync_pr.mergeable_state}]"
@@ -83,7 +86,7 @@ def set_sync_status(gh, pr_info, sync_pr):
         #     FAILURE,
         #     "",
         #     f"state: {sync_pr.mergeable_state}",
-        #     "A Sync",
+        #     StatusNames.SYNC,
         # )
 
 

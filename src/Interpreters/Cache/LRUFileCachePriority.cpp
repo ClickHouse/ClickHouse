@@ -284,6 +284,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     };
 
     iterateForEviction(res, stat, can_fit, lock);
+
     if (can_fit())
     {
         /// `res` contains eviction candidates. Do we have any?
@@ -330,14 +331,17 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     const CachePriorityGuard::Lock & lock)
 {
-    auto stop_condition = [&, this]()
+    auto desired_limits_satisfied = [&]()
     {
         return canFit(0, 0, stat.total_stat.releasable_size, stat.total_stat.releasable_count,
-                      lock, &desired_size, &desired_elements_count)
-            || (max_candidates_to_evict && res.size() >= max_candidates_to_evict);
+                      lock, &desired_size, &desired_elements_count);
+    };
+    auto stop_condition = [&]()
+    {
+        return desired_limits_satisfied() || (max_candidates_to_evict && res.size() >= max_candidates_to_evict);
     };
     iterateForEviction(res, stat, stop_condition, lock);
-    return stop_condition();
+    return desired_limits_satisfied();
 }
 
 void LRUFileCachePriority::iterateForEviction(

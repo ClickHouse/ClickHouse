@@ -14,12 +14,14 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/UnionNode.h>
 
 namespace DB
 {
@@ -106,6 +108,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
+
+    if (is_recursive_with)
+        buffer << ", is_recursive_with: " << is_recursive_with;
 
     if (is_distinct)
         buffer << ", is_distinct: " << is_distinct;
@@ -259,6 +264,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
+        is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
@@ -291,6 +297,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(projection_column_type_name);
     }
 
+    state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
     state.update(is_group_by_with_totals);
@@ -317,19 +324,20 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 {
     auto result_query_node = std::make_shared<QueryNode>(context);
 
-    result_query_node->is_subquery                    = is_subquery;
-    result_query_node->is_cte                         = is_cte;
-    result_query_node->is_distinct                    = is_distinct;
-    result_query_node->is_limit_with_ties             = is_limit_with_ties;
-    result_query_node->is_group_by_with_totals        = is_group_by_with_totals;
-    result_query_node->is_group_by_with_rollup        = is_group_by_with_rollup;
-    result_query_node->is_group_by_with_cube          = is_group_by_with_cube;
+    result_query_node->is_subquery = is_subquery;
+    result_query_node->is_cte = is_cte;
+    result_query_node->is_recursive_with = is_recursive_with;
+    result_query_node->is_distinct = is_distinct;
+    result_query_node->is_limit_with_ties = is_limit_with_ties;
+    result_query_node->is_group_by_with_totals = is_group_by_with_totals;
+    result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
+    result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
-    result_query_node->is_group_by_all                = is_group_by_all;
-    result_query_node->is_order_by_all                = is_order_by_all;
-    result_query_node->cte_name                       = cte_name;
-    result_query_node->projection_columns             = projection_columns;
-    result_query_node->settings_changes               = settings_changes;
+    result_query_node->is_group_by_all = is_group_by_all;
+    result_query_node->is_order_by_all = is_order_by_all;
+    result_query_node->cte_name = cte_name;
+    result_query_node->projection_columns = projection_columns;
+    result_query_node->settings_changes = settings_changes;
 
     return result_query_node;
 }
@@ -337,6 +345,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
+    select_query->recursive_with = is_recursive_with;
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
     select_query->group_by_with_totals = is_group_by_with_totals;
@@ -347,7 +356,41 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->order_by_all = is_order_by_all;
 
     if (hasWith())
-        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST(options));
+    {
+        const auto & with = getWith();
+        auto expression_list_ast = std::make_shared<ASTExpressionList>();
+        expression_list_ast->children.reserve(with.getNodes().size());
+
+        for (const auto & with_node : with)
+        {
+            auto with_node_ast = with_node->toAST(options);
+            expression_list_ast->children.push_back(with_node_ast);
+
+            const auto * with_query_node = with_node->as<QueryNode>();
+            const auto * with_union_node = with_node->as<UnionNode>();
+            if (!with_query_node && !with_union_node)
+                continue;
+
+            bool is_with_node_cte = with_query_node ? with_query_node->isCTE() : with_union_node->isCTE();
+            if (!is_with_node_cte)
+                continue;
+
+            const auto & with_node_cte_name = with_query_node ? with_query_node->cte_name : with_union_node->getCTEName();
+
+            auto * with_node_ast_subquery = with_node_ast->as<ASTSubquery>();
+            if (with_node_ast_subquery)
+                with_node_ast_subquery->cte_name = "";
+
+            auto with_element_ast = std::make_shared<ASTWithElement>();
+            with_element_ast->name = with_node_cte_name;
+            with_element_ast->subquery = std::move(with_node_ast);
+            with_element_ast->children.push_back(with_element_ast->subquery);
+
+            expression_list_ast->children.back() = std::move(with_element_ast);
+        }
+
+        select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(expression_list_ast));
+    }
 
     auto projection_ast = getProjection().toAST(options);
     auto & projection_expression_list_ast = projection_ast->as<ASTExpressionList &>();

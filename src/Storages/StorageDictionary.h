@@ -20,7 +20,7 @@ friend class TableFunctionDictionary;
 
 public:
     /// Specifies where the table is located relative to the dictionary.
-    enum class Location
+    enum class Location : uint8_t
     {
         /// Table was created automatically as an element of a database with the Dictionary engine.
         DictionaryDatabase,

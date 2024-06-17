@@ -44,6 +44,7 @@ ASTPtr ASTSelectQuery::clone() const
 
 void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    hash_state.update(recursive_with);
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
@@ -64,6 +65,10 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (with())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
+
+        if (recursive_with)
+            s.ostr << (s.hilite ? hilite_keyword : "") << " RECURSIVE" << (s.hilite ? hilite_none : "");
+
         s.one_line
             ? with()->formatImpl(s, state, frame)
             : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);

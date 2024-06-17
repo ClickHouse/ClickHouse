@@ -173,6 +173,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
+        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (table)
             {

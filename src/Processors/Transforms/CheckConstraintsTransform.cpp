@@ -57,7 +57,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
 
             auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
-            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*result_column))
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {
                 const auto & nested_column = column_nullable->getNestedColumnPtr();
 

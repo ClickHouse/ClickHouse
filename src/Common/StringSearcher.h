@@ -2,7 +2,7 @@
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Core/Defines.h>
 #include <Poco/Unicode.h>

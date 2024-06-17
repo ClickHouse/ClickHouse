@@ -10,6 +10,7 @@ from typing import Any, List
 
 import boto3  # type: ignore
 import requests
+
 from build_download_helper import (
     download_build_with_progress,
     get_build_name_for_check,
@@ -201,7 +202,7 @@ def main():
     docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
 
     if pr_info.is_scheduled or pr_info.is_dispatched:
-        # get latest clcikhouse by the static link for latest master buit - get its version and provide permanent url for this version to the jepsen
+        # get latest clickhouse by the static link for latest master buit - get its version and provide permanent url for this version to the jepsen
         build_url = f"{S3_URL}/{S3_BUILDS_BUCKET}/master/amd64/clickhouse"
         download_build_with_progress(build_url, Path(TEMP_PATH) / "clickhouse")
         git_runner.run(f"chmod +x {TEMP_PATH}/clickhouse")
