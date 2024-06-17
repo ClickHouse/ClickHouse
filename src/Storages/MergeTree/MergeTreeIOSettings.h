@@ -1,6 +1,6 @@
 #pragma once
 #include <cstddef>
-//#include <Core/Settings.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/WriteSettings.h>
 #include <Compression/CompressionFactory.h>

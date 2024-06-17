@@ -627,14 +627,9 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove)
 {
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
-<<<<<<< HEAD
-    serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
-    serialize_settings.use_compact_variant_discriminators_serialization = storage.getSettings()->use_compact_variant_discriminators_serialization;
-=======
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
->>>>>>> d9a11faf4a3c02aaac2681aa9f7ee126123040b2
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {
