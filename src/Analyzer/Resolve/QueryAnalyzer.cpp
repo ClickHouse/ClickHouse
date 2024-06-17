@@ -985,8 +985,8 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     {
         result_aggregate_function_name = settings.count_distinct_implementation;
     }
-    else if (settings.rewrite_count_distinct_if_with_count_distinct_implementation &&
-        (aggregate_function_name_lowercase == "countdistinctif" || aggregate_function_name_lowercase == "countifdistinct"))
+    else if (aggregate_function_name_lowercase == "countifdistinct" ||
+        (settings.rewrite_count_distinct_if_with_count_distinct_implementation && aggregate_function_name_lowercase == "countdistinctif"))
     {
         result_aggregate_function_name = settings.count_distinct_implementation;
         result_aggregate_function_name += "If";
