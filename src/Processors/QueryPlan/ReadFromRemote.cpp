@@ -449,6 +449,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     }
 
     std::vector<ConnectionPoolPtr> pools_to_use;
+    pools_to_use.reserve(shuffled_pool.size());
     if (exclude_local_replica)
     {
         std::vector<size_t> local_addr_possitions;
@@ -460,7 +461,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
                 end(shard.local_addresses),
                 [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
             if (it != shard.local_addresses.end())
+            {
                 pool.pool.reset();
+            }
         }
     }
     for (const auto & pool : shuffled_pool)
@@ -469,18 +472,28 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             pools_to_use.push_back(pool.pool);
     }
 
+    LOG_DEBUG(
+        getLogger("ReadFromParallelRemoteReplicasStep"),
+        "Number of pools to use is {}. Originally {}",
+        pools_to_use.size(),
+        shuffled_pool.size());
+
     if (pools_to_use.size() > all_replicas_count)
         pools_to_use.resize(all_replicas_count);
-    else
-        all_replicas_count = pools_to_use.size();
-
-    chassert(all_replicas_count == pools_to_use.size());
 
     if (exclude_local_replica && !pools_to_use.empty())
         pools_to_use.resize(all_replicas_count - 1);
 
     if (pools_to_use.empty())
         return;
+
+    {
+        String pool_addresses;
+        for (const auto & pool : pools_to_use)
+            pool_addresses += pool->getAddress() + ";";
+
+        LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", pool_addresses);
+    }
 
     /// local replicas has number 0
     size_t offset = (exclude_local_replica ? 1 : 0);

@@ -489,8 +489,12 @@ void executeQueryWithParallelReplicas(
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
-        new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
+    auto replica_count = new_cluster->getShardsInfo().begin()->getAllNodeCount();
+    if (settings.max_parallel_replicas < replica_count)
+        replica_count = settings.max_parallel_replicas;
+
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(replica_count, settings.parallel_replicas_mark_segment_size);
+
     auto external_tables = new_context->getExternalTables();
 
     /// do not build local plan for distributed queries for now (address it later)
