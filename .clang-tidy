@@ -37,7 +37,6 @@ Checks: [
   '-cert-oop54-cpp',
   '-cert-oop57-cpp',
 
-  '-clang-analyzer-optin.core.EnumCastOutOfRange', # https://github.com/abseil/abseil-cpp/issues/1667
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-unix.Malloc',
