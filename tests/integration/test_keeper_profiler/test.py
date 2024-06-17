@@ -50,9 +50,8 @@ def test_profiler(started_cluster):
     node.query("system flush logs")
     assert int(node.query("exists system.trace_log"))
 
-    assert 1 < int(
-        node.query(
-            """
+    result = node.query(
+        """
 set allow_introspection_functions=1;
 system flush logs;
 select cnt from (
@@ -62,5 +61,36 @@ select cnt from (
             '\n') as trace
 from system.trace_log where trace_type = ‘Real’ and trace ilike '%KeeperTCPHandler%' group by trace);
     """
-        )
     )
+
+    if len(result) == 0:
+        assert 0 < int(
+            node.query(
+                """
+    set allow_introspection_functions=1;
+    system flush logs;
+    select cnt from (
+        select count() as cnt, formatReadableSize(sum(size)),
+                arrayStringConcat(
+                    arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)),
+                '\n') as trace
+    from system.trace_log where trace_type = ‘Real’ group by trace);
+        """
+            )
+        )
+        result = node.query(
+            """
+    set allow_introspection_functions=1;
+    system flush logs;
+    select * from (
+        select count() as cnt, formatReadableSize(sum(size)),
+                arrayStringConcat(
+                    arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)),
+                '\n') as trace
+    from system.trace_log where trace_type = ‘Real’ group by trace);
+        """
+        )
+        print(result)
+        assert False
+
+    assert 1 < int(result)
