@@ -17,7 +17,6 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 9, nodes: 1
           CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1 optimize_injective_functions_inside_uniq=1
 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -33,5 +32,4 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 6, nodes: 1
           CONSTANT id: 7, constant_value: UInt64_10, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1 optimize_injective_functions_inside_uniq=1
 10

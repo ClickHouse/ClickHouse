@@ -1,4 +1,3 @@
-#include <memory>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 
 #include <Functions/IFunction.h>
@@ -8,8 +7,6 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/ListNode.h>
 
 
 namespace DB
@@ -46,15 +43,14 @@ public:
         bool replaced_argument = false;
         auto replaced_uniq_function_arguments_nodes = function_node->getArguments().getNodes();
 
-        DataTypes new_argument_types;
-        new_argument_types.reserve(replaced_uniq_function_arguments_nodes.size());
-
+        /// Replace injective function with its single argument
         auto remove_injective_function = [&replaced_argument](QueryTreeNodePtr & arg) -> bool
         {
             auto * arg_typed = arg->as<FunctionNode>();
             if (!arg_typed || !arg_typed->isOrdinaryFunction())
                 return false;
 
+            /// Do not apply optimization if injective function contains multiple arguments
             auto & arg_arguments_nodes = arg_typed->getArguments().getNodes();
             if (arg_arguments_nodes.size() != 1)
                 return false;
@@ -71,27 +67,32 @@ public:
         {
             while (remove_injective_function(uniq_function_argument_node))
                 ;
-            new_argument_types.emplace_back(uniq_function_argument_node->getResultType());
         }
 
         if (!replaced_argument)
             return;
 
+        DataTypes replaced_argument_types;
+        replaced_argument_types.reserve(replaced_uniq_function_arguments_nodes.size());
+
+        for (const auto & function_node_argument : replaced_uniq_function_arguments_nodes)
+            replaced_argument_types.emplace_back(function_node_argument->getResultType());
+
         auto current_aggregate_function = function_node->getAggregateFunction();
         AggregateFunctionProperties properties;
-        auto new_aggregate_function = AggregateFunctionFactory::instance().get(
+        auto replaced_aggregate_function = AggregateFunctionFactory::instance().get(
             function_node->getFunctionName(),
             NullsAction::EMPTY,
-            new_argument_types,
+            replaced_argument_types,
             current_aggregate_function->getParameters(),
             properties);
 
         /// uniqCombined returns nullable with nullable arguments so the result type might change which breaks the pass
-        if (!new_aggregate_function->getResultType()->equals(*current_aggregate_function->getResultType()))
+        if (!replaced_aggregate_function->getResultType()->equals(*current_aggregate_function->getResultType()))
             return;
 
         function_node->getArguments().getNodes() = std::move(replaced_uniq_function_arguments_nodes);
-        function_node->resolveAsAggregateFunction(std::move(new_aggregate_function));
+        function_node->resolveAsAggregateFunction(std::move(replaced_aggregate_function));
     }
 };
 
