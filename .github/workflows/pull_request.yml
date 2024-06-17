@@ -147,7 +147,7 @@ jobs:
   Builds_Report:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
-    needs: [RunConfig, StyleCheck, Builds_1]
+    needs: [RunConfig, StyleCheck, Builds_1, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
