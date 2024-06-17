@@ -29,8 +29,8 @@ namespace DB
 using AggregatedDataWithoutKey = AggregateDataPtr;
 
 using AggregatedDataWithUInt8Key = FixedImplicitZeroHashMapWithCalculatedSize<UInt8, AggregateDataPtr>;
-using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDataPtr>;
 
+using AggregatedDataWithUInt16Key = HashMap<UInt16, AggregateDataPtr, HashCRC32<UInt16>>;
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
@@ -41,6 +41,7 @@ using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDat
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
+using AggregatedDataWithUInt16KeyTwoLevel = TwoLevelHashMap<UInt16, AggregateDataPtr, HashCRC32<UInt16>>;
 using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
