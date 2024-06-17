@@ -50,6 +50,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
+    extern const Event AsyncInsertQueueFlushesOnLimit;
 }
 
 namespace DB
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int TOO_MANY_PENDING_INSERTS;
 }
 
 static const NameSet settings_to_skip
@@ -194,7 +196,8 @@ void AsynchronousInsertQueue::QueueShardFlushTimeHistory::updateWithCurrentTime(
     time_points.second = std::chrono::steady_clock::now();
 }
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_)
+AsynchronousInsertQueue::AsynchronousInsertQueue(
+    ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t max_pending_inserts_, size_t max_pending_bytes_)
     : WithContext(context_)
     , pool_size(pool_size_)
     , flush_on_shutdown(flush_on_shutdown_)
@@ -205,6 +208,8 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
           CurrentMetrics::AsynchronousInsertThreadsActive,
           CurrentMetrics::AsynchronousInsertThreadsScheduled,
           pool_size)
+    , max_pending_inserts(max_pending_inserts_)
+    , max_pending_bytes(max_pending_bytes_)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
@@ -317,6 +322,8 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
+    checkQueueLimit(std::chrono::seconds(query_context->getSettingsRef().wait_for_async_insert_timeout));
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
 
@@ -360,6 +367,8 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context)
 {
+    checkQueueLimit(std::chrono::seconds(query_context->getSettingsRef().wait_for_async_insert_timeout));
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
@@ -412,10 +421,10 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
-        size_t entry_data_size = entry->chunk.byteSize();
+        const size_t entry_data_size = entry->chunk.byteSize();
 
         assert(data);
-        auto size_in_bytes = data->size_in_bytes;
+        const auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
         data->entries.emplace_back(entry);
@@ -451,6 +460,8 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         shard.last_insert_time = now;
         shard.busy_timeout_ms = timeout_ms;
 
+        ++pending_inserts;
+        pending_bytes += entry_data_size;
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
@@ -557,7 +568,11 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
 void AsynchronousInsertQueue::flushAll()
 {
     std::lock_guard flush_lock(flush_mutex);
+    flushAllImpl(flush_mutex);
+}
 
+void AsynchronousInsertQueue::flushAllImpl(std::timed_mutex &)
+{
     LOG_DEBUG(log, "Requested to flush asynchronous insert queue");
 
     /// Disable background flushes to avoid adding new elements to the queue.
@@ -702,11 +717,14 @@ try
     if (!data)
         return;
 
-    SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
+    SCOPE_EXIT({
+        CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
+        pending_bytes -= data->size_in_bytes;
+        pending_inserts -= data->entries.size();
+    });
 
     setThreadName("AsyncInsertQ");
 
-    const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
@@ -1073,4 +1091,32 @@ void AsynchronousInsertQueue::finishWithException(
     }
 }
 
+void AsynchronousInsertQueue::checkQueueLimit(std::chrono::seconds wait_timeout)
+{
+    if (pending_inserts <= max_pending_inserts && pending_bytes <= max_pending_bytes)
+        return;
+
+    if (flush_mutex.try_lock_for(wait_timeout))
+    {
+        SCOPE_EXIT(flush_mutex.unlock());
+
+        if (pending_inserts > max_pending_inserts || pending_bytes > max_pending_bytes)
+        {
+            LOG_DEBUG(
+                log,
+                "AsynchronousInsertQueue is overloaded - will flush queue immediately: pending_inserts={}, max_pending_inserts={}, "
+                "pending_bytes={}, max_pending_bytes={}",
+                pending_inserts,
+                max_pending_inserts,
+                pending_bytes,
+                max_pending_bytes);
+            flushAllImpl(flush_mutex);
+            ProfileEvents::increment(ProfileEvents::AsyncInsertQueueFlushesOnLimit);
+        }
+    }
+    else
+    {
+        throw Exception(ErrorCodes::TOO_MANY_PENDING_INSERTS, "Timeout waiting for some free space in queue");
+    }
+}
 }

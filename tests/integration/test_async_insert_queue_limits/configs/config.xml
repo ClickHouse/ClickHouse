@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- disable limit on number of inserts -->
+    <max_pending_async_inserts>1000000000</max_pending_async_inserts>
+
+    <max_pending_async_insert_bytes>250</max_pending_async_insert_bytes>
+</clickhouse>
