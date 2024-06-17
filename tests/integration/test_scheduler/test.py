@@ -6,6 +6,7 @@ import time
 import threading
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

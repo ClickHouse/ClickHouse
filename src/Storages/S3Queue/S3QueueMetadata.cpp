@@ -10,7 +10,7 @@
 #include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
 #include <Storages/S3Queue/S3QueueUnorderedFileMetadata.h>
 #include <Storages/S3Queue/S3QueueTableMetadata.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
@@ -167,7 +167,7 @@ S3QueueMetadata::FileMetadataPtr S3QueueMetadata::getFileMetadata(
     S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info)
 {
     auto file_status = local_file_statuses->get(path, /* create */true);
-    switch (settings.mode)
+    switch (settings.mode.value)
     {
         case S3QueueMode::ORDERED:
             return std::make_shared<S3QueueOrderedFileMetadata>(
