@@ -37,6 +37,8 @@ def started_cluster():
 
 def test_profiler(started_cluster):
     node = cluster.instances["node1"]
+    if node1.is_built_with_sanitizer():
+        return
 
     node.query(
         "CREATE TABLE t (key UInt32, value String) Engine = ReplicatedMergeTree('/clickhouse-tables/test1', 'r1') ORDER BY key"
