@@ -707,7 +707,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (header.has(map_values_index_column_name))
             {
                 position = header.getPositionByName(map_values_index_column_name);
-                const_type = value_type;
             }
             else
             {
@@ -718,10 +717,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_field = convertFieldToType(const_value, *actual_type, const_type.get());
-            if (converted_field.isNull())
-                return false;
-
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
 
             return true;
