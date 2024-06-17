@@ -1,9 +1,7 @@
 #pragma once
 
-#include <atomic>
 #include <condition_variable>
 #include <memory>
-#include <thread>
 #include <vector>
 #include <base/types.h>
 
