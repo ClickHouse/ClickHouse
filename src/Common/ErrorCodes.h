@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     /// ErrorCode identifier (index in array).
     using ErrorCode = int;
+    constexpr ErrorCode END = 1002;
     using Value = size_t;
     using FramePointers = std::vector<void *>;
 
@@ -35,7 +36,7 @@ namespace ErrorCodes
 
     struct Error
     {
-        /// Number of times Exception with this ErrorCode had been throw.
+        /// Number of times Exception with this ErrorCode had been thrown.
         Value count = 0;
         /// Time of the last error.
         UInt64 error_time_ms = 0;
