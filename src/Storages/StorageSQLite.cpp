@@ -208,7 +208,7 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
         const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());

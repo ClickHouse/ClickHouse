@@ -118,5 +118,5 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"OK")
 
 
-httpd = http.server.HTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+httpd = http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
 httpd.serve_forever()

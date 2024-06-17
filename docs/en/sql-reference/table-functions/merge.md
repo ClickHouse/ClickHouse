@@ -11,11 +11,11 @@ Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table.
 **Syntax**
 
 ```sql
-merge('db_name', 'tables_regexp')
+merge(['db_name',] 'tables_regexp')
 ```
 **Arguments**
 
-- `db_name` — Possible values:
+- `db_name` — Possible values (optional, default is `currentDatabase()`):
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.

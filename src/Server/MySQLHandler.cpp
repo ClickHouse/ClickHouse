@@ -15,17 +15,20 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
+#include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Common/setThreadName.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -190,6 +193,8 @@ MySQLHandler::MySQLHandler(
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
 }
+
+MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
@@ -461,6 +466,12 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
+
+        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
+        auto settings = query_context->getSettings();
+        settings.prefer_column_name_to_alias = true;
+        query_context->setSettings(settings);
+
         CurrentThread::QueryScope query_scope{query_context};
 
         std::atomic<size_t> affected_rows {0};

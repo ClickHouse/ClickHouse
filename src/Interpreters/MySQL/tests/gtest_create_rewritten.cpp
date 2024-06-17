@@ -19,7 +19,7 @@ using namespace DB;
 static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr context)
 {
     ParserExternalDDLQuery external_ddl_parser;
-    ASTPtr ast = parseQuery(external_ddl_parser, "EXTERNAL DDL FROM MySQL(test_database, test_database) " + query, 0, 0);
+    ASTPtr ast = parseQuery(external_ddl_parser, "EXTERNAL DDL FROM MySQL(test_database, test_database) " + query, 0, 0, 0);
 
     return MySQLInterpreter::InterpreterCreateImpl::getRewrittenQueries(
         *ast->as<ASTExternalDDLQuery>()->external_ddl->as<MySQLParser::ASTCreateQuery>(),

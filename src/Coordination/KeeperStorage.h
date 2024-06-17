@@ -52,8 +52,10 @@ public:
         Node() = default;
 
         Node & operator=(const Node & other);
-
         Node(const Node & other);
+
+        Node & operator=(Node && other) noexcept;
+        Node(Node && other) noexcept;
 
         bool empty() const;
 
@@ -146,6 +148,7 @@ public:
         void removeChild(StringRef child_path);
 
         const auto & getChildren() const noexcept { return children; }
+        auto & getChildren() { return children; }
 
         // Invalidate the calculated digest so it's recalculated again on the next
         // getDigest call

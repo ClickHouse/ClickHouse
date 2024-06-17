@@ -25,8 +25,7 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Probably some projection already was applied.
-    if (reading->hasAnalyzedResult())
+    if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return false;
 
     if (reading->isQueryWithFinal())
@@ -214,7 +213,7 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionDAGNodes & added_filter_nodes)
+    const ActionsDAGPtr & dag)
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
@@ -237,13 +236,15 @@ bool analyzeProjectionCandidate(
     if (projection_parts.empty())
         return false;
 
+    auto projection_query_info = query_info;
+    projection_query_info.prewhere_info = nullptr;
+    projection_query_info.filter_actions_dag = dag;
+
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
-        nullptr,
         required_column_names,
         candidate.projection->metadata,
-        query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
-        added_filter_nodes,
+        projection_query_info,
         context,
         context->getSettingsRef().max_threads,
         max_added_blocks);

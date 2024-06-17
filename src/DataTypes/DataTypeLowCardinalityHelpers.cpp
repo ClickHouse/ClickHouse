@@ -75,6 +75,9 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     else if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
         auto columns = column_tuple->getColumns();
+        if (columns.empty())
+            return column;
+
         for (auto & element : columns)
             element = recursiveRemoveLowCardinality(element);
         res = ColumnTuple::create(columns);

@@ -63,6 +63,8 @@ namespace Net
         ~HTTPIOS();
         HTTPStreamBuf * rdbuf();
 
+        bool isComplete() const { return false; }
+
     protected:
         HTTPStreamBuf _buf;
     };

@@ -37,6 +37,7 @@ DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
   */
 struct DistributedSettings : public BaseSettings<DistributedSettingsTraits>
 {
+    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
     void loadFromQuery(ASTStorage & storage_def);
 };
 

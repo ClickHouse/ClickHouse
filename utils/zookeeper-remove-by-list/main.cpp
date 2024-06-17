@@ -26,7 +26,7 @@ try
         return 1;
     }
 
-    zkutil::ZooKeeper zookeeper(options.at("address").as<std::string>());
+    auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(options.at("address").as<std::string>());
 
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
     std::list<std::future<Coordination::RemoveResponse>> futures;
@@ -37,7 +37,7 @@ try
         std::string path;
         DB::readEscapedString(path, in);
         DB::assertString("\n", in);
-        futures.emplace_back(zookeeper.asyncRemove(path));
+        futures.emplace_back(zookeeper->asyncRemove(path));
         std::cerr << ".";
     }
     std::cerr << "\n";

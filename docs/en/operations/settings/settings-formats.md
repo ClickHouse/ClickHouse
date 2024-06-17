@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -467,7 +467,7 @@ Enabled by default.
 
 Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types. 
+by using String type for keys with unknown types.
 
 Example:
 
@@ -651,6 +651,12 @@ This setting works only when setting `input_format_json_named_tuples_as_objects`
 
 Enabled by default.
 
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+
+Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
+
+Enabled by default.
+
 ## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
@@ -825,7 +831,13 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
+
+Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
 
 Disabled by default.
 
@@ -891,7 +903,7 @@ Default value: `,`.
 
 If it is set to true, allow strings in single quotes.
 
-Enabled by default.
+Disabled by default.
 
 ### format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
 
@@ -1367,7 +1379,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
@@ -1404,6 +1416,17 @@ Default value: `2.latest`.
 Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
 
 Default value: `lz4`.
+
+### input_format_parquet_max_block_size {#input_format_parquet_max_block_size}
+Max block row size for parquet reader. By controlling the number of rows in each block, you can control the memory usage, 
+and in some operators that cache blocks, you can improve the accuracy of the operator's memory control。
+
+Default value: `65409`.
+
+### input_format_parquet_prefer_block_bytes {#input_format_parquet_prefer_block_bytes}
+Average block bytes output by parquet reader. Lowering the configuration in the case of reading some high compression parquet relieves the memory pressure.
+
+Default value: `65409 * 256 = 16744704`
 
 ## Hive format settings {#hive-format-settings}
 
@@ -1605,7 +1628,7 @@ possible values:
 -   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
 -   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
 
-Default value is `auto`. 
+Default value is `auto`.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
@@ -1636,7 +1659,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
@@ -1654,6 +1677,33 @@ Result:
 2. │ max_compress_block_size │ 1048576 │
 3. │ max_block_size          │ 65505   │
    └─────────────────────────┴─────────┘
+```
+
+### output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
+
+Print a readable number tip on the right side of the table if the block consists of a single number which exceeds
+this value (except 0).
+
+Possible values:
+
+- 0 — The readable number tip will not be printed.
+- Positive integer — The readable number tip will be printed if the single number exceeds this value.
+
+Default value: `1000000`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT 1000000000 as a;
+```
+
+Result:
+```text
+┌──────────a─┐
+│ 1000000000 │ -- 1.00 billion
+└────────────┘
 ```
 
 ## Template format settings {#template-format-settings}

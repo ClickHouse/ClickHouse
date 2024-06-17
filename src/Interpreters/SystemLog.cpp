@@ -1,8 +1,19 @@
-#include <IO/WriteHelpers.h>
+#include <Interpreters/SystemLog.h>
+
+#include <base/scope_guard.h>
+#include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/BackupLog.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -10,38 +21,31 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
+#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/BackupLog.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <base/scope_guard.h>
-#include <fmt/core.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include "Common/quoteString.h"
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -91,7 +95,7 @@ namespace
             if (!storage_p.parse(pos, storage, expected))
                 return false;
 
-            ParserKeyword s_comment("COMMENT");
+            ParserKeyword s_comment(Keyword::COMMENT);
             ParserStringLiteral string_literal_parser;
             ASTPtr comment;
 
@@ -216,7 +220,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
     auto storage_ast = parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
-            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
     /// Add comment to AST. So it will be saved when the table will be renamed.
@@ -287,7 +291,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log", "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
-        "asynchronous_metric_log", "Contains the historical values for system.asynchronous_metrics, which are saved once per minute.");
+        "asynchronous_metric_log", "Contains the historical values for system.asynchronous_metrics, once per time interval (one second by default).");
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
         "opentelemetry_span_log", "Contains information about trace spans for executed queries.");
@@ -500,6 +504,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         Block block(std::move(log_element_columns));
 
         MutableColumns columns = block.mutateColumns();
+
+        for (auto & column : columns)
+            column->reserve(to_flush.size());
+
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
@@ -515,8 +523,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
-        /// We always want to deliver the data to the original table regardless of the MVs
-        insert_context->setSetting("materialized_views_ignore_errors", true);
+        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -529,7 +536,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
+            table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
 
     queue->confirm(to_flush_end);
@@ -537,13 +545,18 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
+template <typename LogElement>
+StoragePtr SystemLog<LogElement>::getStorage() const
+{
+    return DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+}
 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto table = getStorage();
     if (table)
     {
         if (old_create_query.empty())
@@ -563,7 +576,6 @@ void SystemLog<LogElement>::prepareTable()
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
-            auto rename = std::make_shared<ASTRenameQuery>();
             ASTRenameQuery::Element elem
             {
                 ASTRenameQuery::Table
@@ -586,17 +598,16 @@ void SystemLog<LogElement>::prepareTable()
                 old_create_query,
                 create_query);
 
-            rename->elements.emplace_back(std::move(elem));
+            auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);
-            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-            query_context->setSetting("check_table_dependencies", Field{false});
-            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
+            addSettingsForQuery(query_context, IAST::QueryKind::Rename);
+
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -613,6 +624,7 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
+        addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
         InterpreterCreateQuery interpreter(create_query_ast, query_context);
@@ -625,6 +637,22 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const
+{
+    if (query_kind == IAST::QueryKind::Insert)
+    {
+        /// We always want to deliver the data to the original table regardless of the MVs
+        mutable_context->setSetting("materialized_views_ignore_errors", true);
+    }
+    else if (query_kind == IAST::QueryKind::Rename)
+    {
+        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+        mutable_context->setSetting("check_table_dependencies", Field{false});
+        mutable_context->setSetting("check_referential_table_dependencies", Field{false});
+    }
 }
 
 template <typename LogElement>
@@ -648,7 +676,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     ASTPtr storage_with_comment_ast = parseQuery(
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
-        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 

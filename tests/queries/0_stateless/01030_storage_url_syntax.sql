@@ -3,7 +3,7 @@ drop table if exists test_table_url_syntax
 create table test_table_url_syntax (id UInt32) ENGINE = URL('')
 ; -- { serverError UNSUPPORTED_URI_SCHEME }
 create table test_table_url_syntax (id UInt32) ENGINE = URL('','','','')
-; -- { serverError 42 }
+; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 drop table if exists test_table_url_syntax
 ;
 
@@ -17,7 +17,7 @@ create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint.j
 drop table test_table_url;
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'ErrorFormat')
-; -- { serverError 73 }
+; -- { serverError UNKNOWN_FORMAT }
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'JSONEachRow', 'gzip');
 drop table test_table_url;
@@ -62,5 +62,5 @@ create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint',
 drop table test_table_url;
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'JSONEachRow', 'zip')
-; -- { serverError 48 }
+; -- { serverError NOT_IMPLEMENTED }
 

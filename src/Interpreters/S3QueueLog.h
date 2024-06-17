@@ -12,11 +12,15 @@ namespace DB
 struct S3QueueLogElement
 {
     time_t event_time{};
-    std::string table_uuid;
+
+    std::string database;
+    std::string table;
+    std::string uuid;
+
     std::string file_name;
     size_t rows_processed = 0;
 
-    enum class S3QueueStatus
+    enum class S3QueueStatus : uint8_t
     {
         Processed,
         Failed,
@@ -33,7 +37,6 @@ struct S3QueueLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class S3QueueLog : public SystemLog<S3QueueLogElement>

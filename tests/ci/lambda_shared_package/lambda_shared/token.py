@@ -6,7 +6,7 @@ from typing import Tuple
 
 import boto3  # type: ignore
 import jwt
-import requests  # type: ignore
+import requests
 
 from . import cached_value_is_valid
 

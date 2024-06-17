@@ -28,10 +28,10 @@ def create_tables(cluster, table_name):
     node3.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
     node1.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
     )
     node3.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
     )
 
     # populate data
@@ -108,12 +108,9 @@ def test_parallel_replicas_custom_key_failover(
             == "subqueries\t4\n"
         )
 
-        # currently this assert is flaky with asan and tsan builds, disable the assert in such cases for now
-        # will be investigated separately
-        if (
-            not node1.is_built_with_thread_sanitizer()
-            and not node1.is_built_with_address_sanitizer()
-        ):
+        # With enabled hedged requests, we can't guarantee exact query distribution among nodes
+        # In case of a replica being slow in terms of responsiveness, hedged connection can change initial replicas choice
+        if use_hedged_requests == 0:
             assert (
                 node1.query(
                     f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"

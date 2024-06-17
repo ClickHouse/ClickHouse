@@ -94,33 +94,33 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule."},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule."},
 
-        {"default_compression_codec",                   std::make_shared<DataTypeString>()},
+        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns)."},
 
-        {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
+        {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
+        {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"group_by_ttl_info.expression",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"group_by_ttl_info.min",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"group_by_ttl_info.max",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"group_by_ttl_info.expression",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
+        {"group_by_ttl_info.min",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
+        {"group_by_ttl_info.max",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
+        {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of projection names calculated for this part."},
 
-        {"visible",                                     std::make_shared<DataTypeUInt8>()},
-        {"creation_tid",                                getTransactionIDDataType()},
-        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>()},
-        {"removal_tid",                                 getTransactionIDDataType()},
-        {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
-        {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
+        {"visible",                                     std::make_shared<DataTypeUInt8>(), "Flag which indicated whether this part is visible for SELECT queries."},
+        {"creation_tid",                                getTransactionIDDataType(), "ID of transaction that has created/is trying to create this object."},
+        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>(), "Hash of removal_tid, used to lock an object for removal."},
+        {"removal_tid",                                 getTransactionIDDataType(), "ID of transaction that has removed/is trying to remove this object"},
+        {"creation_csn",                                std::make_shared<DataTypeUInt64>(), "CSN of transaction that has created this object"},
+        {"removal_csn",                                 std::make_shared<DataTypeUInt64>(), "CSN of transaction that has removed this object"},
 
-        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
+        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>(), "The flag which indicated whether the part has lightweight delete mask."},
 
-        {"last_removal_attempt_time",                   std::make_shared<DataTypeDateTime>()},
-        {"removal_state",                               std::make_shared<DataTypeString>()},
+        {"last_removal_attempt_time",                   std::make_shared<DataTypeDateTime>(), "The last time the server tried to delete this part."},
+        {"removal_state",                               std::make_shared<DataTypeString>(), "The current state of part removal process."},
     }
     )
 {

@@ -9,7 +9,7 @@ namespace DB
 using QuotaValue = UInt64;
 
 /// Kinds of resource what we wish to quota.
-enum class QuotaType
+enum class QuotaType : uint8_t
 {
     QUERIES,                                /// Number of queries.
     QUERY_SELECTS,                          /// Number of select queries.
@@ -33,6 +33,8 @@ struct QuotaTypeInfo
     const char * const raw_name = "";
     const String name;    /// Lowercased with underscores, e.g. "result_rows".
     const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
+    const String current_usage_description;
+    const String max_allowed_usage_description;
     const bool output_as_float = false;
     const UInt64 output_denominator = 1;
     String valueToString(QuotaValue value) const;
@@ -43,7 +45,7 @@ struct QuotaTypeInfo
 
 /// Key to share quota consumption.
 /// Users with the same key share the same amount of resource.
-enum class QuotaKeyType
+enum class QuotaKeyType : uint8_t
 {
     NONE,       /// All users share the same quota.
     USER_NAME,  /// Connections with the same user name share the same quota.

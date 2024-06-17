@@ -177,7 +177,7 @@ def cancel_restore(restore_id):
 def test_cancel_backup():
     # We use partitioning so backups would contain more files.
     node.query(
-        "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%5"
+        "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%20"
     )
 
     node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
@@ -196,7 +196,8 @@ def test_cancel_backup():
     start_restore(try_restore_id_1, backup_id)
     cancel_restore(try_restore_id_1)
 
-    node.query(f"DROP TABLE tbl SYNC")
+    # IF EXISTS because it's unknown whether RESTORE had managed to create a table before it got cancelled.
+    node.query(f"DROP TABLE IF EXISTS tbl SYNC")
 
     restore_id = uuid.uuid4().hex
     start_restore(restore_id, backup_id)

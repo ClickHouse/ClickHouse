@@ -11,8 +11,14 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # upstream/master
 LEFT_SERVER_PORT=9001
+LEFT_SERVER_KEEPER_PORT=9181
+LEFT_SERVER_KEEPER_RAFT_PORT=9234
+LEFT_SERVER_INTERSERVER_PORT=9009
 # patched version
-RIGHT_SERVER_PORT=9002
+RIGHT_SERVER_PORT=19001
+RIGHT_SERVER_KEEPER_PORT=19181
+RIGHT_SERVER_KEEPER_RAFT_PORT=19234
+RIGHT_SERVER_INTERSERVER_PORT=19009
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -127,6 +133,10 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
+        --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
+        --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
+        --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
+        --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -142,6 +152,10 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
+        --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
+        --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
+        --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
+        --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!

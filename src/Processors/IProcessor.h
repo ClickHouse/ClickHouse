@@ -134,7 +134,7 @@ public:
 
     virtual String getName() const = 0;
 
-    enum class Status
+    enum class Status : uint8_t
     {
         /// Processor needs some data at its inputs to proceed.
         /// You need to run another processor to generate required input and then call 'prepare' again.
@@ -369,6 +369,8 @@ public:
 protected:
     virtual void onCancel() {}
 
+    std::atomic<bool> is_cancelled{false};
+
 private:
     /// For:
     /// - elapsed_us
@@ -377,8 +379,6 @@ private:
     /// - input_wait_elapsed_us
     /// - output_wait_elapsed_us
     friend class ExecutingGraph;
-
-    std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
 

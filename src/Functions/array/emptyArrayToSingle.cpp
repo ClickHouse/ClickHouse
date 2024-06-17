@@ -391,7 +391,7 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     const IColumn * inner_col;
     IColumn * inner_res_col;
 
-    const auto * nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
+    const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
     if (nullable_col)
     {
         inner_col = &nullable_col->getNestedColumn();

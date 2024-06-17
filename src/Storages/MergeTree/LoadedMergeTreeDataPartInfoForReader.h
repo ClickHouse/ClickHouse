@@ -22,8 +22,6 @@ public:
 
     bool isWidePart() const override { return DB::isWidePart(data_part); }
 
-    bool isInMemoryPart() const override { return DB::isInMemoryPart(data_part); }
-
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }

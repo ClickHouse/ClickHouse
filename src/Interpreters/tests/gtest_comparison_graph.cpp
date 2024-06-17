@@ -12,7 +12,7 @@ using namespace DB;
 static ComparisonGraph<ASTPtr> getGraph(const String & query)
 {
     ParserExpressionList parser(false);
-    ASTPtr ast = parseQuery(parser, query, 0, 0);
+    ASTPtr ast = parseQuery(parser, query, 0, 0, 0);
     return ComparisonGraph<ASTPtr>(ast->children);
 }
 

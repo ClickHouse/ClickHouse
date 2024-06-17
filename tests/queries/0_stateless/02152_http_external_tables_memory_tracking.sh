@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-cpu-aarch64, no-parallel
+# Tags: no-tsan, no-cpu-aarch64, no-parallel, no-debug
 # TSan does not supports tracing.
 # trace_log doesn't work on aarch64
 
@@ -30,10 +30,16 @@ function run_and_check()
     # Check that temporary table had been destroyed.
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_introspection_functions=1" --data-binary @- <<<"
     WITH arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS sym
-    SELECT count()>0 FROM system.trace_log
+    SELECT 1 FROM system.trace_log
+    PREWHERE
+        query_id = '$query_id' AND
+        trace_type = 'MemorySample' AND
+        /* only deallocations */
+        size < 0 AND
+        event_date >= yesterday()
     WHERE
-        sym LIKE '%DB::StorageMemory::drop%\n%TemporaryTableHolder::~TemporaryTableHolder%' AND
-        query_id = '$query_id'
+        sym LIKE '%DB::StorageMemory::drop%\n%TemporaryTableHolder::~TemporaryTableHolder%'
+    LIMIT 1
     "
 }
 

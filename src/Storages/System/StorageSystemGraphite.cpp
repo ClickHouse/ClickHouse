@@ -1,6 +1,8 @@
-#include <Storages/System/StorageSystemGraphite.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/System/StorageSystemGraphite.h>
 
 
 namespace DB
@@ -11,7 +13,11 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
     return ColumnsDescription
     {
         {"config_name",     std::make_shared<DataTypeString>(), "graphite_rollup parameter name."},
-        {"rule_type",       std::make_shared<DataTypeString>(), ""},
+        {"rule_type",       std::make_shared<DataTypeString>(),
+            "The rule type. Possible values: RuleTypeAll = 0 - default, with regex, compatible with old scheme; "
+            "RuleTypePlain = 1 - plain metrics, with regex, compatible with old scheme; "
+            "RuleTypeTagged = 2 - tagged metrics, with regex, compatible with old scheme; "
+            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to  RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
         {"regexp",          std::make_shared<DataTypeString>(), "A pattern for the metric name."},
         {"function",        std::make_shared<DataTypeString>(), "The name of the aggregating function."},
         {"age",             std::make_shared<DataTypeUInt64>(), "The minimum age of the data in seconds."},
@@ -75,7 +81,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
     return graphite_configs;
 }
 
-void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     Configs graphite_configs = getConfigs(context);
 

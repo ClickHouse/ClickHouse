@@ -30,6 +30,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
+    extern const Event DistributedConnectionSkipReadOnlyReplica;
 }
 
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
@@ -66,20 +67,14 @@ public:
         , log(log_)
     {
         for (size_t i = 0;i < nested_pools.size(); ++i)
-            shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
+            shared_pool_states[i].config_priority = nested_pools[i]->getConfigPriority();
     }
 
     struct TryResult
     {
         TryResult() = default;
 
-        void reset()
-        {
-            entry = Entry();
-            is_usable = false;
-            is_up_to_date = false;
-            delay = 0;
-        }
+        void reset() { *this = {}; }
 
         Entry entry; /// use isNull() to check if connection is established
         bool is_usable = false; /// if connection is established, then can be false only with table check
@@ -87,6 +82,7 @@ public:
         bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
                                     /// Depends on max_replica_delay_for_distributed_queries setting
         UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
+        bool is_readonly = false;   /// Table is in read-only mode, INSERT can ignore such replicas.
     };
 
     struct PoolState;
@@ -117,6 +113,7 @@ public:
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
+            bool skip_read_only_replicas,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority);
 
@@ -133,7 +130,7 @@ protected:
 
     void updateErrorCounts(PoolStates & states, time_t & last_decrease_time) const;
 
-    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority);
+    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority, bool use_slowdown_count = false);
 
     inline void updateSharedErrorCounts(std::vector<ShuffledPool> & shuffled_pools);
 
@@ -160,7 +157,7 @@ protected:
 template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::ShuffledPool>
 PoolWithFailoverBase<TNestedPool>::getShuffledPools(
-    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority)
+    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority, bool use_slowdown_count)
 {
     /// Update random numbers and error counts.
     PoolStates pool_states = updatePoolStates(max_ignored_errors);
@@ -175,13 +172,13 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i], &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i});
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
-        [](const ShuffledPool & lhs, const ShuffledPool & rhs)
+        [use_slowdown_count](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
-            return PoolState::compare(*lhs.state, *rhs.state);
+            return PoolState::compare(*lhs.state, *rhs.state, use_slowdown_count);
         });
 
     return shuffled_pools;
@@ -205,8 +202,12 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
     const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
     std::vector<TryResult> results = getMany(
-        1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
-        max_ignored_errors, fallback_to_stale_replicas,
+        /* min_entries= */ 1,
+        /* max_entries= */ 1,
+        /* max_tries= */ 1,
+        max_ignored_errors,
+        fallback_to_stale_replicas,
+        /* skip_read_only_replicas= */ false,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
@@ -220,14 +221,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
         size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
+        bool skip_read_only_replicas,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority)
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
-    if (max_tries > max_error_cap)
-        max_tries = max_error_cap;
+    max_tries = std::min(max_tries, max_error_cap);
 
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
@@ -271,9 +272,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 ++entries_count;
                 if (result.is_usable)
                 {
-                    ++usable_count;
-                    if (result.is_up_to_date)
-                        ++up_to_date_count;
+                    if (skip_read_only_replicas && result.is_readonly)
+                        ProfileEvents::increment(ProfileEvents::DistributedConnectionSkipReadOnlyReplica);
+                    else
+                    {
+                        ++usable_count;
+                        if (result.is_up_to_date)
+                            ++up_to_date_count;
+                    }
                 }
             }
             else
@@ -296,7 +302,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
+    std::erase_if(try_results, [&](const TryResult & r) { return r.entry.isNull() || !r.is_usable || (skip_read_only_replicas && r.is_readonly); });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(
@@ -344,10 +350,14 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
         random = rng();
     }
 
-    static bool compare(const PoolState & lhs, const PoolState & rhs)
+    static bool compare(const PoolState & lhs, const PoolState & rhs, bool use_slowdown_count)
     {
-        return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
-             < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        if (use_slowdown_count)
+            return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        else
+            return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:

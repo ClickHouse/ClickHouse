@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+
+LC_ALL="en_US.UTF-8"
+ROOT_PATH=$(git rev-parse --show-toplevel)
+
+function xargs-pylint {
+  # $1 is number maximum arguments per pylint process
+  sort | awk '$2=="text/x-script.python" {print $1}' | \
+  xargs -P "$(nproc)" -n "$1" pylint --rcfile="$ROOT_PATH/pyproject.toml" --persistent=no --score=n
+}
+
+find "$ROOT_PATH/tests" -maxdepth 2 -type f -exec file -F' ' --mime-type {} + | xargs-pylint 50
+# Beware, there lambdas are checked. All of them contain `app`, and it causes brain-cucumber-zalgo
+find "$ROOT_PATH/tests/ci" -mindepth 2 -type f -exec file -F' ' --mime-type {} + | xargs-pylint 1

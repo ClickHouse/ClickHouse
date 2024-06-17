@@ -14,8 +14,6 @@
 
  -   `N` – The number of elements to return.
 
- If the parameter is omitted, default value is the size of input.
-
  -   `column` – The value (Integer, String, Float and other Generic types).
 
  **Example**
@@ -36,13 +34,12 @@
  Gets all the String implementations of all numbers in column:
 
  ``` sql
-SELECT groupArraySorted(str) FROM (SELECT toString(number) as str FROM numbers(5));
+SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) as str FROM numbers(5));
 
  ```
 
  ``` text
- ┌─groupArraySorted(str)────────┐
- │ ['0','1','2','3','4']        │
- └──────────────────────────────┘
+┌─groupArraySorted(5)(str)─┐
+│ ['0','1','2','3','4']    │
+└──────────────────────────┘
  ```
- 

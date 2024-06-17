@@ -4,7 +4,6 @@
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/UUID.h>
-#include <atomic>
 
 namespace DB
 {
@@ -23,6 +22,7 @@ public:
     ~RemoteSource() override;
 
     Status prepare() override;
+    void work() override;
     String getName() const override { return "Remote"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
@@ -40,6 +40,8 @@ protected:
 
 private:
     bool was_query_sent = false;
+    bool need_drain = false;
+    bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;

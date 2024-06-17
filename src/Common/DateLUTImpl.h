@@ -9,7 +9,6 @@
 #include <string>
 #include <type_traits>
 
-
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -42,13 +41,18 @@ enum class WeekModeFlag : UInt8
 using YearWeek = std::pair<UInt16, UInt8>;
 
 /// Modes for toDayOfWeek() function.
-enum class WeekDayMode
+enum class WeekDayMode : uint8_t
 {
     WeekStartsMonday1 = 0,
     WeekStartsMonday0 = 1,
     WeekStartsSunday0 = 2,
     WeekStartsSunday1 = 3
 };
+
+namespace DB
+{
+class DateTime64;
+}
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -255,7 +259,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch));
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -280,9 +284,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
-            if (likely(x >= 0))
+            if (x >= 0) [[likely]]
                 return static_cast<DateOrTime>(x / divisor * divisor);
 
             /// Integer division for negative numbers rounds them towards zero (up).
@@ -576,10 +580,10 @@ public:
 
     unsigned toSecond(Time t) const
     {
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
             Time res = t % 60;
-            if (likely(res >= 0))
+            if (res >= 0) [[likely]]
                 return static_cast<unsigned>(res);
             return static_cast<unsigned>(res) + 60;
         }
@@ -592,6 +596,8 @@ public:
 
         return time % 60;
     }
+
+    unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
     unsigned toMinute(Time t) const
     {
@@ -1098,8 +1104,7 @@ public:
                 time -= values.amount_of_offset_change();
 
                 /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
-                if (time < values.time_at_offset_change())
-                    time = values.time_at_offset_change();
+                time = std::max<Time>(time, values.time_at_offset_change());
             }
         }
         else
@@ -1122,9 +1127,9 @@ public:
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         Int64 divisor = 60 * minutes;
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
-            if (likely(t >= 0))
+            if (t >= 0) [[likely]]
                 return static_cast<DateOrTime>(t / divisor * divisor);
             return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
         }
@@ -1244,7 +1249,7 @@ public:
     DateComponents toDateComponents(Time t) const
     {
         const Values & values = getValues(t);
-        return { values.year, values.month, values.day_of_month };
+        return { .year = values.year, .month = values.month, .day = values.day_of_month };
     }
 
     DateTimeComponents toDateTimeComponents(Time t) const
@@ -1339,15 +1344,12 @@ public:
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (likely(day_of_month <= 28))
+        if (day_of_month <= 28) [[likely]]
             return day_of_month;
 
         UInt8 days_in_month = daysInMonth(year, month);
 
-        if (day_of_month > days_in_month)
-            day_of_month = days_in_month;
-
-        return day_of_month;
+        return std::min(day_of_month, days_in_month);
     }
 
     template <typename DateOrTime>

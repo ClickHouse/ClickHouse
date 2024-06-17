@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /**
  * Column for storing Variant(...) type values.
  * Variant type represents a union of other data types.
@@ -59,7 +54,7 @@ namespace ErrorCodes
  *         1                  2
  *
  */
-class ColumnVariant final : public COWHelper<IColumn, ColumnVariant>
+class ColumnVariant final : public COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>
 {
 public:
     using Discriminator = UInt8;
@@ -70,8 +65,16 @@ public:
     static constexpr UInt8 NULL_DISCRIMINATOR = std::numeric_limits<Discriminator>::max(); /// 255
     static constexpr size_t MAX_NESTED_COLUMNS = std::numeric_limits<Discriminator>::max(); /// 255
 
+    struct ComparatorBase;
+
+    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+
 private:
-    friend class COWHelper<IColumn, ColumnVariant>;
+    friend class COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
 
     using NestedColumns = std::vector<WrappedPtr>;
 
@@ -100,7 +103,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other variants.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested variants.
       */
-    using Base = COWHelper<IColumn, ColumnVariant>;
+    using Base = COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
     static Ptr create(const Columns & variants_) { return create(variants_, {}); }
     static Ptr create(const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
     static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_) { return create(local_discriminators_, variants_, {}); }
@@ -172,17 +175,32 @@ public:
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
+
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
-    void insertIntoVariant(const Field & x, Discriminator global_discr);
+    bool tryInsert(const Field & x) override;
+
     void insertFrom(const IColumn & src_, size_t n) override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+    void insertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
+    void insertManyFrom(const IColumn & src_, size_t position, size_t length) override;
+
+    /// Methods for insertion from another Variant but with known mapping between global discriminators.
+    void insertFrom(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    void insertManyFrom(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+
+    /// Methods for insertion into a specific variant.
+    void insertIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t n);
+    void insertRangeIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t start, size_t length);
+    void insertManyIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t position, size_t length);
+
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
+
     void popBack(size_t n) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeVariantAndInsertFromArena(Discriminator global_discr, const char * pos);
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -195,23 +213,12 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
-    /// Variant type is not comparable.
-    int compareAt(size_t, size_t, const IColumn &, int) const override
-    {
-        return 0;
-    }
-
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnVariant");
-    }
-
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                            size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
 
@@ -240,6 +247,8 @@ public:
     const ColumnPtr & getVariantPtrByGlobalDiscriminator(size_t discr) const { return variants[global_to_local_discriminators.at(discr)]; }
     ColumnPtr & getVariantPtrByLocalDiscriminator(size_t discr) { return variants[discr]; }
     ColumnPtr & getVariantPtrByGlobalDiscriminator(size_t discr) { return variants[global_to_local_discriminators.at(discr)]; }
+
+    const NestedColumns & getVariants() const { return variants; }
 
     const IColumn & getLocalDiscriminatorsColumn() const { return *local_discriminators; }
     IColumn & getLocalDiscriminatorsColumn() { return *local_discriminators; }
@@ -289,7 +298,19 @@ public:
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
     void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
 
+    /// Extend current column with new variants. Change global discriminators of current variants to the new
+    /// according to the mapping and add new variants with new global discriminators.
+    /// This extension doesn't rewrite any data, just adds new empty variants and modifies global/local discriminators matching.
+    void extend(const std::vector<Discriminator> & old_to_new_global_discriminators, std::vector<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
+
+    bool hasDynamicStructure() const override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+
 private:
+    void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
+
     void initIdentityGlobalToLocalDiscriminatorsMapping();
 
     template <bool inverted>

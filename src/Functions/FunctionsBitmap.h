@@ -193,8 +193,8 @@ private:
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
         const ColumnPtr & mapped = array->getDataPtr();
         const ColumnArray::Offsets & offsets = array->getOffsets();
-        const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(&*mapped);
-        const typename ColumnVector<T>::Container & input_data = column->getData();
+        const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*mapped);
+        const typename ColumnVector<T>::Container & input_data = column.getData();
 
         // output data
         Array params_row;
@@ -519,12 +519,12 @@ public:
                                        "but one of them has type {}.", getName(), arguments[i + 1]->getName());
 
             if (!array_type)
-                throw exception;
+                throw exception; /// NOLINT
 
             auto nested_type = array_type->getNestedType();
             WhichDataType which(nested_type);
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                throw exception;
+                throw exception; /// NOLINT
         }
         return arguments[0];
     }

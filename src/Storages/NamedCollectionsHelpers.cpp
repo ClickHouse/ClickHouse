@@ -1,10 +1,12 @@
 #include "NamedCollectionsHelpers.h"
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -61,8 +63,31 @@ namespace
         auto value = literal_value->as<ASTLiteral>()->value;
         return std::pair{key, Field(value)};
     }
+
+    std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
+    {
+        auto res = getKeyValueFromAST(ast, true, context);
+
+        if (!res || !std::holds_alternative<Field>(res->second))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", queryToString(ast));
+
+        return {res->first, std::get<Field>(res->second)};
+    }
 }
 
+std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
+{
+    std::map<String, Field> params;
+    for (const auto & ast : asts)
+    {
+        auto [key, value] = getKeyValueFromAST(ast, context);
+        bool inserted = params.emplace(key, value).second;
+        if (!inserted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicated key '{}' in params", key);
+    }
+
+    return params;
+}
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
@@ -70,7 +95,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.empty())
         return nullptr;
 
-    NamedCollectionUtils::loadIfNot();
+    NamedCollectionFactory::instance().loadIfNot();
 
     auto collection_name = getCollectionName(asts);
     if (!collection_name.has_value())

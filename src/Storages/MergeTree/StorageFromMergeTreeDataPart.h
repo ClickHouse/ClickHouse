@@ -34,6 +34,7 @@ public:
         , partition_id(part_->info.partition_id)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
@@ -86,14 +87,10 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
-
-    NamesAndTypesList getVirtuals() const override
-    {
-        return storage.getVirtuals();
-    }
 
     String getPartitionId() const
     {

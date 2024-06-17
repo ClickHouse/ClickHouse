@@ -9,6 +9,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -38,7 +39,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "1 if the mutation is completed, "
             "0 if the mutation is still in process. "
         },
-        { "is_killed",                  std::make_shared<DataTypeUInt8>() },
+        { "is_killed",                  std::make_shared<DataTypeUInt8>(), "Only available in ClickHouse Cloud."},
         { "latest_failed_part",         std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
         { "latest_fail_time",           std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
         { "latest_fail_reason",         std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
@@ -46,7 +47,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
 }
 
 
-void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -100,7 +101,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             { col_table, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

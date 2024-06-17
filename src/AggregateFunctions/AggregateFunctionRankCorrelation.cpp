@@ -66,31 +66,31 @@ public:
     {
         Float64 new_x = columns[0]->getFloat64(row_num);
         Float64 new_y = columns[1]->getFloat64(row_num);
-        this->data(place).addX(new_x, arena);
-        this->data(place).addY(new_y, arena);
+        data(place).addX(new_x, arena);
+        data(place).addY(new_y, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto & a = this->data(place);
-        const auto & b = this->data(rhs);
+        auto & a = data(place);
+        const auto & b = data(rhs);
 
         a.merge(b, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto answer = this->data(place).getResult();
+        auto answer = data(place).getResult();
 
         auto & column = static_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(answer);

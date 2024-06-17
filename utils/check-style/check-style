@@ -50,11 +50,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
-# Double whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
-
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
@@ -70,6 +65,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
+    ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
@@ -157,9 +153,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     grep -vP $EXCLUDE_DIRS |
     xargs xmllint --noout --nonet
 
-# FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
-
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
@@ -179,6 +172,8 @@ for test_case in "${tests_with_query_log[@]}"; do
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
+
+grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateful/stateless tests, because it will break concurrently running queries"
 
 # There shouldn't be large jumps between test numbers (since they should be consecutive)
 max_diff=$(
@@ -246,8 +241,22 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     esac
 done
 
-# All the submodules should be from https://github.com/
-find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
+# All submodules should be from https://github.com/
+git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
+while read -r line; do
+    name=${line#submodule.}; name=${name%.url*}
+    url=${line#* }
+    [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"
+done
+
+# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
+# - restrict the check to top-level .gitmodules file
+git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.path' | \
+while read -r line; do
+    name=${line#submodule.}; name=${name%.path*}
+    path=${line#* }
+    [ "$name" != "$path" ] && echo "Submodule name '$name' is not equal to it's path '$path'"
+done
 
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
@@ -296,8 +305,6 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
-    # DUMP()
-    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -317,6 +324,7 @@ std_cerr_cout_excludes=(
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
+    src/Common/GWPAsan.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
@@ -348,7 +356,7 @@ done
 
 expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
+    pattern="^exp_internal -f \$CLICKHOUSE_TMP/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 
     if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then

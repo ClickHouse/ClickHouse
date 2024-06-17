@@ -61,14 +61,14 @@ sidebar_label: ORDER BY
 
 我们只建议使用 `COLLATE` 对于少量行的最终排序，因为排序与 `COLLATE` 比正常的按字节排序效率低。
 
-## ORDER BY *
+## ORDER BY ALL
 
-`ORDER BY *` 对所有选定的列进行升序排序。
+`ORDER BY ALL` 对所有选定的列进行升序排序。
 
 示例:
 
 ``` sql
-SELECT a, b, c FROM t ORDER BY *
+SELECT a, b, c FROM t ORDER BY ALL
 ```
 
 等同于：
@@ -89,7 +89,7 @@ SELECT a, b, c FROM t ORDER BY a, b, c
 
 ## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
-此修饰符可以与 [LIMIT … WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties) 进行组合使用.
+此修饰符可以与 [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties) 进行组合使用.
 
 可以在`ORDER BY expr`之后用可选的`FROM expr`，`TO expr`和`STEP expr`参数来设置`WITH FILL`修饰符。
 所有`expr`列的缺失值将被顺序填充，而其他列将被填充为默认值。

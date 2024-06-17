@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -16,7 +17,7 @@ class ReadBuffer;
 class JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReaderBase(ReadBuffer & in_);
+    explicit JSONColumnsReaderBase(ReadBuffer & in_);
 
     virtual ~JSONColumnsReaderBase() = default;
 
