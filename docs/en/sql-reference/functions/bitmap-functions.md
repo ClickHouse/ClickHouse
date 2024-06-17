@@ -74,7 +74,7 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Arguments**
 
-- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `bitmap` – [Bitmap object](#bitmapbuild).
 - `range_start` – Start of the range (inclusive). [UInt32](../data-types/int-uint.md).
 - `range_end` – End of the range (exclusive). [UInt32](../data-types/int-uint.md).
 
@@ -104,7 +104,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Arguments**
 
-- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `bitmap` – [Bitmap object](#bitmapbuild).
 - `range_start` – Start of the range (inclusive). [UInt32](../data-types/int-uint.md).
 - `cardinality_limit` – Maximum cardinality of the subset. [UInt32](../data-types/int-uint.md).
 
@@ -134,7 +134,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Arguments**
 
-- `bitmap` – The bitmap. [Bitmap object](#bitmap_functions-bitmapbuild).
+- `bitmap` – The bitmap. [Bitmap object](#bitmapbuild).
 - `offset` – The position of the first element of the subset. [UInt32](../data-types/int-uint.md).
 - `cardinality_limit` – The maximum number of elements in the subset. [UInt32](../data-types/int-uint.md).
 
@@ -162,7 +162,7 @@ bitmapContains(bitmap, needle)
 
 **Arguments**
 
-- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `bitmap` – [Bitmap object](#bitmapbuild).
 - `needle` – Searched bit value. [UInt32](../data-types/int-uint.md).
 
 **Returned values**
@@ -188,7 +188,7 @@ Result:
 
 Checks whether two bitmaps intersect.
 
-If `bitmap2` contains exactly one element, consider using [bitmapContains](#bitmap_functions-bitmapcontains) instead as it works more efficiently.
+If `bitmap2` contains exactly one element, consider using [bitmapContains](#bitmapcontains) instead as it works more efficiently.
 
 **Syntax**
 
