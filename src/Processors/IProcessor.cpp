@@ -16,7 +16,6 @@ void IProcessor::cancel()
     if (already_cancelled)
         return;
 
-    LOG_DEBUG(getLogger("IProcessor"), "cancel: {}", getName());
     onCancel();
 }
 
