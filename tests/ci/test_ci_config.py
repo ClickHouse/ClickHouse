@@ -20,6 +20,42 @@ class TestCIConfig(unittest.TestCase):
         """check runner is provided w/o exception"""
         for job in CI.JobNames:
             self.assertIn(CI.JOB_CONFIGS[job].runner_type, CI.Runners)
+            if (
+                job
+                in (
+                    CI.JobNames.STYLE_CHECK,
+                    CI.JobNames.BUILD_CHECK,
+                )
+                or "jepsen" in job.lower()
+            ):
+                self.assertTrue(
+                    "style" in CI.JOB_CONFIGS[job].runner_type,
+                    f"Job [{job}] must have style-checker(-aarch64) runner",
+                )
+            elif "binary_" in job.lower() or "package_" in job.lower():
+                self.assertTrue(
+                    CI.JOB_CONFIGS[job].runner_type == CI.Runners.BUILDER,
+                    f"Job [{job}] must have [{CI.Runners.BUILDER}] runner",
+                )
+            elif "aarch64" in job.lower():
+                self.assertTrue(
+                    "aarch" in CI.JOB_CONFIGS[job].runner_type,
+                    f"Job [{job}] does not match runner [{CI.JOB_CONFIGS[job].runner_type}]",
+                )
+            else:
+                self.assertTrue(
+                    "aarch" not in CI.JOB_CONFIGS[job].runner_type,
+                    f"Job [{job}] does not match runner [{CI.JOB_CONFIGS[job].runner_type}]",
+                )
+
+    def test_common_configs_applied_properly(self):
+        for job in CI.JobNames:
+            if CI.JOB_CONFIGS[job].job_name_keyword:
+                self.assertTrue(
+                    CI.JOB_CONFIGS[job].job_name_keyword.lower()
+                    in normalize_string(job),
+                    f"Job [{job}] apparently uses wrong common config with job keyword [{CI.JOB_CONFIGS[job].job_name_keyword}]",
+                )
 
     def test_required_checks(self):
         for job in CI.REQUIRED_CHECKS:

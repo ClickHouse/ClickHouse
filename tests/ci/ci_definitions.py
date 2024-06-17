@@ -280,6 +280,8 @@ class JobConfig:
 
     # GH Runner type (tag from @Runners)
     runner_type: str
+    # used for config validation in ci unittests
+    job_name_keyword: str = ""
     # builds required for the job (applicable for test jobs)
     required_builds: Optional[List[str]] = None
     # build config for the build job (applicable for builds)
@@ -328,6 +330,7 @@ class CommonJobConfigs:
     """
 
     BUILD_REPORT = JobConfig(
+        job_name_keyword="build_check",
         run_command="build_report_check.py",
         digest=DigestConfig(
             include_paths=[
@@ -338,23 +341,26 @@ class CommonJobConfigs:
         runner_type=Runners.STYLE_CHECKER_ARM,
     )
     COMPATIBILITY_TEST = JobConfig(
+        job_name_keyword="compatibility",
         digest=DigestConfig(
             include_paths=["./tests/ci/compatibility_check.py"],
             docker=["clickhouse/test-old-ubuntu", "clickhouse/test-old-centos"],
         ),
         run_command="compatibility_check.py",
-        runner_type=Runners.STYLE_CHECKER_ARM,
+        runner_type=Runners.STYLE_CHECKER,
     )
     INSTALL_TEST = JobConfig(
+        job_name_keyword="install",
         digest=DigestConfig(
             include_paths=["./tests/ci/install_check.py"],
             docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
         ),
         run_command='install_check.py "$CHECK_NAME"',
-        runner_type=Runners.STYLE_CHECKER_ARM,
+        runner_type=Runners.STYLE_CHECKER,
         timeout=900,
     )
     STATELESS_TEST = JobConfig(
+        job_name_keyword="stateless",
         digest=DigestConfig(
             include_paths=[
                 "./tests/ci/functional_test_check.py",
@@ -371,6 +377,7 @@ class CommonJobConfigs:
         timeout=10800,
     )
     STATEFUL_TEST = JobConfig(
+        job_name_keyword="stateful",
         digest=DigestConfig(
             include_paths=[
                 "./tests/ci/functional_test_check.py",
@@ -387,6 +394,7 @@ class CommonJobConfigs:
         timeout=3600,
     )
     STRESS_TEST = JobConfig(
+        job_name_keyword="stress",
         digest=DigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
@@ -403,6 +411,7 @@ class CommonJobConfigs:
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
+        job_name_keyword="upgrade",
         digest=DigestConfig(
             include_paths=["./tests/ci/upgrade_check.py"],
             exclude_files=[".md"],
@@ -412,6 +421,7 @@ class CommonJobConfigs:
         runner_type=Runners.STRESS_TESTER,
     )
     INTEGRATION_TEST = JobConfig(
+        job_name_keyword="integration",
         digest=DigestConfig(
             include_paths=[
                 "./tests/ci/integration_test_check.py",
@@ -425,12 +435,14 @@ class CommonJobConfigs:
         runner_type=Runners.STRESS_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
+        job_name_keyword="ast",
         digest=DigestConfig(),
         run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
     UNIT_TEST = JobConfig(
+        job_name_keyword="unit",
         digest=DigestConfig(
             include_paths=["./tests/ci/unit_tests_check.py"],
             exclude_files=[".md"],
@@ -440,6 +452,7 @@ class CommonJobConfigs:
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
     PERF_TESTS = JobConfig(
+        job_name_keyword="performance",
         digest=DigestConfig(
             include_paths=[
                 "./tests/ci/performance_comparison_check.py",
@@ -452,6 +465,7 @@ class CommonJobConfigs:
         runner_type=Runners.STRESS_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
+        job_name_keyword="lancer",
         digest=DigestConfig(),
         run_command="sqlancer_check.py",
         release_only=True,
@@ -459,6 +473,7 @@ class CommonJobConfigs:
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
     SQLLOGIC_TEST = JobConfig(
+        job_name_keyword="logic",
         digest=DigestConfig(
             include_paths=["./tests/ci/sqllogic_test.py"],
             exclude_files=[".md"],
@@ -467,9 +482,10 @@ class CommonJobConfigs:
         run_command="sqllogic_test.py",
         timeout=10800,
         release_only=True,
-        runner_type=Runners.STYLE_CHECKER_ARM,
+        runner_type=Runners.STYLE_CHECKER,
     )
     SQL_TEST = JobConfig(
+        job_name_keyword="sqltest",
         digest=DigestConfig(
             include_paths=["./tests/ci/sqltest.py"],
             exclude_files=[".md"],
@@ -481,12 +497,14 @@ class CommonJobConfigs:
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
     BUGFIX_TEST = JobConfig(
+        job_name_keyword="bugfix",
         digest=DigestConfig(),
         run_command="bugfix_validate_check.py",
         timeout=900,
         runner_type=Runners.FUNC_TESTER,
     )
     DOCKER_SERVER = JobConfig(
+        job_name_keyword="docker",
         required_on_release_branch=True,
         run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
         digest=DigestConfig(
@@ -498,6 +516,7 @@ class CommonJobConfigs:
         runner_type=Runners.STYLE_CHECKER,
     )
     CLICKBENCH_TEST = JobConfig(
+        job_name_keyword="clickbench",
         digest=DigestConfig(
             include_paths=[
                 "tests/ci/clickbench.py",

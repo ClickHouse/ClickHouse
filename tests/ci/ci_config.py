@@ -260,7 +260,8 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE]
         ),
         JobNames.INSTALL_TEST_ARM: CommonJobConfigs.INSTALL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64]
+            required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN]
@@ -284,7 +285,8 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE]
         ),
         JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64]
+            required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE]
@@ -331,6 +333,7 @@ class CI:
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
@@ -397,7 +400,9 @@ class CI:
             required_builds=[BuildNames.PACKAGE_TSAN], num_batches=6
         ),
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64], num_batches=6
+            required_builds=[BuildNames.PACKAGE_AARCH64],
+            num_batches=6,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -414,6 +419,7 @@ class CI:
         JobNames.COMPATIBILITY_TEST_ARM: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             required_on_release_branch=True,
+            runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.UNIT_TEST: CommonJobConfigs.UNIT_TEST.with_properties(
             required_builds=[BuildNames.BINARY_RELEASE],
@@ -467,6 +473,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
             run_by_label="pr-performance",
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -480,11 +487,12 @@ class CI:
         JobNames.SQLTEST: CommonJobConfigs.SQL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
-        JobNames.CLICKBENCH_TEST: CommonJobConfigs.SQL_TEST.with_properties(
+        JobNames.CLICKBENCH_TEST: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
-        JobNames.CLICKBENCH_TEST_ARM: CommonJobConfigs.SQL_TEST.with_properties(
+        JobNames.CLICKBENCH_TEST_ARM: CommonJobConfigs.CLICKBENCH_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
