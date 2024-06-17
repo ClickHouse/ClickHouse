@@ -399,7 +399,7 @@ option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
 # but GWP-ASan also wants to use mmap frequently,
 # and due to a large number of memory mappings,
 # it does not work together well.
-if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
+if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") OR SANITIZE)
     set(ENABLE_GWP_ASAN OFF)
 endif ()
 

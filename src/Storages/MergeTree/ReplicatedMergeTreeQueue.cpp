@@ -2004,8 +2004,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
     {
-        /// FIXME uncomment this assertion after relesing 23.5 (currently it fails in Upgrade check)
-        /// chassert(mutation_pointer < it->second->entry->znode_name);
+        chassert(mutation_pointer < it->second->entry->znode_name);
         mutation_ids.push_back(it->second->entry->znode_name);
         const auto & commands_from_entry = it->second->entry->commands;
         commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
