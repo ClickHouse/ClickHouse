@@ -1871,7 +1871,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
             auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext(), nullptr);
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext(), nullptr).resolved_values;
             StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
@@ -2085,7 +2085,7 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
         return nullptr;
 
     auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-    StorageView::replaceQueryParametersIfParametrizedView(query, getQueryContext(), param_values);
+    StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();

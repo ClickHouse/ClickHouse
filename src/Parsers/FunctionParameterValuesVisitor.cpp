@@ -25,8 +25,13 @@ namespace ErrorCodes
 class FunctionParameterValuesVisitor
 {
 public:
-    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, ContextPtr context_, const ScopeAliases * aliases_)
-        : parameter_values(parameter_values_), aliases(aliases_), context(context_)
+    explicit FunctionParameterValuesVisitor(
+        ParamValuesAnalyzeResult & result_,
+        ContextPtr context_,
+        const ScopeAliases * aliases_)
+        : result(result_)
+        , aliases(aliases_)
+        , context(context_)
     {
     }
 
@@ -40,11 +45,11 @@ public:
     }
 
 private:
-    NameToNameMap & parameter_values;
+    ParamValuesAnalyzeResult & result;
     const ScopeAliases * aliases;
     ContextPtr context;
 
-    std::string tryGetParameterValueAsString(const ASTPtr & ast)
+    std::string tryGetParameterValueAsString(const std::string & param_name, const ASTPtr & ast)
     {
         if (const auto * literal = ast->as<ASTLiteral>())
         {
@@ -57,7 +62,10 @@ private:
                 auto it = aliases->alias_name_to_expression_node_before_group_by.find(value_identifier->name());
                 if (it != aliases->alias_name_to_expression_node_before_group_by.end())
                 {
-                    return tryGetParameterValueAsString(it->second->toAST());
+                    auto value_str = tryGetParameterValueAsString(param_name, it->second->toAST());
+                    if (value_str.empty())
+                        result.unresolved_values.emplace(param_name, value_identifier->name());
+                    return value_str;
                 }
             }
         }
@@ -76,8 +84,8 @@ private:
             }
             else
             {
-                ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(expression_list->children[1], context);
-                parameter_values[identifier->name()] = convertFieldToString(res->as<ASTLiteral>()->value);
+                ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(ast, context);
+                return convertFieldToString(res->as<ASTLiteral>()->value);
             }
         }
         return "";
@@ -95,18 +103,18 @@ private:
 
         if (const auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
         {
-            auto value_str = tryGetParameterValueAsString(expression_list->children[1]);
+            auto value_str = tryGetParameterValueAsString(identifier->name(), expression_list->children[1]);
             if (!value_str.empty())
-                parameter_values[identifier->name()] = value_str;
+                result.resolved_values[identifier->name()] = value_str;
         }
     }
 };
 
-NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, const ContextPtr & context, const ScopeAliases * scope_aliases)
+ParamValuesAnalyzeResult analyzeFunctionParamValues(const ASTPtr & ast, const ContextPtr & context, const ScopeAliases * scope_aliases)
 {
-    NameToNameMap parameter_values;
-    FunctionParameterValuesVisitor(parameter_values, context, scope_aliases).visit(ast);
-    return parameter_values;
+    ParamValuesAnalyzeResult result;
+    FunctionParameterValuesVisitor(result, context, scope_aliases).visit(ast);
+    return result;
 }
 
 

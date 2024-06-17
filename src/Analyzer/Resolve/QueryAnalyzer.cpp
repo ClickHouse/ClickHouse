@@ -25,6 +25,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
@@ -3496,7 +3497,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
   *
   * 4. If node has alias, update its value in scope alias map. Deregister alias from expression_aliases_in_resolve_process.
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias)
+ProjectionNames QueryAnalyzer::resolveExpressionNode(
+    QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias)
 {
     checkStackSize();
 
@@ -4506,11 +4508,25 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        NameToNameMap param_values = analyzeFunctionParamValues(function_ast, &scope.aliases);
-        auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(
+        auto context = scope_context->getQueryContext();
+        auto param_values_result = analyzeFunctionParamValues(function_ast, context, &scope.aliases);
+
+        for (const auto & [param_name, alias] : param_values_result.unresolved_values)
+        {
+            auto it = scope.aliases.alias_name_to_expression_node_before_group_by.find(alias);
+            if (it != scope.aliases.alias_name_to_expression_node_before_group_by.end())
+            {
+                auto res = resolveExpressionNode(it->second, scope, false, false);
+                auto resolved_value = evaluateConstantExpressionOrIdentifierAsLiteral(it->second->toAST(), context);
+                auto resolved_value_str = convertFieldToString(resolved_value->as<ASTLiteral>()->value);
+                param_values_result.resolved_values.emplace(param_name, std::move(resolved_value_str));
+            }
+        }
+
+        auto parametrized_view_storage = context->buildParametrizedViewStorage(
             database_name,
             table_name,
-            param_values);
+            param_values_result.resolved_values);
 
         if (parametrized_view_storage)
         {
