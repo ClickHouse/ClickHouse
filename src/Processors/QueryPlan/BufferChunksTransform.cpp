@@ -3,11 +3,11 @@
 namespace DB
 {
 
-BufferChunksTransform::BufferChunksTransform(const Block & header_, size_t max_bytes_to_buffer_, size_t limit_)
+BufferChunksTransform::BufferChunksTransform(const Block & header_, size_t max_rows_to_buffer_, size_t limit_)
     : IProcessor({header_}, {header_})
     , input(inputs.front())
     , output(outputs.front())
-    , max_bytes_to_buffer(max_bytes_to_buffer_)
+    , max_rows_to_buffer(max_rows_to_buffer_)
     , limit(limit_)
 {
 }
@@ -30,7 +30,7 @@ IProcessor::Status BufferChunksTransform::prepare()
             auto chunk = std::move(chunks.front());
             chunks.pop();
 
-            num_buffered_bytes -= chunk.bytes();
+            num_buffered_rows -= chunk.bytes();
             output.push(std::move(chunk));
         }
         else if (input.hasData())
@@ -45,14 +45,14 @@ IProcessor::Status BufferChunksTransform::prepare()
         }
     }
 
-    if (input.hasData() && num_buffered_bytes < max_bytes_to_buffer)
+    if (input.hasData() && num_buffered_rows < max_rows_to_buffer)
     {
         auto chunk = pullChunk();
-        num_buffered_bytes += chunk.bytes();
+        num_buffered_rows += chunk.bytes();
         chunks.push(std::move(chunk));
     }
 
-    if (num_buffered_bytes >= max_bytes_to_buffer)
+    if (num_buffered_rows >= max_rows_to_buffer)
     {
         input.setNotNeeded();
         return Status::PortFull;
