@@ -602,6 +602,7 @@
     M(721, DEPRECATED_FUNCTION) \
     M(722, ASYNC_LOAD_WAIT_FAILED) \
     M(723, PARQUET_EXCEPTION) \
+    M(724, TOO_LONG_TABLE_NAME) \
     \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -610,7 +611,6 @@
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-    M(1003, TOO_LONG_TABLE_NAME) \
 /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -643,7 +643,7 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code < 0 || error_code > END)
+        if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }

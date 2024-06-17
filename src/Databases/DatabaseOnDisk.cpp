@@ -1,7 +1,6 @@
 #include <Databases/DatabaseOnDisk.h>
 
 #include <filesystem>
-#include <limits>
 #include <iterator>
 #include <span>
 #include <Databases/DatabaseAtomic.h>
@@ -383,7 +382,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     auto max_table_name_length = static_cast<size_t>(max_file_name_length) - database_name.length() - suffix.length() - 38;
 
     if (to_table_name.length() > max_table_name_length)
-        throw Exception(ErrorCodes::TOO_LONG_TABLE_NAME, "The max length of table name in {} is {}, current length is {}",
+        throw Exception(ErrorCodes::TOO_LONG_TABLE_NAME, "The max length of table name for database {} is {}, current length is {}",
                             database_name, max_table_name_length, to_table_name.length());
 
     if (fs::exists(table_metadata_path))
