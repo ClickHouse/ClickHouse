@@ -1,5 +1,9 @@
 #include <base/map.h>
+#include "Common/assert_cast.h"
+#include "Common/logger_useful.h"
 #include <Common/StringUtils.h>
+#include "Columns/IColumn.h"
+#include "DataTypes/Serializations/ISerialization.h"
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
@@ -92,6 +96,18 @@ std::string DataTypeMap::doGetPrettyName(size_t indent) const
 MutableColumnPtr DataTypeMap::createColumn() const
 {
     return ColumnMap::create(nested->createColumn());
+}
+
+MutableColumnPtr DataTypeMap::createColumn(const ISerialization & serialization) const
+{
+    const auto * nested_serialization = removeWrapper<SerializationNamed>(serialization);
+    size_t num_shards = assert_cast<const SerializationMap &>(*nested_serialization).getNumShards();
+
+    MutableColumns shards(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        shards[i] = nested->createColumn();
+
+    return ColumnMap::create(std::move(shards));
 }
 
 Field DataTypeMap::getDefault() const

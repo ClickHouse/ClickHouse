@@ -467,4 +467,13 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
     return state_concrete;
 }
 
+template <typename Serialization>
+const ISerialization * removeWrapper(const ISerialization & serialization)
+{
+    const ISerialization * res = &serialization;
+    while (const auto * current = typeid_cast<const Serialization *>(res))
+        res = current->getNested().get();
+    return res;
+}
+
 }

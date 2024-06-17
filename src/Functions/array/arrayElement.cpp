@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

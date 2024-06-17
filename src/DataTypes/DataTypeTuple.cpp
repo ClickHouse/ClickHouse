@@ -195,14 +195,12 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     /// If we read Tuple as Variant subcolumn, it may be wrapped to SerializationVariantElement.
     /// Here we don't need it, so we drop this wrapper.
     const auto * current_serialization = &serialization;
-    while (const auto * serialization_variant_element = typeid_cast<const SerializationVariantElement *>(current_serialization))
-        current_serialization = serialization_variant_element->getNested().get();
+    current_serialization = removeWrapper<SerializationVariantElement>(*current_serialization);
 
     /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
     /// several times to allow to reconstruct the substream path name.
     /// Here we don't need substream path name, so we drop first several wrapper serializations.
-    while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
-        current_serialization = serialization_named->getNested().get();
+    current_serialization = removeWrapper<SerializationNamed>(*current_serialization);
 
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)

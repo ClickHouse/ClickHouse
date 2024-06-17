@@ -4,6 +4,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
+#include "Common/assert_cast.h"
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -15,11 +17,17 @@ class ColumnMap final : public COWHelper<IColumnHelper<ColumnMap>, ColumnMap>
 private:
     friend class COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
-    WrappedPtr nested;
-
-    explicit ColumnMap(MutableColumnPtr && nested_);
+    std::vector<WrappedPtr> shards;
 
     ColumnMap(const ColumnMap &) = default;
+    explicit ColumnMap(MutableColumns && shards_);
+
+    template <typename F> MutableColumns applyForShards(F && f) const;
+    std::vector<WrappedPtr> cloneEmptyShards() const;
+    static void concatToOneShard(std::vector<WrappedPtr> && shard_sources, IColumn & res);
+
+    template <bool one_value, typename Inserter>
+    void insertRangeImpl(const ColumnMap & src, Inserter && inserter);
 
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
@@ -27,18 +35,33 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
+    static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
+    static Ptr create(ColumnPtr && column) { return ColumnMap::create(column->assumeMutable()); }
+    static MutablePtr create(MutableColumns && columns) { return Base::create(std::move(columns)); }
+
+    static MutablePtr create(MutableColumnPtr && column)
+    {
+        MutableColumns columns;
+        columns.emplace_back(std::move(column));
+        return create(std::move(columns));
+    }
+
     static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
     {
         auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
-        return ColumnMap::create(nested_column);
+        return ColumnMap::create(std::move(nested_column));
     }
 
-    static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
-    static Ptr create(ColumnPtr && arg) { return create(arg); }
+    size_t getNumShards() const { return shards.size(); }
 
-    template <typename ... Args>
-    requires (IsMutableColumns<Args ...>::value)
-    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
+    const ColumnPtr & getShardPtr(size_t idx) const { return shards[idx]; }
+    ColumnPtr & getShardPtr(size_t idx) { return shards[idx]; }
+
+    const ColumnArray & getShard(size_t idx) const { return assert_cast<const ColumnArray &>(*shards[idx]); }
+    ColumnArray & getShard(size_t idx) { return assert_cast<ColumnArray &>(*shards[idx]); }
+
+    const ColumnTuple & getShardData(size_t idx) const { return assert_cast<const ColumnTuple &>(getShard(idx).getData()); }
+    ColumnTuple & getShardData(size_t idx) { return assert_cast<ColumnTuple &>(getShard(idx).getData()); }
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Map"; }
@@ -47,7 +70,7 @@ public:
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    size_t size() const override { return nested->size(); }
+    size_t size() const override { return shards[0]->size(); }
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -91,21 +114,21 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override;
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
-    void finalize() override { nested->finalize(); }
-    bool isFinalized() const override { return nested->isFinalized(); }
+    void finalize() override;
+    bool isFinalized() const override;
 
-    const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
-    ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
+    const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*shards[0]); }
+    ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*shards[0]); }
 
-    const ColumnPtr & getNestedColumnPtr() const { return nested; }
-    ColumnPtr & getNestedColumnPtr() { return nested; }
+    const ColumnPtr & getNestedColumnPtr() const { return shards[0]; }
+    ColumnPtr & getNestedColumnPtr() { return shards[0]; }
 
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 
     ColumnPtr compress() const override;
 
-    bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    bool hasDynamicStructure() const override { return shards[0]->hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 

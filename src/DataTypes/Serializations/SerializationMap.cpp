@@ -4,6 +4,9 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/DataTypeMap.h>
 
+#include "Common/Exception.h"
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/WeakHash.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnMap.h>
@@ -114,24 +117,28 @@ void SerializationMap::serializeTextImpl(
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
-    const auto & nested_array = column_map.getNestedColumn();
-    const auto & nested_tuple = column_map.getNestedData();
-    const auto & offsets = nested_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    writeChar('{', ostr);
-    for (size_t i = offset; i < next_offset; ++i)
+    for (size_t shard = 0; shard < column_map.getNumShards(); ++shard)
     {
-        if (i != offset)
-            writeChar(',', ostr);
+        const auto & nested_array = column_map.getShard(shard);
+        const auto & nested_tuple = column_map.getShardData(shard);
+        const auto & offsets = nested_array.getOffsets();
 
-        key_writer(ostr, key, nested_tuple.getColumn(0), i);
-        writeChar(':', ostr);
-        value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        size_t offset = offsets[row_num - 1];
+        size_t next_offset = offsets[row_num];
+
+        writeChar('{', ostr);
+        for (size_t i = offset; i < next_offset; ++i)
+        {
+            if (i != offset)
+                writeChar(',', ostr);
+
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
+            writeChar(':', ostr);
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
+        writeChar('}', ostr);
+
     }
-    writeChar('}', ostr);
 }
 
 template <typename ReturnType, typename Reader>
@@ -855,66 +862,24 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
+    if (num_shards != column_map.getNumShards())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Serialization (with {} shards) is incompatible with Map column (with {} shards)",
+            num_shards, column_map.getNumShards());
+
     if (num_shards == 1 || !settings.position_independent_encoding)
     {
-        auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
-        nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
+        nested->deserializeBinaryBulkWithMultipleStreams(column_map.getShardPtr(0), limit, settings, state, cache);
         return;
     }
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_map = assert_cast<ColumnMap &>(*mutable_column);
-    auto & column_nested = column_map.getNestedColumn();
-
-    std::vector<ColumnPtr> shard_keys(num_shards);
-    std::vector<ColumnPtr> shard_values(num_shards);
-
     auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
-    if (column_map.empty())
-        map_state->resetCachedShards();
 
     applyForShards(num_shards, settings, [&](size_t i)
     {
-        ColumnPtr shard_column = column_nested.cloneEmpty();
-        // auto shard_cache = getSubstreamCacheForShards(nested, map_state->cached_shards[i], settings.path, cache);
-
-        nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, map_state->states[i], nullptr);
-        // addShardToSubstreamsCache(nested, shard_column, settings.path, map_state->cached_shards[i], cache);
-
-        const auto & shard_array = assert_cast<const ColumnArray &>(*shard_column);
-        const auto & shard_tuple = assert_cast<const ColumnTuple &>(shard_array.getData());
-
-        shard_keys[i] = ColumnArray::create(shard_tuple.getColumnPtr(0), shard_array.getOffsetsPtr());
-        shard_values[i] = ColumnArray::create(shard_tuple.getColumnPtr(1), shard_array.getOffsetsPtr());
+        nested->deserializeBinaryBulkWithMultipleStreams(column_map.getShardPtr(i), limit, settings, map_state->states[i], cache);
     });
-
-    using Sources = std::vector<std::unique_ptr<GatherUtils::IArraySource>>;
-
-    Sources keys_sources(num_shards);
-    Sources values_sources(num_shards);
-
-    for (size_t i = 0; i < num_shards; ++i)
-    {
-        const auto & keys_array = assert_cast<const ColumnArray &>(*shard_keys[i]);
-        keys_sources[i] = GatherUtils::createArraySource(keys_array, false, keys_array.size());
-
-        const auto & values_array = assert_cast<const ColumnArray &>(*shard_values[i]);
-        values_sources[i] = GatherUtils::createArraySource(values_array, false, values_array.size());
-    }
-
-    auto res_keys = GatherUtils::concat(keys_sources);
-    auto res_values = GatherUtils::concat(values_sources);
-
-    const auto & keys_array = assert_cast<const ColumnArray &>(*res_keys);
-    const auto & values_array = assert_cast<const ColumnArray &>(*res_values);
-
-    assert(keys_array.getOffsets() == values_array.getOffsets());
-
-    auto res_array = ColumnArray::create(
-        ColumnTuple::create(Columns{keys_array.getDataPtr(), values_array.getDataPtr()}),
-        keys_array.getOffsetsPtr());
-
-    column_nested.insertRangeFrom(*res_array, 0, res_array->size());
 }
 
 SerializationMapSubcolumn::SerializationMapSubcolumn(SerializationPtr nested_, size_t num_shards_)

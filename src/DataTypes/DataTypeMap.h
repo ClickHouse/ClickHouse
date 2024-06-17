@@ -35,6 +35,7 @@ public:
     bool canBeInsideNullable() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
 
