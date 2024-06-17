@@ -25,7 +25,6 @@
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
-#include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
@@ -198,16 +197,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
                 return false;
             query_with_output.children.push_back(query_with_output.settings_ast);
-
-            // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
-            // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
-            if (query->as<ASTSelectWithUnionQuery>())
-            {
-                auto settings = query_with_output.settings_ast->clone();
-                assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
-                QueryWithOutputSettingsPushDownVisitor::Data data{settings};
-                QueryWithOutputSettingsPushDownVisitor(data).visit(query);
-            }
         }
         else
             break;

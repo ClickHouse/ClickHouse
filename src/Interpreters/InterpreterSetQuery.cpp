@@ -9,6 +9,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+
 namespace DB
 {
 
@@ -45,15 +46,23 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     // It is flattened later, when we process UNION ALL/DISTINCT.
     const auto * last_select = children.back()->as<ASTSelectQuery>();
     if (last_select && last_select->settings())
-    {
         InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
-    }
 }
 
 void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_)
 {
     if (!ast)
         return;
+
+    /// First apply the outermost settings. Then they could be overridden by deeper settings.
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->settings_ast)
+            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext();
+
+        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
+            applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+    }
 
     if (const auto * select_query = ast->as<ASTSelectQuery>())
     {
@@ -70,19 +79,6 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext();
 
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
-    }
-    else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
-    {
-        if (query_with_output->settings_ast)
-            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext();
-
-        if (const auto * create_query = ast->as<ASTCreateQuery>())
-        {
-            if (create_query->select)
-            {
-                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
-            }
-        }
     }
     else if (auto * insert_query = ast->as<ASTInsertQuery>())
     {
