@@ -122,13 +122,6 @@ DatabaseReplicated::DatabaseReplicated(
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
-
-    if (!replica_group_name.empty() && database_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
-    {
-        context_->addWarningMessage(fmt::format("There's a Replicated database with a name starting from '{}', "
-                                                "and replica_group_name is configured. It may cause collisions in cluster names.",
-                                                ALL_GROUPS_CLUSTER_PREFIX));
-    }
 }
 
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
@@ -180,40 +173,13 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     return cluster;
 }
 
-ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
+void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
 {
     std::lock_guard lock{mutex};
-    if (replica_group_name.empty())
-        return nullptr;
-
-    if (cluster_all_groups)
-        return cluster_all_groups;
-
-    /// Database is probably not created or not initialized yet, it's ok to return nullptr
-    if (is_readonly)
-        return cluster_all_groups;
-
-    try
-    {
-        cluster_all_groups = getClusterImpl(/*all_groups*/ true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
-    return cluster_all_groups;
+    cluster = std::move(new_cluster);
 }
 
-void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
-{
-    std::lock_guard lock{mutex};
-    if (all_groups)
-        cluster_all_groups = std::move(new_cluster);
-    else
-        cluster = std::move(new_cluster);
-}
-
-ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
+ClusterPtr DatabaseReplicated::getClusterImpl() const
 {
     Strings unfiltered_hosts;
     Strings hosts;
@@ -233,24 +199,17 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
-        if (all_groups)
-        {
-            hosts = unfiltered_hosts;
-        }
-        else
-        {
-            hosts.clear();
-            std::vector<String> paths;
-            for (const auto & host : unfiltered_hosts)
-                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+        hosts.clear();
+        std::vector<String> paths;
+        for (const auto & host : unfiltered_hosts)
+            paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
 
-            auto replica_groups = zookeeper->tryGet(paths);
+        auto replica_groups = zookeeper->tryGet(paths);
 
-            for (size_t i = 0; i < paths.size(); ++i)
-            {
-                if (replica_groups[i].data == replica_group_name)
-                    hosts.push_back(unfiltered_hosts[i]);
-            }
+        for (size_t i = 0; i < paths.size(); ++i)
+        {
+            if (replica_groups[i].data == replica_group_name)
+                hosts.push_back(unfiltered_hosts[i]);
         }
 
         Int32 cversion = stat.cversion;
@@ -315,11 +274,6 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-
-    String cluster_name = TSA_SUPPRESS_WARNING_FOR_READ(database_name);     /// FIXME
-    if (all_groups)
-        cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
-
     ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
@@ -328,7 +282,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         Priority{1},
-        cluster_name,
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret};
 
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
@@ -967,7 +921,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         query_context->setSetting("allow_experimental_inverted_index", 1);
-        query_context->setSetting("allow_experimental_full_text_index", 1);
         query_context->setSetting("allow_experimental_codecs", 1);
         query_context->setSetting("allow_experimental_live_view", 1);
         query_context->setSetting("allow_experimental_window_view", 1);
@@ -976,14 +929,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
-        query_context->setSetting("allow_experimental_dynamic_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
         query_context->setSetting("allow_experimental_map_type", 1);
-        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
         query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
         query_context->setSetting("allow_suspicious_fixed_string_types", 1);

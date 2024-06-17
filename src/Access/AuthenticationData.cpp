@@ -118,16 +118,13 @@ void AuthenticationData::setPassword(const String & password_)
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(password_));
-            return;
+            return setPasswordHashBinary(Util::stringToDigest(password_));
 
         case AuthenticationType::SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeSHA256(password_));
-            return;
+            return setPasswordHashBinary(Util::encodeSHA256(password_));
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
-            return;
+            return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
 
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
@@ -149,7 +146,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
+    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
 }
 
 String AuthenticationData::getPassword() const

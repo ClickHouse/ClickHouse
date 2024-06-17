@@ -9,12 +9,6 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'backport/**'
-
-# Cancel the previous wf run in PRs.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -273,5 +267,5 @@ jobs:
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 finish_check.py
           python3 merge_pr.py

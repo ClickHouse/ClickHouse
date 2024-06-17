@@ -667,6 +667,8 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
         }
+
+        UNREACHABLE();
     }
 
     String dump() const;
@@ -853,13 +855,13 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
-constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
+inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64;
 }
 
-constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64
@@ -1038,7 +1040,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx) const
+    auto format(const DB::Field & x, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

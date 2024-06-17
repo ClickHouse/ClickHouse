@@ -615,16 +615,12 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
                 if (res_column.column->getDataType() != res_column.type->getColumnType())
-                {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
+                        "Unexpected return type from {}. Expected {}. Got {}",
                         action.node->function->getName(),
-                        res_column.type->getName(),
-                        res_column.column->getName(),
-                        action.toString(),
-                        Block(arguments).dumpStructure());
-                }
+                        res_column.type->getColumnType(),
+                        res_column.column->getDataType());
             }
             break;
         }

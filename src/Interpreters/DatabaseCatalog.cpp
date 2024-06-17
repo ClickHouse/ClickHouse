@@ -988,7 +988,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
+    String path = getContext()->getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -1043,11 +1043,10 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
-        fmt::format("{}.{}.{}.sql",
-            escapeForFileName(table_id.getDatabaseName()),
-            escapeForFileName(table_id.getTableName()),
-            toString(table_id.uuid));
+    return getContext()->getPath() + "metadata_dropped/" +
+           escapeForFileName(table_id.getDatabaseName()) + "." +
+           escapeForFileName(table_id.getTableName()) + "." +
+           toString(table_id.uuid) + ".sql";
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1438,7 +1437,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(

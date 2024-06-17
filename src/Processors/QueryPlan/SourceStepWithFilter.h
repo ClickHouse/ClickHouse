@@ -49,6 +49,11 @@ public:
         filter_dags.push_back(std::move(filter_dag));
     }
 
+    void addFilterFromParentStep(const ActionsDAG::Node * filter_node)
+    {
+        filter_nodes.nodes.push_back(filter_node);
+    }
+
     /// Apply filters that can optimize reading from storage.
     void applyFilters()
     {

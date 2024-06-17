@@ -41,6 +41,8 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
+
+    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -55,6 +57,8 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
+
+    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -70,7 +74,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     for (const auto & col : key_columns)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
         {
             nested_key_columns.push_back(&nullable->getNestedColumn());
             has_nullable_key = true;
