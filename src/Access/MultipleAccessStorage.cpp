@@ -36,7 +36,7 @@ MultipleAccessStorage::~MultipleAccessStorage()
 {
     try
     {
-        shutdown();
+        MultipleAccessStorage::shutdown();
     }
     catch (...)
     {

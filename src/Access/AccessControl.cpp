@@ -265,7 +265,7 @@ AccessControl::~AccessControl()
 {
     try
     {
-        shutdown();
+        AccessControl::shutdown();
     }
     catch (...)
     {

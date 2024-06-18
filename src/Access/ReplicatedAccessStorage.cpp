@@ -69,7 +69,7 @@ ReplicatedAccessStorage::~ReplicatedAccessStorage()
 {
     try
     {
-        shutdown();
+        ReplicatedAccessStorage::shutdown();
     }
     catch (...)
     {

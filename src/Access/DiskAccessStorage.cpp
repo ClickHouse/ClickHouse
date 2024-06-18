@@ -196,7 +196,7 @@ DiskAccessStorage::~DiskAccessStorage()
 {
     try
     {
-        shutdown();
+        DiskAccessStorage::shutdown();
     }
     catch (...)
     {
