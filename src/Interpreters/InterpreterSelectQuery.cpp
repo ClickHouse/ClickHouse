@@ -175,7 +175,7 @@ FilterDAGInfoPtr generateFilterActions(
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot, {}, false, {}, prepared_sets);
-    filter_info->actions = std::make_unique<ActionsDAG>(std::move(analyzer.simpleSelectActions()->actions));
+    filter_info->actions = std::make_unique<ActionsDAG>(std::move(analyzer.simpleSelectActions()->dag));
 
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
     filter_info->actions->removeUnusedActions(NameSet{filter_info->column_name});
@@ -1077,15 +1077,15 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             // with this code. See
             // https://github.com/ClickHouse/ClickHouse/issues/19857 for details.
             if (analysis_result.before_window)
-                return analysis_result.before_window->actions.getResultColumns();
+                return analysis_result.before_window->dag.getResultColumns();
 
             // NOTE: should not handle before_limit_by specially since
             // WithMergeableState does not process LIMIT BY
 
-            return analysis_result.before_order_by->actions.getResultColumns();
+            return analysis_result.before_order_by->dag.getResultColumns();
         }
 
-        Block header = analysis_result.before_aggregation->actions.getResultColumns();
+        Block header = analysis_result.before_aggregation->dag.getResultColumns();
 
         Block res;
 
@@ -1123,18 +1123,18 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         // It's different from selected_columns, see the comment above for
         // WithMergeableState stage.
         if (analysis_result.before_window)
-            return analysis_result.before_window->actions.getResultColumns();
+            return analysis_result.before_window->dag.getResultColumns();
 
         // In case of query on remote shards executed up to
         // WithMergeableStateAfterAggregation*, they can process LIMIT BY,
         // since the initiator will not apply LIMIT BY again.
         if (analysis_result.before_limit_by)
-            return analysis_result.before_limit_by->actions.getResultColumns();
+            return analysis_result.before_limit_by->dag.getResultColumns();
 
-        return analysis_result.before_order_by->actions.getResultColumns();
+        return analysis_result.before_order_by->dag.getResultColumns();
     }
 
-    return analysis_result.final_projection->actions.getResultColumns();
+    return analysis_result.final_projection->dag.getResultColumns();
 }
 
 
@@ -2313,7 +2313,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         }
         if (analysis_result.hasWhere())
         {
-            filter_nodes.push_back(&analysis_result.before_where->actions.findInOutputs(analysis_result.where_column_name));
+            filter_nodes.push_back(&analysis_result.before_where->dag.findInOutputs(analysis_result.where_column_name));
         }
 
         auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
@@ -2379,7 +2379,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         auto column = ColumnAggregateFunction::create(func);
         column->insertFrom(place);
 
-        Block header = analysis_result.before_aggregation->actions.getResultColumns();
+        Block header = analysis_result.before_aggregation->dag.getResultColumns();
         size_t arguments_size = desc.argument_names.size();
         DataTypes argument_types(arguments_size);
         for (size_t j = 0; j < arguments_size; ++j)
@@ -2576,9 +2576,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 }
 
-void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsAndFlagsPtr & expression, bool remove_filter)
+void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter)
 {
-    auto dag = expression->actions.clone();
+    auto dag = expression->dag.clone();
     if (expression->project_input)
         dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -2657,7 +2657,7 @@ static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryE
     return result;
 }
 
-void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsAndFlagsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
+void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
     executeExpression(query_plan, expression, "Before GROUP BY");
 
@@ -2750,9 +2750,9 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 }
 
 
-void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsAndFlagsPtr & expression, bool remove_filter)
+void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter)
 {
-    auto dag = expression->actions.clone();
+    auto dag = expression->dag.clone();
     if (expression->project_input)
         dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -2765,12 +2765,12 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
 
 
 void InterpreterSelectQuery::executeTotalsAndHaving(
-    QueryPlan & query_plan, bool has_having, const ActionsAndFlagsPtr & expression, bool remove_filter, bool overflow_row, bool final)
+    QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final)
 {
     ActionsDAGPtr dag;
     if (expression)
     {
-        dag = expression->actions.clone();
+        dag = expression->dag.clone();
         if (expression->project_input)
             dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
     }
@@ -2814,12 +2814,12 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     query_plan.addStep(std::move(step));
 }
 
-void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsAndFlagsPtr & expression, const std::string & description)
+void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description)
 {
     if (!expression)
         return;
 
-    auto dag = expression->actions.clone();
+    auto dag = expression->dag.clone();
     if (expression->project_input)
         dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -2993,7 +2993,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
 }
 
 
-void InterpreterSelectQuery::executeProjection(QueryPlan & query_plan, const ActionsAndFlagsPtr & expression)
+void InterpreterSelectQuery::executeProjection(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression)
 {
     executeExpression(query_plan, expression, "Projection");
 }

@@ -980,7 +980,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndFlags>(ActionsDAG(columns), false, false)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1129,12 +1129,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsAndFlagsPtr & ExpressionActionsChain::Step::actions()
+ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
 {
     return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsAndFlagsPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
 {
     return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }

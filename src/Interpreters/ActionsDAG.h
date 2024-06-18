@@ -507,13 +507,12 @@ struct ActionDAGNodes
     ActionsDAG::NodeRawConstPtrs nodes;
 };
 
-struct ActionsAndFlags
+struct ActionsAndProjectInputsFlag
 {
-    ActionsDAG actions;
+    ActionsDAG dag;
     bool project_input = false;
-    bool projected_output = false;
 };
 
-using ActionsAndFlagsPtr = std::shared_ptr<ActionsAndFlags>;
+using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
 
 }

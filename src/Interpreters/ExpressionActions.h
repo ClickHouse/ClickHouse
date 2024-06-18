@@ -179,15 +179,16 @@ struct ExpressionActionsChain : WithContext
         virtual std::string dump() const = 0;
 
         /// Only for ExpressionActionsStep
-        ActionsAndFlagsPtr & actions();
-        const ActionsAndFlagsPtr & actions() const;
+        ActionsAndProjectInputsFlagPtr & actions();
+        const ActionsAndProjectInputsFlagPtr & actions() const;
     };
 
     struct ExpressionActionsStep : public Step
     {
-        ActionsAndFlagsPtr actions_and_flags;
+        ActionsAndProjectInputsFlagPtr actions_and_flags;
+        bool is_final_projection = false;
 
-        explicit ExpressionActionsStep(ActionsAndFlagsPtr actiactions_and_flags_, Names required_output_ = Names())
+        explicit ExpressionActionsStep(ActionsAndProjectInputsFlagPtr actiactions_and_flags_, Names required_output_ = Names())
             : Step(std::move(required_output_))
             , actions_and_flags(std::move(actiactions_and_flags_))
         {
@@ -195,18 +196,18 @@ struct ExpressionActionsChain : WithContext
 
         NamesAndTypesList getRequiredColumns() const override
         {
-            return actions_and_flags->actions.getRequiredColumns();
+            return actions_and_flags->dag.getRequiredColumns();
         }
 
         ColumnsWithTypeAndName getResultColumns() const override
         {
-            return actions_and_flags->actions.getResultColumns();
+            return actions_and_flags->dag.getResultColumns();
         }
 
         void finalize(const NameSet & required_output_) override
         {
-            if (!actions_and_flags->projected_output)
-                actions_and_flags->actions.removeUnusedActions(required_output_);
+            if (!is_final_projection)
+                actions_and_flags->dag.removeUnusedActions(required_output_);
         }
 
         void prependProjectInput() override
@@ -216,7 +217,7 @@ struct ExpressionActionsChain : WithContext
 
         std::string dump() const override
         {
-            return actions_and_flags->actions.dumpDAG();
+            return actions_and_flags->dag.dumpDAG();
         }
     };
 
@@ -265,7 +266,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsAndFlagsPtr getLastActions(bool allow_empty = false)
+    ExpressionActionsStep * getLastExpressionStep(bool allow_empty = false)
     {
         if (steps.empty())
         {
@@ -274,7 +275,15 @@ struct ExpressionActionsChain : WithContext
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
         }
 
-        return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_and_flags;
+        return typeid_cast<ExpressionActionsStep *>(steps.back().get());
+    }
+
+    ActionsAndProjectInputsFlagPtr getLastActions(bool allow_empty = false)
+    {
+        if (auto * step = getLastExpressionStep(allow_empty))
+            return step->actions_and_flags;
+
+        return nullptr;
     }
 
     Step & getLastStep()
@@ -294,7 +303,7 @@ struct ExpressionActionsChain : WithContext
 
     Step & addStep(const NamesAndTypesList & columns)
     {
-        return *steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndFlags>(ActionsDAG(columns), false, false)));
+        return *steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
     }
 
     std::string dumpChain() const;

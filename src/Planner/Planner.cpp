@@ -329,11 +329,11 @@ public:
 };
 
 void addExpressionStep(QueryPlan & query_plan,
-    const ActionsAndFlagsPtr & expression_actions,
+    const ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
     std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    auto actions = expression_actions->actions.clone();
+    auto actions = expression_actions->dag.clone();
     if (expression_actions->project_input)
         actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -348,7 +348,7 @@ void addFilterStep(QueryPlan & query_plan,
     const std::string & step_description,
     std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    auto actions = filter_analysis_result.filter_actions->actions.clone();
+    auto actions = filter_analysis_result.filter_actions->dag.clone();
     if (filter_analysis_result.filter_actions->project_input)
         actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -556,7 +556,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     ActionsDAGPtr actions;
     if (having_analysis_result.filter_actions)
     {
-        actions = having_analysis_result.filter_actions->actions.clone();
+        actions = having_analysis_result.filter_actions->dag.clone();
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 

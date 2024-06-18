@@ -231,20 +231,20 @@ struct ExpressionAnalysisResult
 
     bool use_grouping_set_key = false;
 
-    ActionsAndFlagsPtr before_array_join;
+    ActionsAndProjectInputsFlagPtr before_array_join;
     ArrayJoinActionPtr array_join;
-    ActionsAndFlagsPtr before_join;
-    ActionsAndFlagsPtr converting_join_columns;
+    ActionsAndProjectInputsFlagPtr before_join;
+    ActionsAndProjectInputsFlagPtr converting_join_columns;
     JoinPtr join;
-    ActionsAndFlagsPtr before_where;
-    ActionsAndFlagsPtr before_aggregation;
-    ActionsAndFlagsPtr before_having;
+    ActionsAndProjectInputsFlagPtr before_where;
+    ActionsAndProjectInputsFlagPtr before_aggregation;
+    ActionsAndProjectInputsFlagPtr before_having;
     String having_column_name;
     bool remove_having_filter = false;
-    ActionsAndFlagsPtr before_window;
-    ActionsAndFlagsPtr before_order_by;
-    ActionsAndFlagsPtr before_limit_by;
-    ActionsAndFlagsPtr final_projection;
+    ActionsAndProjectInputsFlagPtr before_window;
+    ActionsAndProjectInputsFlagPtr before_order_by;
+    ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
     /// perform SELECT DISTINCT.
@@ -351,12 +351,12 @@ public:
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
-    ActionsAndFlagsPtr simpleSelectActions();
+    ActionsAndProjectInputsFlagPtr simpleSelectActions();
 
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    ActionsAndFlagsPtr appendProjectResult(ExpressionActionsChain & chain) const;
+    ActionsAndProjectInputsFlagPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -386,13 +386,13 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndFlagsPtr & before_array_join, bool only_types);
+    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndFlagsPtr & converting_join_columns);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & converting_join_columns);
 
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsAndFlagsPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -406,7 +406,7 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsAndFlagsPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
