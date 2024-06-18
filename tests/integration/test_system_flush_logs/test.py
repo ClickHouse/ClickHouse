@@ -21,6 +21,7 @@ system_logs = [
     ("system.part_log", 1),
     ("system.trace_log", 1),
     ("system.metric_log", 1),
+    ("system.error_log", 1),
 ]
 
 

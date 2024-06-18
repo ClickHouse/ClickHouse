@@ -10,6 +10,7 @@ def test_yaml_full_conf():
     all_confd = [
         "configs/config.d/0_common_instance_config.yaml",
         "configs/config.d/access_control.yaml",
+        "configs/config.d/error_log.yaml",
         "configs/config.d/keeper_port.yaml",
         "configs/config.d/logging_no_rotate.yaml",
         "configs/config.d/log_to_console.yaml",

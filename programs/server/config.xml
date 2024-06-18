@@ -1155,7 +1155,7 @@
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
-    <!-- Error log contains rows with current values of Errors collected with "collect_interval_milliseconds" interval. -->
+    <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>
         <database>system</database>
         <table>error_log</table>
