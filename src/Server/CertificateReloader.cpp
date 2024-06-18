@@ -103,7 +103,16 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     else
     {
         if (!ctx)
-            ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+        {
+            try
+            {
+                ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+            }
+        }
         data.push_back(MultiData(ctx));
         --it;
         data_index[prefix] = it;
@@ -144,7 +153,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
         /// If callback is not set yet
         try
         {
-            if (it->init_was_not_made)
+            if (it->init_was_not_made && it->ctx != nullptr)
                 init(&*it);
         }
         catch (...)

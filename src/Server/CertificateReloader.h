@@ -55,7 +55,7 @@ public:
 
     struct MultiData
     {
-        SSL_CTX * ctx;
+        SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
         bool init_was_not_made = true;
 
