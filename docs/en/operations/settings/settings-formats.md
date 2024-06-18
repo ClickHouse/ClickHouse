@@ -712,7 +712,7 @@ Disabled by default.
 
 ## output_format_json_content_type_header {#output_format_json_content_type_header}
 
-Allow user to set Content-Type header when using `JSONEachRow` output format in URL function [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
+Allow user to set Content-Type header when using JSON output format e.g. `JSONEachRow` [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format in URL function.
 This setting is useful when using materialized view with URL table engine to push data to external service
 
 Default value: ``. 
