@@ -112,7 +112,7 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return {"_path", "_file", "_size", "_time"};
+    return {"_path", "_file", "_size", "_time", "_etag", "_last_modified"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
@@ -131,6 +131,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
+    add_virtual("_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
     return desc;
 }
@@ -223,6 +224,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         {
             if (virtual_values.last_modified)
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_etag")
+        {
+            if (virtual_values.etag)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }

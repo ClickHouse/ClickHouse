@@ -54,6 +54,8 @@ namespace
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
         object_info.last_modification_time = result.GetLastModified().Seconds();
+        String etag(result.GetETag.c_str(), result.GetETag().size());
+        object_info.etag = etag;
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
