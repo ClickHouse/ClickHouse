@@ -45,11 +45,6 @@ public:
     void stopCollectError();
 
 private:
-    struct ValuePair {
-        UInt64 local = 0;
-        UInt64 remote = 0;
-    };
-
     void threadFunction();
 
     std::unique_ptr<ThreadFromGlobalPool> flush_thread;
