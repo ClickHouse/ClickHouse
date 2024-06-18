@@ -81,7 +81,7 @@ public:
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
         std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(buckets_mutex);
 
-        /// We store a vector of holders, because we cannot release them until processed files are commited.
+        /// We store a vector of holders, because we cannot release them until processed files are committed.
         std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(buckets_mutex);
         /// Protects bucket_holders.
         std::mutex buckets_mutex;
