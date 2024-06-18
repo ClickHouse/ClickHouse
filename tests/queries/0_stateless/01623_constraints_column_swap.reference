@@ -20,7 +20,7 @@ QUERY id: 0
             COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
             CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.column_swap_test_test
+    TABLE id: 5, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -50,7 +50,7 @@ QUERY id: 0
             COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
             CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.column_swap_test_test
+    TABLE id: 5, alias: __table1, table_name: default.column_swap_test_test
   PREWHERE
     FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -80,7 +80,7 @@ QUERY id: 0
             COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
             CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.column_swap_test_test
+    TABLE id: 5, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -110,7 +110,7 @@ QUERY id: 0
             COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
             CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.column_swap_test_test
+    TABLE id: 5, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -140,7 +140,7 @@ QUERY id: 0
             COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
             CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.column_swap_test_test
+    TABLE id: 5, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -162,7 +162,7 @@ QUERY id: 0
             COLUMN id: 4, column_name: b, result_type: UInt64, source_id: 5
             CONSTANT id: 6, constant_value: UInt64_10, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.column_swap_test_test
+    TABLE id: 5, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -191,7 +191,7 @@ QUERY id: 0
             CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
       COLUMN id: 9, column_name: a, result_type: String, source_id: 7
   JOIN TREE
-    TABLE id: 7, table_name: default.column_swap_test_test
+    TABLE id: 7, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -223,7 +223,7 @@ QUERY id: 0
             CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
       COLUMN id: 9, column_name: a, result_type: String, source_id: 7
   JOIN TREE
-    TABLE id: 7, table_name: default.column_swap_test_test
+    TABLE id: 7, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -248,7 +248,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: String, source_id: 3
       COLUMN id: 4, column_name: a, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.column_swap_test_test
+    TABLE id: 3, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 5, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -270,7 +270,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: String, source_id: 3
       COLUMN id: 4, column_name: a, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.column_swap_test_test
+    TABLE id: 3, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 5, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -292,7 +292,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: String, source_id: 3
       COLUMN id: 4, column_name: a, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.column_swap_test_test
+    TABLE id: 3, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 5, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -310,7 +310,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: a, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.column_swap_test_test
+    TABLE id: 3, alias: __table1, table_name: default.column_swap_test_test
   WHERE
     FUNCTION id: 4, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -327,5 +327,5 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: a, result_type: UInt32, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.t_bad_constraint
+    TABLE id: 3, alias: __table1, table_name: default.t_bad_constraint
   SETTINGS allow_experimental_analyzer=1

@@ -14,6 +14,7 @@ public:
     std::string collection_name;
     SettingsChanges changes;
     bool if_not_exists = false;
+    std::unordered_map<String, bool> overridability;
 
     String getID(char) const override { return "CreateNamedCollectionQuery"; }
 

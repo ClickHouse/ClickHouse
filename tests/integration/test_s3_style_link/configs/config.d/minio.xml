@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+
+<!-- Using named collections 22.4+ -->
+<clickhouse>
+    <url_scheme_mappers>
+        <minio>
+            <to>http://minio1:9001/root/{bucket}</to>
+        </minio>
+    </url_scheme_mappers>
+</clickhouse>

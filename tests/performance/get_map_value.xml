@@ -1,0 +1,22 @@
+<test>
+    <create_query>
+        CREATE TABLE test_table_map_1 (a Map(String, String)) ENGINE=Memory
+    </create_query>
+
+    <fill_query>insert into test_table_map_1 select CAST((['xyz', 'abc', '123'], [cast(number % 10 as String), 'dsdfsd', '123']), 'Map(String, String)') from numbers(10000000)</fill_query>
+    
+    <query>select a['xyz'] from test_table_map_1 Format Null settings max_threads=1</query>
+    <query>select a['123'] from test_table_map_1 Format Null settings max_threads=1</query>
+
+    <drop_query>drop table test_table_map_1</drop_query>
+    
+    <create_query>
+        CREATE TABLE test_table_map_2 (a Map(String, String)) ENGINE=Memory
+    </create_query>
+
+    <fill_query>insert into test_table_map_2 select if (number % 2 = 0, CAST((['xyz', 'abc', '123'], [cast(number % 10 as String), 'dsdfsd', '123']), 'Map(String, String)'), CAST((['123', 'abc', 'xyz'], ['123', 'dsdfsd', cast(number % 10 as String)]), 'Map(String, String)')) from numbers(10000000)</fill_query>
+    
+    <query>select a['xyz'] from test_table_map_2 Format Null settings max_threads=1</query>
+
+    <drop_query>drop table test_table_map_2</drop_query>
+</test>

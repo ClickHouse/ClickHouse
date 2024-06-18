@@ -1,29 +1,24 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
-#include <base/types.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/format.h>
 #include <Common/memcpySmall.h>
-
+#include <base/types.h>
 
 #include <algorithm>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
-
 
 namespace DB
 {
 
-struct FormatImpl
+struct FormatStringImpl
 {
     static constexpr size_t right_padding = 15;
 
     template <typename... Args>
-    static inline void formatExecute(bool possibly_has_column_string, bool possibly_has_column_fixed_string, Args &&... args)
+    static void formatExecute(bool possibly_has_column_string, bool possibly_has_column_fixed_string, Args &&... args)
     {
         if (possibly_has_column_string && possibly_has_column_fixed_string)
             format<true, true>(std::forward<Args>(args)...);
@@ -43,7 +38,7 @@ struct FormatImpl
     /// input_rows_count is the number of rows processed.
     /// Precondition: data.size() == offsets.size() == fixed_string_N.size() == constant_strings.size().
     template <bool has_column_string, bool has_column_fixed_string>
-    static inline void format(
+    static void format(
         String pattern,
         const std::vector<const ColumnString::Chars *> & data,
         const std::vector<const ColumnString::Offsets *> & offsets,

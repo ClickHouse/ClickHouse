@@ -1,15 +1,19 @@
 #include "MySQLCharset.h"
 #include "config.h"
 #include <Common/Exception.h>
+#include <unordered_set>
 
 #if USE_ICU
 #include <unicode/ucnv.h>
-#define CHUNK_SIZE 1024
-static const char * TARGET_CHARSET = "utf8";
 #endif
 
 namespace DB
 {
+
+#if USE_ICU
+static constexpr auto CHUNK_SIZE = 1024;
+static constexpr auto TARGET_CHARSET = "utf8";
+#endif
 
 namespace ErrorCodes
 {
@@ -188,6 +192,52 @@ const std::unordered_map<Int32, String> MySQLCharset::charsets
           {250, "gb18030"}
       };
 
+/// https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html
+/// SHOW CHARACTER SET
+static const std::unordered_set<String> available_charsets = {
+    "armscii8",
+    "ascii",
+    "big5",
+    "binary",
+    "cp1250",
+    "cp1251",
+    "cp1256",
+    "cp1257",
+    "cp850",
+    "cp852",
+    "cp866",
+    "cp932",
+    "dec8",
+    "eucjpms",
+    "euckr",
+    "gb18030",
+    "gb2312",
+    "gbk",
+    "geostd8",
+    "greek",
+    "hebrew",
+    "hp8",
+    "keybcs2",
+    "koi8r",
+    "koi8u",
+    "latin1",
+    "latin2",
+    "latin5",
+    "latin7",
+    "macce",
+    "macroman",
+    "sjis",
+    "swe7",
+    "tis620",
+    "ucs2",
+    "ujis",
+    "utf16",
+    "utf16le",
+    "utf32",
+    "utf8mb3",
+    "utf8mb4",
+};
+
 MySQLCharset::~MySQLCharset()
 {
 #if USE_ICU
@@ -203,6 +253,20 @@ MySQLCharset::~MySQLCharset()
 bool MySQLCharset::needConvert(UInt32 id)
 {
     return charsets.contains(id);
+}
+
+bool MySQLCharset::needConvert(const String & charset)
+{
+    if (charset == "utf8mb4" || /// the conversion is not needed for utf8*
+        charset == "utf8mb3" ||
+        charset == "binary")    /// not implemented
+        return false;
+    return true;
+}
+
+bool MySQLCharset::isCharsetAvailable(const String & name)
+{
+    return available_charsets.contains(name);
 }
 
 String MySQLCharset::getCharsetFromId(UInt32 id)
@@ -237,12 +301,16 @@ UConverter * MySQLCharset::getCachedConverter(const String & charset [[maybe_unu
     return conv;
 }
 
-Int32 MySQLCharset::convertFromId(UInt32 id [[maybe_unused]], String & to, const String & from)
+Int32 MySQLCharset::convertFromId(UInt32 id, String & to, const String & from)
+{
+    return convert(getCharsetFromId(id), to, from);
+}
+
+Int32 MySQLCharset::convert(const String & source_charset [[maybe_unused]], String & to, const String & from)
 {
 #if USE_ICU
     std::lock_guard lock(mutex);
     UErrorCode error = U_ZERO_ERROR;
-    String source_charset = getCharsetFromId(id);
     to.clear();
     if (source_charset.empty())
     {

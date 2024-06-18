@@ -1,14 +1,10 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsRandom.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsRandom.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
@@ -21,29 +17,25 @@ class FunctionGenerateUUIDv4 : public IFunction
 public:
     static constexpr auto name = "generateUUIDv4";
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
-
+    bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args;
+        FunctionArgumentDescriptors optional_args{
+            {"expr", nullptr, nullptr, "Arbitrary Expression"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUUID>();
     }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -79,10 +71,10 @@ public:
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
 
-    #if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::AVX2,
             TargetSpecific::AVX2::FunctionGenerateUUIDv4>();
-    #endif
+#endif
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

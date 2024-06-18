@@ -2,10 +2,10 @@
 
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
+#include <Common/re2.h>
 
-#include <re2/re2.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -37,7 +37,7 @@ static inline bool checkExpression(std::string_view match_str, const std::pair<S
     return match_str == expression.first;
 }
 
-static inline auto methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
+static inline auto methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
 {
     std::vector<String> methods;
     Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
@@ -62,7 +62,7 @@ static inline auto getExpression(const std::string & expression)
     return std::make_pair(expression, compiled_regex);
 }
 
-static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
+static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
 {
     return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
     {
@@ -73,7 +73,16 @@ static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, c
     };
 }
 
-static inline auto headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix) /// NOLINT
+static inline auto emptyQueryStringFilter()
+{
+    return [](const HTTPServerRequest & request)
+    {
+        const auto & uri = request.getURI();
+        return std::string::npos == uri.find('?');
+    };
+}
+
+static inline auto headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
 {
     std::unordered_map<String, std::pair<String, CompiledRegexPtr>> headers_expression;
     Poco::Util::AbstractConfiguration::Keys headers_name;
@@ -90,7 +99,7 @@ static inline auto headersFilter(const Poco::Util::AbstractConfiguration & confi
     {
         for (const auto & [header_name, header_expression] : headers_expression)
         {
-            const auto & header_value = request.get(header_name, "");
+            const auto header_value = request.get(header_name, "");
             if (!checkExpression(std::string_view(header_value.data(), header_value.size()), header_expression))
                 return false;
         }

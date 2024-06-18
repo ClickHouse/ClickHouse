@@ -1,2 +1,2 @@
-Tuple(foo Int8, k1 Int8, k2 Int8)
+Tuple(\n    foo Int8,\n    k1 Int8,\n    k2 Int8)
 1

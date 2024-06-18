@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-16_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
+CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-18_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
 CLICKHOUSE_REPO_PATH=${CLICKHOUSE_REPO_PATH:=""}
 
 

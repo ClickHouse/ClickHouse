@@ -23,7 +23,7 @@ struct ThreadEventData
     UInt64 system_ms    = 0;
     UInt64 memory_usage = 0;
 
-    // -1 used as flag 'is not show for old servers'
+    // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
 };
 

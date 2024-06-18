@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 SquashingChunksTransform::SquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
@@ -51,32 +56,39 @@ void SquashingChunksTransform::work()
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : ISimpleTransform(header, header, true), squashing(min_block_size_rows, min_block_size_bytes)
+    : IInflatingTransform(header, header), squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void SimpleSquashingChunksTransform::transform(Chunk & chunk)
+void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    if (!finished)
-    {
-        if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
-            chunk.setColumns(block.getColumns(), block.rows());
-    }
-    else
-    {
-        auto block = squashing.add({});
-        chunk.setColumns(block.getColumns(), block.rows());
-    }
+    Block current_block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    squashed_chunk.setColumns(current_block.getColumns(), current_block.rows());
 }
 
-IProcessor::Status SimpleSquashingChunksTransform::prepare()
+Chunk SimpleSquashingChunksTransform::generate()
 {
-    if (!finished && input.isFinished())
-    {
-        finished = true;
-        return Status::Ready;
-    }
-    return ISimpleTransform::prepare();
+    if (squashed_chunk.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
+
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
+}
+
+bool SimpleSquashingChunksTransform::canGenerate()
+{
+    return !squashed_chunk.empty();
+}
+
+Chunk SimpleSquashingChunksTransform::getRemaining()
+{
+    Block current_block = squashing.add({});
+    squashed_chunk.setColumns(current_block.getColumns(), current_block.rows());
+
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
 }
 
 }

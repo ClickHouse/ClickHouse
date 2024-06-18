@@ -36,9 +36,7 @@ using namespace DB;
 namespace
 {
 
-template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
-template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
-
+template <class T> inline constexpr bool is_pod_v = std::is_trivial_v<std::is_standard_layout<T>>;
 
 template <typename T>
 struct AsHexStringHelper
@@ -444,7 +442,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0);
+    IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
     ASTPtr codec_ast;
@@ -485,7 +483,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
 
-    const auto header_size = codec.getHeaderSize();
+    const auto header_size = ICompressionCodec::getHeaderSize();
     const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
 
     if (expected_compression_ratio)
@@ -796,7 +794,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequences.push_back(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
+        sequences.push_back(generateSeq<T>(generator, name.c_str(), 0, i));
     }
 
     return sequences;

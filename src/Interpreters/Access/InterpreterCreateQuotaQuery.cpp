@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 
 #include <Access/AccessControl.h>
@@ -158,6 +159,15 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query)
 {
     updateQuotaFromQueryImpl(quota, query, {}, {});
+}
+
+void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateQuotaQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateQuotaQuery", create_fn);
 }
 
 }

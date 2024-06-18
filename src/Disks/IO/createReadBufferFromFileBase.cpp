@@ -4,9 +4,9 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <IO/SynchronousReader.h>
 #include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
 #include "config.h"
@@ -100,12 +100,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
-            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
-            if (!reader->isSupported())
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
-
+            auto & reader = getIOUringReaderOrThrow();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                *reader,
+                reader,
                 settings.priority,
                 filename,
                 buffer_size,

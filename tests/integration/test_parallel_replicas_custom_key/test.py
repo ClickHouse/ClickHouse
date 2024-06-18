@@ -26,7 +26,7 @@ def create_tables(cluster):
     n1.query(f"DROP TABLE IF EXISTS test_table ON CLUSTER {cluster}")
 
     n1.query(
-        f"CREATE TABLE test_table ON CLUSTER {cluster} (key Int32, value String) Engine=MergeTree ORDER BY (key, sipHash64(value))"
+        f"CREATE TABLE test_table ON CLUSTER {cluster} (key UInt32, value String) Engine=MergeTree ORDER BY (key, sipHash64(value))"
     )
     n1.query(
         f"""
@@ -86,9 +86,4 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
         assert all(
             node.contains_in_log("Processing query on a replica using custom_key")
             for node in nodes
-        )
-    else:
-        # we first transform all replicas into shards and then append for each shard filter
-        assert n1.contains_in_log(
-            "Single shard cluster used with custom_key, transforming replicas into virtual shards"
         )

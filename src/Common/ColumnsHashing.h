@@ -44,8 +44,8 @@ struct HashMethodOneNumber
     {
         if constexpr (nullable)
         {
-            const auto * null_column = checkAndGetColumn<ColumnNullable>(key_columns[0]);
-            vec = null_column->getNestedColumnPtr()->getRawData().data();
+            const auto & null_column = checkAndGetColumn<ColumnNullable>(*key_columns[0]);
+            vec = null_column.getNestedColumnPtr()->getRawData().data();
         }
         else
         {
@@ -57,8 +57,8 @@ struct HashMethodOneNumber
     {
         if constexpr (nullable)
         {
-            const auto * null_column = checkAndGetColumn<ColumnNullable>(column);
-            vec = null_column->getNestedColumnPtr()->getRawData().data();
+            const auto & null_column = checkAndGetColumn<ColumnNullable>(*column);
+            vec = null_column.getNestedColumnPtr()->getRawData().data();
         }
         else
         {
@@ -105,7 +105,7 @@ struct HashMethodString
         const IColumn * column;
         if constexpr (nullable)
         {
-            column = checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr().get();
+            column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
         }
         else
         {
@@ -153,7 +153,7 @@ struct HashMethodFixedString
         const IColumn * column;
         if constexpr (nullable)
         {
-            column = checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr().get();
+            column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
         }
         else
         {
@@ -235,7 +235,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
 
-    enum class VisitValue
+    enum class VisitValue : uint8_t
     {
         Empty = 0,
         Found = 1,
@@ -685,25 +685,75 @@ struct HashMethodKeysFixed
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename Value, typename Mapped>
+template <typename Value, typename Mapped, bool nullable, bool prealloc>
 struct HashMethodSerialized
-    : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped>, Value, Mapped, false>
+    : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped, nullable, prealloc>, Value, Mapped, false>
 {
-    using Self = HashMethodSerialized<Value, Mapped>;
+    using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
+    std::vector<const UInt8 *> null_maps;
+    PaddedPODArray<UInt64> row_sizes;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : key_columns(key_columns_), keys_size(key_columns_.size()) {}
+        : key_columns(key_columns_), keys_size(key_columns_.size())
+    {
+        if constexpr (nullable)
+        {
+            null_maps.resize(keys_size);
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(key_columns[i]))
+                {
+                    null_maps[i] = nullable_column->getNullMapData().data();
+                    key_columns[i] = nullable_column->getNestedColumnPtr().get();
+                }
+            }
+        }
+
+        if constexpr (prealloc)
+        {
+            null_maps.resize(keys_size);
+            for (size_t i = 0; i < keys_size; ++i)
+                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+        }
+    }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
     {
+        if constexpr (prealloc)
+        {
+            const char * begin = nullptr;
+
+            char * memory = pool.allocContinue(row_sizes[row], begin);
+            StringRef key(memory, row_sizes[row]);
+            for (size_t j = 0; j < keys_size; ++j)
+            {
+                if constexpr (nullable)
+                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                else
+                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+            }
+
+            return SerializedKeyHolder{key, pool};
+        }
+        else if constexpr (nullable)
+        {
+            const char * begin = nullptr;
+
+            size_t sum_size = 0;
+            for (size_t j = 0; j < keys_size; ++j)
+                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size;
+
+            return SerializedKeyHolder{{begin, sum_size}, pool};
+        }
+
         return SerializedKeyHolder{
             serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
             pool};

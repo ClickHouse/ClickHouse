@@ -228,7 +228,7 @@ void commitMetadata(Fn<void()> auto && function, const String & persistent_tmp_p
     }
     catch (...)
     {
-        fs::remove(persistent_tmp_path);
+        (void)fs::remove(persistent_tmp_path);
         throw;
     }
 }

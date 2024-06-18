@@ -139,7 +139,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
                             const auto * literal = equals_expression_list->children[1]->as<ASTLiteral>();
                             if (literal && literal->alias.empty())
                             {
-                                auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
+                                auto expr_lhs = equals_expression_list->children[0]->getTreeHash(/*ignore_aliases=*/ true);
                                 OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
                                 disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
                                 found_chain = true;
@@ -204,26 +204,41 @@ inline ASTs & getFunctionOperands(const ASTFunction * or_function)
 
 bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const
 {
-    if (functions.size() > 1)
+    if (functions.size() <= 1)
+        return false;
+
+    if (!functions[0])
+        return false;
+
+    /// Check if the identifier has LowCardinality type.
+    auto & first_operands = getFunctionOperands(functions.at(0));
+
+    if (first_operands.empty())
+        return false;
+
+    if (!first_operands[0])
+        return false;
+
+    const auto * identifier = first_operands.at(0)->as<ASTIdentifier>();
+    if (!identifier)
+        return false;
+
+    auto pos = IdentifierSemantic::getMembership(*identifier);
+    if (!pos)
+        pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
+
+    if (!pos)
+        return false;
+
+    if (*pos >= tables_with_columns.size())
+        return false;
+
+    if (auto data_type_and_name = tables_with_columns.at(*pos).columns.tryGetByName(identifier->shortName()))
     {
-        /// Check if identifier is LowCardinality type
-        auto & first_operands = getFunctionOperands(functions[0]);
-        const auto * identifier = first_operands[0]->as<ASTIdentifier>();
-        if (identifier)
-        {
-            auto pos = IdentifierSemantic::getMembership(*identifier);
-            if (!pos)
-                pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
-            if (pos)
-            {
-                if (auto data_type_and_name = tables_with_columns[*pos].columns.tryGetByName(identifier->shortName()))
-                {
-                    if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
-                        return true;
-                }
-            }
-        }
+        if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
+            return true;
     }
+
     return false;
 }
 

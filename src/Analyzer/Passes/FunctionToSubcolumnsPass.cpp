@@ -49,6 +49,9 @@ public:
         if (!first_argument_column_node)
             return;
 
+        if (first_argument_column_node->getColumnName() == "__grouping_set")
+            return;
+
         auto column_source = first_argument_column_node->getColumnSource();
         auto * table_node = column_source->as<TableNode>();
 
@@ -72,6 +75,7 @@ public:
                 {
                     /// Replace `length(array_argument)` with `array_argument.size0`
                     column.name += ".size0";
+                    column.type = std::make_shared<DataTypeUInt64>();
 
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
@@ -106,6 +110,7 @@ public:
                 {
                     /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
                     column.name += ".null";
+                    column.type = std::make_shared<DataTypeUInt8>();
 
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
@@ -176,6 +181,23 @@ public:
 
                 node = std::make_shared<ColumnNode>(column, column_source);
             }
+            else if (function_name == "variantElement" && isVariant(column_type) && second_argument_constant_node)
+            {
+                /// Replace `variantElement(variant_argument, type_name)` with `variant_argument.type_name`.
+                const auto & variant_element_constant_value = second_argument_constant_node->getValue();
+                String subcolumn_name;
+
+                if (variant_element_constant_value.getType() != Field::Types::String)
+                    return;
+
+                subcolumn_name = variant_element_constant_value.get<const String &>();
+
+                column.name += '.';
+                column.name += subcolumn_name;
+                column.type = function_node->getResultType();
+
+                node = std::make_shared<ColumnNode>(column, column_source);
+            }
             else if (function_name == "mapContains" && column_type.isMap())
             {
                 const auto & data_type_map = assert_cast<const DataTypeMap &>(*column.type);
@@ -193,7 +215,7 @@ public:
     }
 
 private:
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
@@ -202,7 +224,7 @@ private:
 
 }
 
-void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     FunctionToSubcolumnsVisitor visitor(context);
     visitor.visit(query_tree_node);

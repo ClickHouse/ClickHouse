@@ -2,9 +2,7 @@
 -- Please help shorten this list down to zero elements.
 SELECT name FROM system.functions WHERE NOT is_aggregate AND origin = 'System' AND alias_to = '' AND length(description) < 10
 AND name NOT IN (
-    'MD4', 'MD5', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'halfMD5',
     'aes_decrypt_mysql', 'aes_encrypt_mysql', 'decrypt', 'encrypt',
-    'base64Decode', 'base64Encode', 'tryBase64Decode',
     'convertCharset',
     'detectLanguage', 'detectLanguageMixed',
     'geoToH3',
@@ -15,7 +13,7 @@ AND name NOT IN (
     'h3ToGeoBoundary', 'h3ToParent', 'h3ToString', 'h3UnidirectionalEdgeIsValid', 'h3kRing', 'stringToH3',
     'geoToS2', 's2CapContains', 's2CapUnion', 's2CellsIntersect', 's2GetNeighbors', 's2RectAdd', 's2RectContains', 's2RectIntersection', 's2RectUnion', 's2ToGeo',
     'normalizeUTF8NFC', 'normalizeUTF8NFD', 'normalizeUTF8NFKC', 'normalizeUTF8NFKD',
-    'lemmatize', 'tokenize', 'stem', 'synonyms',
+    'lemmatize', 'tokenize', 'stem', 'synonyms', 'kql_array_sort_asc', 'kql_array_sort_desc',
     'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality'
      -- these functions are not enabled in fast test
 ) ORDER BY name;

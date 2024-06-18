@@ -19,9 +19,9 @@ namespace StructureToFormatSchemaUtils
 
     String getSchemaMessageName(const String & column_name);
 
-    NamesAndTypesList collectNested(const NamesAndTypesList & names_and_types);
+    NamesAndTypesList collectNested(const NamesAndTypesList & names_and_types, bool allow_split_by_underscore, const String & format_name);
 
-    NamesAndTypesList getCollectedTupleElements(const DataTypeTuple & tuple_type);
+    NamesAndTypesList getCollectedTupleElements(const DataTypeTuple & tuple_type, bool allow_split_by_underscore, const String & format_name);
 }
 
 }

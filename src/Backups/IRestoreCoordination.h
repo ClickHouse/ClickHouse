@@ -6,7 +6,7 @@
 namespace DB
 {
 class Exception;
-enum class UserDefinedSQLObjectType;
+enum class UserDefinedSQLObjectType : uint8_t;
 class ASTCreateQuery;
 
 /// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
@@ -40,6 +40,10 @@ public:
     /// Sets that this replica is going to restore replicated user-defined functions.
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) = 0;
+
+    /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
+    /// The function returns false if data for this specific root path is already being restored by another table.
+    virtual bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) = 0;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).

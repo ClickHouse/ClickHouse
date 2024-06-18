@@ -1,8 +1,11 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/ExpressionActions.h>
+
 
 namespace DB
 {
@@ -53,9 +56,15 @@ struct DAGNodeRef
 
 /// Result name -> DAGNodeRef
 using OriginalToNewNodeMap = std::unordered_map<String, DAGNodeRef>;
+using NodeNameToLastUsedStepMap = std::unordered_map<String, size_t>;
 
 /// Clones the part of original DAG responsible for computing the original_dag_node and adds it to the new DAG.
-const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag_node, ActionsDAGPtr new_dag, OriginalToNewNodeMap & node_remap)
+const ActionsDAG::Node & addClonedDAGToDAG(
+    size_t step,
+    const ActionsDAG::Node * original_dag_node,
+    ActionsDAGPtr new_dag,
+    OriginalToNewNodeMap & node_remap,
+    NodeNameToLastUsedStepMap & node_to_step_map)
 {
     const String & node_name = original_dag_node->result_name;
     /// Look for the node in the map of already known nodes
@@ -72,6 +81,10 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
             node_ref.dag->addOrReplaceInOutputs(*node_ref.node);
             const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
             node_remap[node_name] = {new_dag, &new_node}; /// TODO: here we update the node reference. Is it always correct?
+
+            /// Remember the index of the last step which reuses this node.
+            /// We cannot remove this node from the outputs before that step.
+            node_to_step_map[node_name] = step;
             return new_node;
         }
     }
@@ -95,7 +108,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
 
     if (original_dag_node->type == ActionsDAG::ActionType::ALIAS)
     {
-        const auto & alias_child = addClonedDAGToDAG(original_dag_node->children[0], new_dag, node_remap);
+        const auto & alias_child = addClonedDAGToDAG(step, original_dag_node->children[0], new_dag, node_remap, node_to_step_map);
         const auto & new_node = new_dag->addAlias(alias_child, original_dag_node->result_name);
         node_remap[node_name] = {new_dag, &new_node};
         return new_node;
@@ -107,7 +120,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         ActionsDAG::NodeRawConstPtrs new_children;
         for (const auto & child : original_dag_node->children)
         {
-            const auto & new_child = addClonedDAGToDAG(child, new_dag, node_remap);
+            const auto & new_child = addClonedDAGToDAG(step, child, new_dag, node_remap, node_to_step_map);
             new_children.push_back(&new_child);
         }
 
@@ -150,7 +163,7 @@ const ActionsDAG::Node & addCast(
 
     const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+    FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
 
     return addFunction(dag, func_builder_cast, std::move(children), node_remap);
 }
@@ -240,16 +253,18 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     std::vector<Step> steps;
 
     OriginalToNewNodeMap node_remap;
+    NodeNameToLastUsedStepMap node_to_step;
 
-    for (const auto & condition_group : condition_groups)
+    for (size_t step_index = 0; step_index < condition_groups.size(); ++step_index)
     {
+        const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_shared<ActionsDAG>();
         String result_name;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
         {
-            const auto & node_in_new_dag = addClonedDAGToDAG(node, step_dag, node_remap);
+            const auto & node_in_new_dag = addClonedDAGToDAG(step_index, node, step_dag, node_remap, node_to_step);
             new_condition_nodes.push_back(&node_in_new_dag);
         }
 
@@ -321,21 +336,24 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         }
         else
         {
-            const auto & node_in_new_dag = addClonedDAGToDAG(output, steps.back().actions, node_remap);
+            const auto & node_in_new_dag = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step);
             steps.back().actions->addOrReplaceInOutputs(node_in_new_dag);
         }
     }
 
     /// 9. Build PrewhereExprInfo
     {
-        for (const auto & step : steps)
+        for (size_t step_index = 0; step_index < steps.size(); ++step_index)
         {
+            const auto & step = steps[step_index];
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
                 .filter_column_name = step.column_name,
-                .remove_filter_column = !all_output_names.contains(step.column_name), /// Don't remove if it's in the list of original outputs
+                /// Don't remove if it's in the list of original outputs
+                .remove_filter_column =
+                    !all_output_names.contains(step.column_name) && node_to_step[step.column_name] <= step_index,
                 .need_filter = false,
                 .perform_alter_conversions = true,
             };

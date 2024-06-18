@@ -27,6 +27,8 @@ public:
     bool isFromImmutableFile() const override { return getInternalBackupEntry()->isFromImmutableFile(); }
     String getFilePath() const override { return getInternalBackupEntry()->getFilePath(); }
     DiskPtr getDisk() const override { return getInternalBackupEntry()->getDisk(); }
+    bool isReference() const override { return getInternalBackupEntry()->isReference(); }
+    String getReferenceTarget() const override { return getInternalBackupEntry()->getReferenceTarget(); }
 
 private:
     BackupEntryPtr getInternalBackupEntry() const

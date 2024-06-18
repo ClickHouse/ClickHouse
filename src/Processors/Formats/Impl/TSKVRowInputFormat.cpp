@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -92,7 +93,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         }
     }
 
-    throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from TSKV format");
+    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from TSKV format");
 }
 
 
@@ -134,7 +135,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     /// If the key is not found, skip the value.
                     NullOutput sink;
-                    readEscapedStringInto(sink, *in);
+                    readEscapedStringInto<NullOutput,false>(sink, *in);
                 }
                 else
                 {
@@ -147,7 +148,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
                     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                        read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
+                        read_columns[index] = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(*columns[index], *in, format_settings, serialization);
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
                 }
@@ -161,7 +162,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
             if (in->eof())
             {
-                throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream after field in TSKV format: {}", name_ref.toString());
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream after field in TSKV format: {}", name_ref.toString());
             }
             else if (*in->position() == '\t')
             {
@@ -190,7 +191,16 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     /// Fill in the not met columns with default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+        {
+            const auto & type = header.getByPosition(i).type;
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Cannot insert NULL value into a column `{}` of type '{}'",
+                    header.getByPosition(i).name,
+                    type->getName());
+            type->insertDefaultInto(*columns[i]);
+        }
 
     /// return info about defaults set
     if (format_settings.defaults_for_omitted_fields)

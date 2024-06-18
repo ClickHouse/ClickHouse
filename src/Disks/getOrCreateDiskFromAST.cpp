@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 namespace
 {
-    std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context)
+    std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context, bool attach)
     {
         const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function.arguments.get());
         const auto & function_args = function_args_expr->children;
@@ -46,7 +46,8 @@ namespace
         }
 
         auto result_disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
-            auto disk = DiskFactory::instance().create(disk_name, *config, "", context, disks_map);
+            auto disk = DiskFactory::instance().create(
+                disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
             /// Mark that disk can be used without storage policy.
             disk->markDiskAsCustom();
             return disk;
@@ -55,16 +56,16 @@ namespace
         if (!result_disk->isCustomDisk())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk with name `{}` already exist", disk_name);
 
-        if (!result_disk->isRemote())
+        if (!attach && !result_disk->isRemote())
         {
-            static constexpr auto custom_disks_base_dir_in_config = "custom_local_disks_base_directory";
-            auto disk_path_expected_prefix = context->getConfigRef().getString(custom_disks_base_dir_in_config, "");
+            static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
+            auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
 
             if (disk_path_expected_prefix.empty())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Base path for custom local disks must be defined in config file by `{}`",
-                    custom_disks_base_dir_in_config);
+                    custom_local_disks_base_dir_in_config);
 
             if (!pathStartsWith(result_disk->getPath(), disk_path_expected_prefix))
                 throw Exception(
@@ -82,6 +83,7 @@ namespace
         struct Data
         {
             ContextPtr context;
+            bool attach;
         };
 
         static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
@@ -90,7 +92,7 @@ namespace
         {
             if (isDiskFunction(ast))
             {
-                auto disk_name = getOrCreateDiskFromDiskAST(*ast->as<ASTFunction>(), data.context);
+                auto disk_name = getOrCreateDiskFromDiskAST(*ast->as<ASTFunction>(), data.context, data.attach);
                 ast = std::make_shared<ASTLiteral>(disk_name);
             }
         }
@@ -101,18 +103,18 @@ namespace
 }
 
 
-std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr context)
+std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr context, bool attach)
 {
     if (!isDiskFunction(disk_function))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
 
     auto ast = disk_function->clone();
 
-    FlattenDiskConfigurationVisitor::Data data{context};
+    FlattenDiskConfigurationVisitor::Data data{context, attach};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     auto disk_name = assert_cast<const ASTLiteral &>(*ast).value.get<String>();
-    LOG_TRACE(&Poco::Logger::get("getOrCreateDiskFromDiskAST"), "Result disk name: {}", disk_name);
+    LOG_TRACE(getLogger("getOrCreateDiskFromDiskAST"), "Result disk name: {}", disk_name);
     return disk_name;
 }
 

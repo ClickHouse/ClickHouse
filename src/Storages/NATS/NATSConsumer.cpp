@@ -21,7 +21,7 @@ NATSConsumer::NATSConsumer(
     StorageNATS & storage_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     uint32_t queue_size_,
     const std::atomic<bool> & stopped_)
     : connection(connection_)

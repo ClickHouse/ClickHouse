@@ -30,7 +30,16 @@ class IExecutableTask
 {
 public:
     using TaskResultCallback = std::function<void(bool)>;
+
     virtual bool executeStep() = 0;
+
+    /// Sometimes exceptions from the executeStep() had been already printed to
+    /// the log, but with different level (see
+    /// ReplicatedMergeMutateTaskBase::executeStep()), but the exception should
+    /// be throw, since there are some sanity assertions based on the
+    /// std::uncaught_exceptions() (i.e. WriteBuffer::~WriteBuffer())
+    virtual bool printExecutionException() const { return true; }
+
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() const = 0;
     virtual String getQueryId() const = 0;

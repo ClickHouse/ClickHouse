@@ -18,6 +18,8 @@ namespace ErrorCodes
 namespace NamedCollectionConfiguration
 {
 
+void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, bool value);
+
 bool hasConfigValue(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & path)
@@ -72,11 +74,13 @@ template <typename T> T getConfigValueOrDefault(
     }
 }
 
-template<typename T> void setConfigValue(
+template <typename T>
+void setConfigValue(
     Poco::Util::AbstractConfiguration & config,
     const std::string & path,
     const T & value,
-    bool update)
+    bool update,
+    const std::optional<bool> is_overridable)
 {
     if (!update && config.has(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key `{}` already exists", path);
@@ -96,6 +100,8 @@ template<typename T> void setConfigValue(
             ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported type in setConfigValue(). "
             "Supported types are String, UInt64, Int64, Float64, bool");
+    if (is_overridable)
+        setOverridable(config, path, *is_overridable);
 }
 
 template <typename T> void copyConfigValue(
@@ -123,6 +129,9 @@ template <typename T> void copyConfigValue(
             ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported type in copyConfigValue(). "
             "Supported types are String, UInt64, Int64, Float64");
+    const auto overridable = isOverridable(from_config, from_path);
+    if (overridable)
+        setOverridable(to_config, to_path, *overridable);
 }
 
 void removeConfigValue(
@@ -147,13 +156,19 @@ ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
     return config;
 }
 
-ConfigurationPtr createConfiguration(const std::string & root_name, const SettingsChanges & settings)
+ConfigurationPtr createConfiguration(
+    const std::string & root_name, const SettingsChanges & settings, const std::unordered_map<String, bool> & overridability)
 {
     namespace Configuration = NamedCollectionConfiguration;
 
     auto config = Configuration::createEmptyConfiguration(root_name);
     for (const auto & [name, value] : settings)
+    {
         Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
+        auto ovalue = overridability.find(name);
+        if (ovalue != overridability.end())
+            Configuration::setOverridable(*config, name, ovalue->second);
+    }
 
     return config;
 }
@@ -167,7 +182,9 @@ void listKeys(
     if (enumerate_paths.empty())
         enumerate_paths.push("");
 
-    const bool do_finish = depth >= 0 && --depth < 0;
+    const bool do_finish = depth == 0;
+    if (depth >= 0)
+        --depth;
 
     auto initial_paths = std::move(enumerate_paths);
     enumerate_paths = {};
@@ -204,6 +221,22 @@ void listKeys(
     listKeys(config, enumerate_paths, result, depth);
 }
 
+std::optional<bool> isOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    // XPath syntax to access path's attribute 'overridable'
+    // e.g. <url overridable=1>...</url>
+    std::string overridable_path = path + "[@overridable]";
+    if (config.has(overridable_path))
+        return config.getBool(overridable_path);
+    return {};
+}
+
+void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, const bool value)
+{
+    std::string overridable_path = path + "[@overridable]";
+    config.setBool(overridable_path, value);
+}
+
 template String getConfigValue<String>(const Poco::Util::AbstractConfiguration & config,
                                        const std::string & path);
 template UInt64 getConfigValue<UInt64>(const Poco::Util::AbstractConfiguration & config,
@@ -226,16 +259,36 @@ template Float64 getConfigValueOrDefault<Float64>(const Poco::Util::AbstractConf
 template bool getConfigValueOrDefault<bool>(const Poco::Util::AbstractConfiguration & config,
                                             const std::string & path, const bool * default_value);
 
-template void setConfigValue<String>(Poco::Util::AbstractConfiguration & config,
-                                     const std::string & path, const String & value, bool update);
-template void setConfigValue<UInt64>(Poco::Util::AbstractConfiguration & config,
-                                     const std::string & path, const UInt64 & value, bool update);
-template void setConfigValue<Int64>(Poco::Util::AbstractConfiguration & config,
-                                    const std::string & path, const Int64 & value, bool update);
-template void setConfigValue<Float64>(Poco::Util::AbstractConfiguration & config,
-                                      const std::string & path, const Float64 & value, bool update);
-template void setConfigValue<bool>(Poco::Util::AbstractConfiguration & config,
-                                   const std::string & path, const bool & value, bool update);
+template void setConfigValue<String>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const String & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<UInt64>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const UInt64 & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<Int64>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const Int64 & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<Float64>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const Float64 & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<bool>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const bool & value,
+    bool update,
+    const std::optional<bool> is_overridable);
 
 template void copyConfigValue<String>(const Poco::Util::AbstractConfiguration & from_config, const std::string & from_path,
                                       Poco::Util::AbstractConfiguration & to_config, const std::string & to_path);

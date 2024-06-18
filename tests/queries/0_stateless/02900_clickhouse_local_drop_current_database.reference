@@ -1,0 +1,10 @@
+CREATE DATABASE foo;
+USE foo;
+SELECT 1;
+1
+DROP DATABASE foo;
+SELECT 2;
+2
+USE default;
+SELECT 3;
+3

@@ -3,6 +3,7 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/QueryLog.h>
@@ -55,7 +56,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no children in ASTSelectWithUnionQuery");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No children in ASTSelectWithUnionQuery");
 
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
@@ -408,6 +409,15 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
             }
         }
     }
+}
+
+void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectWithUnionQuery>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectWithUnionQuery", create_fn);
 }
 
 }

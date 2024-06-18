@@ -10,6 +10,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool_fwd.h>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ public:
         const Block & right_sample_block,
         bool any_take_last_row_ = false);
 
-    ~ConcurrentHashJoin() override = default;
+    ~ConcurrentHashJoin() override;
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -52,6 +53,7 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -65,6 +67,7 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
+    std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
     std::mutex totals_mutex;

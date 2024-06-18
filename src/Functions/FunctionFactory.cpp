@@ -49,6 +49,18 @@ void FunctionFactory::registerFunction(
     }
 }
 
+void FunctionFactory::registerFunction(
+    const std::string & name,
+    FunctionSimpleCreator creator,
+    FunctionDocumentation doc,
+    CaseSensitiveness case_sensitiveness)
+{
+    registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
+    {
+        return std::make_unique<FunctionToOverloadResolverAdaptor>(my_creator(context));
+    }, std::move(doc), std::move(case_sensitiveness));
+}
+
 
 FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,

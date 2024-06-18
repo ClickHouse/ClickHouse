@@ -20,7 +20,7 @@ NullDictionarySource::NullDictionarySource(const NullDictionarySource & other) :
 
 QueryPipeline NullDictionarySource::loadAll()
 {
-    LOG_TRACE(&Poco::Logger::get("NullDictionarySource"), "loadAll {}", toString());
+    LOG_TRACE(getLogger("NullDictionarySource"), "loadAll {}", toString());
     return QueryPipeline(std::make_shared<NullSource>(sample_block));
 }
 

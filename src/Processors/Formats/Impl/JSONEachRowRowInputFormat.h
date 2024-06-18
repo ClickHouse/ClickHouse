@@ -32,10 +32,11 @@ public:
     String getName() const override { return "JSONEachRowRowInputFormat"; }
     void resetParser() override;
 
-private:
+protected:
     void readPrefix() override;
     void readSuffix() override;
 
+private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -88,6 +89,8 @@ protected:
     std::vector<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
     std::vector<UInt8> seen_columns;
+    size_t seen_columns_count = 0;
+    size_t total_columns = 0;
 
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
@@ -103,6 +106,7 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;

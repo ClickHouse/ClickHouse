@@ -582,8 +582,6 @@ ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-!!! warning "注意:"
-    这种方法不适合大型表的分片。 有一个单独的工具 [clickhouse-copier](../operations/utilities/clickhouse-copier.md) 这可以重新分片任意大表。
 
 正如您所期望的那样，如果计算量大的查询使用3台服务器而不是一个，则运行速度快N倍。
 

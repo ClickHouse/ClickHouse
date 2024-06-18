@@ -1,6 +1,6 @@
 
 CREATE TABLE aine (a Int) ENGINE = Log;
-ATTACH TABLE aine; -- { serverError 57 }
+ATTACH TABLE aine; -- { serverError TABLE_ALREADY_EXISTS }
 ATTACH TABLE IF NOT EXISTS aine;
 DETACH TABLE aine;
 ATTACH TABLE IF NOT EXISTS aine;

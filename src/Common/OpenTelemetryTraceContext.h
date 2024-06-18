@@ -15,7 +15,7 @@ namespace OpenTelemetry
 {
 
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
-enum SpanKind
+enum class SpanKind : uint8_t
 {
     /// Default value. Indicates that the span represents an internal operation within an application,
     /// as opposed to an operations with remote parents or children.
@@ -39,13 +39,13 @@ enum SpanKind
 
 struct Span
 {
-    UUID trace_id{};
+    UUID trace_id;
     UInt64 span_id = 0;
     UInt64 parent_span_id = 0;
     String operation_name;
     UInt64 start_time_us = 0;
     UInt64 finish_time_us = 0;
-    SpanKind kind = INTERNAL;
+    SpanKind kind = SpanKind::INTERNAL;
     Map attributes;
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
@@ -79,7 +79,7 @@ enum TraceFlags : UInt8
 /// The runtime info we need to create new OpenTelemetry spans.
 struct TracingContext
 {
-    UUID trace_id{};
+    UUID trace_id;
     UInt64 span_id = 0;
     // The incoming tracestate header and the trace flags, we just pass them
     // downstream. See https://www.w3.org/TR/trace-context/
@@ -181,7 +181,7 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 /// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
+    explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.

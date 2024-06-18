@@ -6,6 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Columns/IColumn.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -36,7 +37,7 @@ struct SessionLogElement
     SessionLogElement(const UUID & auth_id_, Type type_);
     SessionLogElement(const SessionLogElement &) = default;
     SessionLogElement & operator=(const SessionLogElement &) = default;
-    SessionLogElement(SessionLogElement &&) = default;
+    SessionLogElement(SessionLogElement &&) = default; /// NOLINT(performance-noexcept-move-constructor,hicpp-noexcept-move)
     SessionLogElement & operator=(SessionLogElement &&) = default;
 
     UUID auth_id;
@@ -59,11 +60,10 @@ struct SessionLogElement
 
     static std::string name() { return "SessionLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

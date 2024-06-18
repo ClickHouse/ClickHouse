@@ -84,8 +84,8 @@ function deb2tgz {
     FILE=$1
     PKG_NAME=${FILE##*/}; PKG_NAME=${PKG_NAME%%_*}
     PKG_DIR="$PKG_NAME-$CLICKHOUSE_VERSION_STRING"
-    PKG_PATH="$OUTPUT_DIR/$PKG_NAME-$CLICKHOUSE_VERSION_STRING"
-    TARBALL="$OUTPUT_DIR/$PKG_NAME-$CLICKHOUSE_VERSION_STRING-$DEB_ARCH.tgz"
+    PKG_PATH="$OUTPUT_DIR/$PKG_DIR"
+    TARBALL="$OUTPUT_DIR/$PKG_DIR-$DEB_ARCH.tgz"
     rm -rf "$PKG_PATH"
     dpkg-deb -R "$FILE" "$PKG_PATH"
     mkdir -p "$PKG_PATH/install"
@@ -112,7 +112,8 @@ EOF
         tar -czf "$TARBALL" -C "$OUTPUT_DIR" "$PKG_DIR"
     fi
 
-    sha512sum "$TARBALL" > "$TARBALL".sha512
+    # Cut the $OUTPUT_DIR/ from the sha512sum output to make it universal
+    sha512sum "$TARBALL" | sed "s|$OUTPUT_DIR/||" > "$TARBALL".sha512
 
     rm -r "$PKG_PATH"
 }
@@ -129,6 +130,8 @@ if [ -n "$SANITIZER" ]; then
     fi
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+="+debug"
+elif [[ $BUILD_TYPE =~ 'coverage' ]]; then
+    VERSION_POSTFIX+="+coverage"
 fi
 
 if [[ "$PKG_ROOT" != "$SOURCE" ]]; then

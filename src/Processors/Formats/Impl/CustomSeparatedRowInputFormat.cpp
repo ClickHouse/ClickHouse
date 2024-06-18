@@ -91,19 +91,20 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
+}
+
+void CustomSeparatedRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
 {
-}
-
-void CustomSeparatedRowInputFormat::resetParser()
-{
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
 }
 
 void CustomSeparatedFormatReader::skipPrefixBeforeHeader()

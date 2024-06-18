@@ -18,12 +18,16 @@ namespace
                       << quoteString(new_name);
     }
 
-
     void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
     {
         auth_data.format(settings);
     }
 
+    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(settings);
+    }
 
     void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
     {
@@ -220,6 +224,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (auth_data)
         formatAuthenticationData(*auth_data, format);
+
+    if (valid_until)
+        formatValidUntil(*valid_until, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);

@@ -365,7 +365,7 @@ DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes &
 
     for (size_t i = 0; i != arguments.size(); ++i)
     {
-        if (!isUnsignedInteger(arguments[i]) && !arguments[i]->onlyNull())
+        if (!isUInt(arguments[i]) && !arguments[i]->onlyNull())
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

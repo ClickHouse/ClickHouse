@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
 
@@ -11,7 +11,7 @@ namespace DB
 struct MergeTreeSource::AsyncReadingState
 {
     /// NotStarted -> InProgress -> IsFinished -> NotStarted ...
-    enum class Stage
+    enum class Stage : uint8_t
     {
         NotStarted,
         InProgress,
@@ -105,7 +105,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunner<void>(getIOThreadPool().get(), "MergeTreeRead");
+        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()
@@ -128,7 +128,7 @@ struct MergeTreeSource::AsyncReadingState
     }
 
 private:
-    ThreadPoolCallbackRunner<void> callback_runner;
+    ThreadPoolCallbackRunnerUnsafe<void> callback_runner;
     std::shared_ptr<Control> control;
 };
 #endif

@@ -23,6 +23,7 @@ public:
         const Block & header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
+        size_t max_block_bytes,
         UInt64 limit_,
         bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
@@ -33,8 +34,6 @@ public:
 
     String getName() const override { return "MergeSortingTransform"; }
 
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
-
 protected:
     void consume(Chunk chunk) override;
     void serialize() override;
@@ -42,19 +41,18 @@ protected:
 
     Processors expandPipeline() override;
 
-    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
-
 private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     size_t max_bytes_before_external_sort;
     TemporaryDataOnDiskPtr tmp_data;
     size_t min_free_disk_space;
+    size_t max_block_bytes;
 
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeSortingTransform");
+    LoggerPtr log = getLogger("MergeSortingTransform");
 
     /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
     bool remerge_is_useful = true;
@@ -63,13 +61,6 @@ private:
     void remerge();
 
     ProcessorPtr external_merging_sorted;
-
-    friend class MergeSortingPartialResultTransform;
-    /// The mutex protects variables that are used for creating a snapshot of the current processor.
-    /// The current implementation of MergeSortingPartialResultTransform uses the 'generated_prefix' variable to check
-    /// whether the processor has started sending data through the main pipeline, and the corresponding partial result processor should stop creating snapshots.
-    /// Additionally, the mutex protects the 'chunks' variable and all variables in the 'remerge' function, which is used to transition 'chunks' to a sorted state.
-    std::mutex snapshot_mutex;
 };
 
 }

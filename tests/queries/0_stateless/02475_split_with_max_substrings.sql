@@ -1,59 +1,175 @@
-select splitByChar(',', '1,2,3');
-select splitByChar(',', '1,2,3', -1);
-select splitByChar(',', '1,2,3', 0);
-select splitByChar(',', '1,2,3', 1);
-select splitByChar(',', '1,2,3', 2);
-select splitByChar(',', '1,2,3', 3);
-select splitByChar(',', '1,2,3', 4);
+SELECT '-- negative tests';
+SELECT splitByChar(',', '1,2,3', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByRegexp('[ABC]', 'oneAtwoBthreeC', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT alphaTokens('abca1abc', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByAlpha('abca1abc', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByNonAlpha('  1!  a,  b.  ',  ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByWhitespace('  1!  a,  b.  ', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByString(', ', '1, 2 3, 4,5, abcde', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC');
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', -1);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 0);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 1);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 2);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 3);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 4);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 5);
+SELECT '-- splitByChar';
+SELECT '-- (default)';
+SELECT splitByChar('=', 'a==b=c=d');
+SELECT splitByChar('=', 'a==b=c=d', -1);
+SELECT splitByChar('=', 'a==b=c=d', 0);
+SELECT splitByChar('=', 'a==b=c=d', 1);
+SELECT splitByChar('=', 'a==b=c=d', 2);
+SELECT splitByChar('=', 'a==b=c=d', 3);
+SELECT splitByChar('=', 'a==b=c=d', 4);
+SELECT splitByChar('=', 'a==b=c=d', 5);
+SELECT splitByChar('=', 'a==b=c=d', 6);
+SELECT '-- (include remainder)';
+SELECT splitByChar('=', 'a==b=c=d') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByChar('=', 'a==b=c=d', 6) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
 
-SELECT alphaTokens('abca1abc');
-SELECT alphaTokens('abca1abc', -1);
-SELECT alphaTokens('abca1abc', 0);
-SELECT alphaTokens('abca1abc', 1);
-SELECT alphaTokens('abca1abc', 2);
-SELECT alphaTokens('abca1abc', 3);
+SELECT '-- splitByString';
+SELECT '-- (default)';
+SELECT splitByString('', 'a==b=c=d') SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 6) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 7) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 7) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 8) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('', 'a==b=c=d', 9) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d') SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT splitByString('=', 'a==b=c=d', 6) SETTINGS splitby_max_substrings_includes_remaining_string = 0;
+SELECT '-- (include remainder)';
+SELECT splitByString('', 'a==b=c=d') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 6) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 7) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 8) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('', 'a==b=c=d', 9) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByString('=', 'a==b=c=d', 6) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
 
-SELECT splitByAlpha('abca1abc');
 
-SELECT splitByNonAlpha('  1!  a,  b.  ');
-SELECT splitByNonAlpha('  1!  a,  b.  ', -1);
-SELECT splitByNonAlpha('  1!  a,  b.  ',  0);
-SELECT splitByNonAlpha('  1!  a,  b.  ',  1);
-SELECT splitByNonAlpha('  1!  a,  b.  ',  2);
-SELECT splitByNonAlpha('  1!  a,  b.  ',  3);
-SELECT splitByNonAlpha('  1!  a,  b.  ',  4);
+SELECT '-- splitByRegexp';
+SELECT '-- (default)';
+SELECT splitByRegexp('\\d+', 'a12bc23de345f');
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', -1);
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 0);
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 1);
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 2);
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 3);
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 4);
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 5);
+SELECT splitByRegexp('', 'a12bc23de345f');
+SELECT splitByRegexp('', 'a12bc23de345f', -1);
+SELECT splitByRegexp('', 'a12bc23de345f', 0);
+SELECT splitByRegexp('', 'a12bc23de345f', 1);
+SELECT splitByRegexp('', 'a12bc23de345f', 2);
+SELECT splitByRegexp('', 'a12bc23de345f', 3);
+SELECT splitByRegexp('', 'a12bc23de345f', 4);
+SELECT splitByRegexp('', 'a12bc23de345f', 5);
+SELECT '-- (include remainder)';
+SELECT splitByRegexp('', 'a12bc23de345f') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('', 'a12bc23de345f', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByRegexp('\\d+', 'a12bc23de345f', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
 
-SELECT splitByWhitespace('  1!  a,  b.  ');
-SELECT splitByWhitespace('  1!  a,  b.  ', -1);
-SELECT splitByWhitespace('  1!  a,  b.  ', 0);
-SELECT splitByWhitespace('  1!  a,  b.  ', 1);
-SELECT splitByWhitespace('  1!  a,  b.  ', 2);
-SELECT splitByWhitespace('  1!  a,  b.  ', 3);
-SELECT splitByWhitespace('  1!  a,  b.  ', 4);
+SELECT '-- splitByAlpha';
+SELECT '-- (default)';
+SELECT splitByAlpha('ab.cd.ef.gh');
+SELECT splitByAlpha('ab.cd.ef.gh', -1);
+SELECT splitByAlpha('ab.cd.ef.gh', 0);
+SELECT splitByAlpha('ab.cd.ef.gh', 1);
+SELECT splitByAlpha('ab.cd.ef.gh', 2);
+SELECT splitByAlpha('ab.cd.ef.gh', 3);
+SELECT splitByAlpha('ab.cd.ef.gh', 4);
+SELECT splitByAlpha('ab.cd.ef.gh', 5);
+SELECT '-- (include remainder)';
+SELECT splitByAlpha('ab.cd.ef.gh') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByAlpha('ab.cd.ef.gh', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
 
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', -1);
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', 0);
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', 1);
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', 2);
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', 3);
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', 4);
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', 5);
-
-
-select splitByChar(',', '1,2,3', ''); -- { serverError 43 }
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', ''); -- { serverError 43 }
-SELECT alphaTokens('abca1abc', ''); -- { serverError 43 }
-SELECT splitByAlpha('abca1abc', ''); -- { serverError 43 }
-SELECT splitByNonAlpha('  1!  a,  b.  ',  ''); -- { serverError 43 }
-SELECT splitByWhitespace('  1!  a,  b.  ', ''); -- { serverError 43 }
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', ''); -- { serverError 43 }
+SELECT '-- splitByNonAlpha';
+SELECT '-- (default)';
+SELECT splitByNonAlpha('128.0.0.1');
+SELECT splitByNonAlpha('128.0.0.1', -1);
+SELECT splitByNonAlpha('128.0.0.1', 0);
+SELECT splitByNonAlpha('128.0.0.1', 1);
+SELECT splitByNonAlpha('128.0.0.1', 2);
+SELECT splitByNonAlpha('128.0.0.1', 3);
+SELECT splitByNonAlpha('128.0.0.1', 4);
+SELECT splitByNonAlpha('128.0.0.1', 5);
+SELECT '-- (include remainder)';
+SELECT splitByNonAlpha('128.0.0.1') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByNonAlpha('128.0.0.1', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+--
+--
+SELECT '-- splitByWhitespace';
+SELECT '-- (default)';
+SELECT splitByWhitespace('Nein, nein, nein! Doch!');
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', -1);
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 0);
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 1);
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 2);
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 3);
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 4);
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 5);
+SELECT '-- (include remainder)';
+SELECT splitByWhitespace('Nein, nein, nein! Doch!') SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', -1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 0) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 1) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 3) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 4) SETTINGS splitby_max_substrings_includes_remaining_string = 1;
+SELECT splitByWhitespace('Nein, nein, nein! Doch!', 5) SETTINGS splitby_max_substrings_includes_remaining_string = 1;

@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <title>ClickHouse Binary Viewer</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <style type="text/css">
+        html, body, #space {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+
+        #space {
+            background: #111;
+            image-rendering: pixelated;
+        }
+
+        #error {
+            display: none;
+            position: absolute;
+            z-index: 1001;
+            bottom: max(5%, 1em);
+            left: 50%;
+            transform: translate(-50%, 0);
+            background: #300;
+            color: white;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 16pt;
+            padding: 1em;
+            min-width: 50%;
+            max-width: 80%;
+        }
+
+        .leaflet-fade-anim .leaflet-popup {
+            transition: none;
+            font-family: monospace;
+        }
+
+        .leaflet-control-attribution {
+            font-size: 12pt;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="space"></div>
+    <div id="error"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script>
+        let host = 'http://localhost:8123/';
+        let user = 'default';
+        let password = '';
+        let add_http_cors_header = true;
+
+        /// If it is hosted on server, assume that it is the address of ClickHouse.
+        if (location.protocol != 'file:') {
+            host = location.origin;
+            add_http_cors_header = false;
+        }
+
+        if (window.location.search) {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('host')) { host = params.get('host'); }
+            if (params.has('user')) { user = params.get('user'); }
+            if (params.has('password')) { password = params.get('password'); }
+        }
+
+        let url = `${host}?allow_introspection_functions=1`;
+
+        if (add_http_cors_header) {
+            url += '&add_http_cors_header=1';
+        }
+
+        if (user) {
+            url += `&user=${encodeURIComponent(user)}`;
+        }
+        if (password) {
+            url += `&password=${encodeURIComponent(password)}`;
+        }
+
+        let map = L.map('space', {
+            crs: L.CRS.Simple,
+            center: [-512, 512],
+            maxBounds: [[128, -128], [-1152, 1152]],
+            zoom: 0,
+        });
+
+        let cached_tiles = {};
+
+        async function render(coords, tile) {
+            const sql = `
+                WITH
+                    bitShiftLeft(1::UInt64, 5 - {z:UInt8})::UInt64 AS zoom_factor,
+
+                    number MOD 1024 AS tile_x,
+                    number DIV 1024 AS tile_y,
+
+                    (zoom_factor * (tile_x + {x:UInt16} * 1024))::UInt16 AS x,
+                    (zoom_factor * (tile_y + {y:UInt16} * 1024))::UInt16 AS y,
+
+                    mortonEncode(x, y) AS addr,
+
+                    extract(demangle(addressToSymbol(addr)), '^[^<]+') AS name,
+                    (empty(name) ? 0 : sipHash64(name)) AS hash,
+                    hash MOD 256 AS r, hash DIV 256 MOD 256 AS g, hash DIV 65536 MOD 256 AS b
+
+                SELECT r::UInt8, g::UInt8, b::UInt8
+                FROM numbers_mt(1024*1024)
+                ORDER BY number`;
+
+            const key = `${coords.z}-${coords.x}-${coords.y}`;
+            let buf = cached_tiles[key];
+            if (!buf) {
+                let request_url = `${url}&default_format=RowBinary` +
+                    `&param_z=${coords.z}&param_x=${coords.x}&param_y=${coords.y}` +
+                    `&enable_http_compression=1&network_compression_method=zstd&network_zstd_compression_level=6`;
+
+                const response = await fetch(request_url, { method: 'POST', body: sql });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    let err = document.getElementById('error');
+                    err.textContent = text;
+                    err.style.display = 'block';
+                    return;
+                }
+
+                buf = await response.arrayBuffer();
+                cached_tiles[key] = buf;
+            }
+
+            let ctx = tile.getContext('2d');
+            let image = ctx.createImageData(1024, 1024);
+            let arr = new Uint8ClampedArray(buf);
+
+            for (let i = 0; i < 1024 * 1024; ++i) {
+                image.data[i * 4 + 0] = arr[i * 3 + 0];
+                image.data[i * 4 + 1] = arr[i * 3 + 1];
+                image.data[i * 4 + 2] = arr[i * 3 + 2];
+                image.data[i * 4 + 3] = 255;
+            }
+
+            ctx.putImageData(image, 0, 0, 0, 0, 1024, 1024);
+
+            let err = document.getElementById('error');
+            err.style.display = 'none';
+        }
+
+        L.GridLayer.ClickHouse = L.GridLayer.extend({
+            createTile: function(coords, done) {
+                let tile = L.DomUtil.create('canvas', 'leaflet-tile');
+                tile.width = 1024;
+                tile.height = 1024;
+                if (coords.x < 0 || coords.y < 0 || coords.x >= Math.pow(2, coords.z) || coords.y >= Math.pow(2, coords.z)) return tile;
+                render(coords, tile).then(err => done(err, tile));
+                return tile;
+            }
+        });
+
+        let layer = new L.GridLayer.ClickHouse({
+            tileSize: 1024,
+            minZoom: 0,
+            maxZoom: 10,
+            minNativeZoom: 0,
+            maxNativeZoom: 5,
+            attribution: '© ClickHouse, Inc.'
+        });
+
+        layer.addTo(map);
+
+        map.attributionControl.setPrefix('<a href="https://github.com/ClickHouse/ClickHouse/">About</a>');
+
+        function latLngToPixel(latlng) {
+            return { x: ((latlng.lng / 1024) * 32768)|0, y: ((-latlng.lat / 1024) * 32768)|0 };
+        }
+
+        function pixelToLatLng(pixel) {
+            return { lat: (-pixel.y - 0.5) / 32768 * 1024, lng: (pixel.x + 0.5) / 32768 * 1024 };
+        }
+
+        let popup = L.popup({maxWidth: '100%'});
+        let current_requested_addr = '';
+
+        function updateHistory() {
+            const state = {
+                zoom: map.getZoom(),
+                center: latLngToPixel(map.getCenter()),
+            };
+
+            let query = `?zoom=${state.zoom}&x=${state.center.x}&y=${state.center.y}`;
+
+            if (popup.isOpen() && map.getBounds().contains(popup.getLatLng())) {
+                state.popup = latLngToPixel(popup.getLatLng());
+                query += `&px=${state.popup.x}&py=${state.popup.y}`;
+            }
+
+            history.replaceState(state, '', query);
+        }
+
+        window.onpopstate = function(event) {
+            const state = event.state;
+            if (!state) {
+                return;
+            }
+
+            map.setView(pixelToLatLng(state.center), state.zoom);
+
+            if (state.popup) {
+                showPopup(state.popup.x, state.popup.y);
+            }
+        };
+
+        if (window.location.search) {
+            const params = new URLSearchParams(window.location.search);
+
+            map.setView(pixelToLatLng({x: params.get('x')|0, y: params.get('y')|0}), params.get('zoom'));
+
+            if (params.get('px') !== null && params.get('py') !== null) {
+                showPopup(params.get('px')|0, params.get('py')|0);
+            }
+        }
+
+        function showPopup(x, y) {
+            const xn = BigInt(x);
+            const yn = BigInt(y);
+            let addr_int = 0n;
+            for (let bit = 0n; bit < 16n; ++bit) {
+                addr_int |= ((xn >> bit) & 1n) << (bit * 2n);
+                addr_int |= ((yn >> bit) & 1n) << (1n + bit * 2n);
+            }
+
+            current_requested_addr = addr_int;
+
+            const addr_hex = '0x' + addr_int.toString(16);
+            const response = fetch(
+                `${url}&default_format=JSON`,
+                {
+                    method: 'POST',
+                    body: `SELECT encodeXMLComponent(demangle(addressToSymbol(${addr_int}::UInt64))) AS name,
+                                  encodeXMLComponent(addressToLine(${addr_int}::UInt64)) AS line`
+                }).then(response => response.json().then(o => {
+
+                    let name = o.rows ? o.data[0].name : 'nothing';
+                    let line = o.rows ? o.data[0].line : '';
+
+                    if (addr_int == current_requested_addr) {
+                        popup.setContent(`<p><b>${addr_hex}</b></p><p>${name}</p><p>${line}</p>`);
+                    }
+                }));
+
+            popup
+                .setLatLng(pixelToLatLng({x: x, y: y}))
+                .setContent(addr_hex)
+                .openOn(map);
+        }
+
+        map.on('click', e => {
+            const {x, y} = latLngToPixel(e.latlng);
+            if (x < 0 || x >= 32768 || y < 0 || y >= 32768) return;
+
+            showPopup(x, y);
+            updateHistory();
+        });
+
+        map.on('moveend', e => updateHistory());
+    </script>
+</body>
+</html>

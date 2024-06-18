@@ -1,6 +1,6 @@
 ---
 slug: /en/development/style
-sidebar_position: 70
+sidebar_position: 71
 sidebar_label: C++ Guide
 description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
@@ -57,7 +57,7 @@ memcpy(&buf[place_value], &x, sizeof(x));
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, …) and the ternary operator `?:`.
+**7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, ...) and the ternary operator `?:`.
 
 ``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -86,7 +86,7 @@ dst.ClickGoodEvent     = click.GoodEvent;
 
 If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
 
-**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, …) from the argument.
+**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, ...) from the argument.
 
 **12.** Put a space after a comma, but not before it. The same rule goes for a semicolon inside a `for` expression.
 
@@ -115,7 +115,7 @@ public:
 
 **16.** If the same `namespace` is used for the entire file, and there isn’t anything else significant, an offset is not necessary inside `namespace`.
 
-**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, …
+**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, ...
 
 But if the inner `statement` contains curly brackets or `else`, the external block should be written in curly brackets.
 
@@ -345,7 +345,7 @@ struct ExtractDomain
 **7.** For abstract classes (interfaces) you can add the `I` prefix.
 
 ``` cpp
-class IBlockInputStream
+class IProcessor
 ```
 
 **8.** If you use a variable locally, you can use the short name.
@@ -489,7 +489,7 @@ When using functions with response codes or `errno`, always check the result and
 
 ``` cpp
 if (0 != close(fd))
-    throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
 ```
 
 You can use assert to check invariant in code.

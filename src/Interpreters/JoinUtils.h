@@ -49,7 +49,7 @@ public:
         return nullptr;
     }
 
-    inline bool isRowFiltered(size_t row) const
+    bool isRowFiltered(size_t row) const
     {
         return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }
@@ -59,7 +59,6 @@ private:
 };
 
 
-bool isNullable(const DataTypePtr & type);
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
@@ -71,10 +70,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
-void convertToFullColumnsInplace(Block & block);
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);

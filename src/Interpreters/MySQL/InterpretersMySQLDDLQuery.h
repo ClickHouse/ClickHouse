@@ -75,7 +75,7 @@ public:
         ASTs rewritten_queries = InterpreterImpl::getRewrittenQueries(query, getContext(), mapped_to_database, mysql_database);
 
         for (const auto & rewritten_query : rewritten_queries)
-            executeQuery("/* Rewritten MySQL DDL Query */ " + queryToString(rewritten_query), getContext(), true);
+            executeQuery("/* Rewritten MySQL DDL Query */ " + queryToString(rewritten_query), getContext(), QueryFlags{ .internal = true });
 
         return BlockIO{};
     }

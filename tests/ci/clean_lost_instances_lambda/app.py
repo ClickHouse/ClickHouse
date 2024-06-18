@@ -8,14 +8,13 @@ Lambda function to:
 
 import argparse
 import sys
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List
 
-import requests  # type: ignore
 import boto3  # type: ignore
+import requests
 from botocore.exceptions import ClientError  # type: ignore
-
 from lambda_shared import (
     RUNNER_TYPE_LABELS,
     RunnerDescription,
@@ -23,9 +22,9 @@ from lambda_shared import (
     list_runners,
 )
 from lambda_shared.token import (
+    get_access_token_by_key_app,
     get_cached_access_token,
     get_key_and_app_from_aws,
-    get_access_token_by_key_app,
 )
 
 UNIVERSAL_LABEL = "universal"
@@ -140,6 +139,7 @@ def delete_runner(access_token: str, runner: RunnerDescription) -> bool:
     response = requests.delete(
         f"https://api.github.com/orgs/ClickHouse/actions/runners/{runner.id}",
         headers=headers,
+        timeout=30,
     )
     response.raise_for_status()
     print(f"Response code deleting {runner.name} is {response.status_code}")
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     if args.private_key:
         private_key = args.private_key
     elif args.private_key_path:
-        with open(args.private_key_path, "r") as key_file:
+        with open(args.private_key_path, "r", encoding="utf-8") as key_file:
             private_key = key_file.read()
     else:
         print("Attempt to get key and id from AWS secret manager")

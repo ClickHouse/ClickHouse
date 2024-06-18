@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Context.h>
 
 #include <Parsers/IAST.h>
@@ -65,6 +66,15 @@ BlockIO InterpreterExternalDDLQuery::execute()
     }
 
     return BlockIO();
+}
+
+void registerInterpreterExternalDDLQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterExternalDDLQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterExternalDDLQuery", create_fn);
 }
 
 }

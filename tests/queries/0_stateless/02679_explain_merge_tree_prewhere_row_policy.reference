@@ -29,10 +29,10 @@ Header: id UInt64
         value String
 Actions: INPUT : 0 -> id UInt64 : 0
          INPUT : 1 -> value String : 1
-         ALIAS id :: 0 -> id_0 UInt64 : 2
-         ALIAS value :: 1 -> value_1 String : 0
-         ALIAS id_0 :: 2 -> id UInt64 : 1
-         ALIAS value_1 :: 0 -> value String : 2
+         ALIAS id :: 0 -> __table1.id UInt64 : 2
+         ALIAS value :: 1 -> __table1.value String : 0
+         ALIAS __table1.id :: 2 -> id UInt64 : 1
+         ALIAS __table1.value :: 0 -> value String : 2
 Positions: 1 2
   ReadFromMergeTree (default.test_table)
   Header: id UInt64

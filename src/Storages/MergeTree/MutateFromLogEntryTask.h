@@ -23,7 +23,7 @@ public:
         StorageReplicatedMergeTree & storage_,
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(
-            &Poco::Logger::get(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
+            getLogger(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
             storage_,
             selected_entry_,
             task_result_callback_)

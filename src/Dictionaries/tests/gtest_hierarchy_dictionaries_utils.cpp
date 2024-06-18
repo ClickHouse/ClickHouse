@@ -173,7 +173,7 @@ TEST(HierarchyDictionariesUtils, getIsInHierarchy)
 TEST(HierarchyDictionariesUtils, getDescendants)
 {
     {
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child[0].emplace_back(1);
         parent_to_child[1].emplace_back(2);
         parent_to_child[1].emplace_back(3);
@@ -221,7 +221,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         }
     }
     {
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child[1].emplace_back(2);
         parent_to_child[2].emplace_back(1);
 

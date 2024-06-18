@@ -1,4 +1,5 @@
 INSERT TO S3
+ [ 0 ] S3Clients: 1 
  [ 0 ] S3CompleteMultipartUpload: 1 
  [ 0 ] S3CreateMultipartUpload: 1 
  [ 0 ] S3HeadObject: 2 

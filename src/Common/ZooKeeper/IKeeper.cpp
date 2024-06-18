@@ -1,5 +1,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/thread_local_rng.h>
+#include <random>
 
 
 namespace DB
@@ -21,7 +23,7 @@ namespace ProfileEvents
 namespace Coordination
 {
 
-void Exception::incrementErrorMetrics(const Error code_)
+void Exception::incrementErrorMetrics(Error code_)
 {
     if (Coordination::isUserError(code_))
         ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
@@ -31,14 +33,14 @@ void Exception::incrementErrorMetrics(const Error code_)
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
-Exception::Exception(const std::string & msg, const Error code_, int)
+Exception::Exception(const std::string & msg, Error code_, int)
     : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION)
     , code(code_)
 {
     incrementErrorMetrics(code);
 }
 
-Exception::Exception(PreformattedMessage && msg, const Error code_)
+Exception::Exception(PreformattedMessage && msg, Error code_)
     : DB::Exception(std::move(msg), DB::ErrorCodes::KEEPER_EXCEPTION)
     , code(code_)
 {
@@ -46,13 +48,41 @@ Exception::Exception(PreformattedMessage && msg, const Error code_)
     incrementErrorMetrics(code);
 }
 
-Exception::Exception(const Error code_)
+Exception::Exception(Error code_)
     : Exception(code_, "Coordination error: {}", errorMessage(code_))
 {
 }
 
 Exception::Exception(const Exception & exc) = default;
 
+
+SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_)
+{
+    if (likely(probability_before == 0.0) && likely(probability_after_ == 0.0))
+        return;
+
+    std::bernoulli_distribution fault(probability_before);
+    if (fault(thread_local_rng))
+        throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (before {})", description_);
+
+    probability_after = probability_after_;
+    description = description_;
+    exceptions_level = std::uncaught_exceptions();
+}
+
+SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
+{
+    if (likely(probability_after == 0.0))
+        return;
+
+    /// Do not throw from dtor during unwinding
+    if (exceptions_level != std::uncaught_exceptions())
+        return;
+
+    std::bernoulli_distribution fault(probability_after);
+    if (fault(thread_local_rng))
+        throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after {})", description);
+}
 
 using namespace DB;
 
@@ -114,9 +144,8 @@ const char * errorMessage(Error code)
         case Error::ZCLOSING:                 return "ZooKeeper is closing";
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
+        case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
     }
-
-    UNREACHABLE();
 }
 
 bool isHardwareError(Error zk_return_code)
@@ -126,7 +155,8 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZSESSIONMOVED
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
-        || zk_return_code == Error::ZOPERATIONTIMEOUT;
+        || zk_return_code == Error::ZOPERATIONTIMEOUT
+        || zk_return_code == Error::ZNOTREADONLY;
 }
 
 bool isUserError(Error zk_return_code)
@@ -166,4 +196,3 @@ void MultiResponse::removeRootPath(const String & root_path)
 }
 
 }
-

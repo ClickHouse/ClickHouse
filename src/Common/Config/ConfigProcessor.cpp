@@ -18,7 +18,7 @@
 #include <Poco/NumberParser.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
@@ -77,21 +77,15 @@ ConfigProcessor::ConfigProcessor(
     , name_pool(new Poco::XML::NamePool(65521))
     , dom_parser(name_pool)
 {
-    if (log_to_console && !Poco::Logger::has("ConfigProcessor"))
+    if (log_to_console && !hasLogger("ConfigProcessor"))
     {
         channel_ptr = new Poco::ConsoleChannel;
-        log = &Poco::Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
+        log = createLogger("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
     }
     else
     {
-        log = &Poco::Logger::get("ConfigProcessor");
+        log = getLogger("ConfigProcessor");
     }
-}
-
-ConfigProcessor::~ConfigProcessor()
-{
-    if (channel_ptr) /// This means we have created a new console logger in the constructor.
-        Poco::Logger::destroy("ConfigProcessor");
 }
 
 static std::unordered_map<std::string, std::string_view> embedded_configs;
@@ -330,6 +324,12 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 {
                     Element & config_element = dynamic_cast<Element &>(*config_node);
 
+                    /// Remove substitution attributes from the merge target node if source node already has a value
+                    bool source_has_value = with_element.hasChildNodes();
+                    if (source_has_value)
+                        for (const auto & attr_name: SUBSTITUTION_ATTRS)
+                            config_element.removeAttribute(attr_name);
+
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
                 }
@@ -427,6 +427,8 @@ void ConfigProcessor::doIncludesRecursive(
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
+    /// Merge with the original contents
+    bool merge = attributes->getNamedItem("merge");
 
     bool included_something = false;
 
@@ -450,7 +452,6 @@ void ConfigProcessor::doIncludesRecursive(
         }
         else
         {
-            /// Replace the whole node not just contents.
             if (node->nodeName() == "include")
             {
                 const NodeListPtr children = node_to_include->childNodes();
@@ -458,8 +459,18 @@ void ConfigProcessor::doIncludesRecursive(
                 for (Node * child = children->item(0); child; child = next_child)
                 {
                     next_child = child->nextSibling();
-                    NodePtr new_node = config->importNode(child, true);
-                    node->parentNode()->insertBefore(new_node, node);
+
+                    /// Recursively replace existing nodes in merge mode
+                    if (merge)
+                    {
+                        NodePtr new_node = config->importNode(child->parentNode(), true);
+                        mergeRecursive(config, node->parentNode(), new_node);
+                    }
+                    else  /// Append to existing node by default
+                    {
+                        NodePtr new_node = config->importNode(child, true);
+                        node->parentNode()->insertBefore(new_node, node);
+                    }
                 }
 
                 node->parentNode()->removeChild(node);
@@ -513,6 +524,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_zk"]) /// we have zookeeper subst
     {
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
+
         contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
 
         if (zk_node_cache)
@@ -535,6 +550,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_env"]) /// we have env subst
     {
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_env substitution");
+
         XMLDocumentPtr env_document;
         auto get_env_node = [&](const std::string & name) -> const Node *
         {
@@ -712,8 +731,20 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
+            fs::path p(include_from_path);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                include_from = YAMLParser::parse(include_from_path);
+            }
+            else
+            {
+                include_from = dom_parser.parse(include_from_path);
+            }
+
             contributing_files.push_back(include_from_path);
-            include_from = dom_parser.parse(include_from_path);
         }
 
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
@@ -769,9 +800,9 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-        zkutil::ZooKeeperNodeCache & zk_node_cache,
-        const zkutil::EventPtr & zk_changed_event,
-        bool fallback_to_preprocessed)
+    zkutil::ZooKeeperNodeCache & zk_node_cache,
+    const zkutil::EventPtr & zk_changed_event,
+    bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;

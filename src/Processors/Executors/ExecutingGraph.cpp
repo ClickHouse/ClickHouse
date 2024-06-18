@@ -260,6 +260,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
         {
             pid = updated_processors.top();
             updated_processors.pop();
+
             /// In this method we have ownership on node.
             auto & node = *nodes[pid];
 

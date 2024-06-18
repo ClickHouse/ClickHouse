@@ -2,12 +2,12 @@
 
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
 
 #include <chrono>
 #include <filesystem>
 #include <format>
 #include <map>
-#include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>

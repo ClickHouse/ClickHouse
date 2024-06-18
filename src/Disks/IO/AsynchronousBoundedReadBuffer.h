@@ -44,7 +44,7 @@ public:
 
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
-    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
     size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
 
@@ -67,7 +67,7 @@ private:
     const std::string query_id;
     const std::string current_reader_id;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     AsyncReadCountersPtr async_read_counters;
     FilesystemReadPrefetchesLogPtr prefetches_log;
@@ -95,7 +95,6 @@ private:
     IAsynchronousReader::Result readSync(char * data, size_t size);
 
     void resetPrefetch(FilesystemPrefetchState state);
-
 };
 
 }

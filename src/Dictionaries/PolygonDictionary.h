@@ -34,7 +34,7 @@ public:
      *      - A point is represented by its coordinates stored in an according structure (see below).
      *  A simple polygon is represented by an one-dimensional array of points, stored in the according structure.
      */
-    enum class InputType
+    enum class InputType : uint8_t
     {
         MultiPolygon,
         SimplePolygon
@@ -42,7 +42,7 @@ public:
     /** Controls the different types allowed for providing the coordinates of points.
       * Right now a point can be represented by either an array or a tuple of two Float64 values.
       */
-    enum class PointType
+    enum class PointType : uint8_t
     {
         Array,
         Tuple,
@@ -56,6 +56,8 @@ public:
 
         /// Store polygon key column. That will allow to read columns from polygon dictionary.
         bool store_polygon_key_column = false;
+
+        bool use_async_executor = false;
     };
 
     IPolygonDictionary(
@@ -69,14 +71,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
@@ -98,11 +100,11 @@ public:
     void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -152,6 +154,13 @@ private:
         ValueGetter && get_value,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, typename ValueGetter, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        ValueGetter && get_value,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     ColumnPtr key_attribute_column;
 

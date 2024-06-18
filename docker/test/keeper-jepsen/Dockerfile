@@ -24,7 +24,10 @@ RUN mkdir "/root/.ssh"
 RUN touch "/root/.ssh/known_hosts"
 
 # install java
-RUN apt-get update && apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends
+RUN apt-get update && \
+    apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # install clojure
 RUN curl -O "https://download.clojure.org/install/linux-install-${CLOJURE_VERSION}.sh" && \

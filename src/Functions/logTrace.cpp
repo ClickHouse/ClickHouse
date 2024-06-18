@@ -46,7 +46,7 @@ namespace
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
                     getName());
 
-            static auto * log = &Poco::Logger::get("FunctionLogTrace");
+            static auto log = getLogger("FunctionLogTrace");
             LOG_TRACE(log, fmt::runtime(message));
 
             return DataTypeUInt8().createColumnConst(input_rows_count, 0);

@@ -18,10 +18,12 @@ CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY "${server_opts[@]}" >& cl
 server_pid=$!
 
 trap cleanup EXIT
+# Shellcheck wrongly process "trap" https://www.shellcheck.net/wiki/SC2317
+# shellcheck disable=SC2317
 function cleanup()
 {
-    kill -9 $server_pid
-    kill -9 $client_pid
+    kill -9 "$server_pid"
+    kill -9 "$client_pid"
 
     echo "Test failed. Server log:"
     cat clickhouse-server.log

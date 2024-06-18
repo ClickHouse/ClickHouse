@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-
+#include <optional>
 
 namespace DB
 {
@@ -10,14 +10,23 @@ namespace DB
 class ASTPartition : public IAST
 {
 public:
-    ASTPtr value;
-    size_t fields_count = 0;
+    IAST * value{nullptr};
+    std::optional<size_t> fields_count;
 
-    String id;
+    IAST * id{nullptr};
     bool all = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;
+
+    void setPartitionID(const ASTPtr & ast);
+    void setPartitionValue(const ASTPtr & ast);
+
+    void forEachPointerToChild(std::function<void(void **)> f) override
+    {
+        f(reinterpret_cast<void **>(&value));
+        f(reinterpret_cast<void **>(&id));
+    }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

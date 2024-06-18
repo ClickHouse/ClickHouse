@@ -30,6 +30,7 @@ public:
         Graphite::Params params_,
         time_t time_of_merge_);
 
+    const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
 
     struct ColumnsDefinition
@@ -52,7 +53,7 @@ public:
     {
     public:
         using MergedData::MergedData;
-        ~GraphiteRollupMergedData();
+        ~GraphiteRollupMergedData() override;
 
         void startNextGroup(const ColumnRawPtrs & raw_columns, size_t row,
                             Graphite::RollupRule next_rule, ColumnsDefinition & def);
@@ -71,7 +72,7 @@ public:
     };
 
 private:
-    GraphiteRollupMergedData merged_data;
+    GraphiteRollupMergedData & graphite_rollup_merged_data;
 
     const Graphite::Params params;
     ColumnsDefinition columns_definition;

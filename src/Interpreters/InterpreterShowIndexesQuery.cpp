@@ -1,6 +1,8 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowIndexesQuery.h>
 
 #include <Common/quoteString.h>
+#include <Common/escapeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowIndexesQuery.h>
@@ -23,16 +25,9 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-
-    WriteBufferFromOwnString buf_table;
-    writeEscapedString(query.table, buf_table);
-    String table = buf_table.str();
-
-    WriteBufferFromOwnString buf_database;
+    String table = escapeString(query.table);
     String resolved_database = getContext()->resolveDatabase(query.database);
-    writeEscapedString(resolved_database, buf_database);
-    String database = buf_database.str();
-
+    String database = escapeString(resolved_database);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression) : "";
 
     String rewritten_query = fmt::format(R"(
@@ -95,7 +90,7 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
     ///   can be functional indexes.
     /// Above SELECT tries to emulate that. Caveats:
     /// 1. The primary key index sub-SELECT assumes the primary key expression is non-functional. Non-functional primary key indexes in
-    ///    ClickHouse are possible but quiete obscure. In MySQL they are not possible at all.
+    ///    ClickHouse are possible but quite obscure. In MySQL they are not possible at all.
     /// 2. Related to 1.: Poor man's tuple parsing with splitByString() in the PK sub-SELECT messes up for functional primary key index
     ///    expressions where the comma is not only used as separator between tuple components, e.g. in 'col1 + 1, concat(col2, col3)'.
     /// 3. The data skipping index sub-SELECT assumes the index expression is functional. 3rd party tools that expect MySQL semantics from
@@ -107,9 +102,16 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
-
+void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowIndexesQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn);
 }
 
+}

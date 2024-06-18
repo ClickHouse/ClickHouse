@@ -48,7 +48,7 @@ public:
         SerializationPtr serialization = type->getDefaultSerialization();
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & col_res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnVectorHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
+        ColumnFixedSizeHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
         serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
             col_res_strings.insert(substream_path.toString());

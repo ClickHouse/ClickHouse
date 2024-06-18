@@ -14,6 +14,7 @@ Columns:
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Database UUID.
 - `comment` ([String](../../sql-reference/data-types/enum.md)) — Database comment.
 - `engine_full` ([String](../../sql-reference/data-types/enum.md)) — Parameters of the database engine.
+- `database` ([String](../../sql-reference/data-types/string.md)) – Alias for `name`.
 
 The `name` column from this system table is used for implementing the `SHOW DATABASES` query.
 

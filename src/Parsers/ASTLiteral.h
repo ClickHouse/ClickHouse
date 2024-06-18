@@ -4,6 +4,7 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/FieldVisitorDump.h>
+#include <DataTypes/IDataType.h>
 
 #include <optional>
 
@@ -17,7 +18,14 @@ class ASTLiteral : public ASTWithAlias
 public:
     explicit ASTLiteral(Field value_) : value(std::move(value_)) {}
 
+    // This methond and the custom_type are only used for Apache Gluten,
+    explicit ASTLiteral(Field value_, DataTypePtr & type_) : value(std::move(value_))
+    {
+        custom_type = type_;
+    }
+
     Field value;
+    DataTypePtr custom_type;
 
     /// For ConstantExpressionTemplate
     std::optional<TokenIterator> begin;
@@ -41,7 +49,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

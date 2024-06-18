@@ -34,7 +34,7 @@ The binary you just downloaded can run all sorts of ClickHouse tools and utiliti
 
 A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
 
-If the file is sitting on the same machine as `clickhouse-local`, you can simple specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+If the file is sitting on the same machine as `clickhouse-local`, you can simply specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
 
 ```bash
 ./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
@@ -201,12 +201,12 @@ Arguments:
 
 - `-S`, `--structure` — table structure for input data.
 - `--input-format` — input format, `TSV` by default.
-- `-f`, `--file` — path to data, `stdin` by default.
+- `-F`, `--file` — path to data, `stdin` by default.
 - `-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
 - `--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `-N`, `--table` — table name where to put output data, `table` by default.
-- `--format`, `--output-format` — output format, `TSV` by default.
+- `-f`, `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.
 - `--stacktrace` — whether to dump debug output in case of exception.
 - `--echo` — print query before execution.
@@ -220,7 +220,7 @@ Arguments:
 - `--help` — arguments references for `clickhouse-local`.
 - `-V`, `--version` — print version information and exit.
 
-Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
+Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
 
 ## Examples {#examples}

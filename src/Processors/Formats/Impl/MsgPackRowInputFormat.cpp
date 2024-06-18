@@ -56,8 +56,19 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf->reset();
     visitor.reset();
+}
+
+void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void MsgPackRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
 }
 
 void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) // NOLINT
@@ -543,11 +554,6 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return true;
 }
 
-void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
-}
-
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
@@ -651,7 +657,6 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
-    UNREACHABLE();
 }
 
 std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()

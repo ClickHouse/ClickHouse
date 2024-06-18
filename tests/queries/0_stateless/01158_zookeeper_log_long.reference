@@ -1,20 +1,22 @@
 log
-::1	Response	0	Watch	/test/01158/default/rmt/log	0	0	\N	0	0	ZOK	CHILD	CONNECTED		0	0	0	0
-::1	Request	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	\N	\N	\N		0	0	0	0
-::1	Response	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	ZOK	\N	\N	/test/01158/default/rmt/log	0	0	0	0
-::1	Request	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	\N	\N	\N		0	0	0	0
-::1	Response	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	ZOK	\N	\N	/test/01158/default/rmt/log/log-0000000000	0	0	0	0
+::ffff:127.0.0.1	Response	0	Watch	/test/01158/default/rmt/log	0	0	\N	0	0	ZOK	CHILD	CONNECTED		0	0	0	0
+::ffff:127.0.0.1	Request	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	\N	\N	\N		0	0	0	0
+::ffff:127.0.0.1	Response	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	ZOK	\N	\N	/test/01158/default/rmt/log	0	0	0	0
+::ffff:127.0.0.1	Request	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	\N	\N	\N		0	0	0	0
+::ffff:127.0.0.1	Response	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	ZOK	\N	\N	/test/01158/default/rmt/log/log-0000000000	0	0	0	0
 parts
-Request	0	Multi		0	0	\N	4	0	\N	\N	\N		0	0	0	0
+Request	0	Multi		0	0	\N	5	0	\N	\N	\N		0	0	0	0
 Request	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	\N	\N	\N		0	0	0	0
 Request	0	Remove	/test/01158/default/rmt/block_numbers/all/block-0000000000	0	0	-1	0	2	\N	\N	\N		0	0	0	0
 Request	0	Create	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	3	\N	\N	\N		0	0	0	0
 Request	0	Create	/test/01158/default/rmt/replicas/1/parts/all_0_0_0	0	0	\N	0	4	\N	\N	\N		0	0	0	0
-Response	0	Multi		0	0	\N	4	0	ZOK	\N	\N		0	0	0	0
+Request	0	Check	/clickhouse/sessions/zookeeper/<uuid>	0	0	1	0	5	\N	\N	\N		0	0	0	0
+Response	0	Multi		0	0	\N	5	0	ZOK	\N	\N		0	0	0	0
 Response	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	ZOK	\N	\N	/test/01158/default/rmt/log/log-0000000000	0	0	0	0
 Response	0	Remove	/test/01158/default/rmt/block_numbers/all/block-0000000000	0	0	-1	0	2	ZOK	\N	\N		0	0	0	0
 Response	0	Create	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	3	ZOK	\N	\N	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	0	0
 Response	0	Create	/test/01158/default/rmt/replicas/1/parts/all_0_0_0	0	0	\N	0	4	ZOK	\N	\N	/test/01158/default/rmt/replicas/1/parts/all_0_0_0	0	0	0	0
+Response	0	Check	/clickhouse/sessions/zookeeper/<uuid>	0	0	1	0	5	ZOK	\N	\N		0	0	0	0
 Request	0	Exists	/test/01158/default/rmt/replicas/1/parts/all_0_0_0	0	0	\N	0	0	\N	\N	\N		0	0	0	0
 Response	0	Exists	/test/01158/default/rmt/replicas/1/parts/all_0_0_0	0	0	\N	0	0	ZOK	\N	\N		0	0	96	0
 blocks
@@ -32,5 +34,5 @@ Response	0	Error	/test/01158/default/rmt/blocks/all_6308706741995381342_24957917
 Response	0	Error	/test/01158/default/rmt/block_numbers/all/block-	1	1	\N	0	2	ZRUNTIMEINCONSISTENCY	\N	\N		0	0	0	0
 Request	0	Get	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	0	\N	\N	\N		0	0	0	0
 Response	0	Get	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	0	ZOK	\N	\N		0	0	9	0
-duration_ms
+duration_microseconds
 1

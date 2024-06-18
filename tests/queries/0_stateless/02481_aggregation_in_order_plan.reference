@@ -4,7 +4,7 @@
 0	1	2	200
   Aggregating
   Order: a ASC, c ASC
-      ReadFromMergeTree (default.tab)
+        ReadFromMergeTree (default.tab)
   Aggregating
-  Order: a_0 ASC, c_2 ASC
+  Order: __table1.a ASC, __table1.c ASC
         ReadFromMergeTree (default.tab)

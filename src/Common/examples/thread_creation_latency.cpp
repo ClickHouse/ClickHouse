@@ -14,11 +14,14 @@ int value = 0;
 static void f() { ++value; }
 static void * g(void *) { f(); return {}; }
 
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -48,8 +51,7 @@ void test(size_t n, const char * name, F && kernel)
         kernel();
 
         watch_one.stop();
-        if (watch_one.elapsedSeconds() > max_seconds)
-            max_seconds = watch_one.elapsedSeconds();
+        max_seconds = std::max(watch_one.elapsedSeconds(), max_seconds);
     }
 
     watch.stop();
@@ -72,7 +74,7 @@ int main(int argc, char ** argv)
 
     test(n, "Create and destroy ThreadPool each iteration", []
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 1);
+        SimpleThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
         tp.scheduleOrThrowOnError(f);
         tp.wait();
     });
@@ -81,9 +83,9 @@ int main(int argc, char ** argv)
     {
         pthread_t thread;
         if (pthread_create(&thread, nullptr, g, nullptr))
-            DB::throwFromErrno("Cannot create thread.", DB::ErrorCodes::PTHREAD_ERROR);
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot create thread");
         if (pthread_join(thread, nullptr))
-            DB::throwFromErrno("Cannot join thread.", DB::ErrorCodes::PTHREAD_ERROR);
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot join thread");
     });
 
     test(n, "Create and destroy std::thread each iteration", []
@@ -93,7 +95,7 @@ int main(int argc, char ** argv)
     });
 
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 1);
+        SimpleThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
 
         test(n, "Schedule job for Threadpool each iteration", [&tp]
         {
@@ -103,7 +105,7 @@ int main(int argc, char ** argv)
     }
 
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 128);
+        SimpleThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 128);
 
         test(n, "Schedule job for Threadpool with 128 threads each iteration", [&tp]
         {

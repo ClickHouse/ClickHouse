@@ -9,7 +9,6 @@
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -17,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/iota.h>
 
 
 using namespace DB;
@@ -32,8 +32,7 @@ void stableGetColumnPermutation(
 
     size_t size = column.size();
     out_permutation.resize(size);
-    for (size_t i = 0; i < size; ++i)
-        out_permutation[i] = i;
+    iota(out_permutation.data(), size, IColumn::Permutation::value_type(0));
 
     std::stable_sort(
         out_permutation.begin(),
@@ -146,10 +145,7 @@ void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransfor
 
     std::vector<std::vector<Field>> ranges(ranges_size);
     std::vector<size_t> ranges_permutations(ranges_size);
-    for (size_t i = 0; i < ranges_size; ++i)
-    {
-        ranges_permutations[i] = i;
-    }
+    iota(ranges_permutations.data(), ranges_size, IColumn::Permutation::value_type(0));
 
     IColumn::Permutation actual_permutation;
     IColumn::Permutation expected_permutation;

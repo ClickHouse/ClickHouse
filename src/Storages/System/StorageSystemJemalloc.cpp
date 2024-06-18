@@ -25,6 +25,15 @@ UInt64 getJeMallocValue(const char * name)
     UInt64 value{};
     size_t size = sizeof(value);
     mallctl(name, &value, &size, nullptr, 0);
+    /// mallctl() fills the value with 32 bit integer for some queries("arenas.nbins" for example).
+    /// In this case variable 'size' will be changed from 8 to 4 and the 64 bit variable 'value' will hold the 32 bit actual value times 2^32 on big-endian machines.
+    /// We should right shift the value by 32 on big-endian machines(which is unnecessary on little-endian machines).
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (size == 4)
+    {
+        value >>= 32;
+    }
+#endif
     return value;
 }
 
@@ -68,7 +77,7 @@ void fillJemallocBins(MutableColumns & res_columns)
 
 void fillJemallocBins(MutableColumns &)
 {
-    LOG_INFO(&Poco::Logger::get("StorageSystemJemallocBins"), "jemalloc is not enabled");
+    LOG_INFO(getLogger("StorageSystemJemallocBins"), "jemalloc is not enabled");
 }
 
 #endif // USE_JEMALLOC
@@ -79,24 +88,19 @@ StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_
 {
     StorageInMemoryMetadata storage_metadata;
     ColumnsDescription desc;
-    auto columns = getNamesAndTypes();
-    for (const auto & col : columns)
-    {
-        ColumnDescription col_desc(col.name, col.type);
-        desc.add(col_desc);
-    }
-    storage_metadata.setColumns(desc);
+    storage_metadata.setColumns(getColumnsDescription());
     setInMemoryMetadata(storage_metadata);
 }
 
-NamesAndTypesList StorageSystemJemallocBins::getNamesAndTypes()
+ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
 {
-    return {
-        { "index",          std::make_shared<DataTypeUInt16>() },
-        { "large",          std::make_shared<DataTypeUInt8>() },
-        { "size",           std::make_shared<DataTypeUInt64>() },
-        { "allocations",    std::make_shared<DataTypeInt64>() },
-        { "deallocations",  std::make_shared<DataTypeInt64>() },
+    return ColumnsDescription
+    {
+        { "index",          std::make_shared<DataTypeUInt16>(), "Index of the bin ordered by size."},
+        { "large",          std::make_shared<DataTypeUInt8>(), "True for large allocations and False for small."},
+        { "size",           std::make_shared<DataTypeUInt64>(), "Size of allocations in this bin."},
+        { "allocations",    std::make_shared<DataTypeInt64>(), "Number of allocations."},
+        { "deallocations",  std::make_shared<DataTypeInt64>(), "Number of deallocations."},
     };
 }
 
@@ -111,7 +115,7 @@ Pipe StorageSystemJemallocBins::read(
 {
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);

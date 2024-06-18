@@ -19,7 +19,7 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
-    MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+    explicit MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
 
     struct Info
     {
@@ -69,6 +69,7 @@ public:
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);

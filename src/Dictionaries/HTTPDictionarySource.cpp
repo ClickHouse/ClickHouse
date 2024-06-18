@@ -32,26 +32,26 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Poco::Net::HTTPBasicCredentials & credentials_,
     Block & sample_block_,
     ContextPtr context_)
-    : log(&Poco::Logger::get("HTTPDictionarySource"))
+    : log(getLogger("HTTPDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
     , sample_block(sample_block_)
     , context(context_)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout))
 {
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
 }
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
-    : log(&Poco::Logger::get("HTTPDictionarySource"))
+    : log(getLogger("HTTPDictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)
     , sample_block(other.sample_block)
     , context(Context::createCopy(other.context))
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout))
 {
     credentials.setUsername(other.credentials.getUsername());
     credentials.setPassword(other.credentials.getPassword());
@@ -88,20 +88,18 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
 QueryPipeline HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    Poco::URI uri(configuration.url);
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_GET,
-        ReadWriteBufferFromHTTP::OutStreamCallback(),
-        timeouts,
-        credentials,
-        0,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        nullptr, false);
 
-    return createWrappedBuffer(std::move(in_ptr));
+    Poco::URI uri(configuration.url);
+
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withSettings(context->getReadSettings())
+                   .withTimeouts(timeouts)
+                   .withHeaders(configuration.header_entries)
+                   .withDelayInit(false)
+                   .create(credentials);
+
+    return createWrappedBuffer(std::move(buf));
 }
 
 QueryPipeline HTTPDictionarySource::loadUpdatedAll()
@@ -109,19 +107,16 @@ QueryPipeline HTTPDictionarySource::loadUpdatedAll()
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
     LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_GET,
-        ReadWriteBufferFromHTTP::OutStreamCallback(),
-        timeouts,
-        credentials,
-        0,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        nullptr, false);
 
-    return createWrappedBuffer(std::move(in_ptr));
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withSettings(context->getReadSettings())
+                   .withTimeouts(timeouts)
+                   .withHeaders(configuration.header_entries)
+                   .withDelayInit(false)
+                   .create(credentials);
+
+    return createWrappedBuffer(std::move(buf));
 }
 
 QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -139,19 +134,18 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     };
 
     Poco::URI uri(configuration.url);
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        out_stream_callback,
-        timeouts,
-        credentials,
-        0,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        nullptr, false);
 
-    return createWrappedBuffer(std::move(in_ptr));
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withSettings(context->getReadSettings())
+                   .withTimeouts(timeouts)
+                   .withHeaders(configuration.header_entries)
+                   .withOutCallback(std::move(out_stream_callback))
+                   .withDelayInit(false)
+                   .create(credentials);
+
+    return createWrappedBuffer(std::move(buf));
 }
 
 QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -169,19 +163,18 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
     };
 
     Poco::URI uri(configuration.url);
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        out_stream_callback,
-        timeouts,
-        credentials,
-        0,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        nullptr, false);
 
-    return createWrappedBuffer(std::move(in_ptr));
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withSettings(context->getReadSettings())
+                   .withTimeouts(timeouts)
+                   .withHeaders(configuration.header_entries)
+                   .withOutCallback(std::move(out_stream_callback))
+                   .withDelayInit(false)
+                   .create(credentials);
+
+    return createWrappedBuffer(std::move(buf));
 }
 
 bool HTTPDictionarySource::isModified() const

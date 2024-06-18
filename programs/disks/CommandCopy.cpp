@@ -36,7 +36,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 2)
@@ -51,13 +51,13 @@ public:
         const String & path_from = command_arguments[0];
         const String & path_to =  command_arguments[1];
 
-        DiskPtr disk_from = global_context->getDisk(disk_name_from);
-        DiskPtr disk_to = global_context->getDisk(disk_name_to);
+        DiskPtr disk_from = disk_selector->get(disk_name_from);
+        DiskPtr disk_to = disk_selector->get(disk_name_to);
 
         String relative_path_from = validatePathAndGetAsRelative(path_from);
         String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk_from->copyDirectoryContent(relative_path_from, disk_to, relative_path_to, /* settings= */ {});
+        disk_from->copyDirectoryContent(relative_path_from, disk_to, relative_path_to, /* read_settings= */ {}, /* write_settings= */ {}, /* cancellation_hook= */ {});
     }
 };
 }

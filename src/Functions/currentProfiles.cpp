@@ -15,45 +15,40 @@ namespace DB
 
 namespace
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
-        CURRENT_PROFILES,
-        ENABLED_PROFILES,
-        DEFAULT_PROFILES,
+        currentProfiles,
+        enabledProfiles,
+        defaultProfiles,
     };
 
-    template <Kind kind>
-    class FunctionCurrentProfiles : public IFunction
+    String toString(Kind kind)
+    {
+        switch (kind)
+        {
+            case Kind::currentProfiles: return "currentProfiles";
+            case Kind::enabledProfiles: return "enabledProfiles";
+            case Kind::defaultProfiles: return "defaultProfiles";
+        }
+    }
+
+    class FunctionProfiles : public IFunction
     {
     public:
-        static constexpr auto name = (kind == Kind::CURRENT_PROFILES) ? "currentProfiles" : ((kind == Kind::ENABLED_PROFILES) ? "enabledProfiles" : "defaultProfiles");
-        static FunctionPtr create(const ContextPtr & context) { return std::make_shared<FunctionCurrentProfiles>(context); }
-
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-        String getName() const override { return name; }
-
-        explicit FunctionCurrentProfiles(const ContextPtr & context)
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
         {
-            const auto & manager = context->getAccessControl();
-
-            std::vector<UUID> profile_ids;
-            if constexpr (kind == Kind::CURRENT_PROFILES)
-            {
-                profile_ids = context->getCurrentProfiles();
-            }
-            else if constexpr (kind == Kind::ENABLED_PROFILES)
-            {
-                profile_ids = context->getEnabledProfiles();
-            }
-            else
-            {
-                static_assert(kind == Kind::DEFAULT_PROFILES);
-                profile_ids = context->getUser()->settings.toProfileIDs();
-            }
-
-            profile_names = manager.tryReadNames(profile_ids);
+            return false;
         }
+
+        String getName() const override
+        {
+            return toString(kind);
+        }
+
+        explicit FunctionProfiles(const ContextPtr & context_, Kind kind_)
+            : kind(kind_)
+            , context(context_)
+        {}
 
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
@@ -65,6 +60,8 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
+            std::call_once(initialized_flag, [&]{ initialize(); });
+
             auto col_res = ColumnArray::create(ColumnString::create());
             ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
             ColumnArray::Offsets & res_offsets = col_res->getOffsets();
@@ -75,15 +72,35 @@ namespace
         }
 
     private:
-        Strings profile_names;
+        void initialize() const
+        {
+            const auto & manager = context->getAccessControl();
+
+            std::vector<UUID> profile_ids;
+
+            switch (kind)
+            {
+                case Kind::currentProfiles: profile_ids = context->getCurrentProfiles(); break;
+                case Kind::enabledProfiles: profile_ids = context->getEnabledProfiles(); break;
+                case Kind::defaultProfiles: profile_ids = context->getUser()->settings.toProfileIDs(); break;
+            }
+
+            profile_names = manager.tryReadNames(profile_ids);
+        }
+
+        mutable std::once_flag initialized_flag;
+
+        Kind kind;
+        ContextPtr context;
+        mutable Strings profile_names;
     };
 }
 
-REGISTER_FUNCTION(CurrentProfiles)
+REGISTER_FUNCTION(Profiles)
 {
-    factory.registerFunction<FunctionCurrentProfiles<Kind::CURRENT_PROFILES>>();
-    factory.registerFunction<FunctionCurrentProfiles<Kind::ENABLED_PROFILES>>();
-    factory.registerFunction<FunctionCurrentProfiles<Kind::DEFAULT_PROFILES>>();
+    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); });
+    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); });
+    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); });
 }
 
 }

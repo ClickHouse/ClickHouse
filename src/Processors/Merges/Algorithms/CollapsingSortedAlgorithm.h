@@ -34,15 +34,14 @@ public:
         bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
 
+    const char * getName() const override { return "CollapsingSortedAlgorithm"; }
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     const size_t sign_column_number;
     const bool only_positive_sign;
 
@@ -63,7 +62,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void reportIncorrectData();
     void insertRow(RowRef & row);

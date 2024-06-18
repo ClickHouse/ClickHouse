@@ -3,8 +3,11 @@ import pytest
 
 import os
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 import subprocess
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -127,7 +130,7 @@ def test_prohibited(started_cluster):
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert (
-            "Unable to open HDFS file: /storage_user_two_prohibited error: Permission denied: user=specuser, access=WRITE"
+            "Unable to open HDFS file: /storage_user_two_prohibited (hdfs://suser@kerberizedhdfs1:9010/storage_user_two_prohibited) error: Permission denied: user=specuser, access=WRITE"
             in str(ex)
         )
 

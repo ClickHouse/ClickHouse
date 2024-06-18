@@ -21,58 +21,63 @@ namespace DB
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
-    {
-        {"partition",                                  std::make_shared<DataTypeString>()},
-        {"name",                                       std::make_shared<DataTypeString>()},
-        {"uuid",                                       std::make_shared<DataTypeUUID>()},
-        {"part_type",                                  std::make_shared<DataTypeString>()},
-        {"active",                                     std::make_shared<DataTypeUInt8>()},
-        {"marks",                                      std::make_shared<DataTypeUInt64>()},
-        {"rows",                                       std::make_shared<DataTypeUInt64>()},
-        {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>()},
-        {"data_compressed_bytes",                      std::make_shared<DataTypeUInt64>()},
-        {"data_uncompressed_bytes",                    std::make_shared<DataTypeUInt64>()},
-        {"marks_bytes",                                std::make_shared<DataTypeUInt64>()},
-        {"modification_time",                          std::make_shared<DataTypeDateTime>()},
-        {"remove_time",                                std::make_shared<DataTypeDateTime>()},
-        {"refcount",                                   std::make_shared<DataTypeUInt32>()},
-        {"min_date",                                   std::make_shared<DataTypeDate>()},
-        {"max_date",                                   std::make_shared<DataTypeDate>()},
-        {"min_time",                                   std::make_shared<DataTypeDateTime>()},
-        {"max_time",                                   std::make_shared<DataTypeDateTime>()},
-        {"partition_id",                               std::make_shared<DataTypeString>()},
-        {"min_block_number",                           std::make_shared<DataTypeInt64>()},
-        {"max_block_number",                           std::make_shared<DataTypeInt64>()},
-        {"level",                                      std::make_shared<DataTypeUInt32>()},
-        {"data_version",                               std::make_shared<DataTypeUInt64>()},
-        {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
-        {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
+    ColumnsDescription{
+        {"partition",                                  std::make_shared<DataTypeString>(), "The partition name."},
+        {"name",                                       std::make_shared<DataTypeString>(), "Name of the data part."},
+        {"uuid",                                       std::make_shared<DataTypeUUID>(), "The parts UUID."},
+        {"part_type",                                  std::make_shared<DataTypeString>(), "The data part storing format. "
+            "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem."},
+        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging."},
+        {"marks",                                      std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
+        {"rows",                                       std::make_shared<DataTypeUInt64>(), "The number of rows."},
+        {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
+        {"data_compressed_bytes",                      std::make_shared<DataTypeUInt64>(), "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
+        {"data_uncompressed_bytes",                    std::make_shared<DataTypeUInt64>(), "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
+        {"marks_bytes",                                std::make_shared<DataTypeUInt64>(),"The size of the file with marks."},
+        {"modification_time",                          std::make_shared<DataTypeDateTime>(), "The time the directory with the data part was modified. This usually corresponds to the time of data part creation."},
+        {"remove_time",                                std::make_shared<DataTypeDateTime>(), "The time when the data part became inactive."},
+        {"refcount",                                   std::make_shared<DataTypeUInt32>(), "The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges."},
+        {"min_date",                                   std::make_shared<DataTypeDate>(), "The minimum value for the Date column if that is included in the partition key."},
+        {"max_date",                                   std::make_shared<DataTypeDate>(), "The maximum value for the Date column if that is included in the partition key."},
+        {"min_time",                                   std::make_shared<DataTypeDateTime>(), "The minimum value for the DateTime column if that is included in the partition key."},
+        {"max_time",                                   std::make_shared<DataTypeDateTime>(), "The maximum value for the DateTime column if that is included in the partition key."},
+        {"partition_id",                               std::make_shared<DataTypeString>(), "ID of the partition."},
+        {"min_block_number",                           std::make_shared<DataTypeInt64>(),  "The minimum number of data parts that make up the current part after merging."},
+        {"max_block_number",                           std::make_shared<DataTypeInt64>(),  "The maximum number of data parts that make up the current part after merging."},
+        {"level",                                      std::make_shared<DataTypeUInt32>(), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
+        {"data_version",                               std::make_shared<DataTypeUInt64>(), "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
+        {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>(), "The amount of memory (in bytes) used by primary key values."},
+        {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>(), "The amount of memory (in bytes) reserved for primary key values."},
 
-        {"database",                                   std::make_shared<DataTypeString>()},
-        {"table",                                      std::make_shared<DataTypeString>()},
-        {"engine",                                     std::make_shared<DataTypeString>()},
-        {"disk_name",                                  std::make_shared<DataTypeString>()},
-        {"path",                                       std::make_shared<DataTypeString>()},
+        {"database",                                   std::make_shared<DataTypeString>(), "Name of the database."},
+        {"table",                                      std::make_shared<DataTypeString>(), "Name of the table."},
+        {"engine",                                     std::make_shared<DataTypeString>(), "Name of the table engine without parameters."},
+        {"disk_name",                                  std::make_shared<DataTypeString>(), "Name of a disk that stores the data part."},
+        {"path",                                       std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
-        {"column",                                     std::make_shared<DataTypeString>()},
-        {"type",                                       std::make_shared<DataTypeString>()},
-        {"column_position",                            std::make_shared<DataTypeUInt64>()},
-        {"default_kind",                               std::make_shared<DataTypeString>()},
-        {"default_expression",                         std::make_shared<DataTypeString>()},
-        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
-        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
-        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
-        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"column",                                     std::make_shared<DataTypeString>(), "Name of the column."},
+        {"type",                                       std::make_shared<DataTypeString>(), "Column type."},
+        {"column_position",                            std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
+        {"default_kind",                               std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
+        {"default_expression",                         std::make_shared<DataTypeString>(), "Expression for the default value, or an empty string if it is not defined."},
+        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>(), "Total size of the column in bytes."},
+        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>(), "Total size of the compressed data in the column, in bytes."},
+        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the marks for column, in bytes."},
+        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
+        {"column_ttl_min",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
+        {"column_ttl_max",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
 
-        {"serialization_kind",                         std::make_shared<DataTypeString>()},
-        {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"subcolumns.serializations",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"subcolumns.bytes_on_disk",                   std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"subcolumns.data_compressed_bytes",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"subcolumns.data_uncompressed_bytes",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"subcolumns.marks_bytes",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
+        {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
+        {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
+        {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of subcolumns of a column"},
+        {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Types of subcolumns of a column"},
+        {"subcolumns.serializations",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Kinds of serialization of subcolumns of a column"},
+        {"subcolumns.bytes_on_disk",                   std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes in bytes for each subcolumn"},
+        {"subcolumns.data_compressed_bytes",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the compressed data for each subcolumn, in bytes"},
+        {"subcolumns.data_uncompressed_bytes",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the decompressed data for each subcolumn, in bytes"},
+        {"subcolumns.marks_bytes",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the marks for each subcolumn of a column, in bytes"},
     }
     )
 {
@@ -127,12 +132,14 @@ void StorageSystemPartsColumns::processNextStorage(
         {
             ++column_position;
             size_t src_index = 0, res_index = 0;
+
             if (columns_mask[src_index++])
             {
                 WriteBufferFromOwnString out;
                 part->partition.serializeText(*info.data, out, format_settings);
                 columns[res_index++]->insert(out.str());
             }
+
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -245,10 +252,42 @@ void StorageSystemPartsColumns::processNextStorage(
                 else
                     columns[res_index++]->insertDefault();
             }
+            bool column_has_ttl = part->ttl_infos.columns_ttl.contains(column.name);
+            if (columns_mask[src_index++])
+            {
+                if (column_has_ttl)
+                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].min));
+                else
+                    columns[res_index++]->insertDefault();
+            }
+            if (columns_mask[src_index++])
+            {
+                if (column_has_ttl)
+                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].max));
+                else
+                    columns[res_index++]->insertDefault();
+            }
 
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
+
+            Array substreams;
+            Array filenames;
+
+            serialization->enumerateStreams([&](const auto & subpath)
+            {
+                auto substream = ISerialization::getFileNameForStream(column.name, subpath);
+                auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
+
+                substreams.push_back(std::move(substream));
+                filenames.push_back(filename.value_or(""));
+            });
+
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(substreams);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(filenames);
 
             Array subcolumn_names;
             Array subcolumn_types;
@@ -271,18 +310,21 @@ void StorageSystemPartsColumns::processNextStorage(
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
-                String file_name = ISerialization::getFileNameForStream(subcolumn, subpath);
 
-                auto bin_checksum = part->checksums.files.find(file_name + ".bin");
-                if (bin_checksum != part->checksums.files.end())
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, part->checksums);
+                if (stream_name)
                 {
-                    size.data_compressed += bin_checksum->second.file_size;
-                    size.data_uncompressed += bin_checksum->second.uncompressed_size;
-                }
+                    auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");
+                    if (bin_checksum != part->checksums.files.end())
+                    {
+                        size.data_compressed += bin_checksum->second.file_size;
+                        size.data_uncompressed += bin_checksum->second.uncompressed_size;
+                    }
 
-                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.mark_type.getFileExtension());
-                if (mrk_checksum != part->checksums.files.end())
-                    size.marks += mrk_checksum->second.file_size;
+                    auto mrk_checksum = part->checksums.files.find(*stream_name + part->index_granularity_info.mark_type.getFileExtension());
+                    if (mrk_checksum != part->checksums.files.end())
+                        size.marks += mrk_checksum->second.file_size;
+                }
 
                 subcolumn_bytes_on_disk.push_back(size.data_compressed + size.marks);
                 subcolumn_data_compressed_bytes.push_back(size.data_compressed);

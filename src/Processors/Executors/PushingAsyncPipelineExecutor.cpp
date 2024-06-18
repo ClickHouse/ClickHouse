@@ -90,11 +90,8 @@ struct PushingAsyncPipelineExecutor::Data
 
     void rethrowExceptionIfHas()
     {
-        if (has_exception)
-        {
-            has_exception = false;
+        if (has_exception.exchange(false))
             std::rethrow_exception(exception);
-        }
     }
 };
 
@@ -167,7 +164,7 @@ void PushingAsyncPipelineExecutor::start()
     started = true;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.partial_result_duration_ms);
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     data->source = pushing_source.get();
 

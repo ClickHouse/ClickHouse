@@ -3,7 +3,11 @@
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <Common/typeid_cast.h>
+#include <base/Decimal.h>
+#include <base/Decimal_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -13,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DECIMAL_OVERFLOW;
     extern const int LOGICAL_ERROR;
 }
 
@@ -39,7 +42,6 @@ public:
     static constexpr auto family_name = "Decimal";
 
     const char * getFamilyName() const override { return family_name; }
-    String getSQLCompatibleName() const override;
 
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
@@ -100,171 +102,145 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
     return data_type.getScale();
 }
 
+#define FOR_EACH_DECIMAL_TYPE(M) \
+    M(DataTypeDecimal<DateTime64>) \
+    M(DataTypeDateTime64) \
+    M(DataTypeDecimal32) \
+    M(DataTypeDecimal64) \
+    M(DataTypeDecimal128) \
+    M(DataTypeDecimal256)
+
+#define FOR_EACH_DECIMAL_TYPE_PASS(M, X) \
+    M(DataTypeDecimal<DateTime64>, X) \
+    M(DataTypeDateTime64, X) \
+    M(DataTypeDecimal32, X) \
+    M(DataTypeDecimal64, X) \
+    M(DataTypeDecimal128, X) \
+    M(DataTypeDecimal256, X)
+
+
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
-{
-    using FromFieldType = typename FromDataType::FieldType;
-    using ToFieldType = typename ToDataType::FieldType;
-    using MaxFieldType = std::conditional_t<(sizeof(FromFieldType) > sizeof(ToFieldType)), FromFieldType, ToFieldType>;
-    using MaxNativeType = typename MaxFieldType::NativeType;
+ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result);
 
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template void convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result); \
+    extern template bool convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, bool>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
 
-    MaxNativeType converted_value;
-    if (scale_to > scale_from)
-    {
-        converted_value = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
-        if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
-                                std::string(ToDataType::family_name), toString(value.value), toString(converted_value));
-            else
-                return ReturnType(false);
-        }
-    }
-    else if (scale_to == scale_from)
-    {
-        converted_value = value.value;
-    }
-    else
-    {
-        converted_value = value.value / DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
-    }
-
-    if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
-    {
-        if (converted_value < std::numeric_limits<typename ToFieldType::NativeType>::min() ||
-            converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow: {} is not in range ({}, {})",
-                                std::string(ToDataType::family_name), toString(converted_value),
-                                toString(std::numeric_limits<typename ToFieldType::NativeType>::min()),
-                                toString(std::numeric_limits<typename ToFieldType::NativeType>::max()));
-            else
-                return ReturnType(false);
-        }
-    }
-
-    result = static_cast<typename ToFieldType::NativeType>(converted_value);
-
-    return ReturnType(true);
-}
 
 template <typename FromDataType, typename ToDataType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline typename ToDataType::FieldType convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
-{
-    using ToFieldType = typename ToDataType::FieldType;
-    ToFieldType result;
+typename ToDataType::FieldType convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to);
 
-    convertDecimalsImpl<FromDataType, ToDataType, void>(value, scale_from, scale_to, result);
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template typename TO_DATA_TYPE::FieldType convertDecimals<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
 
-    return result;
-}
 
 template <typename FromDataType, typename ToDataType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
-{
-    return convertDecimalsImpl<FromDataType, ToDataType, bool>(value, scale_from, scale_to, result);
-}
+bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template bool tryConvertDecimals<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
-inline ReturnType convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
-{
-    using FromFieldType = typename FromDataType::FieldType;
-    using ToFieldType = typename ToDataType::FieldType;
+ReturnType convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result);
 
-    return DecimalUtils::convertToImpl<ToFieldType, FromFieldType, ReturnType>(value, scale, result);
-}
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template void convertFromDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result); \
+    extern template bool convertFromDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_ARITHMETIC_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
 
-template <typename FromDataType, typename ToDataType>
-requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
-inline typename ToDataType::FieldType convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
-{
-    typename ToDataType::FieldType result;
-
-    convertFromDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
-
-    return result;
-}
 
 template <typename FromDataType, typename ToDataType>
 requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
-inline bool tryConvertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
-{
-    return convertFromDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
-}
+typename ToDataType::FieldType convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template typename TO_DATA_TYPE::FieldType convertFromDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_ARITHMETIC_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
+
+template <typename FromDataType, typename ToDataType>
+requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+bool tryConvertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template bool tryConvertFromDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType& result);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_ARITHMETIC_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
-{
-    using FromFieldType = typename FromDataType::FieldType;
-    using ToFieldType = typename ToDataType::FieldType;
-    using ToNativeType = typename ToFieldType::NativeType;
+ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result);
 
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template void convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);  \
+    extern template bool convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);
+#define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
 
-    if constexpr (std::is_floating_point_v<FromFieldType>)
-    {
-        if (!std::isfinite(value))
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);
-            else
-                return ReturnType(false);
-        }
-
-        auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
-
-        if (out <= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min()) ||
-            out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
-            else
-                return ReturnType(false);
-        }
-
-        result = static_cast<ToNativeType>(out);
-        return ReturnType(true);
-    }
-    else
-    {
-        if constexpr (is_big_int_v<FromFieldType>)
-            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal256>, ToDataType, ReturnType>(static_cast<Int256>(value), 0, scale, result));
-        else if constexpr (std::is_same_v<FromFieldType, UInt64>)
-            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal128>, ToDataType, ReturnType>(static_cast<Int128>(value), 0, scale, result));
-        else
-            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal64>, ToDataType, ReturnType>(static_cast<Int64>(value), 0, scale, result));
-    }
-}
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
-{
-    typename ToDataType::FieldType result;
-    convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
-    return result;
-}
+typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template typename TO_DATA_TYPE::FieldType convertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale);
+#define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
-{
-    return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
-}
+bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template bool tryConvertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType& result);
+#define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
 
 template <typename T>
-inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
-{
-    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::max_precision<T>, scale);
-}
+DataTypePtr createDecimalMaxPrecision(UInt64 scale);
+
+extern template DataTypePtr createDecimalMaxPrecision<Decimal32>(UInt64 scale);
+extern template DataTypePtr createDecimalMaxPrecision<Decimal64>(UInt64 scale);
+extern template DataTypePtr createDecimalMaxPrecision<Decimal128>(UInt64 scale);
+extern template DataTypePtr createDecimalMaxPrecision<Decimal256>(UInt64 scale);
+
+extern template class DataTypeDecimal<Decimal32>;
+extern template class DataTypeDecimal<Decimal64>;
+extern template class DataTypeDecimal<Decimal128>;
+extern template class DataTypeDecimal<Decimal256>;
 
 }

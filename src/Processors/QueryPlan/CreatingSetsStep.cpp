@@ -157,6 +157,34 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }
 
+QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context)
+{
+    DataStreams input_streams;
+    input_streams.emplace_back(DataStream{pipeline->getHeader()});
+
+    QueryPipelineBuilders pipelines;
+    pipelines.reserve(1 + subqueries.size());
+    pipelines.push_back(std::move(pipeline));
+
+    auto plan_settings = QueryPlanOptimizationSettings::fromContext(context);
+    auto pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+
+    for (auto & future_set : subqueries)
+    {
+        if (future_set->get())
+            continue;
+
+        auto plan = future_set->build(context);
+        if (!plan)
+            continue;
+
+        input_streams.emplace_back(plan->getCurrentDataStream());
+        pipelines.emplace_back(plan->buildQueryPipeline(plan_settings, pipeline_settings));
+    }
+
+    return CreatingSetsStep(input_streams).updatePipeline(std::move(pipelines), pipeline_settings);
+}
+
 std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(DelayedCreatingSetsStep && step)
 {
     std::vector<std::unique_ptr<QueryPlan>> plans;

@@ -27,6 +27,9 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+template <typename T>
+concept has_max_string_size = requires { T::max_string_size; };
+
 template <typename Impl, typename Name>
 class FunctionsStringSimilarity : public IFunction
 {
@@ -68,10 +71,17 @@ public:
         {
             ResultType res{};
             const String & needle = col_needle_const->getValue<String>();
-            if (needle.size() > Impl::max_string_size)
+            if constexpr (has_max_string_size<Impl>)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
-                    "Should be at most {}", getName(), Impl::max_string_size);
+                if (needle.size() > Impl::max_string_size)
+                {
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "String size of needle is too big for function {}. "
+                        "Should be at most {}",
+                        getName(),
+                        Impl::max_string_size);
+                }
             }
             Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
             return result_type->createColumnConst(col_haystack_const->size(), toField(res));
@@ -88,10 +98,17 @@ public:
         if (col_haystack_vector && col_needle_const)
         {
             const String & needle = col_needle_const->getValue<String>();
-            if (needle.size() > Impl::max_string_size)
+            if constexpr (has_max_string_size<Impl>)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
-                    "Should be at most {}", getName(), Impl::max_string_size);
+                if (needle.size() > Impl::max_string_size)
+                {
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "String size of needle is too big for function {}. "
+                        "Should be at most {}",
+                        getName(),
+                        Impl::max_string_size);
+                }
             }
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
         }
@@ -107,10 +124,17 @@ public:
         else if (col_haystack_const && col_needle_vector)
         {
             const String & haystack = col_haystack_const->getValue<String>();
-            if (haystack.size() > Impl::max_string_size)
+            if constexpr (has_max_string_size<Impl>)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of haystack is too big for function {}. "
-                    "Should be at most {}", getName(), Impl::max_string_size);
+                if (haystack.size() > Impl::max_string_size)
+                {
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "String size of haystack is too big for function {}. "
+                        "Should be at most {}",
+                        getName(),
+                        Impl::max_string_size);
+                }
             }
             Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }

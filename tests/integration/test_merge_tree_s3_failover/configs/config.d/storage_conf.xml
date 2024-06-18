@@ -11,6 +11,7 @@
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->
                 <retry_attempts>0</retry_attempts>
+                <s3_use_adaptive_timeouts>0</s3_use_adaptive_timeouts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
             </s3>
             <s3_retryable>
@@ -33,6 +34,7 @@
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->
                 <retry_attempts>1</retry_attempts>
+                <s3_use_adaptive_timeouts>0</s3_use_adaptive_timeouts>
                 <s3_max_single_read_retries>1</s3_max_single_read_retries>
                 <connect_timeout_ms>20000</connect_timeout_ms>
             </s3_no_retries>

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-16_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
+CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-18_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
 CLICKHOUSE_REPO_PATH=${CLICKHOUSE_REPO_PATH:=""}
 
 
@@ -20,6 +20,8 @@ if [ -n "$WITH_LOCAL_BINARY" ]; then
     clickhouse_source="--clickhouse-source /clickhouse"
 fi
 
+# $TESTS_TO_RUN comes from docker
+# shellcheck disable=SC2153
 tests_count="--test-count $TESTS_TO_RUN"
 tests_to_run="test-all"
 workload=""
@@ -47,6 +49,6 @@ fi
 
 cd "$CLICKHOUSE_REPO_PATH/tests/jepsen.clickhouse"
 
-(lein run server $tests_to_run $workload --keeper "$KEEPER_NODE" $concurrency $nemesis $rate --nodes-file "$NODES_FILE_PATH" --username "$NODES_USERNAME" --logging-json --password "$NODES_PASSWORD" --time-limit "$TIME_LIMIT" --concurrency 50 $clickhouse_source $tests_count --reuse-binary || true) | tee "$TEST_OUTPUT/jepsen_run_all_tests.log"
+(lein run server $tests_to_run "$workload" --keeper "$KEEPER_NODE" "$concurrency" "$nemesis" "$rate" --nodes-file "$NODES_FILE_PATH" --username "$NODES_USERNAME" --logging-json --password "$NODES_PASSWORD" --time-limit "$TIME_LIMIT" --concurrency 50 "$clickhouse_source" "$tests_count" --reuse-binary || true) | tee "$TEST_OUTPUT/jepsen_run_all_tests.log"
 
 mv store "$TEST_OUTPUT/"

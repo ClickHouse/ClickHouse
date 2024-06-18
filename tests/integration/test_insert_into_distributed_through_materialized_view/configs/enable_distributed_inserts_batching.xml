@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <distributed_directory_monitor_batch_inserts>1</distributed_directory_monitor_batch_inserts>
+            <distributed_background_insert_batch>1</distributed_background_insert_batch>
             <min_insert_block_size_rows>3</min_insert_block_size_rows>
             <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
         </default>

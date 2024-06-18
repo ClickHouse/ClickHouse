@@ -1,7 +1,7 @@
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Common/FieldVisitorToString.h>
-#include <IO/Operators.h>
-
 #include <Common/JSONBuilder.h>
 
 

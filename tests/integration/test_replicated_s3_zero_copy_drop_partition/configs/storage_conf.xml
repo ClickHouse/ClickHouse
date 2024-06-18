@@ -1,0 +1,32 @@
+<clickhouse>
+    <logger>
+        <level>test</level>
+    </logger>
+
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3>
+        </disks>
+        <policies>
+            <default>
+                <default>
+                    <disk>default</disk>
+                </default>
+            </default>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                        <prefer_not_to_merge>False</prefer_not_to_merge>
+                        <perform_ttl_move_on_insert>True</perform_ttl_move_on_insert>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

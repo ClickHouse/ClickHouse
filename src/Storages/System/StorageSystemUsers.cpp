@@ -34,31 +34,50 @@ namespace
 }
 
 
-NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
+ColumnsDescription StorageSystemUsers::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"name", std::make_shared<DataTypeString>()},
-        {"id", std::make_shared<DataTypeUUID>()},
-        {"storage", std::make_shared<DataTypeString>()},
-        {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues())},
-        {"auth_params", std::make_shared<DataTypeString>()},
-        {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"host_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"host_names_regexp", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"host_names_like", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_roles_all", std::make_shared<DataTypeUInt8>()},
-        {"default_roles_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"grantees_any", std::make_shared<DataTypeUInt8>()},
-        {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_database", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "User name."},
+        {"id", std::make_shared<DataTypeUUID>(), "User ID."},
+        {"storage", std::make_shared<DataTypeString>(), "Path to the storage of users. Configured in the access_control_path parameter."},
+        {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues()),
+            "Shows the authentication type. "
+            "There are multiple ways of user identification: "
+            "with no password, with plain text password, with SHA256-encoded password, "
+            "with double SHA-1-encoded password or with bcrypt-encoded password."
+        },
+        {"auth_params", std::make_shared<DataTypeString>(), "Authentication parameters in the JSON format depending on the auth_type."},
+        {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "IP addresses of hosts that are allowed to connect to the ClickHouse server."
+        },
+        {"host_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Names of hosts that are allowed to connect to the ClickHouse server."
+        },
+        {"host_names_regexp", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Regular expression for host names that are allowed to connect to the ClickHouse server."
+        },
+        {"host_names_like", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Names of hosts that are allowed to connect to the ClickHouse server, set using the LIKE predicate."
+        },
+        {"default_roles_all", std::make_shared<DataTypeUInt8>(),
+            "Shows that all granted roles set for user by default."
+        },
+        {"default_roles_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "List of granted roles provided by default."
+        },
+        {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "All the granted roles set as default excepting of the listed ones."
+        },
+        {"grantees_any", std::make_shared<DataTypeUInt8>(), "The flag that indicates whether a user with any grant option can grant it to anyone."},
+        {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of users or roles to which this user is allowed to grant options to."},
+        {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of users or roles to which this user is forbidden from grant options to."},
+        {"default_database", std::make_shared<DataTypeString>(), "The name of the default database for this user."},
     };
-    return names_and_types;
 }
 
 
-void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
