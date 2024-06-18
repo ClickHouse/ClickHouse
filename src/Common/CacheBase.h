@@ -4,6 +4,7 @@
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
+#include <Common/SIEVECachePolicy.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -45,7 +46,7 @@ public:
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
     explicit CacheBase(size_t max_size_in_bytes, size_t max_count = NO_MAX_COUNT, double size_ratio = DEFAULT_SIZE_RATIO)
-        : CacheBase("SLRU", max_size_in_bytes, max_count, size_ratio)
+        : CacheBase("SIEVE", max_size_in_bytes, max_count, size_ratio)
     {
     }
 
@@ -56,7 +57,7 @@ public:
 
         if (cache_policy_name.empty())
         {
-            static constexpr auto default_cache_policy = "SLRU";
+            static constexpr auto default_cache_policy = "SIEVE";
             cache_policy_name = default_cache_policy;
         }
 
@@ -69,6 +70,11 @@ public:
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_count, size_ratio, on_weight_loss_function);
+        }
+        else if (cache_policy_name == "SIEVE")
+        {
+            using SIEVEPolicy = SIEVECachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+            cache_policy = std::make_unique<SIEVEPolicy>(max_size_in_bytes, max_count, on_weight_loss_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
