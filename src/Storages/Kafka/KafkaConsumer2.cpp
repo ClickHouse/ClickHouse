@@ -194,16 +194,13 @@ void KafkaConsumer2::drainConsumerQueue()
 
 void KafkaConsumer2::pollEvents()
 {
-    static constexpr int64_t max_tries = 5;
-    auto consumer_has_subscription = !consumer->get_subscription().empty();
-    for (auto i = 0; i < max_tries && !consumer_has_subscription; ++i)
-    {
-        consumer->subscribe(topics);
-        consumer_has_subscription = !consumer->get_subscription().empty();
-    }
     auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
     // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
     chassert(!msg && "Consumer returned a message when it was not expected");
+
+    // static constexpr int64_t max_tries = 5;
+    // for(auto i = 0; i < max_tries; ++i)
+    //     consumer->poll(EVENT_POLL_TIMEOUT);
 };
 
 KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
