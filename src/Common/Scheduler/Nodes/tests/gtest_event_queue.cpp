@@ -92,12 +92,12 @@ struct QueueTest {
         event_queue.enqueue([this, text] { log += " " + text; });
     }
 
-    EventQueue::EventId postpone(EventQueue::TimePoint until, const String & text)
+    EventId postpone(EventQueue::TimePoint until, const String & text)
     {
         return event_queue.postpone(until, [this, text] { log += " " + text; });
     }
 
-    void cancel(EventQueue::EventId event_id)
+    void cancel(EventId event_id)
     {
         event_queue.cancelPostponed(event_id);
     }
