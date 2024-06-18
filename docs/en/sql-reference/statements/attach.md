@@ -84,7 +84,7 @@ If you are trying to add a replica to an existing ReplicatedMergeTree table, kee
 ATTACH TABLE [db.]name AS [NOT] REPLICATED
 ```
 
-**Сonvert table to replicated**
+**Convert table to replicated**
 
 ```sql
 DETACH TABLE test;
