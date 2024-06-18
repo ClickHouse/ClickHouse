@@ -2,6 +2,8 @@ SELECT '-------- Bloom filter --------';
 SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;
 
+SET allow_experimental_full_text_index=1;
+
 CREATE TABLE 03165_token_bf
 (
     id Int64,
@@ -125,7 +127,9 @@ CREATE TABLE 03165_token_ft
     INDEX idx_message message TYPE full_text() GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+-- Full text index works only with full parts.
+SETTINGS min_bytes_for_full_part_storage=0;
 
 INSERT INTO 03165_token_ft VALUES(1, 'Service is not ready');
 
