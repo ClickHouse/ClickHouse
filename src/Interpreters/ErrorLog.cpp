@@ -49,7 +49,7 @@ void ErrorLog::startCollectError(size_t collect_interval_milliseconds_)
 }
 
 
-void ErrorLog::stopCollect()
+void ErrorLog::stopCollectError()
 {
     bool old_val = false;
     if (!is_shutdown_error_thread.compare_exchange_strong(old_val, true))
@@ -61,7 +61,7 @@ void ErrorLog::stopCollect()
 
 void ErrorLog::shutdown()
 {
-    stopCollect();
+    stopCollectError();
     stopFlushThread();
 }
 

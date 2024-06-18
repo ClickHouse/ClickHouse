@@ -42,7 +42,7 @@ public:
     void startCollectError(size_t collect_interval_milliseconds_);
 
     /// Stop background thread. Call before shutdown.
-    void stopCollect();
+    void stopCollectError();
 
 private:
     struct ValuePair {
