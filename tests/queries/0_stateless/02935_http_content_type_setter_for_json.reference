@@ -1,2 +1,12 @@
-JSONEachRow output_format_json_content_type_header
+JSONStrings
+ Content-Type: custom-type
+JSON
+ Content-Type: custom-type
+JSONEachRow
+ Content-Type: custom-type
+JSONColumns
+ Content-Type: custom-type
+JSONCompact
+ Content-Type: custom-type
+JSONObjectEachRow
  Content-Type: custom-type
