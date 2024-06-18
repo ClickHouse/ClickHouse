@@ -59,7 +59,7 @@ select cnt from (
             arrayStringConcat(
                 arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)),
             '\n') as trace
-from system.trace_log where trace_type = ‘Real’ and trace ilike '%KeeperTCPHandler%' group by trace);
+from system.trace_log where trace_type = ‘Real’ and (trace ilike '%KeeperTCPHandler%' or trace ilike '%KeeperDispatcher%') group by trace);
     """
     )
 
