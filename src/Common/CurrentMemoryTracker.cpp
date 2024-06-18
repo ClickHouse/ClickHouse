@@ -57,7 +57,6 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             {
                 auto res = memory_tracker->allocImpl(will_be, throw_if_memory_exceeded);
                 current_thread->untracked_memory = 0;
-                current_thread->updateUntrackedMemoryLimit(memory_tracker->get());
                 return res;
             }
             else
@@ -85,13 +84,6 @@ void CurrentMemoryTracker::check()
         std::ignore = memory_tracker->allocImpl(0, true);
 }
 
-Int64 CurrentMemoryTracker::get()
-{
-    if (auto * memory_tracker = getMemoryTracker())
-        return memory_tracker->get();
-    return 0;
-}
-
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
     bool throw_if_memory_exceeded = true;
@@ -111,12 +103,10 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         if (current_thread)
         {
             current_thread->untracked_memory -= size;
-            // Note that we use `max_untracked_memory` and not `untracked_memory_limit` to create hysteresis to avoid track/untrack cycles
-            if (current_thread->untracked_memory < -current_thread->max_untracked_memory)
+            if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
             {
                 Int64 untracked_memory = current_thread->untracked_memory;
                 current_thread->untracked_memory = 0;
-                current_thread->updateUntrackedMemoryLimit(memory_tracker->get() + untracked_memory);
                 return memory_tracker->free(-untracked_memory);
             }
         }
