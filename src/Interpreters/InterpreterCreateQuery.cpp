@@ -1841,25 +1841,8 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         }
     }
 
-    if (create.to_table_id || create.to_table)
-    {
-        String to_database_name;
-        String to_table_name;
-        if (create.to_table_id)
-        {
-            to_database_name = create.to_table_id.database_name;
-            to_table_name = create.to_table_id.table_name;
-        }
-        else
-        {
-            LOG_TRACE(getLogger("InterpreterCreateQuery"), "before tmp_to_table_id");
-            StorageID tmp_to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
-            LOG_TRACE(getLogger("InterpreterCreateQuery"), "after tmp_to_table_id");
-            to_database_name = tmp_to_table_id.database_name;
-            to_table_name = tmp_to_table_id.table_name;
-        }
-        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, to_database_name, to_table_name);
-    }
+    if (create.to_table_id)
+        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_table_id.database_name, create.to_table_id.table_name);
 
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
