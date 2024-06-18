@@ -20,24 +20,18 @@ class StorageS3QueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
-    using ConfigurationPtr = Storage::ConfigurationPtr;
-    using GlobIterator = StorageObjectStorageSource::GlobIterator;
-    using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
+    using Source = StorageObjectStorageSource;
     using RemoveFileFunc = std::function<void(std::string)>;
-    using FileStatusPtr = S3QueueMetadata::FileStatusPtr;
-    using ReaderHolder = StorageObjectStorageSource::ReaderHolder;
-    using Metadata = S3QueueMetadata;
-    using ObjectInfo = StorageObjectStorageSource::ObjectInfo;
-    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-    using ObjectInfos = std::vector<ObjectInfoPtr>;
+    using BucketHolderPtr = S3QueueOrderedFileMetadata::BucketHolderPtr;
+    using BucketHolder = S3QueueOrderedFileMetadata::BucketHolder;
 
-    struct S3QueueObjectInfo : public ObjectInfo
+    struct S3QueueObjectInfo : public Source::ObjectInfo
     {
         S3QueueObjectInfo(
-            const ObjectInfo & object_info,
-            Metadata::FileMetadataPtr file_metadata_);
+            const Source::ObjectInfo & object_info,
+            S3QueueMetadata::FileMetadataPtr file_metadata_);
 
-        Metadata::FileMetadataPtr file_metadata;
+        S3QueueMetadata::FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -45,7 +39,7 @@ public:
     public:
         FileIterator(
             std::shared_ptr<S3QueueMetadata> metadata_,
-            std::unique_ptr<GlobIterator> glob_iterator_,
+            std::unique_ptr<Source::GlobIterator> glob_iterator_,
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
@@ -54,37 +48,51 @@ public:
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        ObjectInfoPtr nextImpl(size_t processor) override;
+        Source::ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
-        void returnForRetry(ObjectInfoPtr object_info);
+        /// If the key was taken from iterator via next() call,
+        /// we might later want to return it back for retrying.
+        void returnForRetry(Source::ObjectInfoPtr object_info);
+
+        /// Release hold buckets.
+        /// In fact, they will anyway be release in destructors of BucketHolder,
+        /// but we anyway release it explicitly,
+        /// because we want to be able to rethrow exceptions if they might happen.
+        void releaseHoldBuckets();
 
     private:
         using Bucket = S3QueueMetadata::Bucket;
         using Processor = S3QueueMetadata::Processor;
 
         const std::shared_ptr<S3QueueMetadata> metadata;
-        const std::unique_ptr<GlobIterator> glob_iterator;
+        const std::unique_ptr<Source::GlobIterator> glob_iterator;
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
         LoggerPtr log;
 
-        std::mutex buckets_mutex;
         struct ListedKeys
         {
-            std::deque<ObjectInfoPtr> keys;
+            std::deque<Source::ObjectInfoPtr> keys;
             std::optional<Processor> processor;
         };
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
+        /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
+        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(buckets_mutex);
+
+        /// We store a vector of holders, because we cannot release them until processed files are commited.
+        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(buckets_mutex);
+        /// Protects bucket_holders.
+        std::mutex buckets_mutex;
+
+        /// Is glob_iterator finished?
         bool iterator_finished = false;
-        std::unordered_map<size_t, S3QueueOrderedFileMetadata::BucketHolderPtr> bucket_holders;
 
         /// Only for processing without buckets.
-        std::deque<ObjectInfoPtr> objects_to_retry;
+        std::deque<Source::ObjectInfoPtr> objects_to_retry;
 
-        std::pair<ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
+        std::pair<Source::ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -137,11 +145,11 @@ private:
     RemoveFileFunc remove_file_func;
     LoggerPtr log;
 
-    std::vector<Metadata::FileMetadataPtr> processed_files;
-    std::vector<Metadata::FileMetadataPtr> failed_during_read_files;
+    std::vector<S3QueueMetadata::FileMetadataPtr> processed_files;
+    std::vector<S3QueueMetadata::FileMetadataPtr> failed_during_read_files;
 
-    ReaderHolder reader;
-    std::future<ReaderHolder> reader_future;
+    Source::ReaderHolder reader;
+    std::future<Source::ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
 
     size_t processed_rows_from_file = 0;
@@ -149,8 +157,6 @@ private:
     size_t total_processed_bytes = 0;
 
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-
-    S3QueueOrderedFileMetadata::BucketHolderPtr current_bucket_holder;
 
     Chunk generateImpl();
     void applyActionAfterProcessing(const String & path);

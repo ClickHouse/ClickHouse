@@ -521,12 +521,15 @@ bool StorageS3Queue::streamToViews()
         {
             for (auto & source : sources)
                 source->commit(/* success */false, getCurrentExceptionMessage(true));
+
+            file_iterator->releaseHoldBuckets();
             throw;
         }
 
         for (auto & source : sources)
             source->commit(/* success */true);
 
+        file_iterator->releaseHoldBuckets();
         total_rows += rows;
     }
 

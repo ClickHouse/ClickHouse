@@ -86,12 +86,16 @@ struct S3QueueOrderedFileMetadata::BucketHolder
     Bucket getBucket() const { return bucket_info->bucket; }
     BucketInfoPtr getBucketInfo() const { return bucket_info; }
 
+    void setFinished() { finished = true; }
+    bool isFinished() const { return finished; }
+
     void release();
 
 private:
     BucketInfoPtr bucket_info;
     const zkutil::ZooKeeperPtr zk_client;
     bool released = false;
+    bool finished = false;
 };
 
 }

@@ -1305,7 +1305,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(10):
+    for _ in range(30):
         if (
             get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
         ) == total_rows:
