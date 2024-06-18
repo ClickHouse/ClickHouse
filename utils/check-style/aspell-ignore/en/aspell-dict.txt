@@ -1706,6 +1706,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1722,6 +1723,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
