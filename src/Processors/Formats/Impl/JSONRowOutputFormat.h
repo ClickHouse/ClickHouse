@@ -28,11 +28,11 @@ public:
 
     void onProgress(const Progress & value) override;
 
-    String getContentType() const override 
-    { 
+    String getContentType() const override
+    {
         if (!settings.json.content_type.empty())
             return settings.json.content_type;
-        return "application/json; charset=UTF-8"; 
+        return "application/json; charset=UTF-8";
     }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
