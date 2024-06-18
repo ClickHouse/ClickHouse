@@ -1084,10 +1084,6 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context, qualified_name, query_ptr);
-    String ref_dependencies_str;
-    for (const auto & ref_dep : ref_dependencies)
-        ref_dependencies_str += ref_dep.getFullName() + ",";
-    LOG_DEBUG(getLogger("InterpreterCreateQuery"), "Add ref dependencies for table {}: {}", qualified_name.getFullName(), ref_dependencies_str);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
