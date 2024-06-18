@@ -1206,6 +1206,16 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
+## mlock_executable {#mlock_executable}
+
+Perform mlockall after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
+Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
+**Example**
+
+``` xml
+<mlock_executable>false</mlock_executable>
+```
+
 ## include_from {#include_from}
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
@@ -1351,6 +1361,26 @@ Examples:
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_try {#listen_try}
+
+The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+
+Examples:
+
+``` xml
+<listen_try>0</listen_try>
+```
+
+## listen_reuse_port {#listen_reuse_port}
+
+Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
+
+Examples:
+
+``` xml
+<listen_reuse_port>0</listen_reuse_port>
 ```
 
 ## listen_backlog {#listen_backlog}
@@ -2894,6 +2924,8 @@ Define proxy servers for HTTP and HTTPS requests, currently supported by S3 stor
 
 There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
 
+Bypassing proxy servers for specific hosts is also supported with the use of `no_proxy`.
+
 ### Environment variables
 
 The `http_proxy` and `https_proxy` environment variables allow you to specify a
@@ -3003,6 +3035,29 @@ This also allows a mix of resolver types can be used.
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
+### no_proxy
+By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
+
+Example:
+
+The below configuration bypasses proxy requests to `clickhouse.cloud` and all of its subdomains (e.g, `auth.clickhouse.cloud`).
+The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
+
+``` xml
+<proxy>
+    <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
 ## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 A limit on the number of materialized views attached to a table.
@@ -3029,3 +3084,21 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
+
+## merge_workload {#merge_workload}
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload {#mutation_workload}
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)

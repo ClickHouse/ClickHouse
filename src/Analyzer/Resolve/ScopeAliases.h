@@ -75,7 +75,12 @@ struct ScopeAliases
             if (jt == transitive_aliases.end())
                 return {};
 
-            key = &(getKey(jt->second, find_option));
+            const auto & new_key = getKey(jt->second, find_option);
+            /// Ignore potential cyclic aliases.
+            if (new_key == *key)
+                return {};
+
+            key = &new_key;
             it = alias_map.find(*key);
         }
 

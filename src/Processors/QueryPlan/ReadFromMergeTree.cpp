@@ -1092,8 +1092,7 @@ static void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
     size_t max_block_size_rows,
-    bool enable_vertical_final,
-    bool can_merge_final_indices_to_next_step_filter)
+    bool enable_vertical_final)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1135,7 +1134,7 @@ static void addMergingFinal(
     };
 
     pipe.addTransform(get_merging_processor());
-    if (enable_vertical_final && !can_merge_final_indices_to_next_step_filter)
+    if (enable_vertical_final)
         pipe.addSimpleTransform([](const Block & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
 }
@@ -1323,8 +1322,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 partition_key_columns,
                 block_size.max_block_size_rows,
-                enable_vertical_final,
-                query_info.has_filters_and_no_array_join_before_filter);
+                enable_vertical_final);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -1358,9 +1356,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead() const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
-    return selectRangesToRead(prepared_parts, alter_conversions_for_parts, false /* find_exact_ranges */);
+    return selectRangesToRead(prepared_parts, alter_conversions_for_parts, find_exact_ranges);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
@@ -1664,6 +1662,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.selected_marks_pk = sum_marks_pk;
     result.total_marks_pk = total_marks_pk;
     result.selected_rows = sum_rows;
+    result.has_exact_ranges = result.selected_parts == 0 || find_exact_ranges;
 
     if (query_info_.input_order_info)
         result.read_type = (query_info_.input_order_info->direction > 0)
@@ -1811,8 +1810,10 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
-    return *result_ptr;
+    if (!analyzed_result_ptr)
+        analyzed_result_ptr = selectRangesToRead();
+
+    return *analyzed_result_ptr;
 }
 
 bool ReadFromMergeTree::isQueryWithSampling() const
