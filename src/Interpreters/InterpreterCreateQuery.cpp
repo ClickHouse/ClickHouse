@@ -1077,6 +1077,27 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 }
 
 
+namespace
+{
+
+void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
+{
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
+}
+
+void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
+{
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
+}
+
+}
+
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
@@ -1322,11 +1343,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return {};
 
     /// If table has dependencies - add them to the graph
-    QualifiedTableName qualified_name{database_name, create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
-
+    addTableDependencies(create, query_ptr, getContext());
     return fillTableIfNeeded(create);
 }
 
@@ -1478,6 +1495,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
     }
 
+    /// Before actually creating the table, check if it will lead to cyclic dependencies.
+    checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -1578,6 +1598,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     ContextMutablePtr create_context = Context::createCopy(current_context);
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
 
+    /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
+    checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
+
     auto make_drop_context = [&]() -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
@@ -1623,6 +1646,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ddl_guard.reset();
         assert(done);
         created = true;
+
+        /// If table has dependencies - add them to the graph
+        addTableDependencies(create, query_ptr, getContext());
 
         /// Try fill temporary table
         BlockIO fill_io = fillTableIfNeeded(create);
