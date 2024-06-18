@@ -1852,7 +1852,9 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         }
         else
         {
+            LOG_TRACE(getLogger("InterpreterCreateQuery"), "before tmp_to_table_id");
             StorageID tmp_to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
+            LOG_TRACE(getLogger("InterpreterCreateQuery"), "after tmp_to_table_id");
             to_database_name = tmp_to_table_id.database_name;
             to_table_name = tmp_to_table_id.table_name;
         }

@@ -1198,14 +1198,17 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (to_table)
     {
         auto * ast_to_table_id = to_table->as<ASTTableIdentifier>();
-        query->to_database = ast_to_table_id->getDatabase();
-        query->to_table = ast_to_table_id->getTable();
-        if (query->to_database)
-            query->children.push_back(query->to_database);
-        if (query->to_table)
-            query->children.push_back(query->to_table);
-        if (!ast_to_table_id->shortName().empty() || ast_to_table_id->uuid != UUIDHelpers::Nil)
-            query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        if (ast_to_table_id != nullptr)
+        {
+            query->to_database = ast_to_table_id->getDatabase();
+            query->to_table = ast_to_table_id->getTable();
+            if (query->to_database)
+                query->children.push_back(query->to_database);
+            if (query->to_table)
+                query->children.push_back(query->to_table);
+            if (!ast_to_table_id->shortName().empty() || ast_to_table_id->uuid != UUIDHelpers::Nil)
+                query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        }
     }
 
     query->set(query->columns_list, columns_list);
@@ -1635,14 +1638,17 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (to_table)
     {
         auto * ast_to_table_id = to_table->as<ASTTableIdentifier>();
-        query->to_database = ast_to_table_id->getDatabase();
-        query->to_table = ast_to_table_id->getTable();
-        if (query->to_database)
-            query->children.push_back(query->to_database);
-        if (query->to_table)
-            query->children.push_back(query->to_table);
-        if (!ast_to_table_id->shortName().empty() || ast_to_table_id->uuid != UUIDHelpers::Nil)
-            query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        if (ast_to_table_id != nullptr)
+        {
+            query->to_database = ast_to_table_id->getDatabase();
+            query->to_table = ast_to_table_id->getTable();
+            if (query->to_database)
+                query->children.push_back(query->to_database);
+            if (query->to_table)
+                query->children.push_back(query->to_table);
+            if (!ast_to_table_id->shortName().empty() || ast_to_table_id->uuid != UUIDHelpers::Nil)
+                query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        }
     }
 
     if (to_inner_uuid)
