@@ -48,8 +48,7 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_stateful--> Allow: Stateful tests
 - [ ] <!---ci_include_integration--> Allow: Integration Tests
 - [ ] <!---ci_include_performance--> Allow: Performance tests
-- [ ] <!---ci_set_normal_builds--> Allow: Normal Builds
-- [ ] <!---ci_set_special_builds--> Allow: Special Builds
+- [ ] <!---ci_set_builds--> Allow: All Builds
 - [ ] <!---ci_set_non_required--> Allow: All NOT Required Checks
 - [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
 - [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
