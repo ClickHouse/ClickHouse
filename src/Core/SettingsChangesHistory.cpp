@@ -59,6 +59,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               {"optimize_functions_to_subcolumns", false, true, "Enable optimization by default"},
+              {"enable_named_columns_in_function_tuple", false, true, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."},
               {"input_format_json_ignore_key_case", false, false, "Ignore json key case while read json field from string."},
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
               {"lightweight_mutation_projection_mode", "throw", "throw", "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop all projection related to this table then do lightweight delete."},
