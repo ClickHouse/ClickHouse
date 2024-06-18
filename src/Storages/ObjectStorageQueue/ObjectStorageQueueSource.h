@@ -3,7 +3,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Processors/ISource.h>
-#include <Storages/S3Queue/S3QueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/S3QueueLog.h>
@@ -16,7 +16,7 @@ namespace DB
 
 struct ObjectMetadata;
 
-class StorageS3QueueSource : public ISource, WithContext
+class ObjectStorageQueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
@@ -24,16 +24,16 @@ public:
     using GlobIterator = StorageObjectStorageSource::GlobIterator;
     using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
     using RemoveFileFunc = std::function<void(std::string)>;
-    using FileStatusPtr = S3QueueMetadata::FileStatusPtr;
+    using FileStatusPtr = ObjectStorageQueueMetadata::FileStatusPtr;
     using ReaderHolder = StorageObjectStorageSource::ReaderHolder;
-    using Metadata = S3QueueMetadata;
+    using Metadata = ObjectStorageQueueMetadata;
     using ObjectInfo = StorageObjectStorageSource::ObjectInfo;
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
 
-    struct S3QueueObjectInfo : public ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
-        S3QueueObjectInfo(
+        ObjectStorageQueueObjectInfo(
             const ObjectInfo & object_info,
             Metadata::FileMetadataPtr processing_holder_);
 
@@ -44,7 +44,7 @@ public:
     {
     public:
         FileIterator(
-            std::shared_ptr<S3QueueMetadata> metadata_,
+            std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             std::unique_ptr<GlobIterator> glob_iterator_,
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
@@ -57,10 +57,10 @@ public:
         size_t estimatedKeysCount() override;
 
     private:
-        using Bucket = S3QueueMetadata::Bucket;
-        using Processor = S3QueueMetadata::Processor;
+        using Bucket = ObjectStorageQueueMetadata::Bucket;
+        using Processor = ObjectStorageQueueMetadata::Processor;
 
-        const std::shared_ptr<S3QueueMetadata> metadata;
+        const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const std::unique_ptr<GlobIterator> glob_iterator;
 
         std::atomic<bool> & shutdown_called;
@@ -75,24 +75,24 @@ public:
         };
         std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
         bool iterator_finished = false;
-        std::unordered_map<size_t, S3QueueOrderedFileMetadata::BucketHolderPtr> bucket_holders;
+        std::unordered_map<size_t, ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr> bucket_holders;
 
-        std::pair<ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
+        std::pair<ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
     };
 
-    StorageS3QueueSource(
+    ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
         const Block & header_,
         std::unique_ptr<StorageObjectStorageSource> internal_source_,
-        std::shared_ptr<S3QueueMetadata> files_metadata_,
-        const S3QueueAction & action_,
+        std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
+        const ObjectStorageQueueAction & action_,
         RemoveFileFunc remove_file_func_,
         const NamesAndTypesList & requested_virtual_columns_,
         ContextPtr context_,
         const std::atomic<bool> & shutdown_called_,
         const std::atomic<bool> & table_is_being_dropped_,
-        std::shared_ptr<S3QueueLog> s3_queue_log_,
+        std::shared_ptr<ObjectStorageQueueLog> s3_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_);
 
@@ -105,13 +105,13 @@ public:
 private:
     const String name;
     const size_t processor_id;
-    const S3QueueAction action;
-    const std::shared_ptr<S3QueueMetadata> files_metadata;
+    const ObjectStorageQueueAction action;
+    const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const std::shared_ptr<StorageObjectStorageSource> internal_source;
     const NamesAndTypesList requested_virtual_columns;
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;
-    const std::shared_ptr<S3QueueLog> s3_queue_log;
+    const std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
     const StorageID storage_id;
 
     RemoveFileFunc remove_file_func;
@@ -122,10 +122,10 @@ private:
     std::atomic<bool> initialized{false};
     size_t processed_rows_from_file = 0;
 
-    S3QueueOrderedFileMetadata::BucketHolderPtr current_bucket_holder;
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr current_bucket_holder;
 
     void applyActionAfterProcessing(const String & path);
-    void appendLogElement(const std::string & filename, S3QueueMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
+    void appendLogElement(const std::string & filename, ObjectStorageQueueMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
     void lazyInitialize(size_t processor);
 };
 

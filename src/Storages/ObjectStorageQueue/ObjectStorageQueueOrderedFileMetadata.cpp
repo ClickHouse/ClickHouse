@@ -1,4 +1,4 @@
-#include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 namespace
 {
-    S3QueueOrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
+    ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
     {
         return sipHash64(path) % buckets_num;
     }
@@ -40,7 +40,7 @@ namespace
     }
 }
 
-S3QueueOrderedFileMetadata::BucketHolder::BucketHolder(
+ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     int bucket_version_,
     const std::string & bucket_lock_path_,
@@ -55,13 +55,13 @@ S3QueueOrderedFileMetadata::BucketHolder::BucketHolder(
 {
 }
 
-void S3QueueOrderedFileMetadata::BucketHolder::release()
+void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 {
     if (released)
         return;
 
     released = true;
-    LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}", bucket_info->bucket);
+    LOG_TEST(getLogger("ObjectStorageQueueBucketHolder"), "Releasing bucket {}", bucket_info->bucket);
 
     Coordination::Requests requests;
     /// Check that bucket lock version has not changed
@@ -75,7 +75,7 @@ void S3QueueOrderedFileMetadata::BucketHolder::release()
     zkutil::KeeperMultiException::check(code, requests, responses);
 }
 
-S3QueueOrderedFileMetadata::BucketHolder::~BucketHolder()
+ObjectStorageQueueOrderedFileMetadata::BucketHolder::~BucketHolder()
 {
     try
     {
@@ -87,7 +87,7 @@ S3QueueOrderedFileMetadata::BucketHolder::~BucketHolder()
     }
 }
 
-S3QueueOrderedFileMetadata::S3QueueOrderedFileMetadata(
+ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     const std::filesystem::path & zk_path_,
     const std::string & path_,
     FileStatusPtr file_status_,
@@ -95,7 +95,7 @@ S3QueueOrderedFileMetadata::S3QueueOrderedFileMetadata(
     size_t buckets_num_,
     size_t max_loading_retries_,
     LoggerPtr log_)
-    : S3QueueIFileMetadata(
+    : ObjectStorageQueueIFileMetadata(
         path_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_),
@@ -109,7 +109,7 @@ S3QueueOrderedFileMetadata::S3QueueOrderedFileMetadata(
 {
 }
 
-std::vector<std::string> S3QueueOrderedFileMetadata::getMetadataPaths(size_t buckets_num)
+std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(size_t buckets_num)
 {
     if (buckets_num > 1)
     {
@@ -122,7 +122,7 @@ std::vector<std::string> S3QueueOrderedFileMetadata::getMetadataPaths(size_t buc
         return {"failed", "processing"};
 }
 
-bool S3QueueOrderedFileMetadata::getMaxProcessedFile(
+bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
     NodeMetadata & result,
     Coordination::Stat * stat,
     const zkutil::ZooKeeperPtr & zk_client)
@@ -130,7 +130,7 @@ bool S3QueueOrderedFileMetadata::getMaxProcessedFile(
     return getMaxProcessedFile(result, stat, processed_node_path, zk_client);
 }
 
-bool S3QueueOrderedFileMetadata::getMaxProcessedFile(
+bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
     NodeMetadata & result,
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
@@ -146,12 +146,12 @@ bool S3QueueOrderedFileMetadata::getMaxProcessedFile(
     return false;
 }
 
-S3QueueOrderedFileMetadata::Bucket S3QueueOrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
+ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
 {
     return getBucketForPathImpl(path_, buckets_num);
 }
 
-S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcquireBucket(
+ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
     const Processor & processor)
@@ -172,7 +172,7 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
             bucket_lock_id_path, processor_info, zkutil::CreateMode::Persistent, /* ignore_if_exists */true));
 
     /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.
-    /// (See comment near S3QueueIFileMetadata::processing_node_version).
+    /// (See comment near ObjectStorageQueueIFileMetadata::processing_node_version).
     requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
 
     Coordination::Responses responses;
@@ -183,7 +183,7 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
         const auto bucket_lock_version = set_response->stat.version;
 
         LOG_TEST(
-            getLogger("S3QueueOrderedFileMetadata"),
+            getLogger("ObjectStorageQueueOrderedFileMetadata"),
             "Processor {} acquired bucket {} for processing (bucket lock version: {})",
             processor, bucket, bucket_lock_version);
 
@@ -204,7 +204,7 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", code);
 }
 
-std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueOrderedFileMetadata::setProcessingImpl()
+std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
 {
     /// In one zookeeper transaction do the following:
     enum RequestType
@@ -300,7 +300,7 @@ std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueOrderedFileMetad
     }
 }
 
-void S3QueueOrderedFileMetadata::setProcessedAtStartRequests(
+void ObjectStorageQueueOrderedFileMetadata::setProcessedAtStartRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr & zk_client)
 {
@@ -318,7 +318,7 @@ void S3QueueOrderedFileMetadata::setProcessedAtStartRequests(
     }
 }
 
-void S3QueueOrderedFileMetadata::setProcessedRequests(
+void ObjectStorageQueueOrderedFileMetadata::setProcessedRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr & zk_client,
     const std::string & processed_node_path_,
@@ -359,7 +359,7 @@ void S3QueueOrderedFileMetadata::setProcessedRequests(
     }
 }
 
-void S3QueueOrderedFileMetadata::setProcessedImpl()
+void ObjectStorageQueueOrderedFileMetadata::setProcessedImpl()
 {
     /// In one zookeeper transaction do the following:
     enum RequestType

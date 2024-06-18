@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class S3QueueIFileMetadata
+class ObjectStorageQueueIFileMetadata
 {
 public:
     struct FileStatus
@@ -41,7 +41,7 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
-    explicit S3QueueIFileMetadata(
+    explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
         const std::string & processing_node_path_,
         const std::string & processed_node_path_,
@@ -50,7 +50,7 @@ public:
         size_t max_loading_retries_,
         LoggerPtr log_);
 
-    virtual ~S3QueueIFileMetadata();
+    virtual ~ObjectStorageQueueIFileMetadata();
 
     bool setProcessing();
     void setProcessed();
@@ -92,7 +92,7 @@ protected:
     LoggerPtr log;
 
     /// processing node is ephemeral, so we cannot verify with it if
-    /// this node was created by a certain processor on a previous s3 queue processing stage,
+    /// this node was created by a certain processor on a previous processing stage,
     /// because we could get a session expired in between the stages
     /// and someone else could just create this processing node.
     /// Therefore we also create a persistent processing node

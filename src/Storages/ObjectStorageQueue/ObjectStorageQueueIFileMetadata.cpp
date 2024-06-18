@@ -1,4 +1,4 @@
-#include <Storages/S3Queue/S3QueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -35,19 +35,19 @@ namespace
     }
 }
 
-void S3QueueIFileMetadata::FileStatus::onProcessing()
+void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
     processing_start_time = now();
 }
 
-void S3QueueIFileMetadata::FileStatus::onProcessed()
+void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
     state = FileStatus::State::Processed;
     processing_end_time = now();
 }
 
-void S3QueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
+void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
     state = FileStatus::State::Failed;
     processing_end_time = now();
@@ -55,13 +55,13 @@ void S3QueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
     last_exception = exception;
 }
 
-std::string S3QueueIFileMetadata::FileStatus::getException() const
+std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
 {
     std::lock_guard lock(last_exception_mutex);
     return last_exception;
 }
 
-std::string S3QueueIFileMetadata::NodeMetadata::toString() const
+std::string ObjectStorageQueueIFileMetadata::NodeMetadata::toString() const
 {
     Poco::JSON::Object json;
     json.set("file_path", file_path);
@@ -76,7 +76,7 @@ std::string S3QueueIFileMetadata::NodeMetadata::toString() const
     return oss.str();
 }
 
-S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::NodeMetadata::fromString(const std::string & metadata_str)
+ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(const std::string & metadata_str)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
@@ -91,7 +91,7 @@ S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::NodeMetadata::fromStrin
     return metadata;
 }
 
-S3QueueIFileMetadata::S3QueueIFileMetadata(
+ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & path_,
     const std::string & processing_node_path_,
     const std::string & processed_node_path_,
@@ -116,7 +116,7 @@ S3QueueIFileMetadata::S3QueueIFileMetadata(
              processed_node_path, processing_node_path, failed_node_path);
 }
 
-S3QueueIFileMetadata::~S3QueueIFileMetadata()
+ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
     if (processing_id_version.has_value())
     {
@@ -148,9 +148,9 @@ S3QueueIFileMetadata::~S3QueueIFileMetadata()
     }
 }
 
-std::string S3QueueIFileMetadata::getNodeName(const std::string & path)
+std::string ObjectStorageQueueIFileMetadata::getNodeName(const std::string & path)
 {
-    /// Since with are dealing with paths in s3 which can have "/",
+    /// Since with are dealing with paths in object storage which can have "/",
     /// we cannot create a zookeeper node with the name equal to path.
     /// Therefore we use a hash of the path as a node name.
 
@@ -159,7 +159,7 @@ std::string S3QueueIFileMetadata::getNodeName(const std::string & path)
     return toString(path_hash.get64());
 }
 
-S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::createNodeMetadata(
+ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::createNodeMetadata(
     const std::string & path,
     const std::string & exception,
     size_t retries)
@@ -168,9 +168,9 @@ S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::createNodeMetadata(
 
     /// Since node name is just a hash we want to know to which file it corresponds,
     /// so we keep "file_path" in nodes data.
-    /// "last_processed_timestamp" is needed for TTL metadata nodes enabled by s3queue_tracked_file_ttl_sec.
+    /// "last_processed_timestamp" is needed for TTL metadata nodes enabled by tracked_file_ttl_sec.
     /// "last_exception" is kept for introspection, should also be visible in system.s3queue_log if it is enabled.
-    /// "retries" is kept for retrying the processing enabled by s3queue_loading_retries.
+    /// "retries" is kept for retrying the processing enabled by loading_retries.
     NodeMetadata metadata;
     metadata.file_path = path;
     metadata.last_processed_timestamp = now();
@@ -179,7 +179,7 @@ S3QueueIFileMetadata::NodeMetadata S3QueueIFileMetadata::createNodeMetadata(
     return metadata;
 }
 
-std::string S3QueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
+std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
 {
     /// Add information which will be useful for debugging just in case.
     Poco::JSON::Object json;
@@ -192,7 +192,7 @@ std::string S3QueueIFileMetadata::getProcessorInfo(const std::string & processor
     return oss.str();
 }
 
-bool S3QueueIFileMetadata::setProcessing()
+bool ObjectStorageQueueIFileMetadata::setProcessing()
 {
     auto state = file_status->state.load();
     if (state == FileStatus::State::Processing
@@ -221,7 +221,7 @@ bool S3QueueIFileMetadata::setProcessing()
     return success;
 }
 
-void S3QueueIFileMetadata::setProcessed()
+void ObjectStorageQueueIFileMetadata::setProcessed()
 {
     LOG_TRACE(log, "Setting file {} as processed (path: {})", path, processed_node_path);
 
@@ -235,7 +235,7 @@ void S3QueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
-void S3QueueIFileMetadata::setFailed(const std::string & exception)
+void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception)
 {
     LOG_TRACE(log, "Setting file {} as failed (exception: {}, path: {})", path, exception, failed_node_path);
 
@@ -254,7 +254,7 @@ void S3QueueIFileMetadata::setFailed(const std::string & exception)
     LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows);
 }
 
-void S3QueueIFileMetadata::setFailedNonRetriable()
+void ObjectStorageQueueIFileMetadata::setFailedNonRetriable()
 {
     auto zk_client = getZooKeeper();
     Coordination::Requests requests;
@@ -285,7 +285,7 @@ void S3QueueIFileMetadata::setFailedNonRetriable()
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error while setting file as failed: {}", code);
 }
 
-void S3QueueIFileMetadata::setFailedRetriable()
+void ObjectStorageQueueIFileMetadata::setFailedRetriable()
 {
     /// Instead of creating a persistent /failed/node_hash node
     /// we create a persistent /failed/node_hash.retriable node.

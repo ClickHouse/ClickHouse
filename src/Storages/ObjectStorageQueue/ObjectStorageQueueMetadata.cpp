@@ -4,13 +4,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Storages/S3Queue/S3QueueMetadata.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/S3Queue/S3QueueIFileMetadata.h>
-#include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
-#include <Storages/S3Queue/S3QueueUnorderedFileMetadata.h>
-#include <Storages/S3Queue/S3QueueTableMetadata.h>
-#include <IO/S3Settings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
@@ -63,7 +62,7 @@ namespace
     }
 }
 
-class S3QueueMetadata::LocalFileStatuses
+class ObjectStorageQueueMetadata::LocalFileStatuses
 {
 public:
     LocalFileStatuses() = default;
@@ -114,90 +113,81 @@ private:
     }
 };
 
-S3QueueMetadata::S3QueueMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_)
+ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, const ObjectStorageQueueSettings & settings_)
     : settings(settings_)
     , zookeeper_path(zookeeper_path_)
     , buckets_num(getBucketsNum(settings_))
-    , log(getLogger("StorageS3Queue(" + zookeeper_path_.string() + ")"))
+    , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
-    if (settings.mode == S3QueueMode::UNORDERED
-        && (settings.s3queue_tracked_files_limit || settings.s3queue_tracked_file_ttl_sec))
+    if (settings.mode == ObjectStorageQueueMode::UNORDERED
+        && (settings.tracked_files_limit || settings.tracked_file_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
-            "S3QueueCleanupFunc",
+            "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
         task->activate();
         task->scheduleAfter(
             generateRescheduleInterval(
-                settings.s3queue_cleanup_interval_min_ms, settings.s3queue_cleanup_interval_max_ms));
+                settings.cleanup_interval_min_ms, settings.cleanup_interval_max_ms));
     }
 }
 
-S3QueueMetadata::~S3QueueMetadata()
+ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
 {
     shutdown();
 }
 
-void S3QueueMetadata::shutdown()
+void ObjectStorageQueueMetadata::shutdown()
 {
     shutdown_called = true;
     if (task)
         task->deactivate();
 }
 
-void S3QueueMetadata::checkSettings(const S3QueueSettings & settings_) const
+void ObjectStorageQueueMetadata::checkSettings(const ObjectStorageQueueSettings & settings_) const
 {
-    S3QueueTableMetadata::checkEquals(settings, settings_);
+    ObjectStorageQueueTableMetadata::checkEquals(settings, settings_);
 }
 
-S3QueueMetadata::FileStatusPtr S3QueueMetadata::getFileStatus(const std::string & path)
+ObjectStorageQueueMetadata::FileStatusPtr ObjectStorageQueueMetadata::getFileStatus(const std::string & path)
 {
     return local_file_statuses->get(path, /* create */false);
 }
 
-S3QueueMetadata::FileStatuses S3QueueMetadata::getFileStatuses() const
+ObjectStorageQueueMetadata::FileStatuses ObjectStorageQueueMetadata::getFileStatuses() const
 {
     return local_file_statuses->getAll();
 }
 
-S3QueueMetadata::FileMetadataPtr S3QueueMetadata::getFileMetadata(
+ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
     const std::string & path,
-    S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info)
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
 {
     auto file_status = local_file_statuses->get(path, /* create */true);
     switch (settings.mode.value)
     {
-        case S3QueueMode::ORDERED:
-            return std::make_shared<S3QueueOrderedFileMetadata>(
+        case ObjectStorageQueueMode::ORDERED:
+            return std::make_shared<ObjectStorageQueueOrderedFileMetadata>(
                 zookeeper_path,
                 path,
                 file_status,
                 bucket_info,
                 buckets_num,
-                settings.s3queue_loading_retries,
+                settings.loading_retries,
                 log);
-        case S3QueueMode::UNORDERED:
-            return std::make_shared<S3QueueUnorderedFileMetadata>(
+        case ObjectStorageQueueMode::UNORDERED:
+            return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
                 path,
                 file_status,
-                settings.s3queue_loading_retries,
+                settings.loading_retries,
                 log);
     }
 }
 
-size_t S3QueueMetadata::getBucketsNum(const S3QueueSettings & settings)
-{
-    if (settings.s3queue_buckets)
-        return settings.s3queue_buckets;
-    if (settings.s3queue_processing_threads_num)
-        return settings.s3queue_processing_threads_num;
-    return 0;
-}
-
-size_t S3QueueMetadata::getBucketsNum(const S3QueueTableMetadata & settings)
+size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueSettings & settings)
 {
     if (settings.buckets)
         return settings.buckets;
@@ -206,32 +196,41 @@ size_t S3QueueMetadata::getBucketsNum(const S3QueueTableMetadata & settings)
     return 0;
 }
 
-bool S3QueueMetadata::useBucketsForProcessing() const
+size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueTableMetadata & settings)
 {
-    return settings.mode == S3QueueMode::ORDERED && (buckets_num > 1);
+    if (settings.buckets)
+        return settings.buckets;
+    if (settings.processing_threads_num)
+        return settings.processing_threads_num;
+    return 0;
 }
 
-S3QueueMetadata::Bucket S3QueueMetadata::getBucketForPath(const std::string & path) const
+bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 {
-    return S3QueueOrderedFileMetadata::getBucketForPath(path, buckets_num);
+    return settings.mode == ObjectStorageQueueMode::ORDERED && (buckets_num > 1);
 }
 
-S3QueueOrderedFileMetadata::BucketHolderPtr
-S3QueueMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
+ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    return S3QueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor);
+    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num);
 }
 
-void S3QueueMetadata::initialize(
+ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
+ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
+{
+    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor);
+}
+
+void ObjectStorageQueueMetadata::initialize(
     const ConfigurationPtr & configuration,
     const StorageInMemoryMetadata & storage_metadata)
 {
-    const auto metadata_from_table = S3QueueTableMetadata(*configuration, settings, storage_metadata);
+    const auto metadata_from_table = ObjectStorageQueueTableMetadata(*configuration, settings, storage_metadata);
     const auto & columns_from_table = storage_metadata.getColumns();
     const auto table_metadata_path = zookeeper_path / "metadata";
-    const auto metadata_paths = settings.mode == S3QueueMode::ORDERED
-        ? S3QueueOrderedFileMetadata::getMetadataPaths(buckets_num)
-        : S3QueueUnorderedFileMetadata::getMetadataPaths();
+    const auto metadata_paths = settings.mode == ObjectStorageQueueMode::ORDERED
+        ? ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num)
+        : ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
 
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(zookeeper_path);
@@ -240,7 +239,7 @@ void S3QueueMetadata::initialize(
     {
         if (zookeeper->exists(table_metadata_path))
         {
-            const auto metadata_from_zk = S3QueueTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
+            const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
             const auto columns_from_zk = ColumnsDescription::parse(metadata_from_zk.columns);
 
             metadata_from_table.checkEquals(metadata_from_zk);
@@ -265,8 +264,8 @@ void S3QueueMetadata::initialize(
             requests.emplace_back(zkutil::makeCreateRequest(zk_path, "", zkutil::CreateMode::Persistent));
         }
 
-        if (!settings.s3queue_last_processed_path.value.empty())
-            getFileMetadata(settings.s3queue_last_processed_path)->setProcessedAtStartRequests(requests, zookeeper);
+        if (!settings.last_processed_path.value.empty())
+            getFileMetadata(settings.last_processed_path)->setProcessedAtStartRequests(requests, zookeeper);
 
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(requests, responses);
@@ -290,10 +289,10 @@ void S3QueueMetadata::initialize(
         "of wrong zookeeper path or because of logical error");
 }
 
-void S3QueueMetadata::cleanupThreadFunc()
+void ObjectStorageQueueMetadata::cleanupThreadFunc()
 {
     /// A background task is responsible for maintaining
-    /// settings.s3queue_tracked_files_limit and max_set_age settings for `unordered` processing mode.
+    /// settings.tracked_files_limit and max_set_age settings for `unordered` processing mode.
 
     if (shutdown_called)
         return;
@@ -312,10 +311,10 @@ void S3QueueMetadata::cleanupThreadFunc()
 
     task->scheduleAfter(
         generateRescheduleInterval(
-            settings.s3queue_cleanup_interval_min_ms, settings.s3queue_cleanup_interval_max_ms));
+            settings.cleanup_interval_min_ms, settings.cleanup_interval_max_ms));
 }
 
-void S3QueueMetadata::cleanupThreadFuncImpl()
+void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueCleanupMaxSetSizeOrTTLMicroseconds);
     const auto zk_client = getZooKeeper();
@@ -355,11 +354,11 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    chassert(settings.s3queue_tracked_files_limit || settings.s3queue_tracked_file_ttl_sec);
-    const bool check_nodes_limit = settings.s3queue_tracked_files_limit > 0;
-    const bool check_nodes_ttl = settings.s3queue_tracked_file_ttl_sec > 0;
+    chassert(settings.tracked_files_limit || settings.tracked_file_ttl_sec);
+    const bool check_nodes_limit = settings.tracked_files_limit > 0;
+    const bool check_nodes_ttl = settings.tracked_file_ttl_sec > 0;
 
-    const bool nodes_limit_exceeded = nodes_num > settings.s3queue_tracked_files_limit;
+    const bool nodes_limit_exceeded = nodes_num > settings.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
         LOG_TEST(log, "No limit exceeded");
@@ -381,7 +380,7 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
     struct Node
     {
         std::string zk_path;
-        S3QueueIFileMetadata::NodeMetadata metadata;
+        ObjectStorageQueueIFileMetadata::NodeMetadata metadata;
     };
     auto node_cmp = [](const Node & a, const Node & b)
     {
@@ -402,7 +401,7 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
                 std::string metadata_str;
                 if (zk_client->tryGet(path, metadata_str))
                 {
-                    sorted_nodes.emplace(path, S3QueueIFileMetadata::NodeMetadata::fromString(metadata_str));
+                    sorted_nodes.emplace(path, ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(metadata_str));
                     LOG_TEST(log, "Fetched metadata for node {}", path);
                 }
                 else
@@ -432,9 +431,9 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
             wb << fmt::format("Node: {}, path: {}, timestamp: {};\n", node, metadata.file_path, metadata.last_processed_timestamp);
         return wb.str();
     };
-    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", settings.s3queue_tracked_files_limit, settings.s3queue_tracked_file_ttl_sec, get_nodes_str());
+    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", settings.tracked_files_limit, settings.tracked_file_ttl_sec, get_nodes_str());
 
-    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - settings.s3queue_tracked_files_limit : 0;
+    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - settings.tracked_files_limit : 0;
     for (const auto & node : sorted_nodes)
     {
         if (nodes_to_remove)
@@ -453,7 +452,7 @@ void S3QueueMetadata::cleanupThreadFuncImpl()
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
-            if (node_age >= settings.s3queue_tracked_file_ttl_sec)
+            if (node_age >= settings.tracked_file_ttl_sec)
             {
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);

@@ -4118,7 +4118,7 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
-std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
+std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)

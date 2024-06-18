@@ -5,25 +5,24 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/S3Queue/S3QueueSource.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context.h>
-#include <IO/S3/BlobStorageLogWriter.h>
 #include <Storages/StorageFactory.h>
 
 
 namespace DB
 {
-class S3QueueMetadata;
+class ObjectStorageQueueMetadata;
 
-class StorageS3Queue : public IStorage, WithContext
+class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    StorageS3Queue(
-        std::unique_ptr<S3QueueSettings> s3queue_settings_,
+    StorageObjectStorageQueue(
+        std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
         ConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -34,7 +33,7 @@ public:
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode);
 
-    String getName() const override { return "S3Queue"; }
+    String getName() const override { return "ObjectStorageQueue"; }
 
     void read(
         QueryPlan & query_plan,
@@ -53,13 +52,13 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
 private:
-    friend class ReadFromS3Queue;
-    using FileIterator = StorageS3QueueSource::FileIterator;
+    friend class ReadFromObjectStorageQueue;
+    using FileIterator = ObjectStorageQueueSource::FileIterator;
 
-    const std::unique_ptr<S3QueueSettings> s3queue_settings;
+    const std::unique_ptr<ObjectStorageQueueSettings> queue_settings;
     const fs::path zk_path;
 
-    std::shared_ptr<S3QueueMetadata> files_metadata;
+    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
@@ -83,10 +82,10 @@ private:
     bool supportsDynamicSubcolumns() const override { return true; }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
-    std::shared_ptr<StorageS3QueueSource> createSource(
+    std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
-        std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
+        std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
         ContextPtr local_context);
 

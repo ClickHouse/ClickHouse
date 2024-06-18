@@ -1,5 +1,5 @@
 #pragma once
-#include <Storages/S3Queue/S3QueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class S3QueueOrderedFileMetadata : public S3QueueIFileMetadata
+class ObjectStorageQueueOrderedFileMetadata : public ObjectStorageQueueIFileMetadata
 {
 public:
     using Processor = std::string;
@@ -21,7 +21,7 @@ public:
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
 
-    explicit S3QueueOrderedFileMetadata(
+    explicit ObjectStorageQueueOrderedFileMetadata(
         const std::filesystem::path & zk_path_,
         const std::string & path_,
         FileStatusPtr file_status_,
@@ -38,7 +38,7 @@ public:
         const Bucket & bucket,
         const Processor & processor);
 
-    static S3QueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
@@ -72,7 +72,7 @@ private:
         bool ignore_if_exists);
 };
 
-struct S3QueueOrderedFileMetadata::BucketHolder
+struct ObjectStorageQueueOrderedFileMetadata::BucketHolder
 {
     BucketHolder(
         const Bucket & bucket_,
