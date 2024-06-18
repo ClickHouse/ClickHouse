@@ -252,7 +252,8 @@ void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
         topic_partitions.begin(),
         topic_partitions.end(),
         std::back_inserter(original_topic_partitions),
-        [](const TopicPartition & tp) {
+        [](const TopicPartition & tp)
+        {
             return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
         });
     initializeQueues(original_topic_partitions);

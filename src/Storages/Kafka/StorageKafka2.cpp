@@ -92,7 +92,6 @@ extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int REPLICA_ALREADY_EXISTS;
 extern const int TABLE_IS_DROPPED;
-extern const int TABLE_WAS_NOT_DROPPED;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
