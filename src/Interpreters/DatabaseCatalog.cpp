@@ -1487,13 +1487,17 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
     {
         auto old_dependencies = dependencies.removeDependencies(table_id);
         dependencies.addDependencies(table_name, new_dependencies);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(table_id);
+            if (!old_dependencies.empty())
+                dependencies.addDependencies(table_id, old_dependencies);
+        };
 
         if (dependencies.hasCyclicDependencies())
         {
             auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            /// Restore previous dependencies before throwing an exception.
-            dependencies.removeDependencies(table_id);
-            dependencies.addDependencies(table_id, old_dependencies);
+            restore_dependencies();
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
                 "Cannot add dependencies for '{}', because it will lead to cyclic dependencies: {}",
@@ -1501,9 +1505,7 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
                 cyclic_dependencies_description);
         }
 
-        /// Restore previous dependencies.
-        dependencies.removeDependencies(table_id);
-        dependencies.addDependencies(table_id, old_dependencies);
+        restore_dependencies();
     };
 
     check(referential_dependencies, new_referential_dependencies);
@@ -1518,13 +1520,16 @@ void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const Stora
     {
         auto old_dependencies = dependencies.removeDependencies(from_table_id);
         dependencies.addDependencies(to_table_id, old_dependencies);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(to_table_id);
+            dependencies.addDependencies(from_table_id, old_dependencies);
+        };
 
         if (dependencies.hasCyclicDependencies())
         {
             auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            /// Restore previous dependencies before throwing an exception.
-            dependencies.removeDependencies(to_table_id);
-            dependencies.addDependencies(from_table_id, old_dependencies);
+            restore_dependencies();
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
                 "Cannot rename '{}' to '{}', because it will lead to cyclic dependencies: {}",
@@ -1533,9 +1538,7 @@ void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const Stora
                 cyclic_dependencies_description);
         }
 
-        /// Restore previous dependencies.
-        dependencies.removeDependencies(to_table_id);
-        dependencies.addDependencies(from_table_id, old_dependencies);
+        restore_dependencies();
     };
 
     check(referential_dependencies);
@@ -1563,7 +1566,6 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
         if (dependencies.hasCyclicDependencies())
         {
             auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            /// Restore previous dependencies before throwing an exception.
             restore_dependencies();
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
@@ -1573,7 +1575,6 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
                 cyclic_dependencies_description);
         }
 
-        /// Restore previous dependencies.
         restore_dependencies();
     };
 
