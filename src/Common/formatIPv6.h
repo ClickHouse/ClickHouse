@@ -88,7 +88,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
 /// returns pointer to the right after parsed sequence or null on failed parsing
 inline const char * parseIPv4(const char * src, const char * end, unsigned char * dst)
 {
-    if (parseIPv4(src, [&src, end](){ return src == end; }, dst))
+    if (parseIPv4(src, [&src, end](){ return src == end || *src == '\0'; }, dst))
         return src;
     return nullptr;
 }
@@ -96,7 +96,8 @@ inline const char * parseIPv4(const char * src, const char * end, unsigned char 
 /// returns true if whole buffer was parsed successfully
 inline bool parseIPv4whole(const char * src, const char * end, unsigned char * dst)
 {
-    return parseIPv4(src, end, dst) == reinterpret_cast<const char *>(dst);
+    const char * parsed = parseIPv4(src, end, dst);
+    return parsed-end == 0;
 }
 
 /// returns pointer to the right after parsed sequence or null on failed parsing

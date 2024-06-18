@@ -31,8 +31,8 @@ ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff	FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 127.0.0.1 is ipv4 string:                               	1
 8.8.8.8 is ipv4 string:                                 	1
 hello is ipv4 string:                                   	0
-192.168.1.1\0000 is ipv4 string:                           	0
-192.168.1.1\00dc is ipv4 string:                           	0
+192.168.1.1\0000 is ipv4 string:                        	0
+192.168.1.1\00dc is ipv4 string:                        	0
 0:0:0:0:0:0:0:0 is ipv4 string:                         	0
 0000:0000:0000:0000:0000:FFFF:C1FC:110A is ipv4 string: 	0
 FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv4 string: 	0
