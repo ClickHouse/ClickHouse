@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 import glob
 import re
 import random
