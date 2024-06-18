@@ -9,6 +9,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 
+#include <Common/assert_cast.h>
+
 namespace DB
 {
 
@@ -66,17 +68,16 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
     }
 
     Row tuple_values;
-    size_t value_types_index = 0;
 
-    for (const auto & value : collection)
+    for (size_t collection_index = 0; collection_index < collection.size(); ++collection_index)
     {
+        const auto & value = collection[collection_index];
         if (columns_size == 1)
         {
-            const DataTypePtr & data_type = value_types[value_types_index];
+            const DataTypePtr & data_type = value_types[collection_index];
             auto field = convertFieldToTypeStrict(value, *data_type, *block_types[0]);
             if (!field)
             {
-                value_types_index += 1;
                 continue;
             }
 
@@ -84,7 +85,6 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
             if (!field->isNull() || need_insert_null)
                 columns[0]->insert(*field);
 
-            value_types_index += 1;
             continue;
         }
 
@@ -94,7 +94,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
                 value.getTypeName());
 
         const auto & tuple = value.template get<const Tuple &>();
-        const DataTypePtr & value_type = value_types[value_types_index];
+        const DataTypePtr & value_type = value_types[collection_index];
         const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
         size_t tuple_size = tuple.size();
@@ -124,8 +124,6 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
         if (i == tuple_size)
             for (i = 0; i < tuple_size; ++i)
                 columns[i]->insert(tuple_values[i]);
-
-        value_types_index += 1;
     }
 
     Block res;
@@ -170,20 +168,14 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
 
         if (rhs_which_type.isArray())
         {
-            const DataTypeArray * value_array_type = typeid_cast<const DataTypeArray *>(value_type.get());
+            const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
             size_t value_array_size = value.get<const Array &>().size();
-            DataTypes value_types;
-            value_types.reserve(value_array_size);
-
-            for (size_t i = 0; i < value_array_size; ++i)
-            {
-                value_types.push_back(value_array_type->getNestedType());
-            }
+            DataTypes value_types(value_array_size, value_array_type->getNestedType());
             result_block = createBlockFromCollection(value.get<const Array &>(), value_types, set_element_types, transform_null_in);
         }
         else if (rhs_which_type.isTuple())
         {
-            const DataTypeTuple * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+            const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
             const DataTypes & value_types = value_tuple_type->getElements();
             result_block = createBlockFromCollection(value.get<const Tuple &>(), value_types, set_element_types, transform_null_in);
         }

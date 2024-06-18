@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <Common/assert_cast.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -113,16 +114,15 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     }
 
     Row tuple_values;
-    size_t value_type_index = 0;
-    for (const auto & value : collection)
+    for (size_t collection_index = 0; collection_index < collection.size(); ++collection_index)
     {
+        const auto& value = collection[collection_index];
         if (columns_num == 1)
         {
-            auto field = convertFieldToTypeStrict(value, *value_types[value_type_index], *types[0]);
+            auto field = convertFieldToTypeStrict(value, *value_types[collection_index], *types[0]);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
             if (field && (!field->isNull() || need_insert_null))
                 columns[0]->insert(*field);
-            value_type_index += 1;
         }
         else
         {
@@ -139,7 +139,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
 
-            const DataTypePtr & value_type = value_types[value_type_index];
+            const DataTypePtr & value_type = value_types[collection_index];
             const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
             size_t i = 0;
@@ -158,7 +158,6 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             if (i == tuple_size)
                 for (i = 0; i < tuple_size; ++i)
                     columns[i]->insert(tuple_values[i]);
-            value_type_index += 1;
         }
     }
 
@@ -322,8 +321,8 @@ Block createBlockForSet(
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
-        DataTypes data_types{right_arg_type};
-        block = createBlockFromCollection(array, data_types, set_element_types, tranform_null_in);
+        DataTypes value_types{right_arg_type};
+        block = createBlockFromCollection(array, value_types, set_element_types, tranform_null_in);
     }
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
@@ -331,20 +330,15 @@ Block createBlockForSet(
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
         {
-            const DataTypes & data_types = typeid_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), data_types, set_element_types, tranform_null_in);
+            const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
+            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), value_types, set_element_types, tranform_null_in);
         }
         else if (type_index == TypeIndex::Array)
         {
-            const auto* right_arg_array_type =  typeid_cast<const DataTypeArray *>(right_arg_type.get());
+            const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
             size_t right_arg_array_size = right_arg_value.get<const Array &>().size();
-            DataTypes data_types;
-            data_types.reserve(right_arg_array_size);
-            for (size_t i = 0; i < right_arg_array_size; ++i)
-            {
-                data_types.push_back(right_arg_array_type->getNestedType());
-            }
-            block = createBlockFromCollection(right_arg_value.get<const Array &>(), data_types, set_element_types, tranform_null_in);
+            DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
+            block = createBlockFromCollection(right_arg_value.get<const Array &>(), value_types, set_element_types, tranform_null_in);
         }
         else
             throw_unsupported_type(right_arg_type);
