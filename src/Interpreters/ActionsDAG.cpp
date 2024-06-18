@@ -1149,21 +1149,6 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     removeUnusedActions();
 }
 
-static void appendInputsFromNamesMap(
-    ActionsDAG & dag,
-    const ColumnsWithTypeAndName & source_columns,
-    const std::unordered_map<std::string_view, std::list<size_t>> & names_map)
-{
-    for (const auto & [_, positions] : names_map)
-    {
-        for (auto pos : positions)
-        {
-            const auto & col = source_columns[pos];
-            dag.addInput(col.name, col.type);
-        }
-    }
-}
-
 void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
 {
     std::unordered_map<std::string_view, std::list<size_t>> names_map;
@@ -1181,7 +1166,14 @@ void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
         positions.pop_front();
     }
 
-    appendInputsFromNamesMap(*this, sample_block.getColumnsWithTypeAndName(), names_map);
+    for (const auto & [_, positions] : names_map)
+    {
+        for (auto pos : positions)
+        {
+            const auto & col = sample_block.getByPosition(pos);
+            addInput(col.name, col.type);
+        }
+    }
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
@@ -2753,11 +2745,7 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
     std::unordered_set<const Node *> used_inputs;
     for (const auto * input : inputs)
-    {
-        // if (removes_filter && input == predicate)
-        //     continue;
         used_inputs.insert(input);
-    }
 
     removeUnusedActions(used_inputs);
 }
