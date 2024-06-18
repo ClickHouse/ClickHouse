@@ -15,12 +15,6 @@
 namespace DB
 {
 
-struct ValuePair {
-    UInt64 local = 0;
-    UInt64 remote = 0;
-};
-
-
 ColumnsDescription ErrorLogElement::getColumnsDescription()
 {
     return ColumnsDescription {
@@ -70,6 +64,12 @@ void ErrorLog::shutdown()
     stopCollectError();
     stopFlushThread();
 }
+
+struct ValuePair
+{
+    UInt64 local = 0;
+    UInt64 remote = 0;
+};
 
 void ErrorLog::threadFunction()
 {
