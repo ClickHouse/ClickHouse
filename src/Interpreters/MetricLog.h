@@ -44,7 +44,7 @@ public:
     /// Launches a background thread to collect metrics with interval
     void startCollectMetric(size_t collect_interval_milliseconds_);
 
-    /// Stop background thread. Call before shutdown.
+    /// Stop background thread
     void stopCollectMetric();
 
 private:

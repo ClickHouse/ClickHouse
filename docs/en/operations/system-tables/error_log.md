@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/error_log
 ---
 # error_log
 
-Contains history of error values from tables `system.errors`, periodically flushed to disk.
+Contains history of error values from table `system.errors`, periodically flushed to disk.
 
 Columns:
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.

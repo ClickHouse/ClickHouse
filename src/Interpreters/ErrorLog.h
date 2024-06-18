@@ -41,7 +41,7 @@ public:
     /// Launches a background thread to collect errors with interval
     void startCollectError(size_t collect_interval_milliseconds_);
 
-    /// Stop background thread. Call before shutdown.
+    /// Stop background thread
     void stopCollectError();
 
 private:
