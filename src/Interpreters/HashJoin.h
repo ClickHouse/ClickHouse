@@ -449,7 +449,10 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
+
     RightTableDataPtr data;
+    bool have_compressed = false;
+
     std::vector<Sizes> key_sizes;
 
     /// Needed to do external cross join
