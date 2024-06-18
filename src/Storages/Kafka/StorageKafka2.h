@@ -127,8 +127,10 @@ private:
     };
 
     // Configuration and state
-    std::mutex keeper_mutex;
+    mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
+    String keeper_path;
+    String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
     const Names topics;
@@ -142,7 +144,6 @@ private:
     LoggerPtr log;
     Poco::Semaphore semaphore;
     const SettingsChanges settings_adjustments;
-    std::atomic<bool> mv_attached = false;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
@@ -156,6 +157,16 @@ private:
     String collection_name;
     std::atomic<bool> shutdown_called = false;
 
+    // Handling replica activation.
+    std::atomic<bool> is_active = false;
+    zkutil::EphemeralNodeHolderPtr replica_is_active_node;
+    BackgroundSchedulePool::TaskHolder activating_task;
+    String active_node_identifier;
+    bool first_time = true;
+    bool activate();
+    void partialShutdown();
+
+    void assertActive() const;
     SettingsChanges createSettingsAdjustments();
     KafkaConsumer2Ptr createConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
@@ -186,7 +197,16 @@ private:
     static Names parseTopics(String topic_list);
     static String getDefaultClientId(const StorageID & table_id_);
 
-    bool streamToViews(size_t idx);
+    enum class StallReason
+    {
+        NoAssignment,
+        CouldNotAcquireLocks,
+        NoPartitions,
+        NoMessages,
+        KeeperSessionEnded,
+    };
+
+    std::optional<StallReason> streamToViews(size_t idx);
 
     std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info);
 
@@ -195,7 +215,7 @@ private:
     // Returns true if this is the first replica
     bool createTableIfNotExists();
     // Returns true if all of the nodes were cleaned up
-    bool removeTableNodesFromZooKeeper(const zkutil::EphemeralNodeHolder::Ptr & drop_lock);
+    bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to_use, const zkutil::EphemeralNodeHolder::Ptr & drop_lock);
     // Creates only the replica in ZooKeeper. Shouldn't be called on the first replica as it is created in createTableIfNotExists
     void createReplica();
     void dropReplica();
@@ -212,7 +232,12 @@ private:
         Stopwatch & watch,
         const ContextPtr & context);
 
-    zkutil::ZooKeeperPtr getZooKeeper();
+    void setZooKeeper();
+    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeperAndAssertActive() const;
+    zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
+
 
     std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
 
