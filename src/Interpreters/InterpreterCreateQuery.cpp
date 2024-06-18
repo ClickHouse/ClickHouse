@@ -1577,7 +1577,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw;
-    if (table_num_limit > 0)
+    if (table_num_limit > 0 && create.getDatabase() != DatabaseCatalog::SYSTEM_DATABASE)
     {
         UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
         if (table_count >= table_num_limit)
