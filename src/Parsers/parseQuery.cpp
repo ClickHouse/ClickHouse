@@ -6,7 +6,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
@@ -92,9 +92,7 @@ void writeQueryWithHighlightedErrorPositions(
         }
         else
         {
-            ssize_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
-            if (bytes_to_hilite > end - current_position_to_hilite)
-                bytes_to_hilite = end - current_position_to_hilite;
+            ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
 
             /// Bright on red background.
             out << "\033[41;1m";

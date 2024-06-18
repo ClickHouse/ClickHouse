@@ -20,7 +20,7 @@
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
@@ -649,7 +649,7 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
-    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });

@@ -159,6 +159,45 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.test_table FROM $user1"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.source
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE TABLE $db.destination1
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE TABLE $db.destination2
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE MATERIALIZED VIEW $db.mv1 TO $db.destination1
+AS SELECT *
+FROM $db.source;
+
+ALTER TABLE $db.mv1 MODIFY DEFINER=default SQL SECURITY DEFINER;
+
+CREATE MATERIALIZED VIEW $db.mv2 TO $db.destination2
+AS SELECT *
+FROM $db.destination1;
+EOF
+
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.source TO $user2"
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100"
+
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
 
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
@@ -191,7 +230,6 @@ ${CLICKHOUSE_CLIENT} --user $user1 --query "
 " 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
-
 
 echo "===== TestRowPolicy ====="
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF

@@ -39,13 +39,24 @@ public:
 
         void set(Chunk chunk_)
         {
-            convertToFullIfSparse(chunk_);
             chunk = std::move(chunk_);
             skip_last_row = false;
         }
     };
 
     using Inputs = std::vector<Input>;
+
+    static void removeConstAndSparse(Input & input)
+    {
+        convertToFullIfConst(input.chunk);
+        convertToFullIfSparse(input.chunk);
+    }
+
+    static void removeConstAndSparse(Inputs & inputs)
+    {
+        for (auto & input : inputs)
+            removeConstAndSparse(input);
+    }
 
     virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;

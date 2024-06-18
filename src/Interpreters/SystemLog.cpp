@@ -504,6 +504,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         Block block(std::move(log_element_columns));
 
         MutableColumns columns = block.mutateColumns();
+
+        for (auto & column : columns)
+            column->reserve(to_flush.size());
+
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
@@ -519,8 +523,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
-        /// We always want to deliver the data to the original table regardless of the MVs
-        insert_context->setSetting("materialized_views_ignore_errors", true);
+        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -533,7 +536,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
+            table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
 
     queue->confirm(to_flush_end);
@@ -541,13 +545,18 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
+template <typename LogElement>
+StoragePtr SystemLog<LogElement>::getStorage() const
+{
+    return DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+}
 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto table = getStorage();
     if (table)
     {
         if (old_create_query.empty())
@@ -596,10 +605,9 @@ void SystemLog<LogElement>::prepareTable()
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);
-            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-            query_context->setSetting("check_table_dependencies", Field{false});
-            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
+            addSettingsForQuery(query_context, IAST::QueryKind::Rename);
+
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -616,6 +624,7 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
+        addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
         InterpreterCreateQuery interpreter(create_query_ast, query_context);
@@ -628,6 +637,22 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const
+{
+    if (query_kind == IAST::QueryKind::Insert)
+    {
+        /// We always want to deliver the data to the original table regardless of the MVs
+        mutable_context->setSetting("materialized_views_ignore_errors", true);
+    }
+    else if (query_kind == IAST::QueryKind::Rename)
+    {
+        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+        mutable_context->setSetting("check_table_dependencies", Field{false});
+        mutable_context->setSetting("check_referential_table_dependencies", Field{false});
+    }
 }
 
 template <typename LogElement>

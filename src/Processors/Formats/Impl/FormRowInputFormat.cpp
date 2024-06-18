@@ -131,7 +131,8 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
-    String field, value, decoded_value;
+    String value;
+    String decoded_value;
     do
     {
         auto name = readFieldName(in);
@@ -175,5 +176,3 @@ void registerFormSchemaReader(FormatFactory & factory)
 }
 
 }
-
-

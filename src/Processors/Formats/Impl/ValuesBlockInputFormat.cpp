@@ -572,9 +572,16 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     skipWhitespaceIfAny(*buf);
 
     if (likely(column_idx + 1 != num_columns))
+    {
         return checkChar(',', *buf);
+    }
     else
+    {
+        /// Optional trailing comma.
+        if (checkChar(',', *buf))
+            skipWhitespaceIfAny(*buf);
         return checkChar(')', *buf);
+    }
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)

@@ -9,15 +9,15 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
 
 #include <memory>
 #include <vector>
 #include <list>
+
 
 namespace DB
 {
@@ -38,7 +38,7 @@ public:
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
@@ -78,8 +78,7 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::RequestSettings request_settings;
-    const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
+    const S3::RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;

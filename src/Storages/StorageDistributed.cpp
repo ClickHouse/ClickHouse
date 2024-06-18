@@ -193,8 +193,7 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
             throw;
         }
 
-        if (num > res)
-            res = num;
+        res = std::max(num, res);
     }
 
     return res;
@@ -701,7 +700,7 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
         auto name_in_storage = Nested::splitName(required_column).first;
         auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
 
-        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumns())
+        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumnsDeprecated())
             return true;
     }
 
@@ -905,11 +904,13 @@ void StorageDistributed::read(
                 [my_custom_key_ast = std::move(custom_key_ast),
                  column_description = this->getInMemoryMetadataPtr()->columns,
                  custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+                 custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
+                 custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
                  context = local_context,
                  replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
+                    replica_count, replica_num - 1, my_custom_key_ast, {custom_key_type, custom_key_range_lower, custom_key_range_upper}, column_description, context);
             };
         }
     }
@@ -927,7 +928,8 @@ void StorageDistributed::read(
         sharding_key_expr,
         sharding_key_column_name,
         distributed_settings,
-        additional_shard_filter_generator);
+        additional_shard_filter_generator,
+        /* is_remote_function= */ static_cast<bool>(owned_cluster));
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -1986,8 +1988,17 @@ void registerStorageDistributed(StorageFactory & factory)
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
 {
-    if (!data_volume)
+    if (!storage_policy || !data_volume)
         return true;
+
+    auto new_storage_policy = getContext()->getStoragePolicy(storage_policy->getName());
+    auto new_data_volume = new_storage_policy->getVolume(0);
+    if (new_storage_policy->getVolumes().size() > 1)
+        LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
+                            "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
+
+    std::atomic_store(&storage_policy, new_storage_policy);
+    std::atomic_store(&data_volume, new_data_volume);
 
     for (auto & disk : data_volume->getDisks())
     {

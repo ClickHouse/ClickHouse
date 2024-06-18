@@ -9,7 +9,7 @@
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
 
@@ -68,12 +68,12 @@ private:
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
 
-    enum class PruneLevel
+    enum class PruneLevel : uint8_t
     {
-        None, /// Do not prune
-        Partition,
-        File,
-        Split,
+        None = 0, /// Do not prune
+        Partition = 1,
+        File = 2,
+        Split = 3,
         Max = Split,
     };
 
