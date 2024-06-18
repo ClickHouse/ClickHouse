@@ -19,9 +19,9 @@ public:
     JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8);
 
     String getName() const override { return "JSONColumnsBlockOutputFormatBase"; }
-    
-    String getContentType() const override 
-    { 
+
+    String getContentType() const override
+    {
         if (!format_settings.json.content_type.empty())
             return format_settings.json.content_type;
         return OutputFormatWithUTF8ValidationAdaptor::getContentType();
