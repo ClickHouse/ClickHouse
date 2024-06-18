@@ -625,8 +625,8 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
 
     if (!granted)
     {
-        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading since 
-        /// SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
+        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
+        /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
         if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
         {
             AccessFlags newFlags;
