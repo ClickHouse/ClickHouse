@@ -1194,7 +1194,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.to_table_id && create.to_table)
         create.to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
     if (create.to_table_id && create.to_table_id.database_name.empty())
-        create.to_table_id.database_name = current_database;
+        create.to_table_id.database_name = database_name;
 
     if (create.select && create.isView())
     {
