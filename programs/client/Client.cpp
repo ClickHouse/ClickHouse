@@ -1184,6 +1184,9 @@ void Client::processConfig()
     global_context->setQueryKindInitial();
     global_context->setQuotaClientKey(config().getString("quota_key", ""));
     global_context->setQueryKind(query_kind);
+
+    /// Allow to pass-through unknown settings to the server.
+    global_context->getAccessControl().allowAllSettings();
 }
 
 

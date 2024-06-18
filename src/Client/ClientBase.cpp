@@ -2958,7 +2958,6 @@ void ClientBase::init(int argc, char ** argv)
         boost::replace_all(arg, "−", "--");
     }
 
-
     OptionsDescription options_description;
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
 
