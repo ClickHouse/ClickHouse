@@ -13,9 +13,9 @@ struct ScopeAliases;
 struct ParamValuesAnalyzeResult
 {
     /// Param name -> resolved param value
-    NameToNameMap resolved_values;
-    /// Pram name -> alias
-    NameToNameMap unresolved_values;
+    NameToNameMap resolved_param_values;
+    /// Param name -> alias
+    NameToNameMap unresolved_param_aliases;
 };
 
 ParamValuesAnalyzeResult analyzeFunctionParamValues(const ASTPtr & ast, const ContextPtr & context, const ScopeAliases * scope_aliases = nullptr);
