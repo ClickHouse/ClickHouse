@@ -2910,6 +2910,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
 
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+            if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
+            {
+                const auto & candidate_name =  non_const_set_candidate->getFunctionName();
+                if (candidate_name == "array")
+                {
+                    function_name = "has";
+                    is_special_function_in = false;
+                    auto & function_arguments = function_node.getArguments().getNodes();
+                    std::swap(function_arguments[0], function_arguments[1]);
+                }
+            }
         }
     }
 
