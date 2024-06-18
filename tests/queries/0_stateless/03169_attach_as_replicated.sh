@@ -53,13 +53,13 @@ ${CLICKHOUSE_CLIENT} --query="SELECT engine_full FROM system.tables WHERE databa
 | grep -c "ReplicatedVersionedCollapsingMergeTree$ARGS_3 ORDER BY ID"
 echo
 
-$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE table='mt'" \
+$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE database=currentDatabase() AND table='mt'" \
 | grep -c "0"
-$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE table='replacing'" \
+$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE database=currentDatabase() AND table='replacing'" \
 | grep -c "0"
-$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE table='replacing_ver'" \
+$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE database=currentDatabase() AND table='replacing_ver'" \
 | grep -c "0"
-$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE table='collapsing_ver'" \
+$CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE database=currentDatabase() AND table='collapsing_ver'" \
 | grep -c "0"
 echo
 

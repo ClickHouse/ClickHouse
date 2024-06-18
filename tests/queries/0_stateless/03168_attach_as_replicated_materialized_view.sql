@@ -1,3 +1,4 @@
+-- Tags: zookeeper, no-replicated-database, no-ordinary-database
 CREATE TABLE hourly_data
     (domain_name String, event_time DateTime, count_views UInt64)
     ENGINE = MergeTree ORDER BY (domain_name, event_time);
