@@ -316,7 +316,9 @@ class PRInfo:
 
     @property
     def is_master(self) -> bool:
-        return self.number == 0 and self.head_ref == "master"
+        return (
+            self.number == 0 and self.head_ref == "master" and not self.is_merge_queue
+        )
 
     @property
     def is_release(self) -> bool:
@@ -324,7 +326,10 @@ class PRInfo:
 
     @property
     def is_pr(self):
-        return self.event_type == EventType.PULL_REQUEST
+        if self.event_type == EventType.PULL_REQUEST:
+            assert self.number
+            return True
+        return False
 
     @property
     def is_scheduled(self) -> bool:
@@ -352,9 +357,6 @@ class PRInfo:
     def fetch_changed_files(self):
         if self.changed_files_requested:
             return
-
-        if not getattr(self, "diff_urls", False):
-            raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
             response = get_gh_api(
