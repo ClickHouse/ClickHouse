@@ -95,6 +95,11 @@ namespace
                     as_table.database = current_database;
                 dependencies.emplace(as_table);
             }
+
+            /// Visit nested select query only for views, for other cases it's not
+            /// an actual dependency as it will be executed only once to fill the table.
+            if (create.select && !create.isView())
+                skip_asts.insert(create.select);
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
