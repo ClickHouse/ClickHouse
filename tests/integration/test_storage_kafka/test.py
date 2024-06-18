@@ -2594,14 +2594,16 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
     "create_query_generator, do_direct_read",
     [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
 )
-def test_kafka_producer_consumer_separate_settings(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_producer_consumer_separate_settings(
+    kafka_cluster, create_query_generator, do_direct_read
+):
     instance.rotate_logs()
     instance.query(
         create_query_generator(
             "test_kafka",
             "key UInt64",
             topic_list="separate_settings",
-            consumer_group="test"
+            consumer_group="test",
         )
     )
 
