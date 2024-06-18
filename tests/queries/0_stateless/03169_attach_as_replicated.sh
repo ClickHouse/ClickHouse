@@ -83,7 +83,7 @@ $CLICKHOUSE_CLIENT -n -q "
     ATTACH TABLE replacing_ver AS NOT REPLICATED;
     ATTACH TABLE collapsing_ver AS NOT REPLICATED;
 
-    SET send_logs_level = 'fatal';
+    SET send_logs_level = 'error';
     SYSTEM DROP REPLICA 'r1' FROM ZKPATH '$MT_ZK_PATH';
     SYSTEM DROP REPLICA 'r1' FROM ZKPATH '$REPLACING_ZK_PATH';
     SYSTEM DROP REPLICA 'r1' FROM ZKPATH '$REPLACING_VER_ZK_PATH';
