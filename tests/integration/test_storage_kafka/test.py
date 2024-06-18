@@ -1856,6 +1856,8 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         """
         )
 
+        instance.rotate_logs()
+
         kafka_produce(kafka_cluster, "recreate_kafka_table", messages)
 
         instance.query(create_query)
@@ -1935,15 +1937,17 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
             instance.query(
                 """{create_query};
 
-                CREATE MATERIALIZED VIEW test.consumer Engine=Log AS
+                CREATE TABLE test.view (key UInt64, value String)
+                    ENGINE = MergeTree()
+                    ORDER BY key;
+
+                CREATE MATERIALIZED VIEW test.consumer TO test.view AS
                     SELECT * FROM test.kafka;
             """.format(
                     create_query=create_query_generator(
                         "kafka",
                         "key UInt64, value String",
                         topic_list=topic_name,
-                        # brokers="kafka1:19092",
-                        # consumer_group=f"{topic_name}_group",
                         format="JSONEachRow",
                         settings={"kafka_flush_interval_ms": 1000},
                     ),
@@ -1955,12 +1959,12 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
             instance.wait_for_log_line(
                 log_line.format(offset=number_of_messages, topic=topic_name)
             )
-
-            result = instance.query("SELECT * FROM test.consumer")
+            result = instance.query("SELECT * FROM test.view")
             assert TSV(result) == TSV(expected)
 
             instance.query("DROP TABLE test.kafka SYNC")
             instance.query("DROP TABLE test.consumer SYNC")
+            instance.query("DROP TABLE test.view SYNC")
 
 
 @pytest.mark.parametrize(
@@ -2586,22 +2590,23 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
             instance.rotate_logs()
 
 
-# TODO(antaljanosbenjamin)
-def test_kafka_producer_consumer_separate_settings(kafka_cluster):
+@pytest.mark.parametrize(
+    "create_query_generator, do_direct_read",
+    [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
+)
+def test_kafka_producer_consumer_separate_settings(kafka_cluster, create_query_generator, do_direct_read):
+    instance.rotate_logs()
     instance.query(
-        """
-        DROP TABLE IF EXISTS test.test_kafka;
-        CREATE TABLE test.test_kafka (key UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'separate_settings',
-                     kafka_group_name = 'test',
-                     kafka_format = 'JSONEachRow',
-                     kafka_row_delimiter = '\\n';
-        """
+        create_query_generator(
+            "test_kafka",
+            "key UInt64",
+            topic_list="separate_settings",
+            consumer_group="test"
+        )
     )
 
-    instance.query("SELECT * FROM test.test_kafka")
+    if do_direct_read:
+        instance.query("SELECT * FROM test.test_kafka")
     instance.query("INSERT INTO test.test_kafka VALUES (1)")
 
     assert instance.contains_in_log("Kafka producer created")
@@ -2616,11 +2621,11 @@ def test_kafka_producer_consumer_separate_settings(kafka_cluster):
         # and producer configurations
         assert "heartbeat.interval.ms" in warn
 
-    kafka_consumer_applyed_properties = instance.grep_in_log("Consumer set property")
-    kafka_producer_applyed_properties = instance.grep_in_log("Producer set property")
+    kafka_consumer_applied_properties = instance.grep_in_log("Consumer set property")
+    kafka_producer_applied_properties = instance.grep_in_log("Producer set property")
 
-    assert kafka_consumer_applyed_properties is not None
-    assert kafka_producer_applyed_properties is not None
+    assert kafka_consumer_applied_properties is not None
+    assert kafka_producer_applied_properties is not None
 
     # global settings should be applied for consumer and producer
     global_settings = {
@@ -2630,38 +2635,38 @@ def test_kafka_producer_consumer_separate_settings(kafka_cluster):
 
     for name, value in global_settings.items():
         property_in_log = f"{name}:{value}"
-        assert property_in_log in kafka_consumer_applyed_properties
-        assert property_in_log in kafka_producer_applyed_properties
+        assert property_in_log in kafka_consumer_applied_properties
+        assert property_in_log in kafka_producer_applied_properties
 
     settings_topic__separate_settings__consumer = {"session.timeout.ms": "6001"}
 
     for name, value in settings_topic__separate_settings__consumer.items():
         property_in_log = f"{name}:{value}"
-        assert property_in_log in kafka_consumer_applyed_properties
-        assert property_in_log not in kafka_producer_applyed_properties
+        assert property_in_log in kafka_consumer_applied_properties
+        assert property_in_log not in kafka_producer_applied_properties
 
     producer_settings = {"transaction.timeout.ms": "60001"}
 
     for name, value in producer_settings.items():
         property_in_log = f"{name}:{value}"
-        assert property_in_log not in kafka_consumer_applyed_properties
-        assert property_in_log in kafka_producer_applyed_properties
+        assert property_in_log not in kafka_consumer_applied_properties
+        assert property_in_log in kafka_producer_applied_properties
 
     # Should be ignored, because it is inside producer tag
     producer_legacy_syntax__topic_separate_settings = {"message.timeout.ms": "300001"}
 
     for name, value in producer_legacy_syntax__topic_separate_settings.items():
         property_in_log = f"{name}:{value}"
-        assert property_in_log not in kafka_consumer_applyed_properties
-        assert property_in_log not in kafka_producer_applyed_properties
+        assert property_in_log not in kafka_consumer_applied_properties
+        assert property_in_log not in kafka_producer_applied_properties
 
     # Old syntax, applied on consumer and producer
     legacy_syntax__topic_separated_settings = {"heartbeat.interval.ms": "302"}
 
     for name, value in legacy_syntax__topic_separated_settings.items():
         property_in_log = f"{name}:{value}"
-        assert property_in_log in kafka_consumer_applyed_properties
-        assert property_in_log in kafka_producer_applyed_properties
+        assert property_in_log in kafka_consumer_applied_properties
+        assert property_in_log in kafka_producer_applied_properties
 
 
 @pytest.mark.parametrize(
@@ -4324,7 +4329,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
     "create_query_generator",
     [
         generate_old_create_table_query,
-        # generate_new_create_table_query TODO(antaljanosbenjamin): crashes CH
+        generate_new_create_table_query,
     ],
 )
 def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
@@ -4823,6 +4828,7 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
         logging.debug("Checking {format_name}")
 
         topic_name = format_name + get_topic_postfix(create_query_generator)
+        table_name = f"kafka_{format_name}"
 
         with kafka_topic(admin_client, topic_name):
             num_rows = 10
@@ -4830,7 +4836,7 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
             message_count = num_rows / max_rows_per_message
 
             create_query = create_query_generator(
-                "kafka",
+                table_name,
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
@@ -4841,14 +4847,14 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
             instance.query(
                 f"""
                 DROP TABLE IF EXISTS test.view;
-                DROP TABLE IF EXISTS test.kafka;
+                DROP TABLE IF EXISTS test.{table_name};
 
                 {create_query};
 
                 CREATE MATERIALIZED VIEW test.view Engine=Log AS
-                    SELECT key, value FROM test.kafka;
+                    SELECT key, value FROM test.{table_name};
 
-                INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
+                INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
             """
             )
 
@@ -4934,9 +4940,11 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
         "JSONCompactColumns",
     ]:
         topic_name = format_name + get_topic_postfix(create_query_generator)
+        table_name = f"kafka_{format_name}"
+        logging.debug(f"Checking format {format_name}")
         with kafka_topic(admin_client, topic_name):
             create_query = create_query_generator(
-                "kafka",
+                table_name,
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
@@ -4946,14 +4954,14 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
             instance.query(
                 f"""
                 DROP TABLE IF EXISTS test.view;
-                DROP TABLE IF EXISTS test.kafka;
+                DROP TABLE IF EXISTS test.{table_name};
 
                 {create_query};
 
                 CREATE MATERIALIZED VIEW test.view Engine=Log AS
-                    SELECT key, value FROM test.kafka;
+                    SELECT key, value FROM test.{table_name};
 
-                INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
+                INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
             """
             )
             messages = kafka_consume_with_retry(
