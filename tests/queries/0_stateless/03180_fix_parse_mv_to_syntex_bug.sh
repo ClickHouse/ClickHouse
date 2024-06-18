@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 url="${CLICKHOUSE_URL}&param_target=mv_target&param_src=mv_src&param_mv_name=mv&param_mv_db_name=test_db"
-CLICKHOUSE_CLIENT="$1"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv_target"
