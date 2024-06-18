@@ -31,7 +31,7 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
-    set_source_files_properties(${DBMS_FUNCTIONS} PROPERTIES COMPILE_FLAGS "-g0")
+    set_source_files_properties(${DBMS_FUNCTIONS} DIRECTORY .. PROPERTIES COMPILE_FLAGS "-g0")
 endif()
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)

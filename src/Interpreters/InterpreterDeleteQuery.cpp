@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -107,7 +108,19 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
+        /// Currently just better exception for the case of a table with projection,
+        /// can act differently according to the setting.
+        if (table->hasProjection())
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE query is not supported for table {} as it has projections. "
+                "User should drop all the projections manually before running the query",
+                table->getStorageID().getFullTableName());
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "DELETE query is not supported for table {}",
+            table->getStorageID().getFullTableName());
     }
 }
 

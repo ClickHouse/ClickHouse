@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -n --query "
 
     CREATE TABLE load_parts_refcounts (id UInt32)
     ENGINE = ReplicatedMergeTree('/test/02482_load_parts_refcounts/{database}/{table}', '1')
-    ORDER BY id;
+    ORDER BY id SETTINGS old_parts_lifetime=100500;
 
     SYSTEM STOP MERGES load_parts_refcounts;
 

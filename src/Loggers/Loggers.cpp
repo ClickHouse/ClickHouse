@@ -263,7 +263,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
     }
 #ifndef WITHOUT_TEXT_LOG
-    if (config.has("text_log"))
+    if (allowTextLog() && config.has("text_log"))
     {
         String text_log_level_str = config.getString("text_log.level", "trace");
         int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
