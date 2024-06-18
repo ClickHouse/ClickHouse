@@ -694,7 +694,7 @@ void Session::recordLoginSucess(ContextPtr login_context) const
         session_log->addLoginSuccess(auth_id,
                                      named_session ? named_session->key.second : "",
                                      settings,
-                                     access,
+                                     access->getAccess(),
                                      getClientInfo(),
                                      user);
     }
