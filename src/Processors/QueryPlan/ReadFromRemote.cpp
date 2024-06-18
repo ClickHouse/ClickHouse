@@ -387,8 +387,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> description;
-    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
+    std::vector<String> replicas;
+    replicas.reserve(cluster->getShardsAddresses().front().size());
 
     bool first_local = false;
     for (const auto & addr : cluster->getShardsAddresses().front())
@@ -400,10 +400,16 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
             continue;
         }
 
-        description.push_back(fmt::format("Replica: {}", addr.host_name));
+        /// replace hostname with replica name if the hostname started with replica namespace,
+        /// it makes description shorter and more readable
+        if (!addr.database_replica_name.empty() && addr.host_name.starts_with(addr.database_replica_name))
+            replicas.push_back(fmt::format("{}", addr.database_replica_name));
+        else
+            replicas.push_back(fmt::format("{}", addr.host_name));
     }
 
-    setStepDescription(boost::algorithm::join(description, ", "));
+    auto description = fmt::format("Query: {} Replicas: ", formattedAST(query_ast)) + boost::algorithm::join(replicas, ", ");
+    setStepDescription(std::move(description));
 }
 
 void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
