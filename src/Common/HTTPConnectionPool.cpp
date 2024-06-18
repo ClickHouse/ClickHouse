@@ -383,16 +383,15 @@ private:
             auto idle = idleTime();
 
             // Reset data hooks for IO scheduling
-            if (ResourceLink link = CurrentThread::getReadResourceLink()) {
+            if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIORead(), link));
-            } else {
+            else
                 Session::setReceiveDataHooks();
-            }
-            if (ResourceLink link = CurrentThread::getWriteResourceLink()) {
+
+            if (ResourceLink link = CurrentThread::getWriteResourceLink())
                 Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIOWrite(), link));
-            } else {
+            else
                 Session::setSendDataHooks();
-            }
 
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
