@@ -68,7 +68,7 @@ void ErrorLog::shutdown()
 void ErrorLog::threadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
-    std::vector<PreviousValue> previous_values(ErrorCodes::end());
+    std::vector<ValuePair> previous_values(ErrorCodes::end());
 
     while (!is_shutdown_error_thread)
     {

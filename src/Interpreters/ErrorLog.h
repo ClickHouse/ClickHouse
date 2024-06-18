@@ -45,7 +45,7 @@ public:
     void stopCollect();
 
 private:
-    struct PreviousValue {
+    struct ValuePair {
         UInt64 local = 0;
         UInt64 remote = 0;
     };
