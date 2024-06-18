@@ -545,7 +545,7 @@ class CI:
         return None
 
     @classmethod
-    def get_job_ci_stage(cls, job_name: str) -> str:
+    def get_job_ci_stage(cls, job_name: str, non_blocking_ci: bool = False) -> str:
         if job_name in [
             JobNames.STYLE_CHECK,
             JobNames.FAST_TEST,
@@ -572,6 +572,8 @@ class CI:
                 else:
                     stage_type = WorkflowStages.TESTS_3
         assert stage_type, f"BUG [{job_name}]"
+        if non_blocking_ci and stage_type == WorkflowStages.TESTS_3:
+            stage_type = WorkflowStages.TESTS_2
         return stage_type
 
     @classmethod
