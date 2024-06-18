@@ -235,7 +235,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 #if USE_AWS_S3
             try
             {
-                if (auto s3_client = disk->getS3StorageClient())
+                if (auto s3_client = disk->tryGetS3StorageClient())
                 {
                     if (auto put_throttler = s3_client->getPutRequestThrottler())
                     {
