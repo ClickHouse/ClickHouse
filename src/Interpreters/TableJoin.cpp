@@ -470,7 +470,7 @@ static ActionsDAGPtr createWrapWithTupleActions(
     if (column_names_to_wrap.empty())
         return nullptr;
 
-    auto actions_dag = std::make_shared<ActionsDAG>(source_columns);
+    auto actions_dag = std::make_unique<ActionsDAG>(source_columns);
 
     FunctionOverloadResolverPtr func_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
 
@@ -616,7 +616,7 @@ TableJoin::createConvertingActions(
         mergeDags(right_dag, std::move(new_right_dag));
     }
 
-    return {left_dag, right_dag};
+    return {std::move(left_dag), std::move(right_dag)};
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>

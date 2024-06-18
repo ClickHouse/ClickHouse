@@ -432,7 +432,7 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
+                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings),
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
@@ -442,7 +442,7 @@ void StorageBuffer::read(
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
+                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions->clone(), actions_settings),
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });

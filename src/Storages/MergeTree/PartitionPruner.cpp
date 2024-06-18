@@ -4,7 +4,7 @@
 namespace DB
 {
 
-PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAGPtr filter_actions_dag, ContextPtr context, bool strict)
+PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const ActionsDAG * filter_actions_dag, ContextPtr context, bool strict)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
     , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())

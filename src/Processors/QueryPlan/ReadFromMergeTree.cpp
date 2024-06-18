@@ -174,7 +174,7 @@ static void updateSortDescriptionForOutputStream(
     {
         if (prewhere_info->prewhere_actions)
         {
-            FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
+            FindOriginalNodeForOutputName original_column_finder(*prewhere_info->prewhere_actions);
             for (auto & column : original_header)
             {
                 const auto * original_node = original_column_finder.find(column.name);
@@ -185,7 +185,7 @@ static void updateSortDescriptionForOutputStream(
 
         if (prewhere_info->row_level_filter)
         {
-            FindOriginalNodeForOutputName original_column_finder(prewhere_info->row_level_filter);
+            FindOriginalNodeForOutputName original_column_finder(*prewhere_info->row_level_filter);
             for (auto & column : original_header)
             {
                 const auto * original_node = original_column_finder.find(column.name);
@@ -830,10 +830,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
             pipes[0].getHeader().getColumnsWithTypeAndName(),
             pipes[1].getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
+        auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
         pipes[0].addSimpleTransform(
-            [conversion_action](const Block & header)
+            [converting_expr](const Block & header)
             {
-                auto converting_expr = std::make_shared<ExpressionActions>(conversion_action);
                 return std::make_shared<ExpressionTransform>(header, converting_expr);
             });
         return Pipe::unitePipes(std::move(pipes));
@@ -849,7 +849,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
 static ActionsDAGPtr createProjection(const Block & header)
 {
-    return std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
+    return std::make_unique<ActionsDAG>(header.getNamesAndTypesList());
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
@@ -1046,7 +1046,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         for (size_t j = 0; j < prefix_size; ++j)
             sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
 
-        auto sorting_key_expr = std::make_shared<ExpressionActions>(sorting_key_prefix_expr);
+        auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
         auto merge_streams = [&](Pipe & pipe)
         {
@@ -1341,10 +1341,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             pipes[0].getHeader().getColumnsWithTypeAndName(),
             pipes[1].getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
+        auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
         pipes[0].addSimpleTransform(
-            [conversion_action](const Block & header)
+            [converting_expr](const Block & header)
             {
-                auto converting_expr = std::make_shared<ExpressionActions>(conversion_action);
                 return std::make_shared<ExpressionTransform>(header, converting_expr);
             });
         return Pipe::unitePipes(std::move(pipes));
@@ -1378,7 +1378,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
 static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
-    ActionsDAGPtr filter_actions_dag,
+    const ActionsDAG * filter_actions_dag,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
     const ContextPtr & context,
@@ -1518,11 +1518,11 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
-        query_info.filter_actions_dag = filter_actions_dag;
+        query_info.filter_actions_dag = std::move(filter_actions_dag);
 
         buildIndexes(
             indexes,
-            filter_actions_dag,
+            query_info.filter_actions_dag.get(),
             data,
             prepared_parts,
             context,
@@ -1564,7 +1564,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & primary_key_column_names = primary_key.column_names;
 
     if (!indexes)
-        buildIndexes(indexes, query_info_.filter_actions_dag, data, parts, context_, query_info_, metadata_snapshot);
+        buildIndexes(indexes, query_info_.filter_actions_dag.get(), data, parts, context_, query_info_, metadata_snapshot);
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -1993,7 +1993,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (result.sampling.use_sampling)
     {
-        auto sampling_actions = std::make_shared<ExpressionActions>(result.sampling.filter_expression);
+        auto sampling_actions = std::make_shared<ExpressionActions>(result.sampling.filter_expression->clone());
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<FilterTransform>(
@@ -2031,7 +2031,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (result_projection)
     {
-        auto projection_actions = std::make_shared<ExpressionActions>(result_projection);
+        auto projection_actions = std::make_shared<ExpressionActions>(result_projection->clone());
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, projection_actions);
@@ -2048,7 +2048,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             ActionsDAG::MatchColumnsMode::Name,
             true);
 
-        auto converting_dag_expr = std::make_shared<ExpressionActions>(convert_actions_dag);
+        auto converting_dag_expr = std::make_shared<ExpressionActions>(std::move(convert_actions_dag));
 
         pipe.addSimpleTransform([&](const Block & header)
         {
@@ -2126,7 +2126,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
                format_settings.out << " (removed)";
             format_settings.out << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->clone());
             expression->describeActions(format_settings.out, prefix);
         }
 
@@ -2135,7 +2135,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
             format_settings.out << prefix << "Row level filter" << '\n';
             format_settings.out << prefix << "Row level filter column: " << prewhere_info->row_level_column_name << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter);
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone());
             expression->describeActions(format_settings.out, prefix);
         }
     }
@@ -2161,7 +2161,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
             std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);
             prewhere_filter_map->add("Prewhere filter remove filter column", prewhere_info->remove_prewhere_column);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->clone());
             prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
 
             prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));
@@ -2171,7 +2171,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         {
             std::unique_ptr<JSONBuilder::JSONMap> row_level_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             row_level_filter_map->add("Row level filter column", prewhere_info->row_level_column_name);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter);
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone());
             row_level_filter_map->add("Row level filter expression", expression->toTree());
 
             prewhere_info_map->add("Row level filter", std::move(row_level_filter_map));

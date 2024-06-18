@@ -12,7 +12,7 @@ namespace DB
 {
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 class IExecutableFunction;
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
@@ -262,6 +262,7 @@ public:
 #endif
 
     ActionsDAGPtr clone() const;
+    ActionsDAGPtr clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
 
     static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
 
@@ -480,11 +481,11 @@ class FindOriginalNodeForOutputName
     using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 
 public:
-    explicit FindOriginalNodeForOutputName(const ActionsDAGPtr & actions);
+    explicit FindOriginalNodeForOutputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & output_name);
 
 private:
-    ActionsDAGPtr actions;
+    //const ActionsDAG & actions;
     NameToNodeIndex index;
 };
 
@@ -493,11 +494,11 @@ class FindAliasForInputName
     using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 
 public:
-    explicit FindAliasForInputName(const ActionsDAGPtr & actions);
+    explicit FindAliasForInputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & name);
 
 private:
-    ActionsDAGPtr actions;
+    //const ActionsDAG & actions;
     NameToNodeIndex index;
 };
 

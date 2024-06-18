@@ -33,6 +33,7 @@ public:
     }
 
     const ActionsDAGPtr & getFilterActionsDAG() const { return filter_actions_dag; }
+    ActionsDAGPtr detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
@@ -53,7 +54,7 @@ public:
     void applyFilters()
     {
         applyFilters(std::move(filter_nodes));
-        filter_dags = {};
+        filter_dags.clear();
     }
 
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);

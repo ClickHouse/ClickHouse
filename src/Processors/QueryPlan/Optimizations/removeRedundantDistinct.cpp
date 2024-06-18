@@ -65,7 +65,7 @@ namespace
     }
 
     /// build actions DAG from stack of steps
-    ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_stack)
+    ActionsDAGPtr buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
     {
         if (dag_stack.empty())
             return nullptr;
@@ -83,7 +83,7 @@ namespace
     }
 
     bool compareAggregationKeysWithDistinctColumns(
-        const Names & aggregation_keys, const DistinctColumns & distinct_columns, std::vector<std::vector<ActionsDAGPtr>> actions_chain)
+        const Names & aggregation_keys, const DistinctColumns & distinct_columns, std::vector<std::vector<const ActionsDAG *>> actions_chain)
     {
         logDebug("aggregation_keys", aggregation_keys);
         logDebug("aggregation_keys size", aggregation_keys.size());
@@ -93,7 +93,8 @@ namespace
         std::set<String> source_columns;
         for (auto & actions : actions_chain)
         {
-            FindOriginalNodeForOutputName original_node_finder(buildActionsForPlanPath(actions));
+            auto tmp_actions = buildActionsForPlanPath(actions);
+            FindOriginalNodeForOutputName original_node_finder(*tmp_actions);
             for (const auto & column : current_columns)
             {
                 logDebug("distinct column name", column);
@@ -152,8 +153,8 @@ namespace
         const DistinctStep * distinct_step = typeid_cast<DistinctStep *>(distinct_node->step.get());
         chassert(distinct_step);
 
-        std::vector<ActionsDAGPtr> dag_stack;
-        std::vector<std::vector<ActionsDAGPtr>> actions_chain;
+        std::vector<const ActionsDAG *> dag_stack;
+        std::vector<std::vector<const ActionsDAG *>> actions_chain;
         const DistinctStep * inner_distinct_step = nullptr;
         const IQueryPlanStep * aggregation_before_distinct = nullptr;
         const QueryPlan::Node * node = distinct_node;
@@ -182,9 +183,9 @@ namespace
             }
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
-                dag_stack.push_back(expr->getExpression());
+                dag_stack.push_back(expr->getExpression().get());
             else if (const auto * const filter = typeid_cast<const FilterStep *>(current_step); filter)
-                dag_stack.push_back(filter->getExpression());
+                dag_stack.push_back(filter->getExpression().get());
 
             node = node->children.front();
             if (inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get()); inner_distinct_step)
@@ -222,7 +223,7 @@ namespace
         chassert(distinct_step);
         const auto distinct_columns = getDistinctColumns(distinct_step);
 
-        std::vector<ActionsDAGPtr> dag_stack;
+        std::vector<const ActionsDAG *> dag_stack;
         const DistinctStep * inner_distinct_step = nullptr;
         const QueryPlan::Node * node = distinct_node;
         while (!node->children.empty())
@@ -235,9 +236,9 @@ namespace
             }
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
-                dag_stack.push_back(expr->getExpression());
+                dag_stack.push_back(expr->getExpression().get());
             else if (const auto * const filter = typeid_cast<const FilterStep *>(current_step); filter)
-                dag_stack.push_back(filter->getExpression());
+                dag_stack.push_back(filter->getExpression().get());
 
             node = node->children.front();
             inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get());
@@ -267,7 +268,7 @@ namespace
             logActionsDAG("distinct pass: merged DAG", path_actions);
 
             /// compare columns of two DISTINCTs
-            FindOriginalNodeForOutputName original_node_finder(path_actions);
+            FindOriginalNodeForOutputName original_node_finder(*path_actions);
             for (const auto & column : distinct_columns)
             {
                 const auto * alias_node = original_node_finder.find(String(column));

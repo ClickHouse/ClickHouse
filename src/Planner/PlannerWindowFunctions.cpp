@@ -120,7 +120,7 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
     return result;
 }
 
-void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions)
+std::vector<size_t> sortWindowDescriptions(const std::vector<WindowDescription> & window_descriptions)
 {
     auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs)
     {
@@ -151,7 +151,16 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
         return left.size() > right.size();
     };
 
-    ::sort(window_descriptions.begin(), window_descriptions.end(), window_description_comparator);
+    auto comparator = [&](size_t lhs, size_t rhs)
+    {
+        return window_description_comparator(window_descriptions[lhs], window_descriptions[rhs]);
+    };
+
+    std::vector<size_t> perm(window_descriptions.size());
+    std::iota(perm.begin(), perm.end(), 0U);
+    ::sort(perm.begin(), perm.end(), comparator);
+
+    return perm;
 }
 
 }

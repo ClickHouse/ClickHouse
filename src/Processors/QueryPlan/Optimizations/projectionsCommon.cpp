@@ -213,7 +213,7 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionsDAGPtr & dag)
+    const ActionsDAG * dag)
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
@@ -238,7 +238,7 @@ bool analyzeProjectionCandidate(
 
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
-    projection_query_info.filter_actions_dag = dag;
+    projection_query_info.filter_actions_dag = dag->clone();
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),

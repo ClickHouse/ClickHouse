@@ -187,7 +187,7 @@ public:
 
     void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
     {
-        setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
+        setKeyConditionImpl(filter_actions_dag.get(), context_, block_for_format);
     }
 
     Chunk generate() override;

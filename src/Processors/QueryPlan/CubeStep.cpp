@@ -36,7 +36,7 @@ CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_,
 
 ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
-    auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+    auto dag = std::make_unique<ActionsDAG>(header.getColumnsWithTypeAndName());
     auto & outputs = dag->getOutputs();
 
     if (use_nulls)
@@ -59,7 +59,7 @@ ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, b
     grouping_node = &dag->materializeNode(*grouping_node);
     outputs.insert(outputs.begin(), grouping_node);
 
-    auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
     return std::make_shared<ExpressionTransform>(header, expression);
 }
 

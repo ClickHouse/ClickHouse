@@ -1302,7 +1302,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             result_columns, ActionsDAG::MatchColumnsMode::Position, true);
         ActionsDAGPtr merge_dag = ActionsDAG::merge(std::move(*actions->clone()), std::move(*conv_dag));
 
-        interpolate_descr = std::make_shared<InterpolateDescription>(merge_dag, aliases);
+        interpolate_descr = std::make_shared<InterpolateDescription>(std::move(merge_dag), aliases);
     }
 
     return interpolate_descr;
@@ -2042,7 +2042,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(header,
-                    std::make_shared<ExpressionActions>(prewhere_info.row_level_filter),
+                    std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->clone()),
                     prewhere_info.row_level_column_name, true);
             });
         }
@@ -2050,7 +2050,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions),
+                header, std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions->clone()),
                 prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
         });
     }
@@ -2094,8 +2094,8 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
         if (does_storage_support_prewhere && shouldMoveToPrewhere())
         {
             /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-            analysis.prewhere_info = std::make_shared<PrewhereInfo>(analysis.filter_info->actions, analysis.filter_info->column_name);
-            analysis.prewhere_info->remove_prewhere_column = analysis.filter_info->do_remove_column;
+            analysis.prewhere_info = std::make_shared<PrewhereInfo>(std::move(analysis.filter_info->actions), analysis.filter_info->column_name);
+            analysis.prewhere_info->remove_prewhere_column = std::move(analysis.filter_info->do_remove_column);
             analysis.prewhere_info->need_filter = true;
             analysis.filter_info = nullptr;
         }
@@ -2103,8 +2103,8 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
     else
     {
         /// Add row level security actions to prewhere.
-        analysis.prewhere_info->row_level_filter = analysis.filter_info->actions;
-        analysis.prewhere_info->row_level_column_name = analysis.filter_info->column_name;
+        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
+        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
         analysis.filter_info = nullptr;
     }
 }

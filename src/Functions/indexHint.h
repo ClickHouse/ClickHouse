@@ -2,13 +2,11 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
 {
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** The `indexHint` function takes any number of any arguments and always returns one.
   *

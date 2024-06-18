@@ -73,7 +73,25 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    return std::make_shared<ExpressionActions>(*this);
+    auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
+
+    std::unordered_map<const Node *, Node *> copy_map;
+    copy->actions_dag = actions_dag->clone(copy_map);
+    copy->actions = actions;
+    for (auto & action : copy->actions)
+        action.node = copy_map[action.node];
+
+    copy->num_columns = num_columns;
+
+    copy->required_columns = required_columns;
+    copy->input_positions = input_positions;
+    copy->result_positions = result_positions;
+    copy->sample_block = sample_block;
+
+    copy->project_inputs = project_inputs;
+    copy->settings = settings;
+
+    return copy;
 }
 
 namespace

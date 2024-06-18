@@ -658,7 +658,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
+            auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
             desc.partition_by_actions.push_back(std::move(actions_dag));
         }
@@ -679,7 +679,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     order_by_element.direction,
                     order_by_element.nulls_direction));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
+            auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
@@ -823,13 +823,14 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             makeWindowDescriptionFromAST(*current_context, window_descriptions,
                 desc, &definition);
 
+            auto full_sort_description = desc.full_sort_description;
+
             auto [it, inserted] = window_descriptions.insert(
-                {default_window_name, desc});
+                {default_window_name, std::move(desc)});
 
             if (!inserted)
             {
-                assert(it->second.full_sort_description
-                    == desc.full_sort_description);
+                assert(it->second.full_sort_description == full_sort_description);
             }
 
             it->second.window_functions.push_back(window_function);
@@ -1353,10 +1354,10 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     {
         for (auto & child : asts)
         {
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_unique<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, *actions_dag);
             group_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
+                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
         }
     }
 
@@ -1606,10 +1607,10 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
     {
         for (const auto & child : select_query->orderBy()->children)
         {
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_unique<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, *actions_dag);
             order_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
+                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
         }
     }
 
@@ -1799,7 +1800,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool remov
 
 ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
 {
-    auto actions = std::make_shared<ActionsDAG>(constant_inputs);
+    auto actions = std::make_unique<ActionsDAG>(constant_inputs);
     getRootActions(query, true /* no_makeset_for_subqueries */, *actions, true /* only_consts */);
     return actions;
 }
@@ -1807,7 +1808,7 @@ ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndNam
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
 {
     auto actions = getConstActionsDAG(constant_inputs);
-    return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
+    return std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings::fromContext(getContext()));
 }
 
 std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
@@ -1878,7 +1879,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (prewhere_dag_and_flags)
         {
-            auto dag = std::make_shared<ActionsDAG>(std::move(prewhere_dag_and_flags->dag));
+            auto dag = std::make_unique<ActionsDAG>(std::move(prewhere_dag_and_flags->dag));
             prewhere_info = std::make_shared<PrewhereInfo>(std::move(dag), query.prewhere()->getColumnName());
             prewhere_dag_and_flags.reset();
         }
@@ -1945,7 +1946,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 {
                     auto dag = prewhere_dag_and_flags->dag.clone();
                     ExpressionActions(
-                        dag,
+                        std::move(dag),
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.

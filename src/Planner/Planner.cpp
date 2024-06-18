@@ -213,7 +213,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = read_from_dummy->getFilterActionsDAG();
+        auto filter_actions = read_from_dummy->detachFilterActionsDAG();
         const auto & table_node = dummy_storage_to_table.at(&read_from_dummy->getStorage());
         res[table_node] = FiltersForTableExpression{std::move(filter_actions), read_from_dummy->getPrewhereInfo()};
     }
@@ -331,13 +331,13 @@ public:
 void addExpressionStep(QueryPlan & query_plan,
     const ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
-    std::vector<ActionsDAGPtr> & result_actions_to_execute)
+    std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
     auto actions = expression_actions->dag.clone();
     if (expression_actions->project_input)
         actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-    result_actions_to_execute.push_back(actions);
+    result_actions_to_execute.push_back(actions.get());
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions);
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
@@ -346,13 +346,13 @@ void addExpressionStep(QueryPlan & query_plan,
 void addFilterStep(QueryPlan & query_plan,
     const FilterAnalysisResult & filter_analysis_result,
     const std::string & step_description,
-    std::vector<ActionsDAGPtr> & result_actions_to_execute)
+    std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
     auto actions = filter_analysis_result.filter_actions->dag.clone();
     if (filter_analysis_result.filter_actions->project_input)
         actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-    result_actions_to_execute.push_back(actions);
+    result_actions_to_execute.push_back(actions.get());
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
         actions,
         filter_analysis_result.filter_column_name,
@@ -544,7 +544,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node,
-    std::vector<ActionsDAGPtr> & result_actions_to_execute)
+    std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -560,7 +560,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-        result_actions_to_execute.push_back(actions);
+        result_actions_to_execute.push_back(actions.get());
     }
 
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
@@ -714,7 +714,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
     if (query_node.hasInterpolate())
     {
-        auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
+        auto interpolate_actions_dag = std::make_unique<ActionsDAG>();
         auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
@@ -885,7 +885,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     const PlannerQueryProcessingInfo & query_processing_info,
     const QueryTreeNodePtr & query_tree,
-    std::vector<ActionsDAGPtr> & result_actions_to_execute)
+    std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
     const auto & query_node = query_tree->as<QueryNode &>();
 
@@ -932,14 +932,14 @@ void addWindowSteps(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    auto window_descriptions = window_analysis_result.window_descriptions;
-    sortWindowDescriptions(window_descriptions);
+    const auto & window_descriptions = window_analysis_result.window_descriptions;
+    auto perm = sortWindowDescriptions(window_descriptions);
 
     size_t window_descriptions_size = window_descriptions.size();
 
     for (size_t i = 0; i < window_descriptions_size; ++i)
     {
-        const auto & window_description = window_descriptions[i];
+        const auto & window_description = window_descriptions[perm[i]];
 
         /** We don't need to sort again if the input from previous window already
           * has suitable sorting. Also don't create sort steps when there are no
@@ -952,8 +952,9 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
-                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+            auto prev = perm[i - 1];
+            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[prev].full_sort_description)
+                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[prev].partition_by.size());
         }
         if (need_sort)
         {
@@ -1054,9 +1055,9 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     }
 }
 
-void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
+void collectSetsFromActionsDAG(const ActionsDAG & dag, std::unordered_set<const FutureSet *> & useful_sets)
 {
-    for (const auto & node : dag->getNodes())
+    for (const auto & node : dag.getNodes())
     {
         if (node.column)
         {
@@ -1075,7 +1076,7 @@ void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<con
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                    collectSetsFromActionsDAG(*index_hint->getActions(), useful_sets);
                 }
             }
         }
@@ -1086,13 +1087,13 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     const PlannerContextPtr & planner_context,
-    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+    const std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
     auto subqueries = planner_context->getPreparedSets().getSubqueries();
     std::unordered_set<const FutureSet *> useful_sets;
 
-    for (const auto & actions_to_execute : result_actions_to_execute)
-        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
+    for (const auto * actions_to_execute : result_actions_to_execute)
+        collectSetsFromActionsDAG(*actions_to_execute, useful_sets);
 
     auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.get()); };
     auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
@@ -1448,7 +1449,7 @@ void Planner::buildPlanForQueryNode()
             if (it != table_filters.end())
             {
                 const auto & filters = it->second;
-                table_expression_data.setFilterActions(filters.filter_actions);
+                table_expression_data.setFilterActions(filters.filter_actions->clone());
                 table_expression_data.setPrewhereInfo(filters.prewhere_info);
             }
         }
@@ -1539,15 +1540,15 @@ void Planner::buildPlanForQueryNode()
         planner_context,
         query_processing_info);
 
-    std::vector<ActionsDAGPtr> result_actions_to_execute = std::move(join_tree_query_plan.actions_dags);
+    std::vector<const ActionsDAG *> result_actions_to_execute = std::move(join_tree_query_plan.actions_dags);
 
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         if (table_expression_data.getPrewhereFilterActions())
-            result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+            result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions().get());
 
         if (table_expression_data.getRowLevelFilterActions())
-            result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
+            result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions().get());
     }
 
     if (query_processing_info.isIntermediateStage())

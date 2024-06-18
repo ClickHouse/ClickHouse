@@ -30,13 +30,13 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
         getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
-    , actions_dag(actions_dag_)
+    , actions_dag(actions_dag_->clone())
 {
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone(), settings.getActionsSettings());
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -49,7 +49,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -61,13 +61,13 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, settings.indent_char);
-    auto expression = std::make_shared<ExpressionActions>(actions_dag);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
     expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
     map.add("Expression", expression->toTree());
 }
 
@@ -79,7 +79,7 @@ void ExpressionStep::updateOutputStream()
     if (!getDataStreamTraits().preserves_sorting)
         return;
 
-    FindAliasForInputName alias_finder(actions_dag);
+    FindAliasForInputName alias_finder(*actions_dag);
     const auto & input_sort_description = getInputStreams().front().sort_description;
     for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
     {

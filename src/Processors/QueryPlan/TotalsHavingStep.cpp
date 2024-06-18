@@ -46,7 +46,7 @@ TotalsHavingStep::TotalsHavingStep(
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
-    , actions_dag(actions_dag_)
+    , actions_dag(actions_dag_->clone())
     , filter_column_name(filter_column_)
     , remove_filter(remove_filter_)
     , totals_mode(totals_mode_)
@@ -57,7 +57,7 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr;
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag->clone(), settings.getActionsSettings()) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
@@ -100,7 +100,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(actions_dag);
+        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
         for (const auto & action : expression->getActions())
         {
             settings.out << prefix << (first ? "Actions: "
@@ -117,7 +117,7 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
-        auto expression = std::make_shared<ExpressionActions>(actions_dag);
+        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
         map.add("Expression", expression->toTree());
     }
 }

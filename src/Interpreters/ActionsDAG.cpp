@@ -626,7 +626,7 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 
 ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    auto actions = std::make_shared<ActionsDAG>();
+    auto actions = std::make_unique<ActionsDAG>();
     std::unordered_map<const Node *, Node *> copy_map;
 
     struct Frame
@@ -1248,25 +1248,29 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 
 ActionsDAGPtr ActionsDAG::clone() const
 {
-    auto actions = std::make_shared<ActionsDAG>();
+    std::unordered_map<const Node *, Node *> old_to_new_nodes;
+    return clone(old_to_new_nodes);
+}
 
-    std::unordered_map<const Node *, Node *> copy_map;
+ActionsDAGPtr ActionsDAG::clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const
+{
+    auto actions = std::make_unique<ActionsDAG>();
 
     for (const auto & node : nodes)
     {
         auto & copy_node = actions->nodes.emplace_back(node);
-        copy_map[&node] = &copy_node;
+        old_to_new_nodes[&node] = &copy_node;
     }
 
     for (auto & node : actions->nodes)
         for (auto & child : node.children)
-            child = copy_map[child];
+            child = old_to_new_nodes[child];
 
     for (const auto & output_node : outputs)
-        actions->outputs.push_back(copy_map[output_node]);
+        actions->outputs.push_back(old_to_new_nodes[output_node]);
 
     for (const auto & input_node : inputs)
-        actions->inputs.push_back(copy_map[input_node]);
+        actions->inputs.push_back(old_to_new_nodes[input_node]);
 
     return actions;
 }
@@ -1421,7 +1425,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     if (add_casted_columns && mode != MatchColumnsMode::Name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
 
-    auto actions_dag = std::make_shared<ActionsDAG>(source);
+    auto actions_dag = std::make_unique<ActionsDAG>(source);
     NodeRawConstPtrs projection(num_result_columns);
 
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
@@ -1549,7 +1553,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
 ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
-    auto adding_column_action = std::make_shared<ActionsDAG>();
+    auto adding_column_action = std::make_unique<ActionsDAG>();
     FunctionOverloadResolverPtr func_builder_materialize
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
@@ -1570,7 +1574,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     /// Some actions could become unused. Do not drop inputs to preserve the header.
     first.removeUnusedActions(false);
 
-    return std::make_shared<ActionsDAG>(std::move(first));
+    return std::make_unique<ActionsDAG>(std::move(first));
 }
 
 void ActionsDAG::mergeInplace(ActionsDAG && second)
@@ -1963,12 +1967,12 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
             second_inputs.push_back(cur.to_second);
     }
 
-    auto first_actions = std::make_shared<ActionsDAG>();
+    auto first_actions = std::make_unique<ActionsDAG>();
     first_actions->nodes.swap(first_nodes);
     first_actions->outputs.swap(first_outputs);
     first_actions->inputs.swap(first_inputs);
 
-    auto second_actions = std::make_shared<ActionsDAG>();
+    auto second_actions = std::make_unique<ActionsDAG>();
     second_actions->nodes.swap(second_nodes);
     second_actions->outputs.swap(second_outputs);
     second_actions->inputs.swap(second_inputs);
@@ -2302,7 +2306,7 @@ ActionsDAGPtr ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjuncti
     if (conjunction.empty())
         return nullptr;
 
-    auto actions = std::make_shared<ActionsDAG>();
+    auto actions = std::make_unique<ActionsDAG>();
 
     FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
@@ -2866,7 +2870,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
         bool visited_children = false;
     };
 
-    auto result_dag = std::make_shared<ActionsDAG>();
+    auto result_dag = std::make_unique<ActionsDAG>();
     std::unordered_map<std::string, const ActionsDAG::Node *> result_inputs;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
 
@@ -2964,7 +2968,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                             const auto & index_hint_args = index_hint->getActions()->getOutputs();
 
                             if (index_hint_args.empty())
-                                index_hint_filter_dag = std::make_shared<ActionsDAG>();
+                                index_hint_filter_dag = std::make_unique<ActionsDAG>();
                             else
                                 index_hint_filter_dag = buildFilterActionsDAG(index_hint_args,
                                     node_name_to_input_node_column,
@@ -3108,10 +3112,10 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
     return nodes;
 }
 
-FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
-    :actions(actions_)
+FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & actions_)
+    //: actions(actions_)
 {
-    const auto & actions_outputs = actions->getOutputs();
+    const auto & actions_outputs = actions_.getOutputs();
     for (const auto * output_node : actions_outputs)
     {
         /// find input node which refers to the output node
@@ -3147,10 +3151,10 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
     return it->second;
 }
 
-FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
-    :actions(actions_)
+FindAliasForInputName::FindAliasForInputName(const ActionsDAG & actions_)
+    //: actions(actions_)
 {
-    const auto & actions_outputs = actions->getOutputs();
+    const auto & actions_outputs = actions_.getOutputs();
     for (const auto * output_node : actions_outputs)
     {
         /// find input node which corresponds to alias

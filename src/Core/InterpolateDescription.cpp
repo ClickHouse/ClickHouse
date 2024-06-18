@@ -14,7 +14,7 @@
 namespace DB
 {
     InterpolateDescription::InterpolateDescription(ActionsDAGPtr actions_, const Aliases & aliases)
-        : actions(actions_)
+        : actions(std::move(actions_))
     {
         for (const auto & name_type : actions->getRequiredColumns())
         {

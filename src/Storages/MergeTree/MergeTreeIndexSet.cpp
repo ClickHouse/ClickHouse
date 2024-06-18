@@ -245,7 +245,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const String & index_name_,
     const Block & index_sample_block,
     size_t max_rows_,
-    const ActionsDAGPtr & filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context)
     : index_name(index_name_)
     , max_rows(max_rows_)
@@ -272,9 +272,9 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
     filter_actions_dag->removeUnusedActions();
-    actions = std::make_shared<ExpressionActions>(filter_actions_dag);
 
     actions_output_column_name = filter_actions_dag->getOutputs().at(0)->result_name;
+    actions = std::make_shared<ExpressionActions>(std::move(filter_actions_dag));
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -544,7 +544,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+    const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context);
 }

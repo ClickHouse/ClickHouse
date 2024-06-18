@@ -486,7 +486,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
                 candidate.dag->getRequiredColumnsNames(),
-                (dag.filter_node ? dag.dag : nullptr),
+                (dag.filter_node ? dag.dag.get() : nullptr),
                 parts,
                 max_added_blocks.get(),
                 context);
@@ -675,7 +675,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 query_info,
                 context,
                 max_added_blocks,
-                candidate.dag);
+                candidate.dag.get());
 
             if (!analyzed)
                 continue;

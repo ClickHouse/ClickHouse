@@ -10,7 +10,7 @@
 namespace DB::QueryPlanOptimizations
 {
 /// build actions DAG from stack of steps
-static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_stack)
+static ActionsDAGPtr buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
 {
     if (dag_stack.empty())
         return nullptr;
@@ -27,10 +27,10 @@ static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_st
 }
 
 static std::set<std::string>
-getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<ActionsDAGPtr> & dag_stack)
+getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<const ActionsDAG *> & dag_stack)
 {
     auto actions = buildActionsForPlanPath(dag_stack);
-    FindOriginalNodeForOutputName original_node_finder(actions);
+    FindOriginalNodeForOutputName original_node_finder(*actions);
     std::set<std::string> original_distinct_columns;
     for (const auto & column : distinct_columns)
     {
@@ -65,7 +65,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// (3) gather actions DAG to find original names for columns in distinct step later
     std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
-    std::vector<ActionsDAGPtr> dag_stack;
+    std::vector<const ActionsDAG *> dag_stack;
     while (!node->children.empty())
     {
         auto * step = dynamic_cast<ITransformingStep *>(node->step.get());
@@ -79,9 +79,9 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         steps_to_update.push_back(step);
 
         if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
-            dag_stack.push_back(expr->getExpression());
+            dag_stack.push_back(expr->getExpression().get());
         else if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
-            dag_stack.push_back(filter->getExpression());
+            dag_stack.push_back(filter->getExpression().get());
 
         node = node->children.front();
     }

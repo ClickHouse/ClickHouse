@@ -77,10 +77,10 @@ void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
     }
 }
 
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
+void filterBlockWithDAG(const ActionsDAGPtr & dag, Block & block, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    auto actions = std::make_shared<ExpressionActions>(dag);
+    auto actions = std::make_shared<ExpressionActions>(dag->clone());
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 

@@ -376,8 +376,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    ActionsDAGPtr left_join_actions = std::make_shared<ActionsDAG>(left_table_expression_columns);
-    ActionsDAGPtr right_join_actions = std::make_shared<ActionsDAG>(right_table_expression_columns);
+    ActionsDAGPtr left_join_actions = std::make_unique<ActionsDAG>(left_table_expression_columns);
+    ActionsDAGPtr right_join_actions = std::make_unique<ActionsDAG>(right_table_expression_columns);
     ColumnsWithTypeAndName mixed_table_expression_columns;
     for (const auto & left_column : left_table_expression_columns)
     {
@@ -387,7 +387,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
     {
         mixed_table_expression_columns.push_back(right_column);
     }
-    ActionsDAGPtr mixed_join_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
+    ActionsDAGPtr mixed_join_actions = std::make_unique<ActionsDAG>(mixed_table_expression_columns);
 
     /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
       * If we do not ignore it, this function will be replaced by underlying constant.
@@ -601,7 +601,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         /// So, for each column, we recalculate the value of the whole expression from JOIN ON to check if rows should be joined.
         if (result.join_clauses.size() > 1)
         {
-            auto mixed_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
+            auto mixed_join_expressions_actions = std::make_unique<ActionsDAG>(mixed_table_expression_columns);
             PlannerActionsVisitor join_expression_visitor(planner_context);
             auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*mixed_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
@@ -611,14 +611,14 @@ JoinClausesAndActions buildJoinClausesAndActions(
             mixed_join_expressions_actions->addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
             Names required_names{join_expression_dag_node_raw_pointers[0]->result_name};
             mixed_join_expressions_actions->removeUnusedActions(required_names);
-            result.mixed_join_expressions_actions = mixed_join_expressions_actions;
+            result.mixed_join_expressions_actions = std::move(mixed_join_expressions_actions);
         }
         else
         {
             const auto & join_clause = result.join_clauses.front();
             const auto & mixed_filter_condition_nodes = join_clause.getMixedFilterConditionNodes();
             auto mixed_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
-            result.mixed_join_expressions_actions = mixed_join_expressions_actions;
+            result.mixed_join_expressions_actions = std::move(mixed_join_expressions_actions);
         }
         auto outputs = result.mixed_join_expressions_actions->getOutputs();
         if (outputs.size() != 1)

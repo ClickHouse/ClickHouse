@@ -7,7 +7,7 @@ namespace DB
 {
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 class WindowTransform;
 

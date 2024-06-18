@@ -5,7 +5,7 @@ namespace DB
 {
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep

@@ -88,7 +88,7 @@ public:
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
-                ActionsDAGPtr alias_column_actions_dag = std::make_shared<ActionsDAG>();
+                ActionsDAGPtr alias_column_actions_dag = std::make_unique<ActionsDAG>();
                 PlannerActionsVisitor actions_visitor(planner_context, false);
                 auto outputs = actions_visitor.visit(*alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
@@ -97,7 +97,7 @@ public:
                 const auto & column_name = column_node->getColumnName();
                 const auto & alias_node = alias_column_actions_dag->addAlias(*outputs[0], column_name);
                 alias_column_actions_dag->addOrReplaceInOutputs(alias_node);
-                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, alias_column_actions_dag, select_added_columns);
+                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
 
             return;
@@ -335,7 +335,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         collect_source_columns_visitor.setKeepAliasColumns(false);
         collect_source_columns_visitor.visit(query_node_typed.getPrewhere());
 
-        auto prewhere_actions_dag = std::make_shared<ActionsDAG>();
+        auto prewhere_actions_dag = std::make_unique<ActionsDAG>();
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
 

@@ -567,7 +567,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<FilterTransform>(
-            header, std::make_shared<ExpressionActions>(filter_expression), filter_function->getColumnName(), true);
+            header, std::make_shared<ExpressionActions>(std::move(filter_expression)), filter_function->getColumnName(), true);
     });
 
     /// Adding window column
@@ -592,7 +592,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         new_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
-        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+        std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -700,7 +700,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
             getContext(),
             getContext()->getSettingsRef().insert_null_as_default);
-        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
@@ -711,7 +711,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag,
+            std::move(convert_actions_dag),
             ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
@@ -1475,7 +1475,7 @@ void StorageWindowView::writeIntoWindowView(
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(filter_expression),
+                header, std::make_shared<ExpressionActions>(std::move(filter_expression)),
                 filter_function->getColumnName(), true);
         });
     }
@@ -1583,7 +1583,7 @@ void StorageWindowView::writeIntoWindowView(
             output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+            std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const Block & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
     }

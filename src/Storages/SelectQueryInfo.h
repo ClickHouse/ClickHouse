@@ -19,7 +19,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -192,7 +192,7 @@ struct SelectQueryInfo
     ASTPtr parallel_replica_custom_key_ast;
 
     /// Filter actions dag for current storage
-    ActionsDAGPtr filter_actions_dag;
+    std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage

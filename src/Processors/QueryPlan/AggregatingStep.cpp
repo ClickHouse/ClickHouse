@@ -303,7 +303,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 const auto & header = ports[set_counter]->getHeader();
 
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
-                auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+                auto dag = std::make_unique<ActionsDAG>(header.getColumnsWithTypeAndName());
                 ActionsDAG::NodeRawConstPtrs outputs;
                 outputs.reserve(output_header.columns() + 1);
 
@@ -347,7 +347,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 }
 
                 dag->getOutputs().swap(outputs);
-                auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+                auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
                 connect(*ports[set_counter], transform->getInputPort());

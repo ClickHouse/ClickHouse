@@ -172,7 +172,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
             query_info,
             context,
             max_added_blocks,
-            query.filter_node ? query.dag : nullptr);
+            query.filter_node ? query.dag.get() : nullptr);
 
         if (!analyzed)
             continue;
