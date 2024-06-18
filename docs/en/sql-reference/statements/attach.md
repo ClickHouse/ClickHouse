@@ -92,7 +92,7 @@ ATTACH TABLE test AS REPLICATED;
 SYSTEM RESTORE REPLICA test;
 ```
 
-**Сonvert table to not replicated**
+**Convert table to not replicated**
 
 Get ZooKeeper path and replica name for table:
 

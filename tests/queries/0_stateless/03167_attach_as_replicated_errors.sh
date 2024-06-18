@@ -12,7 +12,7 @@ ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -n -q "
 
     CREATE TABLE mt ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A;
     DETACH TABLE mt;
-    CREATE TABLE rmt ( A Int64, D Date, S String ) ENGINE ReplicatedMergeTree('/clickhouse/tables/$ORDINARY_DB/rmt/s1', 'r1') PARTITION BY toYYYYMM(D) ORDER BY A;
+    CREATE TABLE rmt ( A Int64, D Date, S String ) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/rmt/s1', 'r1') PARTITION BY toYYYYMM(D) ORDER BY A;
     DETACH TABLE rmt;
     CREATE TABLE log ( A Int64, D Date, S String ) ENGINE Log;
     DETACH TABLE log;
@@ -38,9 +38,10 @@ ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -n -q "
     DROP DATABASE $ORDINARY_DB;
 "
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE already_exists_1 (id UInt32) ENGINE=MergeTree() ORDER BY id;" 
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE already_exists_1 (id UInt32) ENGINE=MergeTree() ORDER BY id;"
 UUID=$($CLICKHOUSE_CLIENT --query="SELECT uuid FROM system.tables WHERE database=currentDatabase() AND table='already_exists_1';")
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE already_exists_2 (id UInt32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$UUID/s1', 'r1') ORDER BY id;"
+ARGS_1="('/clickhouse/tables/$UUID/s1', 'r1')" # Suppress style check for zk path
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE already_exists_2 (id UInt32) ENGINE=ReplicatedMergeTree$ARGS_1 ORDER BY id;"
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE already_exists_1;"
 echo "$(${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --query="ATTACH TABLE already_exists_1 AS REPLICATED" 2>&1)" \
   | grep -c 'There already is an active replica with this replica path'

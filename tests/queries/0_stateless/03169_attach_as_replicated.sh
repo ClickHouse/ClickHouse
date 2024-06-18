@@ -38,14 +38,19 @@ $CLICKHOUSE_CLIENT -n -q "
 "
 
 # Check tables
+# ARGS_i is used to suppress style check for not using {database} in ZK path
+# ATTACH AS REPLICATED uses only default path, so there is nothing else we can do
+ARGS_1="(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\')"
 ${CLICKHOUSE_CLIENT} --query="SELECT engine_full FROM system.tables WHERE database=currentDatabase() AND name = 'mt'" \
-| grep -c "ReplicatedMergeTree(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\') PARTITION BY toYYYYMM(D) ORDER BY A"
+| grep -c "ReplicatedMergeTree$ARGS_1 PARTITION BY toYYYYMM(D) ORDER BY A"
 ${CLICKHOUSE_CLIENT} --query="SELECT engine_full FROM system.tables WHERE database=currentDatabase() AND name = 'replacing'" \
-| grep -c "ReplicatedReplacingMergeTree(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\') PARTITION BY toYYYYMM(D) ORDER BY A"
+| grep -c "ReplicatedReplacingMergeTree$ARGS_1 PARTITION BY toYYYYMM(D) ORDER BY A"
+ARGS_2="(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\', D)"
 ${CLICKHOUSE_CLIENT} --query="SELECT engine_full FROM system.tables WHERE database=currentDatabase() AND name = 'replacing_ver'" \
-| grep -c "ReplicatedReplacingMergeTree(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\', D) PARTITION BY toYYYYMM(D) ORDER BY A"
+| grep -c "ReplicatedReplacingMergeTree$ARGS_2 PARTITION BY toYYYYMM(D) ORDER BY A"
+ARGS_3="(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\', Sign, Version)"
 ${CLICKHOUSE_CLIENT} --query="SELECT engine_full FROM system.tables WHERE database=currentDatabase() AND name = 'collapsing_ver'" \
-| grep -c "ReplicatedVersionedCollapsingMergeTree(\\\\'/clickhouse/tables/{uuid}/{shard}\\\\', \\\\'{replica}\\\\', Sign, Version) ORDER BY ID"
+| grep -c "ReplicatedVersionedCollapsingMergeTree$ARGS_3 ORDER BY ID"
 echo
 
 $CLICKHOUSE_CLIENT --echo --query="SELECT is_readonly FROM system.replicas WHERE table='mt'" \
