@@ -507,6 +507,9 @@ struct ActionDAGNodes
     ActionsDAG::NodeRawConstPtrs nodes;
 };
 
+/// Helper for query analysis.
+/// If project_input is set, all columns not found in inputs should be removed.
+/// Now, we do it before adding a step to query plan by calling appendInputsForUnusedColumns.
 struct ActionsAndProjectInputsFlag
 {
     ActionsDAG dag;
