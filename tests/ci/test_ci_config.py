@@ -201,6 +201,37 @@ class TestCIConfig(unittest.TestCase):
                         msg=f"Stage for [{job}] is not correct",
                     )
 
+    def test_job_stage_config_non_blocking(self):
+        """
+        check runner is provided w/o exception
+        """
+        # check stages
+        for job in CI.JobNames:
+            if job in CI.BuildNames:
+                self.assertTrue(
+                    CI.get_job_ci_stage(job)
+                    in (CI.WorkflowStages.BUILDS_1, CI.WorkflowStages.BUILDS_2)
+                )
+            else:
+                if job in (
+                    CI.JobNames.STYLE_CHECK,
+                    CI.JobNames.FAST_TEST,
+                    CI.JobNames.JEPSEN_SERVER,
+                    CI.JobNames.JEPSEN_KEEPER,
+                    CI.JobNames.BUILD_CHECK,
+                ):
+                    self.assertEqual(
+                        CI.get_job_ci_stage(job),
+                        CI.WorkflowStages.NA,
+                        msg=f"Stage for [{job}] is not correct",
+                    )
+                else:
+                    self.assertTrue(
+                        CI.get_job_ci_stage(job, non_blocking_ci=True)
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
+                        msg=f"Stage for [{job}] is not correct",
+                    )
+
     def test_build_jobs_configs(self):
         """
         check build jobs have non-None build_config attribute

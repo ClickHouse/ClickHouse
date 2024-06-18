@@ -462,7 +462,9 @@ def _configure_jobs(
     return ci_cache
 
 
-def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _generate_ci_stage_config(
+    jobs_data: Dict[str, Any], non_blocking_mode: bool = False
+) -> Dict[str, Dict[str, Any]]:
     """
     populates GH Actions' workflow with real jobs
     "Builds_1": [{"job_name": NAME, "runner_type": RUNNER_TYPE}]
@@ -472,7 +474,7 @@ def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, 
     result = {}  # type: Dict[str, Any]
     stages_to_do = []
     for job in jobs_data:
-        stage_type = CI.get_job_ci_stage(job)
+        stage_type = CI.get_job_ci_stage(job, non_blocking_ci=non_blocking_mode)
         if stage_type == CI.WorkflowStages.NA:
             continue
         if stage_type not in result:
@@ -1007,7 +1009,9 @@ def main() -> int:
         result["docs"] = ci_cache.job_digests[CI.JobNames.DOCS_CHECK]
         result["ci_settings"] = ci_settings.as_dict()
         if not args.skip_jobs:
-            result["stages_data"] = _generate_ci_stage_config(ci_cache.jobs_to_do)
+            result["stages_data"] = _generate_ci_stage_config(
+                ci_cache.jobs_to_do, ci_settings.woolen_wolfdog
+            )
             result["jobs_data"] = {
                 "jobs_to_do": list(ci_cache.jobs_to_do),
                 "jobs_to_skip": ci_cache.jobs_to_skip,
