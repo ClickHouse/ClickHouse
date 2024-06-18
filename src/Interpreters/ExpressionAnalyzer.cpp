@@ -824,7 +824,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
                 desc, &definition);
 
             auto [it, inserted] = window_descriptions.insert(
-                {default_window_name, std::move(desc)});
+                {default_window_name, desc});
 
             if (!inserted)
             {
