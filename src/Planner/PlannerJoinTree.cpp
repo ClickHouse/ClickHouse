@@ -857,12 +857,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
+                auto context_for_read = Context::createCopy(query_context);
+
+                /// It is just a safety check needed until we have a proper sending plan to replicas.
+                /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
+                /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                const bool other_table_already_chosen_for_reading_with_parallel_replicas
+                    = planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                    && !table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower;
+                if (other_table_already_chosen_for_reading_with_parallel_replicas)
+                    context_for_read->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+
                 storage->read(
                     query_plan,
                     columns_names,
                     storage_snapshot,
                     table_expression_query_info,
-                    query_context,
+                    context_for_read,
                     from_stage,
                     max_block_size,
                     max_streams);
