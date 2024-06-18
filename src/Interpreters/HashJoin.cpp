@@ -1350,7 +1350,6 @@ void AddedColumns<true>::buildOutput()
         if (defaults_count > 0)
         {
             JoinCommon::addDefaultValues(*column, type_name[i].type, defaults_count);
-            defaults_count = 0;
         }
     }
 }
