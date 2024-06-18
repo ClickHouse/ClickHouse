@@ -23,7 +23,7 @@ public:
     /** Set setting for current context (query context).
       * It is used for interpretation of SETTINGS clause in SELECT query.
       */
-    void executeForCurrentContext(bool ignore_setting_constraints = false);
+    void executeForCurrentContext(bool ignore_setting_constraints);
 
     bool supportsTransactions() const override { return true; }
 

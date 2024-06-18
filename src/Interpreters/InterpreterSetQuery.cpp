@@ -46,7 +46,7 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     // It is flattened later, when we process UNION ALL/DISTINCT.
     const auto * last_select = children.back()->as<ASTSelectQuery>();
     if (last_select && last_select->settings())
-        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext(false);
 }
 
 void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_)
@@ -58,7 +58,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         if (query_with_output->settings_ast)
-            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext();
+            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext(false);
 
         if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
             applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
@@ -67,7 +67,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     if (const auto * select_query = ast->as<ASTSelectQuery>())
     {
         if (auto new_settings = select_query->settings())
-            InterpreterSetQuery(new_settings, context_).executeForCurrentContext();
+            InterpreterSetQuery(new_settings, context_).executeForCurrentContext(false);
     }
     else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
     {
@@ -76,7 +76,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
         if (explain_query->settings_ast)
-            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext();
+            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext(false);
 
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
     }
@@ -84,7 +84,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     {
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
-            InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext();
+            InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(false);
     }
 }
 
