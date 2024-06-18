@@ -52,12 +52,9 @@ namespace
         auto modifier = [&](const AccessFlags & flags,
                             const AccessFlags & min_flags_with_children,
                             const AccessFlags & max_flags_with_children,
-                            std::string_view database,
-                            std::string_view table,
-                            std::string_view column,
+                            const size_t level,
                             bool /* grant_option */) -> AccessFlags
         {
-            size_t level = !database.empty() + !table.empty() + !column.empty();
             AccessFlags res = flags;
 
             /// CREATE_TABLE => CREATE_VIEW, DROP_TABLE => DROP_VIEW, ALTER_TABLE => ALTER_VIEW
@@ -559,7 +556,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 }
 
 
-template <bool throw_if_denied, bool grant_option, typename... Args>
+template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
 bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
 {
     if (user_was_dropped)
@@ -607,10 +604,20 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
 
     auto acs = getAccessRightsWithImplicit();
     bool granted;
-    if constexpr (grant_option)
-        granted = acs->hasGrantOption(flags, args...);
+    if constexpr (wildcard)
+    {
+        if constexpr (grant_option)
+            granted = acs->hasGrantOptionWildcard(flags, args...);
+        else
+            granted = acs->isGrantedWildcard(flags, args...);
+    }
     else
-        granted = acs->isGranted(flags, args...);
+    {
+        if constexpr (grant_option)
+            granted = acs->hasGrantOption(flags, args...);
+        else
+            granted = acs->isGranted(flags, args...);
+    }
 
     if (!granted)
     {
@@ -685,52 +692,52 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     return access_granted();
 }
 
-template <bool throw_if_denied, bool grant_option>
+template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImpl(const AccessFlags & flags) const
 {
-    return checkAccessImplHelper<throw_if_denied, grant_option>(flags);
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(flags);
 }
 
-template <bool throw_if_denied, bool grant_option, typename... Args>
+template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
 bool ContextAccess::checkAccessImpl(const AccessFlags & flags, std::string_view database, const Args &... args) const
 {
-    return checkAccessImplHelper<throw_if_denied, grant_option>(flags, database.empty() ? params.current_database : database, args...);
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(flags, database.empty() ? params.current_database : database, args...);
 }
 
-template <bool throw_if_denied, bool grant_option>
+template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
-        if (element.any_parameter)
-            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
+        if (element.anyParameter())
+            return checkAccessImpl<throw_if_denied, grant_option, wildcard>(element.access_flags);
         else
-            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.parameter);
+            return checkAccessImpl<throw_if_denied, grant_option, wildcard>(element.access_flags, element.parameter);
     }
-    else if (element.any_database)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
-    else if (element.any_table)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);
-    else if (element.any_column)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database, element.table);
+    else if (element.anyDatabase())
+        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(element.access_flags);
+    else if (element.anyTable())
+        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(element.access_flags, element.database);
+    else if (element.anyColumn())
+        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(element.access_flags, element.database, element.table);
     else
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database, element.table, element.columns);
+        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
 }
 
-template <bool throw_if_denied, bool grant_option>
+template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImpl(const AccessRightsElement & element) const
 {
     if constexpr (grant_option)
     {
-        return checkAccessImplHelper<throw_if_denied, true>(element);
+        return checkAccessImplHelper<throw_if_denied, true, wildcard>(element);
     }
     else
     {
         if (element.grant_option)
-            return checkAccessImplHelper<throw_if_denied, true>(element);
+            return checkAccessImplHelper<throw_if_denied, true, wildcard>(element);
         else
-            return checkAccessImplHelper<throw_if_denied, false>(element);
+            return checkAccessImplHelper<throw_if_denied, false, wildcard>(element);
     }
 }
 
@@ -738,8 +745,18 @@ template <bool throw_if_denied, bool grant_option>
 bool ContextAccess::checkAccessImpl(const AccessRightsElements & elements) const
 {
     for (const auto & element : elements)
-        if (!checkAccessImpl<throw_if_denied, grant_option>(element))
-            return false;
+    {
+        if (element.wildcard)
+        {
+            if (!checkAccessImpl<throw_if_denied, grant_option, true>(element))
+                return false;
+        }
+        else
+        {
+            if (!checkAccessImpl<throw_if_denied, grant_option>(element))
+                return false;
+        }
+    }
     return true;
 }
 
