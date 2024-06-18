@@ -981,6 +981,24 @@ This mode allows to use significantly less memory for storing discriminators in 
 
 Default value: true
 
+## merge_workload
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for background merges of this table. If not specified (empty string), then server setting `merge_workload` is used instead.
+
+Default value: an empty string
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for background mutations of this table. If not specified (empty string), then server setting `mutation_workload` is used instead.
+
+Default value: an empty string
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
 ### optimize_row_order
 
 Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
