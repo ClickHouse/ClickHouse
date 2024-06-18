@@ -61,7 +61,9 @@ void S3QueueOrderedFileMetadata::BucketHolder::release()
         return;
 
     released = true;
-    LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}", bucket_info->bucket);
+
+    LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}, version {}",
+             bucket_info->bucket, bucket_info->bucket_version);
 
     Coordination::Requests requests;
     /// Check that bucket lock version has not changed
@@ -72,6 +74,16 @@ void S3QueueOrderedFileMetadata::BucketHolder::release()
 
     Coordination::Responses responses;
     const auto code = zk_client->tryMulti(requests, responses);
+
+    if (code == Coordination::Error::ZOK)
+        LOG_TEST(getLogger("S3QueueBucketHolder"), "Released bucket {}, version {}",
+                 bucket_info->bucket, bucket_info->bucket_version);
+    else
+        LOG_TRACE(getLogger("S3QueueBucketHolder"),
+                  "Failed to released bucket {}, version {}: {}. "
+                  "This is normal if keeper session expired.",
+                  bucket_info->bucket, bucket_info->bucket_version, code);
+
     zkutil::KeeperMultiException::check(code, requests, responses);
 }
 
