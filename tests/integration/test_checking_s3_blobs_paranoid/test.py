@@ -512,6 +512,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
     ), error
 
 
+@pytest.mark.skip(reason="test is flaky, waiting ClickHouse/issues/64451")
 def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
     node = cluster.instances["node_with_inf_s3_retries"]
 
