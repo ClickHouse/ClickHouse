@@ -732,10 +732,13 @@ ColumnPtr ColumnTuple::compress() const
         });
 }
 
-void ColumnTuple::finalize()
+ColumnPtr ColumnTuple::finalize() const
 {
-    for (auto & column : columns)
-        column->finalize();
+    Columns finalized;
+    finalized.reserve(columns.size());
+    for (const auto & column : columns)
+        finalized.push_back(column->finalize());
+    return ColumnTuple::create(std::move(finalized));
 }
 
 bool ColumnTuple::isFinalized() const

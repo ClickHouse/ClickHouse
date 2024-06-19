@@ -84,10 +84,10 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     }
     else if (const auto * column_map = typeid_cast<const ColumnMap *>(column.get()))
     {
-        const auto & nested = column_map->getNestedColumnPtr();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
-        if (nested.get() != nested_no_lc.get())
-            res = ColumnMap::create(nested_no_lc);
+        auto shards = column_map->getShards();
+        for (auto & shard : shards)
+            shard = recursiveRemoveLowCardinality(shard);
+        res = ColumnMap::create(std::move(shards));
     }
     /// Special case when column is a lazy argument of short circuit function.
     /// We should call recursiveRemoveLowCardinality on the result column

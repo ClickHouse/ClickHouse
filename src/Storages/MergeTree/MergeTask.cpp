@@ -327,7 +327,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     {
         case MergeAlgorithm::Horizontal:
         {
-            NameSet merging_columns_set(global_ctx->merging_column_names.begin(), global_ctx->merging_column_names.end());
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
             global_ctx->gathering_columns.clear();

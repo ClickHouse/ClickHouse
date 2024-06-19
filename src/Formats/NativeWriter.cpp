@@ -106,6 +106,7 @@ size_t NativeWriter::write(const Block & block)
         }
 
         auto column = block.safeGetByPosition(i);
+        column.column = column.column->finalize();
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))

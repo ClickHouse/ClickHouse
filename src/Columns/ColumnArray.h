@@ -168,7 +168,7 @@ public:
         return false;
     }
 
-    void finalize() override { data->finalize(); }
+    ColumnPtr finalize() const override { return ColumnArray::create(data->finalize(), offsets); }
     bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }

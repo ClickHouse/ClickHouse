@@ -106,7 +106,7 @@ public:
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
     ColumnPtr compress() const override;
-    void finalize() override;
+    ColumnPtr finalize() const override;
     bool isFinalized() const override;
 
     size_t tupleSize() const { return columns.size(); }

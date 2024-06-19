@@ -1,3 +1,4 @@
+#include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
@@ -22,6 +23,9 @@
 #include <Functions/FunctionFactory.h>
 
 #include <base/map.h>
+#include <Columns/ColumnsNumber.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/IArraySource.h>
 
 namespace DB
 {
@@ -30,7 +34,11 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
 
 /** An adapter that allows to execute array* functions over Map types arguments.
   * E.g. transform mapConcat to arrayConcat.
@@ -38,14 +46,15 @@ namespace ErrorCodes
   * Impl - the implementation of function that is applied
   * to internal column of Map arguments (e.g. 'arrayConcat').
   *
-  * Adapter - a struct that determines the way how to extract the internal array columns
-  * from Map arguments and possibly modify other columns.
+  * Adapter - a struct that determines the way how to extract the internal
+  * array columns from Map arguments and possibly modify other columns.
 */
-template <typename Impl, typename Adapter, typename Name>
+template <typename Impl, typename Adapter>
 class FunctionMapToArrayAdapter : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = Adapter::name;
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapToArrayAdapter>(); }
     String getName() const override { return name; }
 
@@ -63,17 +72,14 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires at least one argument, passed {}", getName(), arguments.size());
-
-        auto nested_arguments = arguments;
-        Adapter::extractNestedTypesAndColumns(nested_arguments);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", getName());
 
         constexpr bool impl_has_get_return_type = requires
         {
-            impl.getReturnTypeImpl(nested_arguments);
+            impl.getReturnTypeImpl(arguments);
         };
+
+        auto nested_arguments = Adapter::extractArgumentsForShards(arguments).front();
 
         /// If method is not overloaded in the implementation call default implementation
         /// from IFunction. Here inheritance cannot be used for template parameterized field.
@@ -85,152 +91,248 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto nested_arguments = arguments;
-        Adapter::extractNestedTypesAndColumns(nested_arguments);
-        return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
+        auto impl_result_type = Adapter::extractResultType(result_type);
+        auto arguments_for_shards = Adapter::extractArgumentsForShards(arguments);
+
+        std::vector<ColumnPtr> result_shards;
+        result_shards.reserve(arguments_for_shards.size());
+
+        for (const auto & args : arguments_for_shards)
+        {
+            auto result = impl.executeImpl(args, impl_result_type, input_rows_count);
+            result_shards.push_back(std::move(result));
+        }
+
+        return Adapter::gatherResult(std::move(result_shards));
     }
 
 private:
     Impl impl;
 };
 
-
-template <typename Derived, typename Name>
-struct MapAdapterBase
+template <typename Name, typename ArgumentExtractor, typename ResultGatherer>
+struct MapAdapter
 {
+public:
+    static constexpr auto name = Name::name;
+
+    static DataTypePtr extractResultType(DataTypePtr type)
+    {
+        if constexpr (ResultGatherer::returns_map)
+            return assert_cast<const DataTypeMap &>(*type).getNestedType();
+        else
+            return type;
+    }
+
+    static DataTypePtr wrapType(DataTypePtr type)
+    {
+        if constexpr (ResultGatherer::returns_map)
+            return std::make_shared<DataTypeMap>(std::move(type));
+        else
+            return type;
+    }
+
+    static ColumnPtr gatherResult(std::vector<ColumnPtr> columns)
+    {
+        return ResultGatherer::gatherResult(std::move(columns));
+    }
+
     static void extractNestedTypes(DataTypes & types)
     {
         bool has_map_column = false;
         for (auto & type : types)
         {
-            if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
-            {
-                has_map_column = true;
-                type = Derived::extractNestedType(*type_map);
-            }
+            const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
+            if (!type_map)
+                continue;
+
+            type = ArgumentExtractor::extractType(*type_map);
+            has_map_column = true;
         }
 
         if (!has_map_column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} requires at least one argument of type Map", Name::name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires at least one argument of type Map", Name::name);
     }
 
-    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    static std::vector<ColumnsWithTypeAndName> extractArgumentsForShards(const ColumnsWithTypeAndName & arguments)
     {
         bool has_map_column = false;
-        for (auto & argument : arguments)
-        {
-            if (const auto * type_map = typeid_cast<const DataTypeMap *>(argument.type.get()))
-            {
-                has_map_column = true;
-                argument.type = Derived::extractNestedType(*type_map);
+        std::vector<size_t> map_column_indexes;
+        auto nested_arguments = arguments;
 
-                if (argument.column)
-                {
-                    if (const auto * const_map = checkAndGetColumnConstData<ColumnMap>(argument.column.get()))
-                        argument.column = ColumnConst::create(Derived::extractNestedColumn(*const_map), argument.column->size());
-                    else
-                        argument.column = Derived::extractNestedColumn(assert_cast<const ColumnMap &>(*argument.column));
-                }
+        for (size_t i = 0; i < nested_arguments.size(); ++i)
+        {
+            auto & argument = nested_arguments[i];
+            const auto * type_map = typeid_cast<const DataTypeMap *>(argument.type.get());
+            if (!type_map)
+                continue;
+
+            argument.type = ArgumentExtractor::extractType(*type_map);
+            has_map_column = true;
+
+            if (argument.column)
+            {
+                map_column_indexes.push_back(i);
+                if (ResultGatherer::need_finalize)
+                    argument.column = argument.column->finalize();
             }
         }
 
         if (!has_map_column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} requires at least one argument of type Map", Name::name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires at least one argument of type Map", Name::name);
+
+        if (map_column_indexes.empty())
+            return {std::move(nested_arguments)};
+
+        if (map_column_indexes.size() > 1 && !ResultGatherer::need_finalize)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} requires several arguments of type Map and must use finalize", Name::name);
+
+        size_t map_column_index = map_column_indexes.front();
+        size_t num_shards = getNumShardsOfMapColumn(*nested_arguments[map_column_index].column);
+
+        std::vector<ColumnsWithTypeAndName> shard_arguments(num_shards, nested_arguments);
+
+        for (size_t shard = 0; shard < num_shards; ++shard)
+        {
+            for (auto idx : map_column_indexes)
+            {
+                auto & argument = shard_arguments[shard][idx];
+                argument.column = extractColumnFromMap(*argument.column, shard);
+            }
+        }
+
+        return shard_arguments;
+    }
+
+private:
+    static ColumnPtr extractColumnFromMap(const IColumn & column, size_t shard_idx)
+    {
+        if (const auto * const_map = checkAndGetColumnConstData<ColumnMap>(&column))
+        {
+            auto res = ArgumentExtractor::extractColumn(*const_map, shard_idx);
+            return ColumnConst::create(std::move(res), column.size());
+        }
+
+        return ArgumentExtractor::extractColumn(assert_cast<const ColumnMap &>(column), shard_idx);
+    }
+
+    static size_t getNumShardsOfMapColumn(const IColumn & column)
+    {
+        if (const auto * const_map = checkAndGetColumnConstData<ColumnMap>(&column))
+            return const_map->getNumShards();
+
+        return assert_cast<const ColumnMap &>(column).getNumShards();
     }
 };
 
-/// Adapter that extracts nested Array(Tuple(key, value)) from Map columns.
-template <typename Name, bool returns_map = true>
-struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, returns_map>, Name>
+/// Extracts nested Array(Tuple(key, value)) from Map columns.
+struct ArgumentExtractorMap
 {
-    using MapAdapterBase<MapToNestedAdapter, Name>::extractNestedTypes;
-    using MapAdapterBase<MapToNestedAdapter, Name>::extractNestedTypesAndColumns;
-
-    static DataTypePtr extractNestedType(const DataTypeMap & type_map)
+    static DataTypePtr extractType(const DataTypeMap & type_map)
     {
         return type_map.getNestedTypeWithUnnamedTuple();
     }
 
-    static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
+    static ColumnPtr extractColumn(const ColumnMap & column_map, size_t shard_idx)
     {
-        return column_map.getNestedColumnPtr();
-    }
-
-    static DataTypePtr extractResultType(const DataTypePtr & result_type)
-    {
-        if constexpr (returns_map)
-            return assert_cast<const DataTypeMap &>(*result_type).getNestedType();
-        return result_type;
-    }
-
-    static DataTypePtr wrapType(DataTypePtr type)
-    {
-        if constexpr (returns_map)
-            return std::make_shared<DataTypeMap>(std::move(type));
-        return type;
-    }
-
-    static ColumnPtr wrapColumn(ColumnPtr column)
-    {
-        if constexpr (returns_map)
-            return ColumnMap::create(std::move(column));
-        return column;
+        return column_map.getShardPtr(shard_idx);
     }
 };
 
-/// Adapter that extracts array with keys or values from Map columns.
-template <typename Name, size_t position>
-struct MapToSubcolumnAdapter
+/// Extracts array with keys or values from Map columns.
+template <size_t position>
+struct ArgumentExtractorSubcolumn
 {
     static_assert(position <= 1);
 
-    static void extractNestedTypes(DataTypes & types)
-    {
-        if (types.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
-                Name::name,
-                types.size());
-
-        DataTypes new_types = {types[0]};
-        MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypes(new_types);
-        types[0] = new_types[0];
-    }
-
-    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
-    {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
-                Name::name,
-                arguments.size());
-
-        ColumnsWithTypeAndName new_arguments = {arguments[0]};
-        MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypesAndColumns(new_arguments);
-        arguments[0] = new_arguments[0];
-    }
-
-    static DataTypePtr extractNestedType(const DataTypeMap & type_map)
+    static DataTypePtr extractType(const DataTypeMap & type_map)
     {
         const auto & array_type = assert_cast<const DataTypeArray &>(*type_map.getNestedType());
         const auto & tuple_type = assert_cast<const DataTypeTuple &>(*array_type.getNestedType());
         return std::make_shared<DataTypeArray>(tuple_type.getElement(position));
     }
 
-    static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
+    static ColumnPtr extractColumn(const ColumnMap & column_map, size_t shard_idx)
     {
-        const auto & array_column = column_map.getNestedColumn();
-        const auto & tuple_column = column_map.getNestedData();
+        const auto & array_column = column_map.getShard(shard_idx);
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(array_column.getData());
         return ColumnArray::create(tuple_column.getColumnPtr(position), array_column.getOffsetsPtr());
     }
+};
 
-    static DataTypePtr extractResultType(const DataTypePtr & result_type) { return result_type; }
-    static DataTypePtr wrapType(DataTypePtr type) { return type; }
-    static ColumnPtr wrapColumn(ColumnPtr column) { return column; }
+struct ResultGathererMap
+{
+    static constexpr bool returns_map = true;
+    static constexpr bool need_finalize = false;
+
+    static ColumnPtr gatherResult(std::vector<ColumnPtr> columns)
+    {
+        return ColumnMap::create(std::move(columns));
+    }
+};
+
+struct ResultGathererMapOneShard
+{
+    static constexpr bool returns_map = true;
+    static constexpr bool need_finalize = true;
+
+    static ColumnPtr gatherResult(std::vector<ColumnPtr> columns)
+    {
+        chassert(columns.size() == 1);
+        return ColumnMap::create(std::move(columns));
+    }
+};
+
+struct ResultGathererArray
+{
+    static constexpr bool returns_map = false;
+    static constexpr bool need_finalize = false;
+
+    static ColumnPtr gatherResult(std::vector<ColumnPtr> columns)
+    {
+        if (columns.size() == 1)
+            return columns.front();
+
+        std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources(columns.size());
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            const auto & shard_array = assert_cast<const ColumnArray &>(*columns[i]);
+            sources[i] = GatherUtils::createArraySource(shard_array, false, shard_array.size());
+        }
+
+        return GatherUtils::concat(sources);
+    }
+};
+
+struct OrImpl { static UInt8 apply(UInt8 x, UInt8 y) { return x | y; } };
+struct AndImpl { static UInt8 apply(UInt8 x, UInt8 y) { return x & y; } };
+
+template <typename Op>
+struct ResultGathererBool
+{
+    static constexpr bool returns_map = false;
+    static constexpr bool need_finalize = false;
+
+    static ColumnPtr gatherResult(std::vector<ColumnPtr> columns)
+    {
+        if (columns.size() == 1)
+            return columns.front();
+
+        auto res = columns.front()->assumeMutable();
+        auto & res_data = assert_cast<ColumnUInt8 &>(*res).getData();
+        size_t res_size = res_data.size();
+
+        for (size_t i = 1; i < columns.size(); ++i)
+        {
+            const auto & data = assert_cast<const ColumnUInt8 &>(*columns[i]).getData();
+            chassert(data.size() == res_size);
+
+            for (size_t j = 0; j < res_size; ++j)
+                res_data[j] = Op::apply(res_data[j], data[j]);
+        }
+
+        return res;
+    }
 };
 
 /// A special function that works like the following:
@@ -266,9 +368,11 @@ private:
 /// and prepares ColumnFunction as first argument which works
 /// like lambda (k, v) -> k LIKE pattern to pass it to the nested
 /// function derived from FunctionArrayMapped.
-template <typename Name, bool returns_map>
-struct MapKeyLikeAdapter
+template <typename Name, typename ArgumentExtractor, typename ResultGatherer>
+struct MapKeyLikeAdapter : MapAdapter<Name, ArgumentExtractor, ResultGatherer>
 {
+    using Base = MapAdapter<Name, ArgumentExtractor, ResultGatherer>;
+
     static void checkTypes(const DataTypes & types)
     {
         if (types.size() != 2)
@@ -299,15 +403,16 @@ struct MapKeyLikeAdapter
         auto function_type = std::make_shared<DataTypeFunction>(argument_types, result_type);
 
         types = {function_type, types[0]};
-        MapToNestedAdapter<Name, returns_map>::extractNestedTypes(types);
+        Base::extractNestedTypes(types);
     }
 
-    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    static std::vector<ColumnsWithTypeAndName> extractArgumentsForShards(const ColumnsWithTypeAndName & arguments)
     {
-        checkTypes(collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }));
+        auto new_arguments = arguments;
+        checkTypes(collections::map<DataTypes>(new_arguments, [](const auto & elem) { return elem.type; }));
 
-        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-        const auto & pattern_arg = arguments[1];
+        const auto & map_type = assert_cast<const DataTypeMap &>(*new_arguments[0].type);
+        const auto & pattern_arg = new_arguments[1];
 
         ColumnPtr function_column;
         auto function = std::make_shared<FunctionMapKeyLike>();
@@ -327,65 +432,52 @@ struct MapKeyLikeAdapter
         }
 
         ColumnWithTypeAndName function_arg{function_column, function_type, "__function_map_key_like"};
-        arguments = {function_arg, arguments[0]};
-        MapToNestedAdapter<Name, returns_map>::extractNestedTypesAndColumns(arguments);
-    }
-
-    static DataTypePtr extractResultType(const DataTypePtr & result_type)
-    {
-        return MapToNestedAdapter<Name, returns_map>::extractResultType(result_type);
-    }
-
-    static DataTypePtr wrapType(DataTypePtr type)
-    {
-        return MapToNestedAdapter<Name, returns_map>::wrapType(std::move(type));
-    }
-
-    static ColumnPtr wrapColumn(ColumnPtr column)
-    {
-        return MapToNestedAdapter<Name, returns_map>::wrapColumn(std::move(column));
+        new_arguments = {function_arg, new_arguments[0]};
+        return Base::extractArgumentsForShards(new_arguments);
     }
 };
 
 struct NameMapConcat { static constexpr auto name = "mapConcat"; };
-using FunctionMapConcat = FunctionMapToArrayAdapter<FunctionArrayConcat, MapToNestedAdapter<NameMapConcat>, NameMapConcat>;
+using FunctionMapConcat = FunctionMapToArrayAdapter<FunctionArrayConcat, MapAdapter<NameMapConcat, ArgumentExtractorMap, ResultGathererMapOneShard>>;
 
 struct NameMapKeys { static constexpr auto name = "mapKeys"; };
-using FunctionMapKeys = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapKeys, 0>, NameMapKeys>;
+using FunctionMapKeys = FunctionMapToArrayAdapter<FunctionIdentity, MapAdapter<NameMapKeys, ArgumentExtractorSubcolumn<0>, ResultGathererArray>>;
 
 struct NameMapValues { static constexpr auto name = "mapValues"; };
-using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
+using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapAdapter<NameMapValues, ArgumentExtractorSubcolumn<1>, ResultGathererArray>>;
 
 struct NameMapContains { static constexpr auto name = "mapContains"; };
-using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapToSubcolumnAdapter<NameMapKeys, 0>, NameMapContains>;
+using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapAdapter<NameMapContains, ArgumentExtractorSubcolumn<0>, ResultGathererBool<OrImpl>>>;
 
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
-using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;
+using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapAdapter<NameMapFilter, ArgumentExtractorMap, ResultGathererMap>>;
 
 struct NameMapApply { static constexpr auto name = "mapApply"; };
-using FunctionMapApply = FunctionMapToArrayAdapter<FunctionArrayMap, MapToNestedAdapter<NameMapApply>, NameMapApply>;
+using FunctionMapApply = FunctionMapToArrayAdapter<FunctionArrayMap, MapAdapter<NameMapApply, ArgumentExtractorMap, ResultGathererMap>>;
 
 struct NameMapExists { static constexpr auto name = "mapExists"; };
-using FunctionMapExists = FunctionMapToArrayAdapter<FunctionArrayExists, MapToNestedAdapter<NameMapExists, false>, NameMapExists>;
+using FunctionMapExists = FunctionMapToArrayAdapter<FunctionArrayExists, MapAdapter<NameMapExists, ArgumentExtractorMap, ResultGathererBool<OrImpl>>>;
 
 struct NameMapAll { static constexpr auto name = "mapAll"; };
-using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAdapter<NameMapAll, false>, NameMapAll>;
+using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapAdapter<NameMapAll, ArgumentExtractorMap, ResultGathererBool<AndImpl>>>;
 
 struct NameMapContainsKeyLike { static constexpr auto name = "mapContainsKeyLike"; };
-using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapKeyLikeAdapter<NameMapContainsKeyLike, false>, NameMapContainsKeyLike>;
+using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapKeyLikeAdapter<NameMapContainsKeyLike, ArgumentExtractorMap, ResultGathererBool<OrImpl>>>;
 
 struct NameMapExtractKeyLike { static constexpr auto name = "mapExtractKeyLike"; };
-using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapKeyLikeAdapter<NameMapExtractKeyLike, true>, NameMapExtractKeyLike>;
+using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapKeyLikeAdapter<NameMapExtractKeyLike, ArgumentExtractorMap, ResultGathererMap>>;
 
 struct NameMapSort { static constexpr auto name = "mapSort"; };
 struct NameMapReverseSort { static constexpr auto name = "mapReverseSort"; };
 struct NameMapPartialSort { static constexpr auto name = "mapPartialSort"; };
 struct NameMapPartialReverseSort { static constexpr auto name = "mapPartialReverseSort"; };
 
-using FunctionMapSort = FunctionMapToArrayAdapter<FunctionArraySort, MapToNestedAdapter<NameMapSort>, NameMapSort>;
-using FunctionMapReverseSort = FunctionMapToArrayAdapter<FunctionArrayReverseSort, MapToNestedAdapter<NameMapReverseSort>, NameMapReverseSort>;
-using FunctionMapPartialSort = FunctionMapToArrayAdapter<FunctionArrayPartialSort, MapToNestedAdapter<NameMapPartialSort>, NameMapPartialSort>;
-using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPartialReverseSort, MapToNestedAdapter<NameMapPartialReverseSort>, NameMapPartialReverseSort>;
+using FunctionMapSort = FunctionMapToArrayAdapter<FunctionArraySort, MapAdapter<NameMapSort, ArgumentExtractorMap, ResultGathererMapOneShard>>;
+using FunctionMapReverseSort = FunctionMapToArrayAdapter<FunctionArrayReverseSort, MapAdapter<NameMapReverseSort, ArgumentExtractorMap, ResultGathererMapOneShard>>;
+using FunctionMapPartialSort = FunctionMapToArrayAdapter<FunctionArrayPartialSort, MapAdapter<NameMapPartialSort, ArgumentExtractorMap, ResultGathererMapOneShard>>;
+using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPartialReverseSort, MapAdapter<NameMapPartialReverseSort, ArgumentExtractorMap, ResultGathererMapOneShard>>;
+
+}
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {

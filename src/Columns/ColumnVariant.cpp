@@ -12,6 +12,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
+#include "Columns/IColumn.h"
 #include <Columns/MaskOperations.h>
 
 
@@ -1381,10 +1382,13 @@ void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, s
     }
 }
 
-void ColumnVariant::finalize()
+ColumnPtr ColumnVariant::finalize() const
 {
-    for (auto & variant : variants)
-        variant->finalize();
+    Columns finalized;
+    finalized.reserve(variants.size());
+    for (const auto & variant : variants)
+        finalized.push_back(variant->finalize());
+    return ColumnVariant::create(finalized);
 }
 
 bool ColumnVariant::isFinalized() const

@@ -527,7 +527,7 @@ public:
     }
 
     /// Some columns may require finalization before using of other operations.
-    virtual void finalize() {}
+    virtual Ptr finalize() const { return getPtr(); }
     virtual bool isFinalized() const { return true; }
 
     MutablePtr cloneFinalized() const

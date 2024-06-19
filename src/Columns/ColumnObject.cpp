@@ -1068,29 +1068,30 @@ bool ColumnObject::isFinalized() const
         [](const auto & entry) { return entry->data.isFinalized(); });
 }
 
-void ColumnObject::finalize()
+ColumnPtr ColumnObject::finalize() const
 {
-    size_t old_size = size();
-    Subcolumns new_subcolumns;
-    for (auto && entry : subcolumns)
-    {
-        const auto & least_common_type = entry->data.getLeastCommonType();
+    return getPtr();
+    // size_t old_size = size();
+    // Subcolumns new_subcolumns;
+    // for (auto && entry : subcolumns)
+    // {
+    //     const auto & least_common_type = entry->data.getLeastCommonType();
 
-        /// Do not add subcolumns, which consist only from NULLs.
-        if (isNothing(getBaseTypeOfArray(least_common_type)))
-            continue;
+    //     /// Do not add subcolumns, which consist only from NULLs.
+    //     if (isNothing(getBaseTypeOfArray(least_common_type)))
+    //         continue;
 
-        entry->data.finalize();
-        new_subcolumns.add(entry->path, entry->data);
-    }
+    //     entry->data.finalize();
+    //     new_subcolumns.add(entry->path, entry->data);
+    // }
 
-    /// If all subcolumns were skipped add a dummy subcolumn,
-    /// because Tuple type must have at least one element.
-    if (new_subcolumns.empty())
-        new_subcolumns.add(PathInData{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size, 0), is_nullable});
+    // /// If all subcolumns were skipped add a dummy subcolumn,
+    // /// because Tuple type must have at least one element.
+    // if (new_subcolumns.empty())
+    //     new_subcolumns.add(PathInData{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size, 0), is_nullable});
 
-    std::swap(subcolumns, new_subcolumns);
-    checkObjectHasNoAmbiguosPaths(getKeys());
+    // std::swap(subcolumns, new_subcolumns);
+    // checkObjectHasNoAmbiguosPaths(getKeys());
 }
 
 }

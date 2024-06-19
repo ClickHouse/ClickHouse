@@ -24,6 +24,7 @@ private:
 
     template <typename F> MutableColumns applyForShards(F && f) const;
     std::vector<WrappedPtr> cloneEmptyShards() const;
+
     static void concatToOneShard(std::vector<WrappedPtr> && shard_sources, IColumn & res);
 
     template <bool one_value, typename Inserter>
@@ -35,24 +36,16 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
+    static Ptr create(Columns && columns);
     static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
     static Ptr create(ColumnPtr && column) { return ColumnMap::create(column->assumeMutable()); }
+    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets);
+
     static MutablePtr create(MutableColumns && columns) { return Base::create(std::move(columns)); }
-
-    static MutablePtr create(MutableColumnPtr && column)
-    {
-        MutableColumns columns;
-        columns.emplace_back(std::move(column));
-        return create(std::move(columns));
-    }
-
-    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
-    {
-        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
-        return ColumnMap::create(std::move(nested_column));
-    }
+    static MutablePtr create(MutableColumnPtr && column);
 
     size_t getNumShards() const { return shards.size(); }
+    Columns getShards() const { return Columns(shards.begin(), shards.end()); }
 
     const ColumnPtr & getShardPtr(size_t idx) const { return shards[idx]; }
     ColumnPtr & getShardPtr(size_t idx) { return shards[idx]; }
@@ -114,7 +107,7 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override;
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
-    void finalize() override;
+    ColumnPtr finalize() const override;
     bool isFinalized() const override;
 
     const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*shards[0]); }

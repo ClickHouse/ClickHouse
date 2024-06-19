@@ -2,11 +2,9 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/DataTypeMap.h>
 
-#include "Common/Exception.h"
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/WeakHash.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnMap.h>
@@ -19,8 +17,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/BitHelpers.h>
-#include "DataTypes/Serializations/ISerialization.h"
-#include "DataTypes/Serializations/SerializationNumber.h"
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -547,7 +543,7 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
     auto fill_selector = [&](auto && sharder)
     {
         UInt64 prev_offset = 0;
-        for (size_t i = 0; i < column.size(); ++i)
+        for (size_t i = 0; i < column_map.size(); ++i)
         {
             UInt64 map_size = map_offsets[i] - prev_offset;
 
@@ -839,15 +835,29 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (num_shards == 1 || !settings.position_independent_encoding)
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+    size_t num_column_shards = column_map.getNumShards();
+
+    if (num_column_shards != 1 && num_shards != num_column_shards)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Serialization (with {} shards) is incompatible with Map column (with {} shards)",
+            num_shards, column_map.getNumShards());
+
+    if (num_shards == 1 && num_column_shards == 1)
     {
         nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
         return;
     }
 
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMap>(state);
+
     if (offset == 0)
-        map_state->cached_shards = scatterToShards(column, num_shards);
+    {
+        if (num_shards != 1 && num_column_shards == 1)
+            map_state->cached_shards = scatterToShards(column, num_shards);
+        else
+            map_state->cached_shards = column_map.getShards();
+    }
 
     applyForShards(num_shards, settings, [&](size_t i)
     {

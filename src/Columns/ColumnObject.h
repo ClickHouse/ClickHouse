@@ -222,7 +222,7 @@ public:
     MutableColumnPtr cloneResized(size_t new_size) const override;
 
     /// Finalizes all subcolumns.
-    void finalize() override;
+    ColumnPtr finalize() const override;
     bool isFinalized() const override;
 
     /// Order of rows in ColumnObject is undefined.

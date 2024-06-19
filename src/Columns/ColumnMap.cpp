@@ -12,7 +12,6 @@
 #include "Columns/IColumn.h"
 #include "Functions/GatherUtils/GatherUtils.h"
 #include "Functions/GatherUtils/IArraySource.h"
-#include "base/types.h"
 #include <Core/Field.h>
 
 
@@ -24,6 +23,30 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+ColumnMap::Ptr ColumnMap::create(Columns && columns)
+{
+    MutableColumns mutable_columns;
+    mutable_columns.reserve(columns.size());
+
+    for (const auto & column : columns)
+        mutable_columns.emplace_back(column->assumeMutable());
+
+    return create(std::move(mutable_columns));
+}
+
+ColumnMap::Ptr ColumnMap::create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
+{
+    auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
+    return ColumnMap::create(std::move(nested_column));
+}
+
+ColumnMap::MutablePtr ColumnMap::create(MutableColumnPtr && column)
+{
+    MutableColumns columns;
+    columns.emplace_back(std::move(column));
+    return create(std::move(columns));
 }
 
 std::string ColumnMap::getName() const
@@ -128,6 +151,7 @@ void ColumnMap::insertRangeImpl(const ColumnMap & src, Inserter && inserter)
     else
     {
         /// TODO: fix
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implememnted");
     }
 }
 
@@ -449,14 +473,20 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnMap::finalize()
+ColumnPtr ColumnMap::finalize() const
 {
-    for (auto & shard : shards)
-        shard->finalize();
+    if (isFinalized())
+        return getPtr();
+
+    std::vector<WrappedPtr> finalized_shards;
+    finalized_shards.reserve(shards.size());
+
+    for (const auto & shard : shards)
+        finalized_shards.push_back(shard->finalize());
 
     auto res = shards[0]->cloneEmpty();
-    concatToOneShard(std::move(shards), *res);
-    shards = { std::move(res) };
+    concatToOneShard(std::move(finalized_shards), *res);
+    return ColumnMap::create(std::move(res));
 }
 
 bool ColumnMap::isFinalized() const

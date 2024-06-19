@@ -302,9 +302,9 @@ public:
         variant_column->getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
-    void finalize() override
+    ColumnPtr finalize() const override
     {
-        variant_column->finalize();
+        return variant_column->finalize();
     }
 
     bool isFinalized() const override
