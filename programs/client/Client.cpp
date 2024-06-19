@@ -1112,7 +1112,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("ignore_drop_queries_probability", "1");
     if (options.count("jwt"))
     {
-        if (options.count("user"))
+        if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
     }
