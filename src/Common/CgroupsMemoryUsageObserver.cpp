@@ -1,3 +1,5 @@
+#include <memory>
+#include <stdint.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 
 #if defined(OS_LINUX)
@@ -28,8 +30,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CLOSE_FILE;
-    extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_DATA;
 }
@@ -107,6 +107,75 @@ void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmo
 namespace
 {
 
+/// Format is
+///   kernel 5
+///   rss 15
+///   [...]
+uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
+{
+    while (!buf.eof())
+    {
+        std::string current_key;
+        readStringUntilWhitespace(current_key, buf);
+        if (current_key != key)
+        {
+            std::string dummy;
+            readStringUntilNewlineInto(dummy, buf);
+            buf.ignore();
+            continue;
+        }
+
+        assertChar(' ', buf);
+        uint64_t mem_usage = 0;
+        readIntText(mem_usage, buf);
+        return mem_usage;
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find '{}' in '{}'", key, buf.getFileName());
+}
+
+struct CgroupsV1Reader : ICgroupsReader
+{
+    CgroupsV1Reader(const std::filesystem::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
+
+    uint64_t readMemoryUsage() override
+    {
+        std::lock_guard lock(mutex);
+        buf.rewind();
+        return readMetricFromStatFile(buf, "rss");
+    }
+
+private:
+    std::mutex mutex;
+    ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
+};
+
+struct CgroupsV2Reader : ICgroupsReader
+{
+    CgroupsV2Reader(const std::filesystem::path & stat_file_dir)
+        : current_buf(stat_file_dir / "memory.current"), stat_buf(stat_file_dir / "memory.stat")
+    {
+    }
+
+    uint64_t readMemoryUsage() override
+    {
+        std::lock_guard lock(mutex);
+        current_buf.rewind();
+        stat_buf.rewind();
+
+        uint64_t mem_usage = 0;
+        /// memory.current contains a single number
+        readIntText(mem_usage, current_buf);
+        mem_usage -= readMetricFromStatFile(stat_buf, "inactive_file");
+        return mem_usage;
+    }
+
+private:
+    std::mutex mutex;
+    ReadBufferFromFile current_buf TSA_GUARDED_BY(mutex);
+    ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
+};
+
 /// Caveats:
 /// - All of the logic in this file assumes that the current process is the only process in the
 ///   containing cgroup (or more precisely: the only process with significant memory consumption).
@@ -117,7 +186,7 @@ namespace
 /// - I did not test what happens if a host has v1 and v2 simultaneously enabled. I believe such
 ///   systems existed only for a short transition period.
 
-std::optional<std::string> getCgroupsV2FileName()
+std::optional<std::string> getCgroupsV2Path()
 {
     if (!cgroupsV2Enabled())
         return {};
@@ -132,29 +201,30 @@ std::optional<std::string> getCgroupsV2FileName()
     /// level, try again at the parent level as memory settings are inherited.
     while (current_cgroup != default_cgroups_mount.parent_path())
     {
-        auto path = current_cgroup / "memory.current";
-        if (std::filesystem::exists(path))
-            return {path};
+        const auto current_path = current_cgroup / "memory.current";
+        const auto stat_path = current_cgroup / "memory.stat";
+        if (std::filesystem::exists(current_path) && std::filesystem::exists(stat_path))
+            return {current_cgroup};
         current_cgroup = current_cgroup.parent_path();
     }
     return {};
 }
 
-std::optional<std::string> getCgroupsV1FileName()
+std::optional<std::string> getCgroupsV1Path()
 {
     auto path = default_cgroups_mount / "memory/memory.stat";
     if (!std::filesystem::exists(path))
         return {};
-    return {path};
+    return {default_cgroups_mount / "memory"};
 }
 
-std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsFileName()
+std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPath()
 {
-    auto v2_file_name = getCgroupsV2FileName();
+    auto v2_file_name = getCgroupsV2Path();
     if (v2_file_name.has_value())
         return {*v2_file_name, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
 
-    auto v1_file_name = getCgroupsV1FileName();
+    auto v1_file_name = getCgroupsV1Path();
     if (v1_file_name.has_value())
         return {*v1_file_name, CgroupsMemoryUsageObserver::CgroupsVersion::V1};
 
@@ -166,87 +236,25 @@ std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsFil
 CgroupsMemoryUsageObserver::MemoryUsageFile::MemoryUsageFile(LoggerPtr log_)
     : log(log_)
 {
-    std::tie(file_name, version) = getCgroupsFileName();
+    const auto [cgroup_path, version] = getCgroupsPath();
 
-    LOG_INFO(log, "Will read the current memory usage from '{}' (cgroups version: {})", file_name, (version == CgroupsVersion::V1) ? "v1" : "v2");
+    if (version == CgroupsVersion::V2)
+        cgroup_reader = std::make_unique<CgroupsV2Reader>(cgroup_path);
+    else
+        cgroup_reader = std::make_unique<CgroupsV1Reader>(cgroup_path);
 
-    fd = ::open(file_name.data(), O_RDONLY);
-    if (fd == -1)
-        ErrnoException::throwFromPath(
-            (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
-            file_name, "Cannot open file '{}'", file_name);
-}
-
-CgroupsMemoryUsageObserver::MemoryUsageFile::~MemoryUsageFile()
-{
-    assert(fd != -1);
-    if (::close(fd) != 0)
-    {
-        try
-        {
-            ErrnoException::throwFromPath(
-                ErrorCodes::CANNOT_CLOSE_FILE,
-                file_name, "Cannot close file '{}'", file_name);
-        }
-        catch (const ErrnoException &)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
-    }
+    LOG_INFO(
+        log,
+        "Will read the current memory usage from '{}' (cgroups version: {})",
+        cgroup_path,
+        (version == CgroupsVersion::V1) ? "v1" : "v2");
 }
 
 uint64_t CgroupsMemoryUsageObserver::MemoryUsageFile::readMemoryUsage() const
 {
-    /// File read is probably not read is thread-safe, just to be sure
-    std::lock_guard lock(mutex);
-
-    ReadBufferFromFileDescriptor buf(fd);
-    buf.rewind();
-
-    uint64_t mem_usage = 0;
-
-    switch (version)
-    {
-        case CgroupsVersion::V1:
-        {
-            /// Format is
-            ///   kernel 5
-            ///   rss 15
-            ///   [...]
-            std::string key;
-            bool found_rss = false;
-
-            while (!buf.eof())
-            {
-                readStringUntilWhitespace(key, buf);
-                if (key != "rss")
-                {
-                    std::string dummy;
-                    readStringUntilNewlineInto(dummy, buf);
-                    buf.ignore();
-                    continue;
-                }
-
-                assertChar(' ', buf);
-                readIntText(mem_usage, buf);
-                found_rss = true;
-                break;
-            }
-
-            if (!found_rss)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find 'rss' in '{}'", file_name);
-
-            break;
-        }
-        case CgroupsVersion::V2:
-        {
-            readIntText(mem_usage, buf);
-            break;
-        }
-    }
-
+    chassert(cgroup_reader);
+    const auto mem_usage = cgroup_reader->readMemoryUsage();
     LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(mem_usage));
-
     return mem_usage;
 }
 
