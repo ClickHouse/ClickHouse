@@ -14,7 +14,7 @@ function run_test_for_disk()
 
     echo "$disk"
 
-    clickhouse-disks -C "$config" --disk "$disk" --query "write --path-from "$config" $CLICKHOUSE_DATABASE/test"
+    clickhouse-disks -C "$config" --disk "$disk" --query "write --path-from $config $CLICKHOUSE_DATABASE/test"
     clickhouse-disks -C "$config" --log-level test --disk "$disk" --query "copy $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy" |& {
         grep -o -e "Single part upload has completed." -e "Single operation copy has completed."
     }
@@ -29,9 +29,9 @@ function run_test_copy_from_s3_to_s3(){
     local disk_dest=$1 && shift
 
     echo "copy from $disk_src to $disk_dest"
-    clickhouse-disks -C "$config" --disk "$disk_src" --query "write --path-from "$config" $CLICKHOUSE_DATABASE/test"
+    clickhouse-disks -C "$config" --disk "$disk_src" --query "write --path-from $config $CLICKHOUSE_DATABASE/test"
 
-    clickhouse-disks -C "$config" --log-level test --query "copy --disk-from "$disk_src" --disk-to "$disk_dest"  $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy" |& {
+    clickhouse-disks -C "$config" --log-level test --query "copy --disk-from $disk_src --disk-to $disk_dest $CLICKHOUSE_DATABASE/test $CLICKHOUSE_DATABASE/test.copy" |& {
         grep -o -e "Single part upload has completed." -e "Single operation copy has completed."
     }
     clickhouse-disks -C "$config" --disk "$disk_dest" --query "remove $CLICKHOUSE_DATABASE/test.copy/test"
