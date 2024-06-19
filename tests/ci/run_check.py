@@ -73,7 +73,7 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
         )
         return False, "Needs 'can be tested' label"
 
-    return True, "No special conditions apply"
+    return True, ""
 
 
 def main():
