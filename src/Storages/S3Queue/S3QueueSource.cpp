@@ -32,9 +32,9 @@ namespace ErrorCodes
 }
 
 StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
-        const ObjectInfo & object_info,
+        const Source::ObjectInfo & object_info,
         S3QueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(object_info.relative_path, object_info.metadata)
+    : Source::ObjectInfo(object_info.relative_path, object_info.metadata)
     , file_metadata(file_metadata_)
 {
 }
@@ -138,7 +138,7 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
 {
     /// We need this lock to maintain consistency between listing s3 directory
     /// and getting/putting result into listed_keys_cache.
-    std::lock_guard lock(buckets_mutex);
+    std::lock_guard lock(mutex);
 
     auto bucket_holder_it = bucket_holders.emplace(processor, std::vector<BucketHolderPtr>{}).first;
     BucketHolder * current_bucket_holder = bucket_holder_it->second.empty() || bucket_holder_it->second.back()->isFinished()

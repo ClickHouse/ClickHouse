@@ -79,12 +79,10 @@ public:
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(buckets_mutex);
+        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
 
         /// We store a vector of holders, because we cannot release them until processed files are commited.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(buckets_mutex);
-        /// Protects bucket_holders.
-        std::mutex buckets_mutex;
+        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
 
         /// Is glob_iterator finished?
         bool iterator_finished = false;
