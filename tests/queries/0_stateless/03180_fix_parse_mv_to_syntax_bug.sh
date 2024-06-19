@@ -5,7 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-length=10
 prefix="test_db_"
 db_name="${prefix}${RANDOM}"
 url="${CLICKHOUSE_URL}&param_target=mv_target&param_src=mv_src&param_mv_name=mv&param_mv_db_name=${db_name}"
