@@ -151,6 +151,8 @@ class AsyncLoader;
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
 
+using ClusterPtr = std::shared_ptr<Cluster>;
+
 class LoadTask;
 using LoadTaskPtr = std::shared_ptr<LoadTask>;
 using LoadTaskPtrs = std::vector<LoadTaskPtr>;
@@ -435,6 +437,8 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
+
+    bool offset_parallel_replicas_enabled = true;
 
 public:
     /// Some counters for current query execution.
@@ -1273,7 +1277,13 @@ public:
     bool canUseTaskBasedParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
-    bool canUseParallelReplicasCustomKey(const Cluster & cluster) const;
+    bool canUseParallelReplicasCustomKey() const;
+    bool canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const;
+    bool canUseOffsetParallelReplicas() const;
+
+    void disableOffsetParallelReplicas();
+
+    ClusterPtr getClusterForParallelReplicas() const;
 
     enum class ParallelReplicasMode : uint8_t
     {

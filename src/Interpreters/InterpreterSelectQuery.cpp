@@ -566,7 +566,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
-    if (storage && context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
+    if (storage && context->canUseParallelReplicasCustomKey() && !joined_tables.tablesWithColumns().empty())
     {
         if (settings.parallel_replicas_count > 1)
         {
@@ -587,16 +587,23 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             else if (settings.parallel_replica_offset > 0)
             {
                 throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Parallel replicas processing with custom_key has been requested "
-                        "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
-                        "or it's invalid (settings `parallel_replicas_custom_key`)");
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Parallel replicas processing with custom_key has been requested "
+                    "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
+                    "or it's invalid (settings `parallel_replicas_custom_key`)");
             }
         }
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
-                 distributed && context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
+                 distributed && context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
         {
             context->setSetting("distributed_group_by_no_merge", 2);
+            context->setSetting("prefer_localhost_replica", Field(0));
+        }
+        else if (
+            storage->isMergeTree() && (storage->supportsReplication() || settings.parallel_replicas_for_non_replicated_merge_tree)
+            && context->canUseParallelReplicasCustomKeyForCluster(*context->getClusterForParallelReplicas()))
+        {
+            context->setSetting("prefer_localhost_replica", Field(0));
         }
     }
 

@@ -1,5 +1,6 @@
 #include "StorageMergeTree.h"
 #include "Core/QueryProcessingStage.h"
+#include "Interpreters/ClientInfo.h"
 #include "Storages/MergeTree/IMergeTreeDataPart.h"
 
 #include <optional>
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 namespace ActionLocks
@@ -220,24 +222,44 @@ void StorageMergeTree::read(
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
+        return;
     }
-    else
-    {
-        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
-            && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
-            && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
 
-        if (auto plan = reader.read(
-                column_names,
+    if (local_context->canUseParallelReplicasCustomKey() && settings.parallel_replicas_for_non_replicated_merge_tree
+        && !settings.allow_experimental_analyzer && local_context->getClientInfo().distributed_depth == 0)
+    {
+        if (auto cluster = local_context->getClusterForParallelReplicas();
+            local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+        {
+            auto modified_query_info = query_info;
+            modified_query_info.cluster = std::move(cluster);
+            ClusterProxy::executeQueryWithParallelReplicasCustomKey(
+                query_plan,
+                getStorageID(),
+                std::move(modified_query_info),
+                getInMemoryMetadataPtr()->getColumns(),
                 storage_snapshot,
-                query_info,
-                local_context,
-                max_block_size,
-                num_streams,
-                nullptr,
-                enable_parallel_reading))
-            query_plan = std::move(*plan);
+                processed_stage,
+                query_info.query,
+                local_context);
+            return;
+        }
     }
+
+    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
+        && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
+        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
+
+    if (auto plan = reader.read(
+            column_names,
+            storage_snapshot,
+            query_info,
+            local_context,
+            max_block_size,
+            num_streams,
+            nullptr,
+            enable_parallel_reading))
+        query_plan = std::move(*plan);
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const

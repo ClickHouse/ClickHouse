@@ -190,6 +190,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -7075,6 +7076,20 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
     if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
+        const auto & settings = query_context->getSettingsRef();
+        if (query_context->canUseParallelReplicasCustomKey())
+        {
+            if (query_context->getClientInfo().distributed_depth > 0)
+                return QueryProcessingStage::FetchColumns;
+
+            if (!settings.parallel_replicas_for_non_replicated_merge_tree)
+                return QueryProcessingStage::Enum::FetchColumns;
+
+            if (to_stage >= QueryProcessingStage::WithMergeableState
+                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        }
+
         if (query_context->getClientInfo().collaborate_with_initiator)
             return QueryProcessingStage::Enum::FetchColumns;
 
@@ -7086,7 +7101,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
                 return QueryProcessingStage::Enum::WithMergeableState;
 
             /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+            if (settings.parallel_replicas_for_non_replicated_merge_tree)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }

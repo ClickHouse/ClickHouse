@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -12,6 +12,11 @@ struct DistributedSettings;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 struct SelectQueryInfo;
+
+class ColumnsDescription;
+struct StorageSnapshot;
+
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class Pipe;
 class QueryPlan;
@@ -60,10 +65,10 @@ void executeQuery(
     LoggerPtr log,
     ContextPtr context,
     const SelectQueryInfo & query_info,
+    const ColumnsDescription & columns,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
-    AdditionalShardFilterGenerator shard_filter_generator,
     bool is_remote_function);
 
 void executeQueryWithParallelReplicas(
@@ -91,6 +96,36 @@ void executeQueryWithParallelReplicas(
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);
+
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    const SelectQueryInfo & query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const Block & header,
+    ContextPtr context);
+
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    const SelectQueryInfo & query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const QueryTreeNodePtr & query_tree,
+    ContextPtr context);
+
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    SelectQueryInfo query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context);
 }
 
 }

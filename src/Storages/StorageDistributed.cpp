@@ -426,7 +426,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     query_info.cluster = cluster;
 
-    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
+    if (!local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
     {
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
@@ -871,20 +871,6 @@ void StorageDistributed::read(
             remote_database, remote_table, remote_table_function_ptr);
     }
 
-    /// Return directly (with correct header) if no shard to query.
-    if (modified_query_info.getCluster()->getShardsInfo().empty())
-    {
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
-            return;
-
-        Pipe pipe(std::make_shared<NullSource>(header));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-        query_plan.addStep(std::move(read_from_pipe));
-
-        return;
-    }
-
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
@@ -892,28 +878,6 @@ void StorageDistributed::read(
             snapshot_data.objects_by_shard,
             storage_snapshot,
             processed_stage);
-
-    const auto & settings = local_context->getSettingsRef();
-
-    ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (local_context->canUseParallelReplicasCustomKey(*modified_query_info.getCluster()))
-    {
-        if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
-        {
-            additional_shard_filter_generator =
-                [my_custom_key_ast = std::move(custom_key_ast),
-                 column_description = this->getInMemoryMetadataPtr()->columns,
-                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
-                 custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
-                 custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
-                 context = local_context,
-                 replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
-            {
-                return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, {custom_key_type, custom_key_range_lower, custom_key_range_upper}, column_description, context);
-            };
-        }
-    }
 
     ClusterProxy::executeQuery(
         query_plan,
@@ -925,10 +889,10 @@ void StorageDistributed::read(
         log,
         local_context,
         modified_query_info,
+        getInMemoryMetadataPtr()->columns,
         sharding_key_expr,
         sharding_key_column_name,
         distributed_settings,
-        additional_shard_filter_generator,
         /* is_remote_function= */ static_cast<bool>(owned_cluster));
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.

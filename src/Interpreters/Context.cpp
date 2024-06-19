@@ -5394,10 +5394,37 @@ bool Context::canUseParallelReplicasOnFollower() const
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
-bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
+bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+}
+
+bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
+{
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+}
+
+bool Context::canUseOffsetParallelReplicas() const
+{
+    return offset_parallel_replicas_enabled && settings.max_parallel_replicas > 1
+        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
+}
+
+void Context::disableOffsetParallelReplicas()
+{
+    offset_parallel_replicas_enabled = false;
+}
+
+ClusterPtr Context::getClusterForParallelReplicas() const
+{
+    /// check cluster for parallel replicas
+    if (settings.cluster_for_parallel_replicas.value.empty())
+        throw Exception(
+            ErrorCodes::CLUSTER_DOESNT_EXIST,
+            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
+            "'cluster_for_parallel_replicas' setting");
+
+    return getCluster(settings.cluster_for_parallel_replicas);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
