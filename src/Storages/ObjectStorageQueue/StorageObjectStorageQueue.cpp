@@ -105,7 +105,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(queue_settings->polling_min_timeout_ms)
-    , log(getLogger(fmt::format("{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     if (configuration->getPath().empty())
     {
