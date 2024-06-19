@@ -196,7 +196,7 @@ public:
 
         readVarUInt(cur_data.data_size, buf);
 
-        cur_data.data = new char[cur_data.data_size];
+        checkAndUpdateSize(cur_data.data_size, arena);
         buf.readStrict(cur_data.data, cur_data.data_size);
 
         if constexpr (has_limit)
