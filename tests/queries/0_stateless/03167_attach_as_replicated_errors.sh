@@ -23,9 +23,9 @@ ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -n -q "
 "
 
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE mt AS NOT REPLICATED" 2>&1)" \
-  | grep -c 'Table is already not replicated'
+  | grep -c 'Can not attach table as not replicated, table is already not replicated'
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE rmt AS REPLICATED" 2>&1)" \
-  | grep -c 'Table is already replicated'
+  | grep -c 'Can not attach table as replicated, table is already replicated'
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE log AS REPLICATED" 2>&1)" \
   | grep -c 'Table engine conversion is supported only for MergeTree family engines'
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE mt AS REPLICATED ON CLUSTER test_shard_localhost" 2>&1)" \

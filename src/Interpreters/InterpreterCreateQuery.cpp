@@ -1967,10 +1967,10 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (engine_name.starts_with("Replicated"))
     {
         if (to_replicated)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Table is already replicated");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as replicated, table is already replicated");
     }
     else if (!to_replicated)
-       throw Exception(ErrorCodes::INCORRECT_QUERY, "Table is already not replicated");
+       throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
     /// Set new engine
     DatabaseOrdinary::setReplicatedMergeTreeEngine(create, getContext(), to_replicated);
