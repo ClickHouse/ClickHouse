@@ -30,8 +30,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & context_, const QualifiedTableName & table_name_, const ASTPtr & ast_)
-            : create_query(ast_), table_name(table_name_), current_database(context_->getCurrentDatabase()), context(context_)
+        DDLDependencyVisitorData(const ContextPtr & context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_)
+            : create_query(ast_), table_name(table_name_), current_database(current_database_), context(context_)
         {
         }
 
@@ -464,9 +464,9 @@ namespace
 }
 
 
-TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & context, const QualifiedTableName & table_name, const ASTPtr & ast)
+TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database)
 {
-    DDLDependencyVisitor::Data data{context, table_name, ast};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return std::move(data).getDependencies();
