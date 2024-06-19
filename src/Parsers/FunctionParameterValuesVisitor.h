@@ -7,17 +7,8 @@
 
 namespace DB
 {
-struct ScopeAliases;
 
 /// Find parameters in a query parameter values and collect them into map.
-struct ParamValuesAnalyzeResult
-{
-    /// Param name -> resolved param value
-    NameToNameMap resolved_param_values;
-    /// Param name -> alias
-    NameToNameMap unresolved_param_aliases;
-};
-
-ParamValuesAnalyzeResult analyzeFunctionParamValues(const ASTPtr & ast, const ContextPtr & context, const ScopeAliases * scope_aliases = nullptr);
+NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, ContextPtr context);
 
 }

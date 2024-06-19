@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -25,7 +24,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
@@ -63,6 +61,7 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+#include <Analyzer/Resolve/ParametrizedViewFunctionVisitor.h>
 
 namespace ProfileEvents
 {
@@ -4509,35 +4508,19 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
-        auto param_values_result = analyzeFunctionParamValues(function_ast, context, &scope.aliases);
-
-        for (const auto & [param_name, alias] : param_values_result.unresolved_param_aliases)
-        {
-            auto it = scope.aliases.alias_name_to_expression_node_before_group_by.find(alias);
-            if (it != scope.aliases.alias_name_to_expression_node_before_group_by.end())
+        auto params_visitor = ParametrizedViewFunctionParamsVisitor(
+            [&](QueryTreeNodePtr node)
             {
-                std::string resolved_value_str;
-                try
-                {
-                    resolveExpressionNode(it->second, scope, /* allow_lambda_expression */false, /* allow_table_expression */false);
-                    auto resolved_value = evaluateConstantExpressionOrIdentifierAsLiteral(it->second->toAST(), context);
-                    resolved_value_str = convertFieldToString(resolved_value->as<ASTLiteral>()->value);
-                }
-                catch (...)
-                {
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "Failed to resolve alias ({}) value for parameter {} for parametrized view function: {}. Error: {}",
-                        alias, param_name, it->second->formatASTForErrorMessage(), getCurrentExceptionMessage(true));
-                }
-                param_values_result.resolved_param_values.emplace(param_name, std::move(resolved_value_str));
-            }
-        }
+                resolveExpressionNode(node, scope, /* allow_lambda_expression */true, /* allow_table_function */false);
+            },
+            context);
+
+        params_visitor.visit(table_function_node);
 
         auto parametrized_view_storage = context->buildParametrizedViewStorage(
             database_name,
             table_name,
-            param_values_result.resolved_param_values);
+            params_visitor.getParams());
 
         if (parametrized_view_storage)
         {
