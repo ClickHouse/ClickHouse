@@ -954,10 +954,10 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         for (; tp_it != topic_partitions.end(); ++tp_it, ++path_it)
         {
             using zkutil::EphemeralNodeHolder;
-            LockedTopicPartitionInfo lock_info{.lock = EphemeralNodeHolder::existing(*path_it / lock_file_name, keeper_to_use)};
-
-            lock_info.committed_offset = getNumber(keeper_to_use, *path_it / commit_file_name);
-            lock_info.intent_size = getNumber(keeper_to_use, *path_it / intent_file_name);
+            LockedTopicPartitionInfo lock_info{
+                EphemeralNodeHolder::existing(*path_it / lock_file_name, keeper_to_use),
+                getNumber(keeper_to_use, *path_it / commit_file_name),
+                getNumber(keeper_to_use, *path_it / intent_file_name)};
 
             LOG_TRACE(
                 log,

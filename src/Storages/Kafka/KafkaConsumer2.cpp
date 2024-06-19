@@ -1,22 +1,22 @@
-// Needs to go first because its partial specialization of fmt::formatter
-// should be defined before any instantiation
-#include <cppkafka/exceptions.h>
-#include <cppkafka/topic_partition.h>
-#include <cppkafka/topic_partition_list.h>
-#include <fmt/ostream.h>
-
-#include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 
+#include <fmt/ranges.h>
+#include <cppkafka/exceptions.h>
+#include <cppkafka/topic_partition.h>
+#include <cppkafka/cppkafka.h>
+#include <cppkafka/topic_partition_list.h>
+#include <fmt/ostream.h>
+#include <boost/algorithm/string/join.hpp>
+
+#include <IO/ReadBufferFromMemory.h>
+#include <Storages/Kafka/StorageKafkaCommon.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 #include <algorithm>
 #include <iterator>
-#include <boost/algorithm/string/join.hpp>
-#include <cppkafka/cppkafka.h>
 
-#include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
 
 namespace CurrentMetrics
 {

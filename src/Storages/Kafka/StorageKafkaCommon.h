@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
+#include <cppkafka/topic_partition.h>
+#include <fmt/ostream.h>
 #include <librdkafka/rdkafka.h>
 
 namespace Poco
@@ -59,3 +61,13 @@ struct KafkaConfigLoader
         const Names & topics);
 };
 }
+
+
+template <>
+struct fmt::formatter<cppkafka::TopicPartition> : fmt::ostream_formatter
+{
+};
+template <>
+struct fmt::formatter<cppkafka::Error> : fmt::ostream_formatter
+{
+};

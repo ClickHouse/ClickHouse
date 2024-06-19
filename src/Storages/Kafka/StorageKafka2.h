@@ -99,9 +99,9 @@ private:
     {
         KafkaConsumer2Ptr consumer; /// available consumers
         size_t consume_from_topic_partition_index{0};
-        TopicPartitions topic_partitions;
+        TopicPartitions topic_partitions{};
         zkutil::ZooKeeperPtr keeper;
-        TopicPartitionLocks locks;
+        TopicPartitionLocks locks{};
         Stopwatch watch{CLOCK_MONOTONIC_COARSE};
     };
 
