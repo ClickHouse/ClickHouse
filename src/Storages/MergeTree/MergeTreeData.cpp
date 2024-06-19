@@ -190,7 +190,6 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
-    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)

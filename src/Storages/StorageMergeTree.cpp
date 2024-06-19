@@ -67,7 +67,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_IS_READ_ONLY;
-    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 namespace ActionLocks

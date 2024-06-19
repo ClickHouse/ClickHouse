@@ -38,7 +38,6 @@ namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
-    extern const int CLUSTER_DOESNT_EXIST;
     extern const int UNEXPECTED_CLUSTER;
 }
 

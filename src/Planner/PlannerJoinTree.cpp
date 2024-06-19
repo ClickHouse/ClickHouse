@@ -81,7 +81,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
-    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 namespace
