@@ -112,7 +112,7 @@ struct fmt::formatter<DB::TestHint::ErrorVector>
     }
 
     template <typename FormatContext>
-    auto format(const DB::TestHint::ErrorVector & ErrorVector, FormatContext & ctx)
+    auto format(const DB::TestHint::ErrorVector & ErrorVector, FormatContext & ctx) const
     {
         if (ErrorVector.empty())
             return fmt::format_to(ctx.out(), "{}", 0);

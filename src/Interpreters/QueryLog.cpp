@@ -136,6 +136,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
 
+        {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
+        {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
+
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query cache, 'Write' = The query result was written into the query cache, 'Read' = The query result was read from the query cache."},
@@ -267,6 +270,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
@@ -290,6 +295,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
         fill_column(used_row_policies, column_row_policies_names);
+        fill_column(used_privileges, column_used_privileges);
+        fill_column(missing_privileges, column_missing_privileges);
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});

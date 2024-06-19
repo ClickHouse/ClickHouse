@@ -258,7 +258,8 @@
     M(KeeperExistsRequest) \
 \
     M(IOUringSQEsSubmitted) \
-    M(IOUringSQEsResubmits) \
+    M(IOUringSQEsResubmitsAsync) \
+    M(IOUringSQEsResubmitsSync) \
     M(IOUringCQEsCompleted) \
     M(IOUringCQEsFailed) \
 \

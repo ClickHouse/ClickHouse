@@ -10,7 +10,7 @@
 #include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
 #include <Storages/S3Queue/S3QueueUnorderedFileMetadata.h>
 #include <Storages/S3Queue/S3QueueTableMetadata.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>

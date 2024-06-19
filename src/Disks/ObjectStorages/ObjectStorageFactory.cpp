@@ -172,6 +172,14 @@ void checkS3Capabilities(
 }
 }
 
+static std::string getEndpoint(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ContextPtr & context)
+{
+    return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+}
+
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
     static constexpr auto disk_type = "s3";
@@ -185,8 +193,9 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings, true);
+        auto endpoint = getEndpoint(config, config_prefix, context);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
@@ -221,8 +230,9 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings, true);
+        auto endpoint = getEndpoint(config, config_prefix, context);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
@@ -255,8 +265,9 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-            auto settings = getSettings(config, config_prefix, context);
-            auto client = getClient(config, config_prefix, context, *settings, true);
+            auto endpoint = getEndpoint(config, config_prefix, context);
+            auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+            auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
             auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<S3ObjectStorage, MetadataStorageType::PlainRewritable>();

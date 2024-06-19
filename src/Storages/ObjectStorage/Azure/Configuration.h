@@ -51,7 +51,7 @@ public:
         ContextPtr context) override;
 
 protected:
-    void fromNamedCollection(const NamedCollection & collection) override;
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

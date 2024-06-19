@@ -20,6 +20,7 @@ handle SIGPIPE nostop noprint pass
 handle SIGTERM nostop noprint pass
 handle SIGUSR1 nostop noprint pass
 handle SIGUSR2 nostop noprint pass
+handle SIGSEGV nostop pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue

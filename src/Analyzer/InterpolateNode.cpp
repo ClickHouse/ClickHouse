@@ -10,9 +10,12 @@
 namespace DB
 {
 
-InterpolateNode::InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_)
+InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_)
     : IQueryTreeNode(children_size)
 {
+    if (expression_)
+        expression_name = expression_->getIdentifier().getFullName();
+
     children[expression_child_index] = std::move(expression_);
     children[interpolate_expression_child_index] = std::move(interpolate_expression_);
 }
@@ -41,13 +44,23 @@ void InterpolateNode::updateTreeHashImpl(HashState &, CompareOptions) const
 
 QueryTreeNodePtr InterpolateNode::cloneImpl() const
 {
-    return std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
+    auto cloned = std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
+    cloned->expression_name = expression_name;
+    return cloned;
 }
 
 ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto result = std::make_shared<ASTInterpolateElement>();
-    result->column = getExpression()->toAST(options)->getColumnName();
+
+    /// Interpolate parser supports only identifier node.
+    /// In case of alias, identifier is replaced to expression, which can't be parsed.
+    /// In this case, keep original alias name.
+    if (const auto * identifier = getExpression()->as<IdentifierNode>())
+        result->column = identifier->toAST(options)->getColumnName();
+    else
+        result->column = expression_name;
+
     result->children.push_back(getInterpolateExpression()->toAST(options));
     result->expr = result->children.back();
 

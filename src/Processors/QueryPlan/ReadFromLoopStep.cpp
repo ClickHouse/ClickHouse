@@ -1,14 +1,15 @@
-#include <Processors/QueryPlan/ReadFromLoopStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/IStorage.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Interpreters/Context.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -111,6 +112,13 @@ namespace DB
         std::unique_ptr<PullingPipelineExecutor> executor;
     };
 
+    static ContextPtr disableParallelReplicas(ContextPtr context)
+    {
+        auto modified_context = Context::createCopy(context);
+        modified_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        return modified_context;
+    }
+
     ReadFromLoopStep::ReadFromLoopStep(
             const Names & column_names_,
             const SelectQueryInfo & query_info_,
@@ -125,7 +133,7 @@ namespace DB
             column_names_,
             query_info_,
             storage_snapshot_,
-            context_)
+            disableParallelReplicas(context_))
             , column_names(column_names_)
             , processed_stage(processed_stage_)
             , inner_storage(std::move(inner_storage_))

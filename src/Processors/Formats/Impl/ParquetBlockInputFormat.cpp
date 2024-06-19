@@ -420,6 +420,24 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
 
+    auto adative_chunk_size = [&](int row_group_idx) -> size_t
+    {
+        size_t total_size = 0;
+        auto row_group_meta = metadata->RowGroup(row_group_idx);
+        for (int column_index : column_indices)
+        {
+            total_size += row_group_meta->ColumnChunk(column_index)->total_uncompressed_size();
+        }
+        if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
+        auto average_row_bytes = floor(static_cast<double>(total_size) / row_group_meta->num_rows());
+        // avoid inf preferred_num_rows;
+        if (average_row_bytes < 1) return 0;
+        const size_t preferred_num_rows = static_cast<size_t>(floor(format_settings.parquet.prefer_block_bytes/average_row_bytes));
+        const size_t MIN_ROW_NUM = 128;
+        // size_t != UInt64 in darwin
+        return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), static_cast<size_t>(format_settings.parquet.max_block_size));
+    };
+
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
@@ -439,6 +457,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
+        auto rows = adative_chunk_size(row_group);
+        row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
 }
 
@@ -449,7 +469,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     parquet::ArrowReaderProperties arrow_properties;
     parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
     arrow_properties.set_use_threads(false);
-    arrow_properties.set_batch_size(format_settings.parquet.max_block_size);
+    arrow_properties.set_batch_size(row_group_batch.adaptive_chunk_size);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one

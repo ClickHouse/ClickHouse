@@ -91,6 +91,9 @@ cd ./utils/check-style
 # Check python type hinting with mypy
 ./check-mypy
 
+# Check python with flake8
+./check-flake8
+
 # Check code with codespell
 ./check-typos
 

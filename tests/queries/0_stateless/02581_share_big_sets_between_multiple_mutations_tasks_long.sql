@@ -1,4 +1,4 @@
--- Tags: long, no-debug, no-tsan, no-asan, no-ubsan, no-msan, no-parallel
+-- Tags: long, no-debug, no-tsan, no-asan, no-ubsan, no-msan, no-parallel, no-sanitize-coverage
 
 -- no-parallel because the sets use a lot of memory, which may interfere with other tests
 

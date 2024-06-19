@@ -330,27 +330,26 @@ void SSLManager::initDefaultContext(bool server)
 	else
 		_ptrDefaultClientContext->disableProtocols(disabledProtocols);
 
-    /// Temporarily disabled during the transition from boringssl to OpenSSL due to tsan issues.
-	/// bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
-	/// if (server)
-	/// {
-	/// 	std::string sessionIdContext = config.getString(prefix + CFG_SESSION_ID_CONTEXT, config.getString("application.name", ""));
-	/// 	_ptrDefaultServerContext->enableSessionCache(cacheSessions, sessionIdContext);
-	/// 	if (config.hasProperty(prefix + CFG_SESSION_CACHE_SIZE))
-	/// 	{
-	/// 		int cacheSize = config.getInt(prefix + CFG_SESSION_CACHE_SIZE);
-	/// 		_ptrDefaultServerContext->setSessionCacheSize(cacheSize);
-	/// 	}
-	/// 	if (config.hasProperty(prefix + CFG_SESSION_TIMEOUT))
-	/// 	{
-	/// 		int timeout = config.getInt(prefix + CFG_SESSION_TIMEOUT);
-	/// 		_ptrDefaultServerContext->setSessionTimeout(timeout);
-	/// 	}
-	/// }
-	/// else
-	/// {
-	/// 	_ptrDefaultClientContext->enableSessionCache(cacheSessions);
-	/// }
+	bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
+	if (server)
+	{
+		std::string sessionIdContext = config.getString(prefix + CFG_SESSION_ID_CONTEXT, config.getString("application.name", ""));
+		_ptrDefaultServerContext->enableSessionCache(cacheSessions, sessionIdContext);
+		if (config.hasProperty(prefix + CFG_SESSION_CACHE_SIZE))
+		{
+			int cacheSize = config.getInt(prefix + CFG_SESSION_CACHE_SIZE);
+			_ptrDefaultServerContext->setSessionCacheSize(cacheSize);
+		}
+		if (config.hasProperty(prefix + CFG_SESSION_TIMEOUT))
+		{
+			int timeout = config.getInt(prefix + CFG_SESSION_TIMEOUT);
+			_ptrDefaultServerContext->setSessionTimeout(timeout);
+		}
+	}
+	else
+	{
+		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
+	}
 	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);

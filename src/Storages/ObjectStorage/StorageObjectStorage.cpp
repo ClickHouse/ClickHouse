@@ -424,7 +424,7 @@ void StorageObjectStorage::Configuration::initialize(
     bool with_table_structure)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-        configuration.fromNamedCollection(*named_collection);
+        configuration.fromNamedCollection(*named_collection, local_context);
     else
         configuration.fromAST(engine_args, local_context, with_table_structure);
 

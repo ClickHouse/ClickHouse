@@ -57,7 +57,13 @@ public:
     /// Is throttler already accumulated some sleep time and throttling.
     bool isThrottling() const;
 
+    Int64 getAvailable();
+    UInt64 getMaxSpeed() const { return static_cast<UInt64>(max_speed); }
+    UInt64 getMaxBurst() const { return static_cast<UInt64>(max_burst); }
+
 private:
+    void addImpl(size_t amount, size_t & count_value, double & tokens_value);
+
     size_t count{0};
     const size_t max_speed{0}; /// in tokens per second.
     const size_t max_burst{0}; /// in tokens.

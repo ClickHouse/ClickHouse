@@ -5,8 +5,6 @@
 
 #include <Common/Scheduler/Nodes/FairPolicy.h>
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
-#include "Common/Scheduler/ISchedulerNode.h"
-#include "Common/Scheduler/ResourceRequest.h"
 
 using namespace DB;
 
