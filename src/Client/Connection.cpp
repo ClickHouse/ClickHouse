@@ -72,8 +72,14 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    if (connected)
-        Connection::disconnect();
+    try{
+        if (connected)
+            Connection::disconnect();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 Connection::Connection(const String & host_, UInt16 port_,
