@@ -44,10 +44,10 @@ class ResourceGuard
 public:
     enum class Lock
     {
-        StraightAway, /// Locks inside constructor (default)
+        Default, /// Locks inside constructor
 
         // WARNING: Only for tests. It is not exception-safe because `lock()` must be called after construction.
-        Postpone /// Don't lock in constructor, but send request
+        Defer /// Don't lock in constructor, but send request
     };
 
     struct Metrics
@@ -155,8 +155,8 @@ public:
         RequestState state = Finished;
     };
 
-    /// Creates pending request for resource; blocks while resource is not available (unless `PostponeLocking`)
-    explicit ResourceGuard(const Metrics * metrics, ResourceLink link_, ResourceCost cost = 1, ResourceGuard::Lock type = ResourceGuard::Lock::StraightAway)
+    /// Creates pending request for resource; blocks while resource is not available (unless `Lock::Defer`)
+    explicit ResourceGuard(const Metrics * metrics, ResourceLink link_, ResourceCost cost = 1, ResourceGuard::Lock type = ResourceGuard::Lock::Default)
         : link(link_)
         , request(Request::local(metrics))
     {
@@ -165,7 +165,7 @@ public:
         else if (link)
         {
             request.enqueue(cost, link);
-            if (type == Lock::StraightAway)
+            if (type == Lock::Default)
                 request.wait();
         }
     }

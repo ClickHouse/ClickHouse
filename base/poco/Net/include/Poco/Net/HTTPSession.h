@@ -49,7 +49,7 @@ namespace Net
         /// Called when sending/receiving of data `bytes` is successfully finished.
 
         virtual void fail() = 0;
-        /// If an error occured during send/receive `fail()` is called instead of `finish()`.
+        /// If an error occurred during send/receive `fail()` is called instead of `finish()`.
     };
 
 

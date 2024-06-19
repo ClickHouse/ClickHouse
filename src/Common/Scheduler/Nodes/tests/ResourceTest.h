@@ -232,7 +232,7 @@ struct ResourceTestManager : public ResourceTestBase
         ResourceTestManager & t;
 
         Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost)
-            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost, Lock::Postpone)
+            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost, Lock::Defer)
             , t(t_)
         {
             t.onEnqueue(link);
@@ -311,7 +311,7 @@ struct ResourceTestManager : public ResourceTestBase
     // NOTE: actually leader's request(s) make their own small busy period.
     void blockResource(ResourceLink link)
     {
-        ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), link, 1, ResourceGuard::Lock::Postpone);
+        ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), link, 1, ResourceGuard::Lock::Defer);
         g.lock();
         g.consume(1);
         // NOTE: at this point we assume resource to be blocked by single request (<max_requests>1</max_requests>)
@@ -322,7 +322,7 @@ struct ResourceTestManager : public ResourceTestBase
     {
         getLinkData(link).left += total_requests + 1;
         busy_period.arrive_and_wait(); // (1) wait leader to block resource
-        ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), link, cost, ResourceGuard::Lock::Postpone);
+        ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), link, cost, ResourceGuard::Lock::Defer);
         onEnqueue(link);
         busy_period.arrive_and_wait(); // (2) notify leader to unblock
         g.lock();
