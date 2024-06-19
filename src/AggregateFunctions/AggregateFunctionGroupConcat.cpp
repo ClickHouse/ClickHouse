@@ -59,9 +59,26 @@ struct GroupConcatDataBase
         data_size += str_size;
     }
 
+    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
+    {
+        WriteBufferFromOwnString buff;
+        serialization->serializeText(*column, row_num, buff, FormatSettings{});
+        auto string = buff.stringView();
+        insertChar(string.data(), string.size(), arena);
+    }
+
 };
 
-struct GroupConcatData : public GroupConcatDataBase
+template <bool has_limit>
+struct GroupConcatData;
+
+template<>
+struct GroupConcatData<false> final : public GroupConcatDataBase
+{
+};
+
+template<>
+struct GroupConcatData<true> final : public GroupConcatDataBase
 {
     using Offset = UInt64;
     using Allocator = MixedAlignedArenaAllocator<alignof(Offset), 4096>;
@@ -92,7 +109,7 @@ struct GroupConcatData : public GroupConcatDataBase
 
 template <bool has_limit>
 class GroupConcatImpl final
-    : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
+    : public IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>
 {
     static constexpr auto name = "groupConcat";
 
@@ -102,7 +119,7 @@ class GroupConcatImpl final
 
 public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
-        : IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>(
+        : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
             {data_type_}, parameters_, std::make_shared<DataTypeString>())
         , serialization(this->argument_types[0]->getDefaultSerialization())
         , limit(limit_)
@@ -162,7 +179,6 @@ public:
         auto & cur_data = this->data(place);
 
         writeVarUInt(cur_data.data_size, buf);
-        writeVarUInt(cur_data.allocated_size, buf);
 
         buf.write(cur_data.data, cur_data.data_size);
 
@@ -179,8 +195,8 @@ public:
         auto & cur_data = this->data(place);
 
         readVarUInt(cur_data.data_size, buf);
-        readVarUInt(cur_data.allocated_size, buf);
 
+        cur_data.data = new char[cur_data.data_size];
         buf.readStrict(cur_data.data, cur_data.data_size);
 
         if constexpr (has_limit)
