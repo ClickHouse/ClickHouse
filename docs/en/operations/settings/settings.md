@@ -5418,6 +5418,12 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
+## uniform_snowflake_conversion_functions {#uniform_snowflake_conversion_functions}
+
+If set to `true`, then functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` are enabled, and functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are disabled (and vice versa if set to `false`).
+
+Default value: `true`
+
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 
 Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
