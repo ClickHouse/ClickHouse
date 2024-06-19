@@ -198,6 +198,7 @@ protected:
     /// since other members can use them.
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+    ContextMutablePtr query_context;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
