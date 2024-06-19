@@ -121,6 +121,8 @@ public:
 
     Chunk generate() override;
 
+    /// Commit files after insertion into storage finished.
+    /// `success` defines whether insertion was successful or not.
     void commit(bool success, const std::string & exception = {});
 
 private:
