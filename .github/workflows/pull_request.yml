@@ -126,6 +126,8 @@ jobs:
     with:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
+
+  # stages for jobs that do not prohibit merge
   Tests_2:
     needs: [RunConfig, Builds_2]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
@@ -133,9 +135,8 @@ jobs:
     with:
       stage: Tests_2
       data: ${{ needs.RunConfig.outputs.data }}
-  # stage for jobs that do not prohibit merge
   Tests_3:
-    needs: [RunConfig, Builds_1, Tests_1, Builds_2, Tests_2]
+    needs: [RunConfig, Builds_1, Tests_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
@@ -156,7 +157,8 @@ jobs:
 
   CheckReadyForMerge:
     if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2]
+    # Test_2 or Test_3 must not have jobs required for Mergeable check
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -195,8 +197,7 @@ jobs:
     concurrency:
       group: jepsen
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse Keeper Jepsen') }}
-    # jepsen needs binary_release build which is in Builds_2
-    needs: [RunConfig, Builds_2]
+    needs: [RunConfig, Builds_1]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse Keeper Jepsen
