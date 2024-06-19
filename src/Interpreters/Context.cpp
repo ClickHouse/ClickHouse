@@ -4127,6 +4127,15 @@ std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
     return shared->system_logs->s3_queue_log;
 }
 
+std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->azure_queue_log;
+}
+
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
 {
     SharedLockGuard lock(shared->mutex);

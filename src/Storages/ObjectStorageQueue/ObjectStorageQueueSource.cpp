@@ -12,7 +12,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3QueuePullMicroseconds;
+    extern const Event ObjectStorageQueuePullMicroseconds;
 }
 
 namespace DB
@@ -81,7 +81,7 @@ ObjectStorageQueueSource::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::
 std::pair<ObjectStorageQueueSource::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr>
 ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
-    /// We need this lock to maintain consistency between listing s3 directory
+    /// We need this lock to maintain consistency between listing object storage directory
     /// and getting/putting result into listed_keys_cache.
     std::lock_guard lock(buckets_mutex);
 
@@ -98,7 +98,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         /// and checks if corresponding bucket is already acquired by someone.
         /// In case it is already acquired, they put the key into listed_keys_cache,
         /// so that the thread who acquired the bucket will be able to see
-        /// those keys without the need to list s3 directory once again.
+        /// those keys without the need to list object storage directory once again.
         if (bucket_holder_it->second)
         {
             const auto bucket = bucket_holder_it->second->getBucket();
@@ -155,7 +155,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             }
         }
         /// If processing thread has already acquired some bucket
-        /// and while listing s3 directory gets a key which is in a different bucket,
+        /// and while listing object storage directory gets a key which is in a different bucket,
         /// it puts the key into listed_keys_cache to allow others to process it,
         /// because one processing thread can acquire only one bucket at a time.
         /// Once a thread is finished with its acquired bucket, it checks listed_keys_cache
@@ -292,7 +292,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ContextPtr context_,
     const std::atomic<bool> & shutdown_called_,
     const std::atomic<bool> & table_is_being_dropped_,
-    std::shared_ptr<ObjectStorageQueueLog> s3_queue_log_,
+    std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
     const StorageID & storage_id_,
     LoggerPtr log_)
     : ISource(header_)
@@ -305,7 +305,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , requested_virtual_columns(requested_virtual_columns_)
     , shutdown_called(shutdown_called_)
     , table_is_being_dropped(table_is_being_dropped_)
-    , s3_queue_log(s3_queue_log_)
+    , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , remove_file_func(remove_file_func_)
     , log(log_)
@@ -400,11 +400,11 @@ Chunk ObjectStorageQueueSource::generate()
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
-        /// FIXME:  if files are compressed, profile counters update does not work fully (s3 related counters are not saved). Why?
+        /// FIXME:  if files are compressed, profile counters update does not work fully (object storage related counters are not saved). Why?
 
         try
         {
-            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueuePullMicroseconds);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
 
             Chunk chunk;
             if (reader->pull(chunk))
@@ -487,7 +487,7 @@ void ObjectStorageQueueSource::appendLogElement(
     size_t processed_rows,
     bool processed)
 {
-    if (!s3_queue_log)
+    if (!system_queue_log)
         return;
 
     ObjectStorageQueueLogElement elem{};
@@ -507,7 +507,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .exception = file_status_.getException(),
         };
     }
-    s3_queue_log->add(std::move(elem));
+    system_queue_log->add(std::move(elem));
 }
 
 }

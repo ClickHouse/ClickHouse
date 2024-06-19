@@ -12,6 +12,7 @@ import json
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
 NO_AUTH = ["NOSIGN"]
+AZURE_CONTAINER_NAME = "cont"
 
 
 def prepare_public_s3_bucket(started_cluster):
@@ -84,6 +85,7 @@ def started_cluster():
             "instance",
             user_configs=["configs/users.xml"],
             with_minio=True,
+            with_azurite=True,
             with_zookeeper=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -115,6 +117,9 @@ def started_cluster():
         cluster.start()
         logging.info("Cluster started")
 
+        container_client = cluster.blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+        container_client.create_container()
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -134,6 +139,7 @@ def generate_random_files(
     started_cluster,
     files_path,
     count,
+    storage = "s3",
     column_num=3,
     row_num=10,
     start_ind=0,
@@ -155,7 +161,10 @@ def generate_random_files(
         values_csv = (
             "\n".join((",".join(map(str, row)) for row in rand_values)) + "\n"
         ).encode()
-        put_s3_file_content(started_cluster, filename, values_csv, bucket)
+        if storage == "s3":
+            put_s3_file_content(started_cluster, filename, values_csv, bucket)
+        else:
+            put_azure_file_content(started_cluster, filename, values_csv, bucket)
     return total_values
 
 
@@ -164,6 +173,11 @@ def put_s3_file_content(started_cluster, filename, data, bucket=None):
     buf = io.BytesIO(data)
     started_cluster.minio_client.put_object(bucket, filename, buf, len(data))
 
+def put_azure_file_content(started_cluster, filename, data, bucket=None):
+    client = started_cluster.blob_service_client.get_blob_client(AZURE_CONTAINER_NAME, filename)
+    buf = io.BytesIO(data)
+    client.upload_blob(buf, "BlockBlob", len(data))
+
 
 def create_table(
     started_cluster,
@@ -171,6 +185,7 @@ def create_table(
     table_name,
     mode,
     files_path,
+    engine_name = "S3Queue",
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     additional_settings={},
     file_format="CSV",
@@ -189,11 +204,17 @@ def create_table(
     }
     settings.update(additional_settings)
 
-    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+    engine_def = None
+    if engine_name == "S3Queue":
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+        engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
+    else:
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{files_path}/', 'CSV')"
+
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
         CREATE TABLE {table_name} ({format})
-        ENGINE = S3Queue('{url}', {auth_params}, {file_format})
+        ENGINE = {engine_def}
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
 
@@ -224,17 +245,29 @@ def create_mv(
     )
 
 
-@pytest.mark.parametrize("mode", AVAILABLE_MODES)
-def test_delete_after_processing(started_cluster, mode):
+@pytest.mark.parametrize(
+    "mode, engine_name",
+    [
+        pytest.param("unordered", "S3Queue"),
+        pytest.param("unordered", "AzureQueue"),
+        pytest.param("ordered", "S3Queue"),
+        pytest.param("ordered", "AzureQueue"),
+    ],
+)
+def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"test.delete_after_processing_{mode}"
+    table_name = f"test.delete_after_processing_{mode}_{engine_name}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
     row_num = 10
+    if engine_name == "S3Queue":
+        storage = "s3"
+    else:
+        storage = "azure"
 
     total_values = generate_random_files(
-        started_cluster, files_path, files_num, row_num=row_num
+        started_cluster, files_path, files_num, row_num=row_num, storage = storage
     )
     create_table(
         started_cluster,
@@ -243,6 +276,7 @@ def test_delete_after_processing(started_cluster, mode):
         mode,
         files_path,
         additional_settings={"after_processing": "delete"},
+        engine_name = engine_name,
     )
     create_mv(node, table_name, dst_table_name)
 
@@ -263,15 +297,29 @@ def test_delete_after_processing(started_cluster, mode):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    minio = started_cluster.minio_client
-    objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
-    assert len(objects) == 0
+    if engine_name == "S3Queue":
+        minio = started_cluster.minio_client
+        objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
+        assert len(objects) == 0
+    else:
+        client = started_cluster.blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+        objects_iterator = client.list_blobs(files_path)
+        for objects in objects_iterator:
+            assert False
 
 
-@pytest.mark.parametrize("mode", AVAILABLE_MODES)
-def test_failed_retry(started_cluster, mode):
+@pytest.mark.parametrize(
+    "mode, engine_name",
+    [
+        pytest.param("unordered", "S3Queue"),
+        pytest.param("unordered", "AzureQueue"),
+        pytest.param("ordered", "S3Queue"),
+        pytest.param("ordered", "AzureQueue"),
+    ],
+)
+def test_failed_retry(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"test.failed_retry_{mode}"
+    table_name = f"test.failed_retry_{mode}_{engine_name}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     file_path = f"{files_path}/trash_test.csv"
@@ -296,6 +344,7 @@ def test_failed_retry(started_cluster, mode):
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
         },
+        engine_name = engine_name,
     )
     create_mv(node, table_name, dst_table_name)
 

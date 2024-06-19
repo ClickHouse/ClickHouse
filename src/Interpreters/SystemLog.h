@@ -75,6 +75,7 @@ struct SystemLogs
     std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
     std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
+    std::shared_ptr<ObjectStorageQueueLog> azure_queue_log;
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.

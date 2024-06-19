@@ -6,7 +6,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/S3QueueLog.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 
 
 namespace Poco { class Logger; }
@@ -49,9 +49,6 @@ public:
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
-        /// Note:
-        /// List results in s3 are always returned in UTF-8 binary order.
-        /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
         ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
@@ -92,7 +89,7 @@ public:
         ContextPtr context_,
         const std::atomic<bool> & shutdown_called_,
         const std::atomic<bool> & table_is_being_dropped_,
-        std::shared_ptr<ObjectStorageQueueLog> s3_queue_log_,
+        std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_);
 
@@ -111,7 +108,7 @@ private:
     const NamesAndTypesList requested_virtual_columns;
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;
-    const std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
+    const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
 
     RemoveFileFunc remove_file_func;

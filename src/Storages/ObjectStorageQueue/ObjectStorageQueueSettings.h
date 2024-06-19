@@ -22,6 +22,7 @@ class ASTStorage;
     M(UInt32, loading_retries, 0, "Retry loading up to specified number of times", 0) \
     M(UInt32, processing_threads_num, 1, "Number of processing threads", 0) \
     M(UInt32, enable_logging_to_s3queue_log, 1, "Enable logging to system table system.s3queue_log", 0) \
+    M(UInt32, enable_logging_to_azure_queue_log, 1, "Enable logging to system table system.s3queue_log", 0) \
     M(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
     M(UInt32, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
     M(UInt32, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \

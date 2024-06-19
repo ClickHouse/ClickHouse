@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Interpreters/S3QueueLog.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 
 
 namespace DB

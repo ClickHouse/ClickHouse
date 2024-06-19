@@ -11,8 +11,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3QueueProcessedFiles;
-    extern const Event S3QueueFailedFiles;
+    extern const Event ObjectStorageQueueProcessedFiles;
+    extern const Event ObjectStorageQueueFailedFiles;
 };
 
 namespace DB
@@ -169,7 +169,7 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::c
     /// Since node name is just a hash we want to know to which file it corresponds,
     /// so we keep "file_path" in nodes data.
     /// "last_processed_timestamp" is needed for TTL metadata nodes enabled by tracked_file_ttl_sec.
-    /// "last_exception" is kept for introspection, should also be visible in system.s3queue_log if it is enabled.
+    /// "last_exception" is kept for introspection, should also be visible in system.s3(azure)queue_log if it is enabled.
     /// "retries" is kept for retrying the processing enabled by loading_retries.
     NodeMetadata metadata;
     metadata.file_path = path;
@@ -225,7 +225,7 @@ void ObjectStorageQueueIFileMetadata::setProcessed()
 {
     LOG_TRACE(log, "Setting file {} as processed (path: {})", path, processed_node_path);
 
-    ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
     file_status->onProcessed();
     setProcessedImpl();
 
@@ -239,7 +239,7 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception)
 {
     LOG_TRACE(log, "Setting file {} as failed (exception: {}, path: {})", path, exception, failed_node_path);
 
-    ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
     file_status->onFailed(exception);
     node_metadata.last_exception = exception;
 

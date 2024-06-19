@@ -21,13 +21,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3QueueSetFileProcessingMicroseconds;
-    extern const Event S3QueueSetFileProcessedMicroseconds;
-    extern const Event S3QueueSetFileFailedMicroseconds;
-    extern const Event S3QueueFailedFiles;
-    extern const Event S3QueueProcessedFiles;
-    extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
-    extern const Event S3QueueLockLocalFileStatusesMicroseconds;
+    extern const Event ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds;
+    extern const Event ObjectStorageQueueLockLocalFileStatusesMicroseconds;
 };
 
 namespace DB
@@ -108,7 +103,7 @@ private:
 
     std::unique_lock<std::mutex> lock() const
     {
-        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueLockLocalFileStatusesMicroseconds);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueueLockLocalFileStatusesMicroseconds);
         return std::unique_lock(mutex);
     }
 };
@@ -316,7 +311,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFunc()
 
 void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 {
-    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueCleanupMaxSetSizeOrTTLMicroseconds);
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds);
     const auto zk_client = getZooKeeper();
     const fs::path zookeeper_processed_path = zookeeper_path / "processed";
     const fs::path zookeeper_failed_path = zookeeper_path / "failed";

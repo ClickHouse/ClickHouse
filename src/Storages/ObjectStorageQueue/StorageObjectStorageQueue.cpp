@@ -105,7 +105,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(queue_settings->polling_min_timeout_ms)
-    , log(getLogger("StorageObjectStorageQueue (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger(fmt::format("{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     if (configuration->getPath().empty())
     {
@@ -332,7 +332,10 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     {
         object_storage->removeObject(StoredObject(path));
     };
-    auto s3_queue_log = queue_settings->enable_logging_to_s3queue_log ? local_context->getS3QueueLog() : nullptr;
+    auto system_queue_log = queue_settings->enable_logging_to_s3queue_log
+        ? local_context->getS3QueueLog()
+        : queue_settings->enable_logging_to_azure_queue_log ? local_context->getAzureQueueLog() : nullptr;
+
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -345,7 +348,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         local_context,
         shutdown_called,
         table_is_being_dropped,
-        s3_queue_log,
+        system_queue_log,
         getStorageID(),
         log);
 }
