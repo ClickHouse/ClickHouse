@@ -328,7 +328,7 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
@@ -363,7 +363,7 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
@@ -887,6 +887,14 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
+
+    /** We have only one way to execute a CROSS JOIN - with a hash join.
+      * Therefore, for a query with an explicit CROSS JOIN, it should not fail because of the `join_algorithm` setting.
+      * If the user expects CROSS JOIN + WHERE to be rewritten to INNER join and to be executed with a specific algorithm,
+      * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
+      */
+    if (table_join->kind() == JoinKind::Cross)
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");

@@ -47,6 +47,8 @@ enum PollPidResult
         #define SYS_pidfd_open 434
     #elif defined(__s390x__)
         #define SYS_pidfd_open 434
+    #elif defined(__loongarch64)
+        #define SYS_pidfd_open 434
     #else
         #error "Unsupported architecture"
     #endif
@@ -132,7 +134,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (kq == -1)
         return PollPidResult::FAILED;
 
-    struct kevent change;
+    struct kevent change{};
     change.ident = 0;
 
     EV_SET(&change, pid, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
@@ -146,7 +148,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         return PollPidResult::FAILED;
     }
 
-    struct kevent event;
+    struct kevent event{};
     event.ident = 0;
 
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};

@@ -55,7 +55,7 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_STATISTIC;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -781,7 +781,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -801,20 +801,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                 materialized_indices.emplace(command.index_name);
             }
         }
-        else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
+        else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            for (const auto & stat_column_name: command.statistic_columns)
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            for (const auto & stat_column_name: command.statistics_columns)
             {
-                if (!columns_desc.has(stat_column_name) || !columns_desc.get(stat_column_name).stat)
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Unknown statistic column: {}", stat_column_name);
-                dependencies.emplace(stat_column_name, ColumnDependency::STATISTIC);
+                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
+                dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
             }
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
             if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
@@ -825,18 +825,18 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             materialized_indices.erase(command.index_name);
         }
-        else if (command.type == MutationCommand::DROP_STATISTIC)
+        else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            for (const auto & stat_column_name: command.statistic_columns)
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            for (const auto & stat_column_name: command.statistics_columns)
                 materialized_statistics.erase(stat_column_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
@@ -888,7 +888,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX
                         || dependency.kind == ColumnDependency::PROJECTION
-                        || dependency.kind == ColumnDependency::STATISTIC)
+                        || dependency.kind == ColumnDependency::STATISTICS)
                         dependencies.insert(dependency);
                 }
             }
@@ -1321,7 +1321,7 @@ void MutationsInterpreter::validate()
 
             if (nondeterministic_func_data.nondeterministic_function_name)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
+                    "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                     "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
         }
     }
@@ -1360,7 +1360,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
@@ -1417,8 +1417,7 @@ bool MutationsInterpreter::isAffectingAllColumns() const
 
 void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
 {
-    if (mutation_kind < kind)
-        mutation_kind = kind;
+    mutation_kind = std::max(mutation_kind, kind);
 }
 
 }

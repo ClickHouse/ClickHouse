@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -9,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -607,7 +609,10 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             uncommitted_auth.pop_front();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
-
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&front_delta.operation))
+        {
+            closed_sessions.erase(close_session->session_id);
         }
 
         deltas.pop_front();
@@ -679,6 +684,10 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                 if (uncommitted_auth.empty())
                     session_and_auth.erase(add_auth->session_id);
             }
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&delta_it->operation))
+        {
+           closed_sessions.erase(close_session->session_id);
         }
     }
 
@@ -874,6 +883,10 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid)
                 else if constexpr (std::same_as<DeltaType, KeeperStorage::AddAuthDelta>)
                 {
                     session_and_auth[operation.session_id].emplace_back(std::move(operation.auth_id));
+                    return Coordination::Error::ZOK;
+                }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
+                {
                     return Coordination::Error::ZOK;
                 }
                 else
@@ -1172,8 +1185,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             else if (parent_cversion > node.cversion)
                 node.cversion = parent_cversion;
 
-            if (zxid > node.pzxid)
-                node.pzxid = zxid;
+            node.pzxid = std::max(zxid, node.pzxid);
             node.increaseNumChildren();
         };
 
@@ -1351,9 +1363,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     [zxid](KeeperStorage::Node & parent)
                     {
-                        if (parent.pzxid < zxid)
-                            parent.pzxid = zxid;
-                   }
+                        parent.pzxid = std::max(parent.pzxid, zxid);
+                    }
                 }
             );
         };
@@ -2366,12 +2377,15 @@ void KeeperStorage::preprocessRequest(
 
             ephemerals.erase(session_ephemerals);
         }
+        new_deltas.emplace_back(transaction.zxid, CloseSessionDelta{session_id});
+        uncommitted_state.closed_sessions.insert(session_id);
 
         new_digest = calculateNodesDigest(new_digest, new_deltas);
         return;
     }
 
-    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
+    if ((check_acl && !request_processor->checkAuth(*this, session_id, false)) ||
+        uncommitted_state.closed_sessions.contains(session_id))  // Is session closed but not committed yet
     {
         uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
         return;
@@ -2708,3 +2722,5 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

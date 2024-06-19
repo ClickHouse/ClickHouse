@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+#include <azure/storage/blobs/blob_options.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
@@ -176,6 +178,12 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
         return std::make_unique<T>(url, storage_shared_key_credential, client_options);
     }
 
+    if (config.getBool(config_prefix + ".use_workload_identity", false))
+    {
+        auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+        return std::make_unique<T>(url, workload_identity_credential);
+    }
+
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
     return std::make_unique<T>(url, managed_identity_credential, client_options);
 }
@@ -205,6 +213,8 @@ Azure::Storage::Blobs::BlobClientOptions getAzureBlobClientOptions(const Poco::U
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
     client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
+
+    client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=true};
 
     return client_options;
 }
@@ -247,6 +257,7 @@ std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Po
     settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", context->getSettings().azure_max_upload_part_size);
     settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", context->getSettings().azure_max_single_part_copy_size);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->max_blocks_in_multipart_upload = config.getUInt64(config_prefix + ".max_blocks_in_multipart_upload", 50000);
     settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries);
     settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", context->getSettings().azure_max_inflight_parts_for_one_file);
     settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", context->getSettings().azure_strict_upload_part_size);

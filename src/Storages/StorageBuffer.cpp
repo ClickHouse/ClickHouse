@@ -281,7 +281,7 @@ void StorageBuffer::read(
                 if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
-                    boost::range::remove_erase(columns_intersection, column_name);
+                    std::erase(columns_intersection, column_name);
                     continue;
                 }
                 const auto & dst_col = dest_columns.getPhysical(column_name);
@@ -302,6 +302,8 @@ void StorageBuffer::read(
                 auto src_table_query_info = query_info;
                 if (src_table_query_info.prewhere_info)
                 {
+                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
+
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             header_after_adding_defaults.getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),

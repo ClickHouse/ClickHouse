@@ -128,15 +128,21 @@ class IndexAccess
 public:
     explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_)
     {
-        /// Some suffix of index columns might not be loaded (see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`)
-        /// and we need to use the same set of index columns across all parts.
+        /// Indices might be reloaded during the process and the reload might produce a different value
+        /// (change in `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). Also, some suffix of index
+        /// columns might not be loaded (same setting) so we keep a reference to the current indices and
+        /// track the minimal subset of loaded columns across all parts.
+        indices.reserve(parts.size());
         for (const auto & part : parts)
-            loaded_columns = std::min(loaded_columns, part.data_part->getIndex()->size());
+            indices.push_back(part.data_part->getIndex());
+
+        for (const auto & index : indices)
+            loaded_columns = std::min(loaded_columns, index->size());
     }
 
     Values getValue(size_t part_idx, size_t mark) const
     {
-        const auto & index = parts[part_idx].data_part->getIndex();
+        const auto & index = indices[part_idx];
         chassert(index->size() >= loaded_columns);
         Values values(loaded_columns);
         for (size_t i = 0; i < loaded_columns; ++i)
@@ -206,6 +212,7 @@ public:
     }
 private:
     const RangesInDataParts & parts;
+    std::vector<IMergeTreeDataPart::Index> indices;
     size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 
@@ -617,14 +624,11 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     }
 
     /// Process parts ranges with undefined value at end mark
-    bool is_intersecting = part_index_start_to_range.size() > 1;
+    /// The last parts ranges could be non-intersect only if: (1) there is only one part range left, (2) it belongs to a non-L0 part,
+    /// and (3) the begin value of this range is larger than the largest end value of all previous ranges. This is too complicated
+    /// to check, so we just add the last part ranges to the intersecting ranges.
     for (const auto & [part_range_index, mark_range] : part_index_start_to_range)
-    {
-        if (is_intersecting)
-            add_intersecting_range(part_range_index.part_index, mark_range);
-        else
-            add_non_intersecting_range(part_range_index.part_index, mark_range);
-    }
+        add_intersecting_range(part_range_index.part_index, mark_range);
 
     auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
     auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());

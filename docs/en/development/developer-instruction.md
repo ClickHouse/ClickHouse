@@ -72,7 +72,7 @@ You can also add original ClickHouse repo address to your local repository to pu
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
 :::note 
-Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md) and so on.
+Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md), [on Linux for Linux/LoongArch](build-cross-loongarch.md) and so on.
 :::
 
 ## Build System {#build-system}
@@ -121,7 +121,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-18 CXX=clang++-18`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 

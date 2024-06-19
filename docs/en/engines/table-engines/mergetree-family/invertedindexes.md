@@ -2,7 +2,7 @@
 slug: /en/engines/table-engines/mergetree-family/invertedindexes
 sidebar_label:  Full-text Indexes
 description: Quickly find search terms in text.
-keywords: [full-text search, text search, inverted, index, indices]
+keywords: [full-text search, text search, index, indices]
 ---
 
 # Full-text Search using Full-text Indexes [experimental]
@@ -37,7 +37,7 @@ ways, for example with respect to their DDL/DQL syntax or performance/compressio
 To use full-text indexes, first enable them in the configuration:
 
 ```sql
-SET allow_experimental_inverted_index = true;
+SET allow_experimental_full_text_index = true;
 ```
 
 An full-text index can be defined on a string column using the following syntax
@@ -52,6 +52,10 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key
 ```
+
+:::note
+In earlier versions of ClickHouse, the corresponding index type name was `inverted`.
+:::
 
 where `N` specifies the tokenizer:
 

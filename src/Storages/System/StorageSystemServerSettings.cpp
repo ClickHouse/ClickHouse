@@ -23,7 +23,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-enum class ChangeableWithoutRestart
+enum class ChangeableWithoutRestart : uint8_t
 {
     No,
     IncreaseOnly,
@@ -81,7 +81,10 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
         {"index_mark_cache_size", {std::to_string(context->getIndexMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
         {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-        {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}}
+        {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+
+        {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
+        {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}}
     };
 
     if (context->areBackgroundExecutorsInitialized())

@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -29,7 +31,7 @@ GinFilterParameters::GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_pos
         max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
 
     if (ngrams > 8)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of inverted index filter cannot be greater than 8");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of full-text index filter cannot be greater than 8");
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)
@@ -174,3 +176,5 @@ bool GinFilter::match(const GinPostingsCache & postings_cache) const
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

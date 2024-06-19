@@ -2,10 +2,8 @@
 
 #include "Types.h"
 #include <Poco/Util/LayeredConfiguration.h>
-#include <unordered_set>
 #include <future>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -18,7 +16,6 @@
 #include <Common/thread_local_rng.h>
 #include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
-#include <random>
 
 
 namespace ProfileEvents
@@ -644,7 +641,11 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
-    Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
+
+    /// returns error code with optional reason
+    std::pair<Coordination::Error, std::string>
+    multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
+
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
