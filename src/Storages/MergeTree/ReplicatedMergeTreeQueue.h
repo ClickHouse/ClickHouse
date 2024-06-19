@@ -26,7 +26,7 @@ class MergeTreeDataMergerMutator;
 class ReplicatedMergeTreeMergePredicate;
 class ReplicatedMergeTreeMergeStrategyPicker;
 
-using PartitionIdsHint = std::unordered_set<String>;
+using PartitionIdsHint = PartitionIds;
 
 class ReplicatedMergeTreeQueue
 {

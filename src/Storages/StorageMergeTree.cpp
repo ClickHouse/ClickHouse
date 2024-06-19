@@ -1558,19 +1558,21 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     if (!truncate && !finished_mutations_to_keep)
         return 0;
 
+    std::map<std::string, MutationCommands> unfinished_mutations;
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        if (current_mutations_by_version.size() <= finished_mutations_to_keep)
+            return 0;
+        unfinished_mutations = getUnfinishedMutationCommands();
+    }
+
     finished_mutations_to_keep = truncate ? 0 : finished_mutations_to_keep;
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        if (current_mutations_by_version.size() <= finished_mutations_to_keep)
-            return 0;
-
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
-
-        if (std::optional<Int64> min_version = getMinPartDataVersion())
-            end_it = current_mutations_by_version.upper_bound(*min_version);
 
         size_t done_count = std::distance(begin_it, end_it);
 
@@ -1579,7 +1581,8 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
         for (auto it = begin_it; it != end_it; ++it)
         {
-            if (!it->second.tid.isPrehistoric())
+            const MergeTreeMutationEntry & entry = it->second;
+            if (unfinished_mutations.find(entry.file_name) != unfinished_mutations.end())
             {
                 done_count = std::distance(begin_it, it);
                 break;

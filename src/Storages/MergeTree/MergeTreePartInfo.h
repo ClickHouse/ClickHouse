@@ -5,6 +5,7 @@
 #include <tuple>
 #include <vector>
 #include <array>
+#include <boost/container/flat_set.hpp>
 #include <base/types.h>
 #include <base/DayNum.h>
 #include <IO/ReadBuffer.h>
@@ -195,21 +196,11 @@ private:
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
 
-using PartitionIds = std::vector<String>; // sorted, suitable for binary_search
-
-void compactPartitionIds(PartitionIds &);
+using PartitionIds = boost::container::flat_set<String>;
 
 inline bool containsInPartitionIdsOrEmpty(const PartitionIds & haystack, const String & needle)
 {
-    switch (haystack.size())
-    {
-    case 0:
-        return true;
-    case 1:
-        return haystack.front() == needle; // just a small optimization, size > 1 is not common
-    default:
-        return std::binary_search(haystack.cbegin(), haystack.cend(), needle);
-    }
+    return haystack.empty() || haystack.contains(needle);
 }
 
 }
