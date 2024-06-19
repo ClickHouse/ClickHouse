@@ -161,9 +161,9 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const size_t threads)
 {
-    local_context->checkAccess(AccessType::dictGet, getStorageID());
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
+    local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
     return dictionary->read(column_names, max_block_size, threads);
 }
 
