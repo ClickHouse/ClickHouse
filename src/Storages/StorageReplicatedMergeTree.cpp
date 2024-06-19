@@ -5341,7 +5341,6 @@ void StorageReplicatedMergeTree::shutdown(bool)
     if (shutdown_called.exchange(true))
         return;
 
-    const auto storage_name = getStorageID().getNameForLogs();
     LOG_TRACE(log, "Shutdown started");
 
     flushAndPrepareForShutdown();
