@@ -117,7 +117,9 @@ def started_cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        container_client = cluster.blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+        container_client = cluster.blob_service_client.get_container_client(
+            AZURE_CONTAINER_NAME
+        )
         container_client.create_container()
 
         yield cluster
@@ -139,7 +141,7 @@ def generate_random_files(
     started_cluster,
     files_path,
     count,
-    storage = "s3",
+    storage="s3",
     column_num=3,
     row_num=10,
     start_ind=0,
@@ -173,8 +175,11 @@ def put_s3_file_content(started_cluster, filename, data, bucket=None):
     buf = io.BytesIO(data)
     started_cluster.minio_client.put_object(bucket, filename, buf, len(data))
 
+
 def put_azure_file_content(started_cluster, filename, data, bucket=None):
-    client = started_cluster.blob_service_client.get_blob_client(AZURE_CONTAINER_NAME, filename)
+    client = started_cluster.blob_service_client.get_blob_client(
+        AZURE_CONTAINER_NAME, filename
+    )
     buf = io.BytesIO(data)
     client.upload_blob(buf, "BlockBlob", len(data))
 
@@ -185,7 +190,7 @@ def create_table(
     table_name,
     mode,
     files_path,
-    engine_name = "S3Queue",
+    engine_name="S3Queue",
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     additional_settings={},
     file_format="CSV",
@@ -267,7 +272,7 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         storage = "azure"
 
     total_values = generate_random_files(
-        started_cluster, files_path, files_num, row_num=row_num, storage = storage
+        started_cluster, files_path, files_num, row_num=row_num, storage=storage
     )
     create_table(
         started_cluster,
@@ -276,7 +281,7 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         mode,
         files_path,
         additional_settings={"after_processing": "delete"},
-        engine_name = engine_name,
+        engine_name=engine_name,
     )
     create_mv(node, table_name, dst_table_name)
 
@@ -302,7 +307,9 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
         assert len(objects) == 0
     else:
-        client = started_cluster.blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+        client = started_cluster.blob_service_client.get_container_client(
+            AZURE_CONTAINER_NAME
+        )
         objects_iterator = client.list_blobs(files_path)
         for objects in objects_iterator:
             assert False
@@ -344,7 +351,7 @@ def test_failed_retry(started_cluster, mode, engine_name):
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
         },
-        engine_name = engine_name,
+        engine_name=engine_name,
     )
     create_mv(node, table_name, dst_table_name)
 
