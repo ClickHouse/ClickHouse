@@ -24,7 +24,7 @@ struct IndexDescription
     /// Index name
     String name;
 
-    /// Index type (minmax, set, bloom filter, etc.)
+    /// Index type (minmax, set, bloom_filter, etc.)
     String type;
 
     /// Prepared expressions for index calculations

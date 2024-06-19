@@ -95,6 +95,9 @@ String joinByComma(const T & t)
             joined_keys += k;
         }
         return joined_keys;
+
+        /// TODO once our libcxx is recent enough, replace above by
+        ///      return fmt::format("{}", fmt::join(std::views::keys(t)), ", "));
     }
     std::unreachable();
 }
@@ -475,9 +478,9 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /*attac
 
     /// Check that passed arguments are supported
     if (!methods.contains(index.arguments[0].get<String>()))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector similarity index is not supported. Supported kinds are: {}", joinByComma(methods));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector similarity index is not supported. Supported methods are: {}", joinByComma(methods));
     if (!distanceFunctionToMetricKind.contains(index.arguments[1].get<String>()))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported kinds are: {}", joinByComma(distanceFunctionToMetricKind));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance functions are: {}", joinByComma(distanceFunctionToMetricKind));
     if (has_six_args)
     {
         if (!quantizationToScalarKind.contains(index.arguments[2].get<String>()))
@@ -500,11 +503,11 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /*attac
     {
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32))");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32)");
     }
     else
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32))");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32)");
     }
 }
 
