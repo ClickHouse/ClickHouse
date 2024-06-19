@@ -1192,13 +1192,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.temporary && !create.database)
         create.setDatabase(current_database);
     if (!create.to_table_id && create.to_table)
-    {
-        LOG_TRACE(getLogger("InterpreterCreateQuery"), "before test_ptr");
-        auto *test_ptr = create.to_table->as<ASTTableIdentifier>();
-        LOG_TRACE(getLogger("InterpreterCreateQuery"), "before getTableId()");
-        create.to_table_id = test_ptr->getTableId();
-        LOG_TRACE(getLogger("InterpreterCreateQuery"), "after getTableId()");
-    }
+        create.to_table_id = StorageID(database_name, create.to_table->as<ASTIdentifier>()->shortName());
     if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = database_name;
 
