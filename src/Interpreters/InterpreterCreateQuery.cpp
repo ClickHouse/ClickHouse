@@ -88,6 +88,11 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTable;
+}
+
 namespace DB
 {
 
@@ -113,6 +118,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_MANY_TABLES;
+    extern const int TOO_MANY_DATABASES;
 }
 
 namespace fs = std::filesystem;
@@ -136,6 +143,31 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             return {};
         else
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
+    }
+
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw;
+    if (db_num_limit > 0)
+    {
+        size_t db_count = DatabaseCatalog::instance().getDatabases().size();
+        std::vector<String> system_databases = {
+            DatabaseCatalog::TEMPORARY_DATABASE,
+            DatabaseCatalog::SYSTEM_DATABASE,
+            DatabaseCatalog::INFORMATION_SCHEMA,
+            DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            DatabaseCatalog::DEFAULT_DATABASE
+        };
+
+        for (const auto & system_database : system_databases)
+        {
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
+                db_count--;
+        }
+
+        if (db_count >= db_num_limit)
+            throw Exception(ErrorCodes::TOO_MANY_DATABASES,
+                            "Too many databases in the Clickhouse. "
+                            "The limit (setting 'max_database_num_to_throw') is set to {}, current number of databases is {}",
+                            db_num_limit, db_count);
     }
 
     /// Will write file with database metadata, if needed.
@@ -448,10 +480,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (column.stat)
+        if (!column.statistics.empty())
         {
-            column_declaration->stat_type = column.stat->ast;
-            column_declaration->children.push_back(column_declaration->stat_type);
+            column_declaration->statistics_desc = column.statistics.getAST();
+            column_declaration->children.push_back(column_declaration->statistics_desc);
         }
 
         if (column.ttl)
@@ -675,11 +707,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
-        if (col_decl.stat_type)
+        column.statistics.column_name = column.name; /// We assign column name here for better exception error message.
+        if (col_decl.statistics_desc)
         {
-            if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistic)
-                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
-            column.stat = StatisticDescription::getStatisticFromColumnDeclaration(col_decl);
+            if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistics)
+                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
+            column.statistics = ColumnStatisticsDescription::fromColumnDeclaration(col_decl, column.type);
         }
 
         if (col_decl.ttl)
@@ -750,8 +783,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use different index names.", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_inverted_index)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_inverted_index')");
+                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_full_text_index)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_full_text_index')");
+                /// ----
+                /// Temporary check during a transition period. Please remove at the end of 2024.
+                if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
+                /// ----
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
                 if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
@@ -1082,11 +1120,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
+    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
+    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+
     if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
 
     DDLGuardPtr ddl_guard;
 
@@ -1212,9 +1253,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
-
-    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
-    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -1535,6 +1573,17 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
+    }
+
+    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw;
+    if (table_num_limit > 0 && create.getDatabase() != DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        if (table_count >= table_num_limit)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many tables in the Clickhouse. "
+                            "The limit (setting 'max_table_num_to_throw') is set to {}, current number of tables is {}",
+                            table_num_limit, table_count);
     }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
@@ -1880,7 +1929,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool skip_check_permissions)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
@@ -1921,7 +1970,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
     }
 
     /// Checks the permissions for the specified definer user.
-    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
+    if (sql_security.definer && !sql_security.is_definer_current_user && !skip_check_permissions)
     {
         const auto definer_name = sql_security.definer->toString();
 
@@ -1931,7 +1980,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
-    if (sql_security.type == SQLSecurityType::NONE && !is_attach)
+    if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
