@@ -602,7 +602,7 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
     if constexpr (intersect)
     {
         if (!nested_types.empty())
-            result_type = getMostSubtype(nested_types, true, true);
+            result_type = getMostSubtype(nested_types, true);
         if (has_nothing)
             result_type = std::make_shared<DataTypeNothing>();
     }
