@@ -170,7 +170,7 @@ LIFETIME(0);
 SELECT 'Polygon dictionary';
 SELECT * FROM 02183_polygon_dictionary;
 
-DROP DICTIONARY 02183_polygon_dictionr;
+DROP DICTIONARY 02183_polygon_dictionry;
 DROP TABLE 02183_polygon_dictionary_source_table;
 
 DROP TABLE IF EXISTS 02183_range_dictionary_source_table;
