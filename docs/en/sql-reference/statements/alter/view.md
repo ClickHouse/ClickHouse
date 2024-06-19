@@ -79,8 +79,6 @@ ORDER BY ts, event_type;
 │ 2020-01-03 00:00:00 │ imp        │         │          2 │    0 │
 └─────────────────────┴────────────┴─────────┴────────────┴──────┘
 
-SET allow_experimental_alter_materialized_view_structure=1;
-
 ALTER TABLE mv MODIFY QUERY
   SELECT toStartOfDay(ts) ts, event_type, browser,
   count() events_cnt,
@@ -178,7 +176,6 @@ SELECT * FROM mv;
 └───┘
 ```
 ```sql
-set allow_experimental_alter_materialized_view_structure=1;
 ALTER TABLE mv MODIFY QUERY SELECT a * 2 as a FROM src_table;
 INSERT INTO src_table (a) VALUES (3), (4);
 SELECT * FROM mv;

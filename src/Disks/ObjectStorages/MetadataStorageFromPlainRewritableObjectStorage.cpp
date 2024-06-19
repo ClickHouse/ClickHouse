@@ -50,6 +50,8 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
                 res.first->second,
                 remote_path.parent_path().string());
     }
+    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
+    CurrentMetrics::add(metric, result.size());
     return result;
 }
 
@@ -132,6 +134,12 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
 
     auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), metadata_mutex, path_map);
     object_storage->setKeysGenerator(keys_gen);
+}
+
+MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewritableObjectStorage()
+{
+    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
+    CurrentMetrics::sub(metric, path_map->size());
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(

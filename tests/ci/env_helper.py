@@ -9,8 +9,9 @@ from build_download_helper import APIException, get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
+
 ROOT_DIR = git_root
-CI = bool(os.getenv("CI"))
+IS_CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
 REPORT_PATH = f"{TEMP_PATH}/reports"
 # FIXME: latest should not be used in CI, set temporary for transition to "docker with digest as a tag"
@@ -39,6 +40,7 @@ S3_ARTIFACT_DOWNLOAD_TEMPLATE = (
     f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
     "{pr_or_release}/{commit}/{build_name}/{artifact}"
 )
+CI_CONFIG_PATH = f"{TEMP_PATH}/ci_config.json"
 
 # These parameters are set only on demand, and only once
 _GITHUB_JOB_ID = ""

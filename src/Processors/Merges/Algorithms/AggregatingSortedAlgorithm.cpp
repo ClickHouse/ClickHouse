@@ -76,9 +76,6 @@ static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Col
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    for (auto & column : columns)
-        column = column->convertToFullColumnIfConst();
-
     for (const auto & desc : def.columns_to_simple_aggregate)
         if (desc.nested_type)
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
@@ -266,6 +263,7 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
+    removeConstAndSparse(inputs);
     merged_data.initialize(header, inputs);
 
     for (auto & input : inputs)
@@ -277,6 +275,7 @@ void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 
 void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }

@@ -183,12 +183,27 @@ class _ServerRuntime:
             )
             request_handler.write_error(429, data)
 
+    # make sure that Alibaba errors (QpsLimitExceeded, TotalQpsLimitExceededAction) are retriable
+    # we patched contrib/aws to achive it: https://github.com/ClickHouse/aws-sdk-cpp/pull/22 https://github.com/ClickHouse/aws-sdk-cpp/pull/23
+    # https://www.alibabacloud.com/help/en/oss/support/http-status-code-503
     class QpsLimitExceededAction:
         def inject_error(self, request_handler):
             data = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 "<Error>"
                 "<Code>QpsLimitExceeded</Code>"
+                "<Message>Please reduce your request rate.</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(429, data)
+
+    class TotalQpsLimitExceededAction:
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>TotalQpsLimitExceeded</Code>"
                 "<Message>Please reduce your request rate.</Message>"
                 "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
                 "</Error>"
@@ -267,6 +282,10 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.SlowDownAction(*self.action_args)
             elif self.action == "qps_limit_exceeded":
                 self.error_handler = _ServerRuntime.QpsLimitExceededAction(
+                    *self.action_args
+                )
+            elif self.action == "total_qps_limit_exceeded":
+                self.error_handler = _ServerRuntime.TotalQpsLimitExceededAction(
                     *self.action_args
                 )
             else:

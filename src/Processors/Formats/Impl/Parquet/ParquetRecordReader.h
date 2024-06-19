@@ -19,7 +19,8 @@ class ParquetRecordReader
 public:
     ParquetRecordReader(
         Block header_,
-        parquet::ArrowReaderProperties reader_properties_,
+        parquet::ArrowReaderProperties arrow_properties_,
+        parquet::ReaderProperties reader_properties_,
         std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
         const FormatSettings & format_settings,
         std::vector<int> row_groups_indices_,
@@ -29,7 +30,7 @@ public:
 
 private:
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
-    parquet::ArrowReaderProperties reader_properties;
+    parquet::ArrowReaderProperties arrow_properties;
 
     Block header;
 

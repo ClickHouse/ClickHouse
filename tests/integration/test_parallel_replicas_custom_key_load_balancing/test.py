@@ -33,7 +33,7 @@ def create_tables(table_name):
     for i in range(0, 4):
         nodes[i].query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         nodes[i].query(
-            f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r{i+1}') ORDER BY (key)"
+            f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r{i+1}') ORDER BY (key)"
         )
 
     # populate data

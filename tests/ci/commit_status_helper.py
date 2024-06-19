@@ -17,12 +17,8 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
-from env_helper import (
-    GITHUB_REPOSITORY,
-    GITHUB_UPSTREAM_REPOSITORY,
-    TEMP_PATH,
-)
+from ci_config import CI
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
 from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
@@ -84,7 +80,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: StatusType,
+    state: StatusType,  # do not change it, it MUST be StatusType and nothing else
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
@@ -164,7 +160,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     if not statuses:
         return
 
-    if not [status for status in statuses if status.context == StatusNames.CI]:
+    if not [status for status in statuses if status.context == CI.StatusNames.CI]:
         # This is the case, when some statuses already exist for the check,
         # but not the StatusNames.CI. We should create it as pending.
         # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
@@ -173,7 +169,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
             PENDING,
             create_ci_report(pr_info, statuses),
             "The report for running CI",
-            StatusNames.CI,
+            CI.StatusNames.CI,
         )
 
     # We update the report in generate_status_comment function, so do it each
@@ -216,20 +212,20 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         f"\n"
     )
     # group checks by the name to get the worst one per each
-    grouped_statuses = {}  # type: Dict[CheckDescription, CommitStatuses]
+    grouped_statuses = {}  # type: Dict[CI.CheckDescription, CommitStatuses]
     for status in statuses:
         cd = None
-        for c in CHECK_DESCRIPTIONS:
+        for c in CI.CHECK_DESCRIPTIONS:
             if c.match_func(status.context):
                 cd = c
                 break
 
-        if cd is None or cd == CHECK_DESCRIPTIONS[-1]:
+        if cd is None or cd == CI.CHECK_DESCRIPTIONS[-1]:
             # This is the case for either non-found description or a fallback
-            cd = CheckDescription(
+            cd = CI.CheckDescription(
                 status.context,
-                CHECK_DESCRIPTIONS[-1].description,
-                CHECK_DESCRIPTIONS[-1].match_func,
+                CI.CHECK_DESCRIPTIONS[-1].description,
+                CI.CHECK_DESCRIPTIONS[-1].match_func,
             )
 
         if cd in grouped_statuses:
@@ -305,7 +301,7 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], StatusNames.CI
+        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI.StatusNames.CI
     )
 
 
@@ -439,7 +435,7 @@ def set_mergeable_check(
         state,
         report_url,
         format_description(description),
-        StatusNames.MERGEABLE,
+        CI.StatusNames.MERGEABLE,
     )
 
 
@@ -447,7 +443,7 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
         pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
-        or not is_required(check_name)
+        or not CI.is_required(check_name)
         or pr_info.release_pr
         or pr_info.number == 0
     )
@@ -469,11 +465,11 @@ def trigger_mergeable_check(
     workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update StatusNames.MERGEABLE"""
-    required_checks = [status for status in statuses if is_required(status.context)]
+    required_checks = [status for status in statuses if CI.is_required(status.context)]
 
     mergeable_status = None
     for status in statuses:
-        if status.context == StatusNames.MERGEABLE:
+        if status.context == CI.StatusNames.MERGEABLE:
             mergeable_status = status
             break
 
@@ -550,7 +546,7 @@ def update_upstream_sync_status(
         "Using commit %s to post the %s status `%s`: [%s]",
         last_synced_upstream_commit.sha,
         sync_status,
-        StatusNames.SYNC,
+        CI.StatusNames.SYNC,
         "",
     )
     post_commit_status(
@@ -558,7 +554,7 @@ def update_upstream_sync_status(
         sync_status,
         "",
         "",
-        StatusNames.SYNC,
+        CI.StatusNames.SYNC,
     )
     trigger_mergeable_check(
         last_synced_upstream_commit,

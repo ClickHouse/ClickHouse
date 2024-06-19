@@ -1,10 +1,10 @@
 #pragma once
 
-#include <filesystem>
 #include <string>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <filesystem>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -13,22 +13,27 @@
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
 
-#include <Disks/ObjectStorages/StoredObject.h>
-#include <Disks/DiskType.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/ObjectStorageKey.h>
-#include <Disks/WriteMode.h>
-#include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Disks/DiskType.h>
+#include <Disks/ObjectStorages/MetadataStorageMetrics.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/WriteMode.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
+#endif
+
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
 #endif
 
 namespace DB
@@ -110,6 +115,8 @@ public:
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
+
+    virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
@@ -254,6 +261,13 @@ public:
     virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+#endif
+
+#if USE_AWS_S3
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
 #endif
 

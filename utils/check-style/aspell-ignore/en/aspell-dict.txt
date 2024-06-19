@@ -222,6 +222,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -246,7 +247,6 @@ DockerHub
 DoubleDelta
 Doxygen
 Durre
-doesnt
 ECMA
 Ecto
 EdgeAngle
@@ -294,6 +294,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
@@ -447,6 +448,7 @@ KafkaLibrdkafkaThreads
 KafkaProducers
 KafkaWrites
 Kahan
+Kaser
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequets
@@ -467,11 +469,13 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
+Lemir
 Levenshtein
 Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineString
 Linf
 LinfDistance
 LinfNorm
@@ -959,6 +963,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -990,6 +995,7 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
+UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -1006,6 +1012,8 @@ Updatable
 Uppercased
 Uptime
 Uptrace
+UrlDecode
+UrlEncode
 UserID
 Util
 VARCHAR
@@ -1358,6 +1366,7 @@ cond
 conf
 config
 configs
+conformant
 congruential
 conjuction
 conjuctive
@@ -1366,6 +1375,10 @@ const
 contrib
 convertCharset
 coroutines
+corrMatrix
+corrStable
+corrmatrix
+corrstable
 cosineDistance
 countDigits
 countEqual
@@ -1375,10 +1388,19 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF
 covarPop
+covarPopMatrix
+covarPopStable
 covarSamp
+covarSampMatrix
+covarSampStable
+covarStable
 covariates
 covarpop
+covarpopmatrix
+covarpopstable
 covarsamp
+covarsampmatrix
+covarsampstable
 covid
 cpp
 cppkafka
@@ -1414,8 +1436,12 @@ cutQueryString
 cutQueryStringAndFragment
 cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
+cutToFirstSignificantSubdomainCustomRFC
 cutToFirstSignificantSubdomainCustomWithWWW
+cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainRFC
 cutToFirstSignificantSubdomainWithWWW
+cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 cyrus
@@ -1433,6 +1459,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1502,7 +1529,10 @@ displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
+doesnt
+domainRFC
 domainWithoutWWW
+domainWithoutWWWRFC
 dont
 dotProduct
 downsampling
@@ -1513,6 +1543,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1575,8 +1606,11 @@ filesystems
 finalizeAggregation
 fips
 firstLine
+firstSignficantSubdomain
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
+firstSignificantSubdomainCustomRFC
+firstSignificantSubdomainRFC
 fixedstring
 flamegraph
 flatbuffers
@@ -1599,6 +1633,7 @@ formated
 formatschema
 formatter
 formatters
+frac
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1618,6 +1653,7 @@ gcem
 generateRandom
 generateRandomStructure
 generateSeries
+generateSnowflakeID
 generateULID
 generateUUIDv
 geoDistance
@@ -1673,6 +1709,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1689,6 +1726,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1724,6 +1762,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
+hilbertDecode
+hilbertEncode
 hiveHash
 holistics
 homebrew
@@ -1863,6 +1903,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
@@ -1904,6 +1945,8 @@ london
 lookups
 loongarch
 lowcardinality
+lowCardinalityIndices
+lowCardinalityKeys
 lowerUTF
 lowercased
 lttb
@@ -1970,6 +2013,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
@@ -2122,6 +2167,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
@@ -2155,6 +2203,7 @@ polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
 popcnt
+portRFC
 porthttps
 positionCaseInsensitive
 positionCaseInsensitiveUTF
@@ -2274,6 +2323,7 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKTLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2432,6 +2482,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
@@ -2652,8 +2703,11 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
+toStartOfMicrosecond
+toStartOfMillisecond
 toStartOfMinute
 toStartOfMonth
+toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
@@ -2689,6 +2743,7 @@ toolset
 topK
 topKWeighted
 topLevelDomain
+topLevelDomainRFC
 topk
 topkweighted
 transactional
