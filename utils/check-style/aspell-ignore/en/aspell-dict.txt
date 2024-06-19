@@ -963,6 +963,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -1458,6 +1459,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -2480,6 +2482,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
