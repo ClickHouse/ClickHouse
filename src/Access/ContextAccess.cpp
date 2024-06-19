@@ -37,7 +37,7 @@ namespace ErrorCodes
 
 namespace
 {
-    static const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
+    const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
         {AccessType::FILE, "File"},
         {AccessType::URL, "URL"},
         {AccessType::REMOTE, "Distributed"},
@@ -268,6 +268,11 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
+
+    std::string_view getTableEngine() { return {}; }
+
+    template <typename... OtherArgs>
+    std::string_view getTableEngine(std::string_view arg1, const OtherArgs &...) { return arg1; }
 }
 
 
@@ -557,18 +562,6 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
     return nothing_granted;
 }
 
-/// Just Dummy to pass compile.
-template <typename... Args>
-static std::string_view getTableEngineName(const Args &... args[[maybe_unused]])
-{
-    return "";
-}
-
-template <typename... Args>
-static std::string_view getTableEngineName(std::string_view name, const Args &... args[[maybe_unused]])
-{
-    return name;
-}
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
 bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
@@ -631,7 +624,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         {
             AccessFlags newFlags;
 
-            String table_engine_name{getTableEngineName(args...)};
+            String table_engine_name{getTableEngine(args...)};
             for (const auto & source_and_table_engine : source_and_table_engines)
             {
                 const auto & table_engine = std::get<1>(source_and_table_engine);
@@ -642,7 +635,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                 break;
             }
 
-            if (newFlags == AccessType::NONE)
+            if (newFlags.isEmpty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Didn't find the target Source from the Table Engine");
 
             if (grant_option && acs->isGranted(flags, args...))
