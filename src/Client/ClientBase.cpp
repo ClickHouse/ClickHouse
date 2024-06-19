@@ -949,7 +949,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// But for asynchronous inserts we don't extract data, because it's needed
     /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
     const auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && isSyncInsertWithData(*insert, query_context))
+    if (insert && isSyncInsertWithData(*insert, global_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
     else
         query_to_execute = full_query;
