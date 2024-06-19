@@ -46,6 +46,7 @@ class Tags(metaclass=WithIter):
     """
 
     DO_NOT_TEST_LABEL = "do_not_test"
+    WOOLEN_WOLFDOG_LABEL = "woolen_wolfdog"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     # to upload all binaries from build jobs
