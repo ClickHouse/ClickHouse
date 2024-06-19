@@ -38,7 +38,7 @@
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
-#include "Core/Types.h"
+#include <Core/Types.h>
 #include "config.h"
 
 #if USE_SSL
