@@ -11,7 +11,7 @@ import boto3  # type: ignore
 import botocore  # type: ignore
 from compress_files import compress_file_fast
 from env_helper import (
-    CI,
+    IS_CI,
     RUNNER_TEMP,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
@@ -111,13 +111,13 @@ class S3Helper:
         self.client.delete_object(Bucket=bucket_name, Key=s3_path)
 
     def upload_test_report_to_s3(self, file_path: Path, s3_path: str) -> str:
-        if CI:
+        if IS_CI:
             return self._upload_file_to_s3(S3_TEST_REPORTS_BUCKET, file_path, s3_path)
 
         return S3Helper.copy_file_to_local(S3_TEST_REPORTS_BUCKET, file_path, s3_path)
 
     def upload_build_file_to_s3(self, file_path: Path, s3_path: str) -> str:
-        if CI:
+        if IS_CI:
             return self._upload_file_to_s3(S3_BUILDS_BUCKET, file_path, s3_path)
 
         return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
@@ -255,7 +255,7 @@ class S3Helper:
 
             if full_fs_path.is_symlink():
                 if upload_symlinks:
-                    if CI:
+                    if IS_CI:
                         return self._upload_file_to_s3(
                             bucket_name,
                             full_fs_path,
@@ -266,7 +266,7 @@ class S3Helper:
                     )
                 return []
 
-            if CI:
+            if IS_CI:
                 return self._upload_file_to_s3(
                     bucket_name, full_fs_path, full_s3_path + "/" + file_path.name
                 )
@@ -331,7 +331,7 @@ class S3Helper:
         return result
 
     def url_if_exists(self, key: str, bucket: str = S3_BUILDS_BUCKET) -> str:
-        if not CI:
+        if not IS_CI:
             local_path = self.local_path(bucket, key)
             if local_path.exists():
                 return local_path.as_uri()
@@ -345,7 +345,7 @@ class S3Helper:
 
     @staticmethod
     def get_url(bucket: str, key: str) -> str:
-        if CI:
+        if IS_CI:
             return S3Helper.s3_url(bucket, key)
         return S3Helper.local_path(bucket, key).as_uri()
 
