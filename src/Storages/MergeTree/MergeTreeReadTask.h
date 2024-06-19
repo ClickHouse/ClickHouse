@@ -160,6 +160,9 @@ private:
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
+
+    /// If true, add once, and then set false.
+    bool add_virtual_row = false;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

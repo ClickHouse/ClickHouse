@@ -6,7 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -132,28 +132,69 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
-        auto res = algorithm->readFromTask(*task, block_size_params);
-
-        if (res.row_count)
+        if (enable_virtual_row)
         {
+            /// Turn on virtual row just once.
+            enable_virtual_row = false;
+
+            const auto & primary_key = getPrimaryKey();
+
+            MergeTreeReadTask::BlockAndProgress res;
+            res.row_count = 1;
+
             /// Reorder the columns according to result_header
             Columns ordered_columns;
             ordered_columns.reserve(result_header.columns());
-            for (size_t i = 0; i < result_header.columns(); ++i)
+            for (size_t i = 0, j = 0; i < result_header.columns(); ++i)
             {
-                auto name = result_header.getByPosition(i).name;
-                ordered_columns.push_back(res.block.getByName(name).column);
+                const ColumnWithTypeAndName & type_and_name = result_header.getByPosition(i);
+                ColumnPtr current_column = type_and_name.type->createColumn();
+
+                if (j < index->size() && type_and_name.name == primary_key.column_names[j] && type_and_name.type == primary_key.data_types[j])
+                {
+                    auto column = current_column->cloneEmpty();
+                    column->insert((*(*index)[j])[mark_range_begin]);
+                    ordered_columns.push_back(std::move(column));
+                    ++j;
+                }
+                else
+                    ordered_columns.push_back(current_column->cloneResized(1));
             }
 
             return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level) : nullptr),
+                .chunk = Chunk(ordered_columns, res.row_count, std::make_shared<MergeTreeReadInfo>(
+                    (add_part_level ? task->getInfo().data_part->info.level : 0), true)),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
         }
         else
         {
-            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+            auto res = algorithm->readFromTask(*task, block_size_params);
+
+            if (res.row_count)
+            {
+                /// Reorder the columns according to result_header
+                Columns ordered_columns;
+                ordered_columns.reserve(result_header.columns());
+                for (size_t i = 0; i < result_header.columns(); ++i)
+                {
+                    auto name = result_header.getByPosition(i).name;
+                    ordered_columns.push_back(res.block.getByName(name).column);
+                }
+
+                return ChunkAndProgress{
+                    .chunk = Chunk(ordered_columns, res.row_count,
+                        add_part_level ? std::make_shared<MergeTreeReadInfo>(
+                            (add_part_level ? task->getInfo().data_part->info.level : 0), false) : nullptr),
+                    .num_read_rows = res.num_read_rows,
+                    .num_read_bytes = res.num_read_bytes,
+                    .is_finished = false};
+            }
+            else
+            {
+                return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+            }
         }
     }
 

@@ -19,6 +19,8 @@ public:
 
     Status prepare() override;
 
+    const MergeTreeSelectProcessorPtr& getProcessor() const { return processor; }
+
 #if defined(OS_LINUX)
     int schedule() override;
 #endif
