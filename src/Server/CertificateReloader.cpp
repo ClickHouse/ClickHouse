@@ -103,16 +103,7 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     else
     {
         if (!ctx)
-        {
-            try
-            {
-                ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
-            }
-            catch (...)
-            {
-                LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
-            }
-        }
+            ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
         data.push_back(MultiData(ctx));
         --it;
         data_index[prefix] = it;
@@ -137,28 +128,27 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
     else
     {
-        auto it = findOrInsert(ctx, prefix);
-
-        bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
-        bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
-
-        if (cert_file_changed || key_file_changed)
-        {
-            LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-            std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
-            it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
-            LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-        }
-
-        /// If callback is not set yet
         try
         {
-            if (it->init_was_not_made && it->ctx != nullptr)
+            auto it = findOrInsert(ctx, prefix);
+
+            bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
+            bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
+
+            if (cert_file_changed || key_file_changed)
+            {
+                LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+                std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
+                it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
+                LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+            }
+
+            /// If callback is not set yet
+            if (it->init_was_not_made)
                 init(&*it);
         }
         catch (...)
         {
-            it->init_was_not_made = true;
             LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
         }
     }
