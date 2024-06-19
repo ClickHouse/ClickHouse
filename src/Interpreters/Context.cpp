@@ -18,6 +18,7 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -31,7 +32,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -370,7 +371,7 @@ struct ContextSharedPart : boost::noncopyable
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
-    std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
+    std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
@@ -610,6 +611,8 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
 
+        NamedCollectionFactory::instance().shutdown();
+
         delete_async_insert_queue.reset();
 
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
@@ -740,12 +743,18 @@ struct ContextSharedPart : boost::noncopyable
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (!trace_log)
-            return;
+        if (!trace_collector.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector needs to be first created before initialization");
+
+        trace_collector->initialize(trace_log);
+    }
+
+    void createTraceCollector()
+    {
         if (hasTraceCollector())
             return;
 
-        trace_collector.emplace(std::move(trace_log));
+        trace_collector.emplace();
     }
 
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
@@ -1862,7 +1871,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
             auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
             StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
@@ -2076,7 +2085,7 @@ StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression
         return nullptr;
 
     auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
     StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
     ASTCreateQuery create;
@@ -3891,6 +3900,11 @@ void Context::initializeSystemLogs()
     });
 }
 
+void Context::createTraceCollector()
+{
+    shared->createTraceCollector();
+}
+
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
@@ -4282,7 +4296,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     {
         std::lock_guard lock(shared->mutex);
         if (shared->storage_s3_settings)
-            shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
+            shared->storage_s3_settings->loadFromConfig(config, /* config_prefix */"s3", getSettingsRef());
     }
 
 }
@@ -4334,14 +4348,14 @@ const DistributedSettings & Context::getDistributedSettings() const
     return *shared->distributed_settings;
 }
 
-const StorageS3Settings & Context::getStorageS3Settings() const
+const S3SettingsByEndpoint & Context::getStorageS3Settings() const
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
     }
 
     return *shared->storage_s3_settings;

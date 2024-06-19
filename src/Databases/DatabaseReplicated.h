@@ -20,6 +20,8 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated : public DatabaseAtomic
 {
 public:
+    static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
+
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
@@ -65,6 +67,7 @@ public:
 
     /// Returns cluster consisting of database replicas
     ClusterPtr tryGetCluster() const;
+    ClusterPtr tryGetAllGroupsCluster() const;
 
     void drop(ContextPtr /*context*/) override;
 
@@ -113,8 +116,8 @@ private:
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
     String readMetadataFile(const String & table_name) const;
 
-    ClusterPtr getClusterImpl() const;
-    void setCluster(ClusterPtr && new_cluster);
+    ClusterPtr getClusterImpl(bool all_groups = false) const;
+    void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
 
     void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
@@ -155,6 +158,7 @@ private:
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     mutable ClusterPtr cluster;
+    mutable ClusterPtr cluster_all_groups;
 
     LoadTaskPtr startup_replicated_database_task TSA_GUARDED_BY(mutex);
 };

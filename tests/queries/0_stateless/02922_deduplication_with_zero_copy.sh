@@ -58,9 +58,9 @@ function filter_temporary_locks()
 
 
 function insert_duplicates() {
-  $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" --send_logs_level="error"  &
+  $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" --allow_repeated_settings --send_logs_level="error"  &
 
-  $CLICKHOUSE_CLIENT -q "insert into r2 values(1);" --send_logs_level="error"
+  $CLICKHOUSE_CLIENT -q "insert into r2 values(1);" --allow_repeated_settings --send_logs_level="error"
 
   wait
 
@@ -137,8 +137,8 @@ function list_keeper_nodes() {
 
 list_keeper_nodes "${table_shared_id}"
 
-$CLICKHOUSE_CLIENT -nm -q "drop table r1;" --send_logs_level="error"  &
-$CLICKHOUSE_CLIENT -nm -q "drop table r2;" --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -nm -q "drop table r1;" --allow_repeated_settings --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -nm -q "drop table r2;" --allow_repeated_settings --send_logs_level="error"  &
 wait
 
 list_keeper_nodes "${table_shared_id}"
