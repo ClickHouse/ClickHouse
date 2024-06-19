@@ -4,7 +4,7 @@ import logging
 
 from github import Github
 
-from ci_config import StatusNames
+from ci_config import CI
 from commit_status_helper import (
     get_commit,
     get_commit_filtered_statuses,
@@ -71,7 +71,7 @@ def main():
             can_set_green_mergeable_status=True,
         )
 
-    ci_running_statuses = [s for s in statuses if s.context == StatusNames.CI]
+    ci_running_statuses = [s for s in statuses if s.context == CI.StatusNames.CI]
     if not ci_running_statuses:
         return
     # Take the latest status
@@ -81,7 +81,11 @@ def main():
     has_pending = False
     error_cnt = 0
     for status in statuses:
-        if status.context in (StatusNames.MERGEABLE, StatusNames.CI, StatusNames.SYNC):
+        if status.context in (
+            CI.StatusNames.MERGEABLE,
+            CI.StatusNames.CI,
+            CI.StatusNames.SYNC,
+        ):
             # do not account these statuses
             continue
         if status.state == PENDING:
@@ -108,7 +112,7 @@ def main():
         ci_state,
         ci_status.target_url,
         description,
-        StatusNames.CI,
+        CI.StatusNames.CI,
         pr_info,
         dump_to_file=True,
     )

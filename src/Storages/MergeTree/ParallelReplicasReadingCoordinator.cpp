@@ -112,7 +112,7 @@ struct fmt::formatter<DB::Part>
     static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const DB::Part & part, FormatContext & ctx)
+    auto format(const DB::Part & part, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
     }

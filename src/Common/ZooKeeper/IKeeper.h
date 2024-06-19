@@ -647,7 +647,7 @@ public:
 
 template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(Coordination::Error code, auto & ctx)
+    constexpr auto format(Coordination::Error code, auto & ctx) const
     {
         return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
     }

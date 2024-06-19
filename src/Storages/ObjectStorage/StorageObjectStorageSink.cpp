@@ -83,7 +83,6 @@ void StorageObjectStorageSink::finalize()
     {
         writer->finalize();
         writer->flush();
-        write_buf->finalize();
     }
     catch (...)
     {
@@ -91,6 +90,8 @@ void StorageObjectStorageSink::finalize()
         release();
         throw;
     }
+
+    write_buf->finalize();
 }
 
 void StorageObjectStorageSink::release()
