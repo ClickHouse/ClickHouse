@@ -1541,6 +1541,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1706,6 +1707,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1722,6 +1724,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1898,6 +1901,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
