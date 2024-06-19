@@ -556,7 +556,7 @@ Chunk StorageS3QueueSource::generateImpl()
 
         appendLogElement(path, *file_status, processed_rows_from_file, true);
 
-        file_status->onProcessed();
+        file_status->setProcessingEndTime();
         file_status.reset();
 
         processed_rows_from_file = 0;

@@ -19,6 +19,7 @@ public:
             None
         };
 
+        void setProcessingEndTime();
         void onProcessing();
         void onProcessed();
         void onFailed(const std::string & exception);

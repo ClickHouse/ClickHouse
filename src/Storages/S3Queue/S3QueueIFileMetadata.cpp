@@ -35,6 +35,11 @@ namespace
     }
 }
 
+void S3QueueIFileMetadata::FileStatus::setProcessingEndTime()
+{
+    processing_end_time = now();
+}
+
 void S3QueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
@@ -44,13 +49,15 @@ void S3QueueIFileMetadata::FileStatus::onProcessing()
 void S3QueueIFileMetadata::FileStatus::onProcessed()
 {
     state = FileStatus::State::Processed;
-    processing_end_time = now();
+    if (!processing_end_time)
+        setProcessingEndTime();
 }
 
 void S3QueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
     state = FileStatus::State::Failed;
-    processing_end_time = now();
+    if (!processing_end_time)
+        setProcessingEndTime();
     std::lock_guard lock(last_exception_mutex);
     last_exception = exception;
 }
@@ -233,7 +240,7 @@ void S3QueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Setting file {} as processed (path: {})", path, processed_node_path);
 
     ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
-    chassert(file_status->state == FileStatus::State::Processed);
+    file_status->onProcessed();
 
     try
     {
