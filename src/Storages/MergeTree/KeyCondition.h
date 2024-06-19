@@ -14,6 +14,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include "DataTypes/Serializations/ISerialization.h"
 
 
 namespace DB
@@ -253,13 +254,12 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool transformConstantWithValidFunctions(
+    bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
+        MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
