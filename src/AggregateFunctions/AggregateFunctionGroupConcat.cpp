@@ -194,7 +194,7 @@ public:
     {
         auto & cur_data = this->data(place);
 
-        UInt64 temp_size;
+        UInt64 temp_size = 0;
         readVarUInt(temp_size, buf);
 
         cur_data.checkAndUpdateSize(temp_size, arena);
