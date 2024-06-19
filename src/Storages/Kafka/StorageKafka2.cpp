@@ -302,7 +302,7 @@ bool StorageKafka2::activate()
 
     if (!activate_in_keeper())
     {
-        assert(storage.is_readonly);
+        assert(!is_active);
         return false;
     }
 
@@ -1203,7 +1203,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
 void StorageKafka2::threadFunc(size_t idx)
 {
-    assert(idx < tasks.size());
+    chassert(idx < tasks.size());
     auto task = tasks[idx];
     std::optional<StallReason> maybe_stall_reason;
     try
