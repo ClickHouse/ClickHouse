@@ -194,9 +194,12 @@ public:
     {
         auto & cur_data = this->data(place);
 
-        readVarUInt(cur_data.data_size, buf);
+        UInt64 temp_size;
+        readVarUInt(temp_size, buf);
 
-        checkAndUpdateSize(cur_data.data_size, arena);
+        cur_data.checkAndUpdateSize(temp_size, arena);
+
+        cur_data.data_size = temp_size;
         buf.readStrict(cur_data.data, cur_data.data_size);
 
         if constexpr (has_limit)
