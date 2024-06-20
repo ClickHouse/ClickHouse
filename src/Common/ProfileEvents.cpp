@@ -195,6 +195,8 @@
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
+    M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).") \
+    M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.") \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
@@ -642,7 +644,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
-    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
+    M(IOUringSQEsResubmitsAsync, "Total number of asynchronous io_uring SQE resubmits performed") \
+    M(IOUringSQEsResubmitsSync, "Total number of synchronous io_uring SQE resubmits performed") \
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
     \
@@ -752,6 +755,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP") \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.") \
+    \
+    M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
+    M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
+    M(GWPAsanFree, "Number of free operations done by GWPAsan") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

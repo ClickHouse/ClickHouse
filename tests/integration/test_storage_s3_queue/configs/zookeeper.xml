@@ -13,4 +13,19 @@
             <port>2181</port>
         </node>
     </zookeeper>
+
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>instance</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>instance2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
 </clickhouse>

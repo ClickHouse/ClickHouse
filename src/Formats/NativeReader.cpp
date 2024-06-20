@@ -294,7 +294,7 @@ Block NativeReader::read()
     }
 
     if (res.rows() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after desirialization, got: {}, expected: {}", res.rows(), rows);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
 }

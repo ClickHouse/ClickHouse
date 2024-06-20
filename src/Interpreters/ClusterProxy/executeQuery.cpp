@@ -22,7 +22,9 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Distributed/DistributedSettings.h>
-
+#include <Storages/buildQueryTreeForShard.h>
+#include <Planner/Utils.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 namespace DB
 {
@@ -503,6 +505,41 @@ void executeQueryWithParallelReplicas(
         std::move(storage_limits));
 
     query_plan.addStep(std::move(read_from_remote));
+}
+
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    QueryProcessingStage::Enum processed_stage,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    ContextPtr context,
+    std::shared_ptr<const StorageLimitsList> storage_limits)
+{
+    QueryTreeNodePtr modified_query_tree = query_tree->clone();
+    rewriteJoinToGlobalJoin(modified_query_tree, context);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
+
+    auto header
+        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
+
+    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
+}
+
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    std::shared_ptr<const StorageLimitsList> storage_limits)
+{
+    auto modified_query_ast = ClusterProxy::rewriteSelectQuery(
+        context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
+    auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
 }
 
 }
