@@ -26,6 +26,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include "Formats/FormatSettings.h"
 
 
 namespace DB
@@ -167,16 +168,15 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         auto & serialized_value_offsets = serialized_value_column->getOffsets();
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
-
-        for (auto && chunk : input_chunks)
+        FormatSettings format_settings; /// Format settings is 1.5KB, so it's not wise to create it for each row
+        for (const auto & chunk : input_chunks)
         {
             const auto & columns = chunk.getColumns();
             auto rows = chunk.getNumRows();
             for (size_t i = 0; i < rows; ++i)
             {
                 for (size_t idx = 0; idx < columns.size(); ++idx)
-                    serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, {});
-                /// String in ColumnString must be null-terminated
+                    serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, format_settings);
                 writeChar('\0', writer_key);
                 writeChar('\0', writer_value);
                 serialized_key_offsets.emplace_back(writer_key.count());
