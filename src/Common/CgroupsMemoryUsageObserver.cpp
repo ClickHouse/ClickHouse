@@ -24,84 +24,17 @@
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
 #endif
 
+using namespace DB;
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int FILE_DOESNT_EXIST;
-    extern const int INCORRECT_DATA;
+extern const int FILE_DOESNT_EXIST;
+extern const int INCORRECT_DATA;
 }
 
-CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
-    : log(getLogger("CgroupsMemoryUsageObserver"))
-    , wait_time(wait_time_)
-    , memory_usage_file(log)
-{
-    LOG_INFO(log, "Initialized cgroups memory limit observer, wait time is {} sec", wait_time.count());
-}
-
-CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
-{
-    stopThread();
-}
-
-void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_)
-{
-    std::lock_guard<std::mutex> limit_lock(limit_mutex);
-
-    if (hard_limit_ == hard_limit && soft_limit_ == soft_limit)
-        return;
-
-    hard_limit = hard_limit_;
-    soft_limit = soft_limit_;
-
-    on_hard_limit = [this, hard_limit_](bool up)
-    {
-        if (up)
-        {
-            LOG_WARNING(log, "Exceeded hard memory limit ({})", ReadableSize(hard_limit_));
-
-            /// Update current usage in memory tracker. Also reset free_memory_in_allocator_arenas to zero though we don't know if they are
-            /// really zero. Trying to avoid OOM ...
-            MemoryTracker::setRSS(hard_limit_, 0);
-        }
-        else
-        {
-            LOG_INFO(log, "Dropped below hard memory limit ({})", ReadableSize(hard_limit_));
-        }
-    };
-
-    on_soft_limit = [this, soft_limit_](bool up)
-    {
-        if (up)
-        {
-            LOG_WARNING(log, "Exceeded soft memory limit ({})", ReadableSize(soft_limit_));
-
-#if USE_JEMALLOC
-            LOG_INFO(log, "Purging jemalloc arenas");
-            mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
-#endif
-            /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
-            uint64_t memory_usage = memory_usage_file.readMemoryUsage();
-            MemoryTracker::setRSS(memory_usage, 0);
-
-            LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
-        }
-        else
-        {
-            LOG_INFO(log, "Dropped below soft memory limit ({})", ReadableSize(soft_limit_));
-        }
-    };
-
-    LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
-}
-
-void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
-{
-    std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
-    on_memory_amount_available_changed = on_memory_amount_available_changed_;
 }
 
 namespace
@@ -233,8 +166,11 @@ std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPat
 
 }
 
-CgroupsMemoryUsageObserver::MemoryUsageFile::MemoryUsageFile(LoggerPtr log_)
-    : log(log_)
+namespace DB
+{
+
+CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
+    : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_)
 {
     const auto [cgroup_path, version] = getCgroupsPath();
 
@@ -245,17 +181,73 @@ CgroupsMemoryUsageObserver::MemoryUsageFile::MemoryUsageFile(LoggerPtr log_)
 
     LOG_INFO(
         log,
-        "Will read the current memory usage from '{}' (cgroups version: {})",
+        "Will read the current memory usage from '{}' (cgroups version: {}), wait time is {} sec",
         cgroup_path,
-        (version == CgroupsVersion::V1) ? "v1" : "v2");
+        (version == CgroupsVersion::V1) ? "v1" : "v2",
+        wait_time.count());
 }
 
-uint64_t CgroupsMemoryUsageObserver::MemoryUsageFile::readMemoryUsage() const
+CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
 {
-    chassert(cgroup_reader);
-    const auto mem_usage = cgroup_reader->readMemoryUsage();
-    LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(mem_usage));
-    return mem_usage;
+    stopThread();
+}
+
+void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_)
+{
+    std::lock_guard<std::mutex> limit_lock(limit_mutex);
+
+    if (hard_limit_ == hard_limit && soft_limit_ == soft_limit)
+        return;
+
+    hard_limit = hard_limit_;
+    soft_limit = soft_limit_;
+
+    on_hard_limit = [this, hard_limit_](bool up)
+    {
+        if (up)
+        {
+            LOG_WARNING(log, "Exceeded hard memory limit ({})", ReadableSize(hard_limit_));
+
+            /// Update current usage in memory tracker. Also reset free_memory_in_allocator_arenas to zero though we don't know if they are
+            /// really zero. Trying to avoid OOM ...
+            MemoryTracker::setRSS(hard_limit_, 0);
+        }
+        else
+        {
+            LOG_INFO(log, "Dropped below hard memory limit ({})", ReadableSize(hard_limit_));
+        }
+    };
+
+    on_soft_limit = [this, soft_limit_](bool up)
+    {
+        if (up)
+        {
+            LOG_WARNING(log, "Exceeded soft memory limit ({})", ReadableSize(soft_limit_));
+
+#    if USE_JEMALLOC
+            LOG_INFO(log, "Purging jemalloc arenas");
+            mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+#    endif
+            /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
+            uint64_t memory_usage = cgroup_reader->readMemoryUsage();
+            LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(memory_usage));
+            MemoryTracker::setRSS(memory_usage, 0);
+
+            LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
+        }
+        else
+        {
+            LOG_INFO(log, "Dropped below soft memory limit ({})", ReadableSize(soft_limit_));
+        }
+    };
+
+    LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
+}
+
+void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
+{
+    std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
+    on_memory_amount_available_changed = on_memory_amount_available_changed_;
 }
 
 void CgroupsMemoryUsageObserver::startThread()
@@ -309,7 +301,8 @@ void CgroupsMemoryUsageObserver::runThread()
             std::lock_guard<std::mutex> limit_lock(limit_mutex);
             if (soft_limit > 0 && hard_limit > 0)
             {
-                uint64_t memory_usage = memory_usage_file.readMemoryUsage();
+                uint64_t memory_usage = cgroup_reader->readMemoryUsage();
+                LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(memory_usage));
                 if (memory_usage > hard_limit)
                 {
                     if (last_memory_usage <= hard_limit)

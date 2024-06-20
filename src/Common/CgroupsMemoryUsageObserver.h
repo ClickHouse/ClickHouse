@@ -69,22 +69,11 @@ private:
     uint64_t last_memory_usage = 0;        /// how much memory does the process use
     uint64_t last_available_memory_amount; /// how much memory can the process use
 
-    /// Represents the cgroup virtual file that shows the memory consumption of the process's cgroup.
-    struct MemoryUsageFile
-    {
-    public:
-        explicit MemoryUsageFile(LoggerPtr log_);
-        uint64_t readMemoryUsage() const;
-    private:
-        LoggerPtr log;
-        std::unique_ptr<ICgroupsReader> cgroup_reader;
-    };
-
-    MemoryUsageFile memory_usage_file;
-
     void stopThread();
 
     void runThread();
+
+    std::unique_ptr<ICgroupsReader> cgroup_reader;
 
     std::mutex thread_mutex;
     std::condition_variable cond;
