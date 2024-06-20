@@ -1,5 +1,5 @@
+#include <cstdint>
 #include <memory>
-#include <stdint.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 
 #if defined(OS_LINUX)
@@ -69,7 +69,7 @@ uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & ke
 
 struct CgroupsV1Reader : ICgroupsReader
 {
-    CgroupsV1Reader(const std::filesystem::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
+    explicit CgroupsV1Reader(const std::filesystem::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
 
     uint64_t readMemoryUsage() override
     {
@@ -85,7 +85,7 @@ private:
 
 struct CgroupsV2Reader : ICgroupsReader
 {
-    CgroupsV2Reader(const std::filesystem::path & stat_file_dir)
+    explicit CgroupsV2Reader(const std::filesystem::path & stat_file_dir)
         : current_buf(stat_file_dir / "memory.current"), stat_buf(stat_file_dir / "memory.stat")
     {
     }
