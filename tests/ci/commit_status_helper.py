@@ -29,7 +29,6 @@ from report import (
     StatusType,
     TestResult,
     TestResults,
-    get_status,
     get_worst_status,
 )
 from s3_helper import S3Helper
@@ -462,6 +461,7 @@ def trigger_mergeable_check(
     commit: Commit,
     statuses: CommitStatuses,
     set_if_green: bool = False,
+    set_from_sync: bool = False,
     workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update StatusNames.MERGEABLE"""
@@ -503,10 +503,17 @@ def trigger_mergeable_check(
 
     if not set_if_green and state == SUCCESS:
         # do not set green Mergeable Check status
-        pass
-    else:
-        if mergeable_status is None or mergeable_status.description != description:
+        return state
+
+    if set_from_sync:
+        # update Mergeable Check from sync WF only if its status already present or its new status is not SUCCESS
+        #   to avoid false-positives
+        if mergeable_status or state != SUCCESS:
             set_mergeable_check(commit, description, state)
+        return state
+
+    if mergeable_status is None or mergeable_status.description != description:
+        set_mergeable_check(commit, description, state)
 
     return state
 
@@ -516,7 +523,6 @@ def update_upstream_sync_status(
     sync_pr_number: int,
     gh: Github,
     state: StatusType,
-    can_set_green_mergeable_status: bool = False,
 ) -> None:
     upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
     upstream_pr = upstream_repo.get_pull(upstream_pr_number)
@@ -541,23 +547,27 @@ def update_upstream_sync_status(
 
     assert last_synced_upstream_commit
 
-    sync_status = get_status(state)
     logging.info(
         "Using commit %s to post the %s status `%s`: [%s]",
         last_synced_upstream_commit.sha,
-        sync_status,
+        state,
         CI.StatusNames.SYNC,
         "",
     )
+    if state == SUCCESS:
+        description = CI.SyncState.COMPLETED
+    else:
+        description = CI.SyncState.TESTS_FAILED
+
     post_commit_status(
         last_synced_upstream_commit,
-        sync_status,
+        state,
         "",
-        "",
+        description,
         CI.StatusNames.SYNC,
     )
     trigger_mergeable_check(
         last_synced_upstream_commit,
         get_commit_filtered_statuses(last_synced_upstream_commit),
-        set_if_green=can_set_green_mergeable_status,
+        set_from_sync=True,
     )

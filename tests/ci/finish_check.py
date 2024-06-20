@@ -68,7 +68,6 @@ def main():
             pr_info.number,
             gh,
             state,
-            can_set_green_mergeable_status=True,
         )
 
     ci_running_statuses = [s for s in statuses if s.context == CI.StatusNames.CI]
