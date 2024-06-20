@@ -51,7 +51,7 @@ public:
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
-    size_t size() const override { return nested_column->size(); }
+    size_t size() const override { return assert_cast<const ColumnUInt8 &>(*null_map).size(); }
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -109,6 +109,7 @@ public:
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
+    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
     void reserve(size_t n) override;
     void shrinkToFit() override;
     void ensureOwnership() override;

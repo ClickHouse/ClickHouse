@@ -169,6 +169,8 @@ public:
         return client.get();
     }
 
+    bool supportParallelWrite() const override { return true; }
+
 private:
     using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
     void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);

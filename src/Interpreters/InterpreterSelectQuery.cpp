@@ -578,7 +578,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     settings.parallel_replicas_count,
                     settings.parallel_replica_offset,
                     std::move(custom_key_ast),
-                    settings.parallel_replicas_custom_key_filter_type,
+                    {settings.parallel_replicas_custom_key_filter_type,
+                     settings.parallel_replicas_custom_key_range_lower,
+                     settings.parallel_replicas_custom_key_range_upper},
                     storage->getInMemoryMetadataPtr()->columns,
                     context);
             }
@@ -657,7 +659,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
-                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
+                    storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -1471,6 +1473,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
     if (expressions.hasHaving() && query.group_by_with_totals && (query.group_by_with_rollup || query.group_by_with_cube))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
+
+    if (query.qualify())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QUALIFY clause is not supported in the old analyzer");
 
     if (options.only_analyze)
     {
@@ -2372,49 +2377,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     return 0;
 }
 
-/** Storages can rely that filters that for storage will be available for analysis before
-  * plan is fully constructed and optimized.
-  *
-  * StorageMerge common header calculation and prewhere push-down relies on this.
-  *
-  * This is similar to Planner::collectFiltersForAnalysis
-  */
-void collectFiltersForAnalysis(
-    const ASTPtr & query_ptr,
-    const ContextPtr & query_context,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryOptions & options,
-    SelectQueryInfo & query_info)
-{
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-
-    auto dummy = std::make_shared<StorageDummy>(
-        storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)), storage_snapshot);
-
-    QueryPlan query_plan;
-    InterpreterSelectQuery(query_ptr, query_context, dummy, dummy->getInMemoryMetadataPtr(), options).buildQueryPlan(query_plan);
-
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
-    query_plan.optimize(optimization_settings);
-
-    std::vector<QueryPlan::Node *> nodes_to_process;
-    nodes_to_process.push_back(query_plan.getRootNode());
-
-    while (!nodes_to_process.empty())
-    {
-        const auto * node_to_process = nodes_to_process.back();
-        nodes_to_process.pop_back();
-        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
-
-        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
-        if (!read_from_dummy)
-            continue;
-
-        query_info.filter_actions_dag = read_from_dummy->getFilterActionsDAG();
-        query_info.optimized_prewhere_info = read_from_dummy->getPrewhereInfo();
-    }
-}
-
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
@@ -2544,10 +2506,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
-            && typeid_cast<const StorageMerge *>(storage.get()))
-            collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
-
         /// Table.
         if (max_streams == 0)
             max_streams = 1;
@@ -2599,10 +2557,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
-        /// Possible filters: row-security, additional filter, replica filter (before array join), where (after array join)
-        query_info.has_filters_and_no_array_join_before_filter = row_policy_filter || additional_filter_info
-            || parallel_replicas_custom_filter_info
-            || (analysis_result.hasWhere() && !analysis_result.before_where->hasArrayJoin() && !analysis_result.array_join);
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)

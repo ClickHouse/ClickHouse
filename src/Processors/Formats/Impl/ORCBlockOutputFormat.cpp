@@ -315,18 +315,20 @@ void ORCBlockOutputFormat::writeColumn(
     if (null_bytemap)
         orc_column.hasNulls = true;
 
+    /// ORC doesn't have unsigned types, so cast everything to signed and sign-extend to Int64 to
+    /// make the ORC library calculate min and max correctly.
     switch (type->getTypeId())
     {
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             /// Note: Explicit cast to avoid clang-tidy error: 'signed char' to 'long' conversion; consider casting to 'unsigned char' first.
-            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int8 & value){ return static_cast<int64_t>(value); });
+            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int8 & value){ return Int64(Int8(value)); });
             break;
         }
         case TypeIndex::UInt8:
         {
-            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return value; });
+            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return Int64(Int8(value)); });
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
@@ -338,7 +340,7 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return value; });
+            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return Int64(Int16(value)); });
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -349,12 +351,12 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::UInt32:
         {
-            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return value; });
+            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return Int64(Int32(value)); });
             break;
         }
         case TypeIndex::IPv4:
         {
-            writeNumbers<IPv4, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const IPv4 & value){ return value.toUnderType(); });
+            writeNumbers<IPv4, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const IPv4 & value){ return Int64(Int32(value.toUnderType())); });
             break;
         }
         case TypeIndex::Int64:

@@ -44,6 +44,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
@@ -222,6 +223,17 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
+addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr context_ptr)
+{
+    const auto & privileges_info = context_ptr->getQueryPrivilegesInfo();
+    {
+        std::lock_guard lock(privileges_info.mutex);
+        element.used_privileges = privileges_info.used_privileges;
+        element.missing_privileges = privileges_info.missing_privileges;
+    }
+}
+
+static void
 addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
 {
     const auto time_now = std::chrono::system_clock::now();
@@ -286,6 +298,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
+    addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
 
@@ -600,6 +613,8 @@ void logExceptionBeforeStart(
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
+
+    addPrivilegesInfoToQueryLogElement(elem, context);
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
@@ -1194,7 +1209,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                }
 
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -1260,7 +1277,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             }
                         }
                     }
-
                 }
             }
         }

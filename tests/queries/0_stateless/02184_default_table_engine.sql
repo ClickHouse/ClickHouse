@@ -69,9 +69,9 @@ DROP TABLE t2;
 
 CREATE DATABASE test_02184 ORDER BY kek; -- {serverError INCORRECT_QUERY}
 CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError UNKNOWN_SETTING}
-CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError 36}
+CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}
 SET default_table_engine = 'MergeTree';
-CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError 36}
+CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}
 
 CREATE TABLE mt (a UInt64, b Nullable(String), PRIMARY KEY (a, coalesce(b, 'test')), INDEX b_index b TYPE set(123) GRANULARITY 1);
 SHOW CREATE TABLE mt;
