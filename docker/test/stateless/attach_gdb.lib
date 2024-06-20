@@ -27,7 +27,7 @@ continue
 backtrace full
 info registers
 p "top 1 KiB of the stack:"
-p/x *(uint64_t[128]*)$sp
+p/x *(uint64_t[128]*)"'$sp'"
 maintenance info sections
 thread apply all backtrace full
 disassemble /s
