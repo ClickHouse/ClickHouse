@@ -14,7 +14,7 @@ class ParametrizedViewFunctionParamsVisitor : public InDepthQueryTreeVisitor<Par
 {
 public:
     ParametrizedViewFunctionParamsVisitor(
-        std::function<void(QueryTreeNodePtr)> resolve_node_,
+        std::function<QueryTreeNodePtr(QueryTreeNodePtr)> resolve_node_,
         const ContextPtr & context_)
         : context(context_)
         , resolve_node(resolve_node_)
@@ -34,8 +34,8 @@ public:
 
             if (auto * identifier_node = nodes[0]->as<IdentifierNode>())
             {
-                resolve_node(nodes[1]);
-                auto resolved_value = evaluateConstantExpressionOrIdentifierAsLiteral(nodes[1]->toAST(), context);
+                auto resolved_node = resolve_node(nodes[1]);
+                auto resolved_value = evaluateConstantExpressionOrIdentifierAsLiteral(resolved_node->toAST(), context);
                 auto resolved_value_str = convertFieldToString(resolved_value->as<ASTLiteral>()->value);
                 params[identifier_node->getIdentifier().getFullName()] = resolved_value_str;
             }
@@ -44,11 +44,11 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
 
-    NameToNameMap getParams() const { return params; }
+    const NameToNameMap & getParametersMap() const { return params; }
 
 private:
     NameToNameMap params;
     const ContextPtr context;
-    std::function<void(QueryTreeNodePtr)> resolve_node;
+    std::function<QueryTreeNodePtr(QueryTreeNodePtr)> resolve_node;
 };
 }

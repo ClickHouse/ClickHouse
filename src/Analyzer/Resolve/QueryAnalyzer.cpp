@@ -4512,6 +4512,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             [&](QueryTreeNodePtr node)
             {
                 resolveExpressionNode(node, scope, /* allow_lambda_expression */true, /* allow_table_function */false);
+                auto alias_node = scope.aliases.alias_name_to_expression_node->find(node->getAlias());
+                if (alias_node != scope.aliases.alias_name_to_expression_node->end())
+                    return alias_node->second;
+                else
+                    return node;
             },
             context);
 
@@ -4520,7 +4525,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         auto parametrized_view_storage = context->buildParametrizedViewStorage(
             database_name,
             table_name,
-            params_visitor.getParams());
+            params_visitor.getParametersMap());
 
         if (parametrized_view_storage)
         {
