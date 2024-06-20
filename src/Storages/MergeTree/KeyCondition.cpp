@@ -790,8 +790,8 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_)
     : filter_dag(filter_dag_)
-    , context(context_) 
-    ,key_expr(key_expr_)
+    , context(context_)
+    , key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
 {

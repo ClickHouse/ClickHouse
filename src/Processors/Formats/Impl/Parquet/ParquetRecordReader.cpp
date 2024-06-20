@@ -383,7 +383,7 @@ Chunk ParquetRecordReader::readChunk()
     }
     if (has_any_col_finished == has_any_col_unfinished)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Some columns are finished, but some are not");
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Some columns are finished, but some are not");
     }
     current_row_group_finished = !has_any_col_unfinished;
     // Each column should read the same number rows.
@@ -448,7 +448,7 @@ static std::shared_ptr<parquet::ArrowInputStream> getStream(arrow::io::RandomAcc
     if (allocate_result.ok())
         buffer.reset(allocate_result.ValueUnsafe().release());
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Allocate buffer failed");
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Allocate buffer failed");
 
     Int64 readPos = 0;
     std::ranges::for_each(
@@ -462,7 +462,7 @@ static std::shared_ptr<parquet::ArrowInputStream> getStream(arrow::io::RandomAcc
             if (result.ok())
                 bytes_read = *result;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "read at offset {} failed", offset);
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "read at offset {} failed", offset);
             assert(bytes_read == length);
             readPos += bytes_read;
         });

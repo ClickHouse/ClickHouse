@@ -276,15 +276,15 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 max_read_r
     resetColumn(max_read_rows);
     UInt32 current_read_rows = 0;
 
-    auto remained_rows_to_read = max_read_rows; 
+    auto remained_rows_to_read = max_read_rows;
     while (remained_rows_to_read)
     {
         // if dictionary page encountered, another page should be read
-        if(!readPageIfEmpty())
+        if (!readPageIfEmpty())
             break;
         if (!read_state->hasMoreToRead())
             break;
-    
+
         auto rows_to_read = read_state->nextRowsToRead();
         UInt32 read_values = 0;
         if (rows_to_read < 0)

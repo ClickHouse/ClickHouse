@@ -19,6 +19,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int PARQUET_EXCEPTION;
+}
 struct BoundaryOrder;
 struct UnorderedBoundary;
 struct AscendingBoundary;
@@ -219,40 +223,40 @@ struct AscendingBoundary : BoundaryOrder
         const Int32 length = static_cast<Int32>(comparator.size());
         if (!length)
             return std::nullopt;
-        Int32 lowerLeft = 0;
-        Int32 upperLeft = 0;
-        auto lowerRight = length - 1;
-        auto upperRight = length - 1;
+        Int32 lower_left = 0;
+        Int32 upper_left = 0;
+        auto lower_right = length - 1;
+        auto upper_right = length - 1;
 
         do
         {
-            if (lowerLeft > lowerRight)
+            if (lower_left > lower_right)
                 return std::nullopt;
 
-            auto i = floorMid(lowerLeft, lowerRight);
+            auto i = floorMid(lower_left, lower_right);
             if (comparator.compareValueToMin(i) < 0)
-                lowerRight = upperRight = i - 1;
+                lower_right = upper_right = i - 1;
             else if (comparator.compareValueToMax(i) > 0)
-                lowerLeft = upperLeft = i + 1;
+                lower_left = upper_left = i + 1;
             else
-                lowerRight = upperLeft = i;
-        } while (lowerLeft != lowerRight);
+                lower_right = upper_left = i;
+        } while (lower_left != lower_right);
 
         do
         {
-            if (upperLeft > upperRight)
+            if (upper_left > upper_right)
                 return std::nullopt;
 
-            auto i = ceilingMid(upperLeft, upperRight);
+            auto i = ceilingMid(upper_left, upper_right);
             if (comparator.compareValueToMin(i) < 0)
-                upperRight = i - 1;
+                upper_right = i - 1;
             else if (comparator.compareValueToMax(i) > 0)
-                upperLeft = i + 1;
+                upper_left = i + 1;
             else
-                upperLeft = i;
-        } while (upperLeft != upperRight);
+                upper_left = i;
+        } while (upper_left != upper_right);
 
-        return Bounds(static_cast<size_t>(lowerLeft), static_cast<size_t>(upperRight));
+        return Bounds(static_cast<size_t>(lower_left), static_cast<size_t>(upper_right));
     }
 
     template <typename DType>
@@ -362,7 +366,8 @@ struct AscendingBoundary : BoundaryOrder
                 [&](const Bounds & b)
                 {
                     return builder.filter(
-                        [&](const size_t i) {
+                        [&](const size_t i)
+                        {
                             return i < b.lower || i > b.upper || comparator.compareValueToMin(i) != 0
                                 || comparator.compareValueToMax(i) != 0;
                         });
@@ -377,38 +382,38 @@ struct DescendingBoundary : BoundaryOrder
     static std::optional<Bounds> findBounds(const TypedComparator<DType> & comparator)
     {
         const Int32 length = static_cast<Int32>(comparator.size());
-        Int32 lowerLeft = 0;
-        Int32 upperLeft = 0;
-        Int32 lowerRight = length - 1;
-        Int32 upperRight = length - 1;
+        Int32 lower_left = 0;
+        Int32 upper_left = 0;
+        Int32 lower_right = length - 1;
+        Int32 upper_right = length - 1;
 
         do
         {
-            if (lowerLeft > lowerRight)
+            if (lower_left > lower_right)
                 return std::nullopt;
-            Int32 i = static_cast<Int32>(std::floor((lowerLeft + lowerRight) / 2));
+            Int32 i = static_cast<Int32>(std::floor((lower_left + lower_right) / 2));
             if (comparator.compareValueToMax(i) > 0)
-                lowerRight = upperRight = i - 1;
+                lower_right = upper_right = i - 1;
             else if (comparator.compareValueToMin(i) < 0)
-                lowerLeft = upperLeft = i + 1;
+                lower_left = upper_left = i + 1;
             else
-                lowerRight = upperLeft = i;
-        } while (lowerLeft != lowerRight);
+                lower_right = upper_left = i;
+        } while (lower_left != lower_right);
 
         do
         {
-            if (upperLeft > upperRight)
+            if (upper_left > upper_right)
                 return std::nullopt;
-            Int32 i = static_cast<Int32>(std::ceil((upperLeft + upperRight) / 2));
+            Int32 i = static_cast<Int32>(std::ceil((upper_left + upper_right) / 2));
             if (comparator.compareValueToMax(i) > 0)
-                upperRight = i - 1;
+                upper_right = i - 1;
             else if (comparator.compareValueToMin(i) < 0)
-                upperLeft = i + 1;
+                upper_left = i + 1;
             else
-                upperLeft = i;
-        } while (upperLeft != upperRight);
+                upper_left = i;
+        } while (upper_left != upper_right);
 
-        return Bounds(static_cast<size_t>(lowerLeft), static_cast<size_t>(upperRight));
+        return Bounds(static_cast<size_t>(lower_left), static_cast<size_t>(upper_right));
     }
 
     template <typename DType>
@@ -515,7 +520,8 @@ struct DescendingBoundary : BoundaryOrder
                 [&](const Bounds & b)
                 {
                     return builder.filter(
-                        [&](const size_t i) {
+                        [&](const size_t i)
+                        {
                             return i < b.lower || i > b.upper || comparator.compareValueToMin(i) != 0
                                 || comparator.compareValueToMin(i) != 0;
                         });
@@ -645,7 +651,7 @@ std::unique_ptr<T> dynamic_pointer_cast(std::unique_ptr<S> && p) noexcept
     }
     // cast failed; leave input untouched
     throw Exception(
-        ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}", demangle(typeid(S).name()), demangle(typeid(T).name()));
+        ErrorCodes::PARQUET_EXCEPTION, "Bad cast from type {} to {}", demangle(typeid(S).name()), demangle(typeid(T).name()));
 }
 
 template <typename ORDER>
@@ -683,7 +689,7 @@ ParquetColumnIndexPtr internalMakeColumnIndex(
         case parquet::Type::UNDEFINED:
             break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported physical type {}", TypeToString(physical_type));
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported physical type {}", TypeToString(physical_type));
 }
 
 ParquetColumnIndexPtr ParquetColumnIndex::create(
@@ -706,7 +712,7 @@ ParquetColumnIndexPtr ParquetColumnIndex::create(
         default:
             break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported UNDEFINED BoundaryOrder: {}", order);
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported UNDEFINED BoundaryOrder: {}", order);
 }
 
 ///
@@ -865,7 +871,7 @@ bool ParquetColumnIndexFilter::extractAtomFromTree(const RPNBuilderTreeNode & no
             return false;
 
         if (out.columnName.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "`columnName` is empty. It is a bug.");
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "`columnName` is empty. It is a bug.");
 
         const auto atom_it = atom_map.find(func_name);
         return atom_it->second(out, const_value);
@@ -985,7 +991,7 @@ RowRanges ParquetColumnIndexFilter::calculateRowRanges(const ParquetColumnIndexS
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in ParquetColumnIndexFilter::calculateRowRanges");
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unexpected stack size in ParquetColumnIndexFilter::calculateRowRanges");
 
     return rpn_stack[0];
 }
@@ -1184,7 +1190,6 @@ static std::pair<std::vector<arrow::io::ReadRange>, ParquetColumnReadSequence> b
         const size_t last_row_index_in_page = page_row_ranges[i].to;
         size_t read_row_index_in_page = page_row_ranges[i].from;
 
-        /// [read_row_index_in_page ,row_index-1] - [row_index, row_index+read_number-1] - [row_index+read_number, last_row_index_in_page]
         if (row_index <= last_row_index_in_page)
         {
             assert(row_index >= read_row_index_in_page);
@@ -1227,14 +1232,14 @@ ParquetFileColumnIndexFilter::calculateReadSequence(int row_group, const String 
         boost::to_lower(col_name);
     auto col_pos_it = col_name_to_index.find(col_name);
     if (col_pos_it == col_name_to_index.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column name: {}", col_name);
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unknown column name: {}", col_name);
     auto col_pos = col_pos_it->second;
 
     auto file_metadata = file_reader.metadata();
     auto row_group_metadata = file_metadata->RowGroup(row_group);
     const auto column_metadata = row_group_metadata->ColumnChunk(col_pos);
     const auto col_range = computeColumnChunkRange(*file_metadata, *column_metadata, source_file_size);
-    
+
     auto * col_index_store = getColumnIndexStore(row_group);
     if (!col_index_store)
     {
