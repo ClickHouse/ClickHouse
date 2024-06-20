@@ -37,6 +37,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
@@ -49,6 +50,7 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        std::cout << "to compare least and greastest" << std::endl;
         size_t num_arguments = arguments.size();
         if (1 == num_arguments)
             return arguments[0].column;
@@ -65,20 +67,19 @@ private:
             size_t best_arg = 0;
             for (size_t arg = 1; arg < num_arguments; ++arg)
             {
-                auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
-
                 if constexpr (kind == LeastGreatest::Least)
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
                     if (cmp_result < 0)
                         best_arg = arg;
                 }
                 else
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], -1);
                     if (cmp_result > 0)
                         best_arg = arg;
                 }
             }
-
             result_column->insertFrom(*converted_columns[best_arg], row_num);
         }
 

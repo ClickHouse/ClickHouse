@@ -246,7 +246,7 @@ enum class OpCase : uint8_t
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
 
-template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
+template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType, bool is_compare=false>
 struct BinaryOperation
 {
     using ResultType = OpResultType;
@@ -254,7 +254,7 @@ struct BinaryOperation
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * left_nullmap = nullptr, const NullMap * right_nullmap = nullptr)
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
@@ -266,17 +266,32 @@ struct BinaryOperation
         }
         else
         {
-            if (right_nullmap)
+            if constexpr (is_compare)
             {
                 for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
+                {
+                    if (left_nullmap && (*left_nullmap)[i])
+                        c[i] = static_cast<ResultType>(b[i]);
+                    else if (right_nullmap && (*right_nullmap)[i])
+                        c[i] = static_cast<ResultType>(a[i]);
                     else
                         apply<op_case>(a, b, c, i);
+                }
             }
             else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
+            {
+                if (right_nullmap)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
+                else
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+            }
         }
     }
 
@@ -527,8 +542,8 @@ private:
     }
 };
 
-template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
-struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType> { };
+template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType, bool is_compare=false>
+struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType, is_compare> { };
 
 /**
  * Binary operations with Decimals (either Decimal OP Decimal or Decimal Op Float) need to scale the args correctly.
@@ -549,7 +564,7 @@ private:
 public:
     template <OpCase op_case, bool is_decimal_a, bool is_decimal_b>
     static void NO_INLINE process(const auto & a, const auto & b, ResultContainerType & c,
-        NativeResultType scale_a, NativeResultType scale_b, const NullMap * right_nullmap = nullptr)
+        NativeResultType scale_a, NativeResultType scale_b, const NullMap * left_nullmap = nullptr, const NullMap * right_nullmap = nullptr)
     {
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
@@ -565,20 +580,47 @@ public:
         {
             if (scale_a != 1)
             {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_a);
+                if constexpr (is_compare)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c[i] = applyScaled<true>(
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                            scale_a,
+                            left_nullmap && (*left_nullmap[i]),
+                            right_nullmap && (*right_nullmap[i]));
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c[i] = applyScaled<true>(
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                            scale_a,
+                            );
+                }
                 return;
             }
             else if (scale_b != 1)
             {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_b);
+                if constexpr (is_compare)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c[i] = applyScaled<false>(
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                            scale_b,
+                            left_nullmap && (*left_nullmap[i]),
+                            right_nullmap && (*right_nullmap[i]));
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c[i] = applyScaled<false>(
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                            scale_b);
+                }
                 return;
             }
         }
@@ -606,7 +648,7 @@ public:
         }
         else if constexpr (is_division && is_decimal_b)
         {
-            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
+            processWithNullmapImpl<op_case>(a, b, c, size, nullptr, right_nullmap, [&scale_a](const auto & left, const auto & right)
             {
                 return applyScaledDiv<is_decimal_a>(
                     static_cast<NativeResultType>(left), right, scale_a);
@@ -614,13 +656,14 @@ public:
             return;
         }
 
-        processWithRightNullmapImpl<op_case>(
-            a, b, c, size, right_nullmap,
-            [](const auto & left, const auto & right)
+        processWithNullmapImpl<op_case>(
+            a, b, c, size, left_nullmap, right_nullmap,
+            [](const auto & left, const auto & right, bool left_null, bool right_null)
             {
                 return apply(
                     static_cast<NativeResultType>(left),
-                    static_cast<NativeResultType>(right));
+                    static_cast<NativeResultType>(right),
+                    left_null, right_null);
             });
     }
 
@@ -643,7 +686,7 @@ public:
 
 private:
     template <OpCase op_case, typename ApplyFunc>
-    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
+    static void processWithNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * left_nullmap, const NullMap * right_nullmap, ApplyFunc apply_func)
     {
         if (right_nullmap)
         {
@@ -669,6 +712,10 @@ private:
                         c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
                 }
             }
+        }
+        else if (left_nullmap)
+        {
+            
         }
         else
             for (size_t i = 0; i < size; ++i)
@@ -701,8 +748,15 @@ private:
     }
 
     /// there's implicit type conversion here
-    static NativeResultType apply(NativeResultType a, NativeResultType b)
+    static NativeResultType apply(NativeResultType a, NativeResultType b, bool left_null=false, bool right_null=false)
     {
+        if constexpr (is_compare)
+        {
+            if (left_null)
+                return b;
+            else if (right_null)
+                return a;
+        }
         if constexpr (can_overflow && check_overflow)
         {
             NativeResultType res;
@@ -711,14 +765,24 @@ private:
             return res;
         }
         else
+        {
             return Op::template apply<NativeResultType>(a, b);
+        }
     }
 
     template <bool scale_left, bool may_check_overflow = true>
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale, bool left_null=false, bool right_null=false)
     {
         static_assert(is_plus_minus_compare || is_multiply);
         NativeResultType res;
+        
+        if constexpr (is_compare)
+        {
+            if (left_null)
+                return b;
+            else if (right_null)
+                return a;
+        }
 
         if constexpr (check_overflow && may_check_overflow)
         {
@@ -790,6 +854,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
+    static constexpr bool is_compare = IsOperation<Op>::greatest || IsOperation<Op>::least;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -1468,7 +1533,7 @@ public:
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
         /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
         /// by zero error (when value is Null we store default value 0 in nested column).
-        return !division_by_nullable;
+        return !division_by_nullable && !is_compare;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -1558,6 +1623,49 @@ public:
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
         }
+
+        // if constexpr (is_compare)
+        // {
+        //     using Types = TypeList<DataTypeFloat32, DataTypeFloat64,
+        //         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
+        //         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256>;
+        //         // DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
+            
+        //     DataTypePtr result_type = nullptr;
+        //     bool valid = castTypeToEither(Types{}, removeNullable(arguments[0]).get(), [&](const auto & left_) 
+        //     {
+        //         return castTypeToEither(Types{}, removeNullable(arguments[1]).get(), [&](const auto & right_)
+        //         {
+        //             using A = std::decay_t<decltype(left_)>::FieldType;
+        //             using B = std::decay_t<decltype(right_)>::FieldType;
+        //             using R = Op<A, B>::ResultType;
+        //             if constexpr (std::is_same_v<R, NumberTraits::Error>)
+        //                 return false;
+        //             // else if constexpr (std::is_same_v<R, Decimal32> || std::is_same_v<R, Decimal64> 
+        //             //     || std::is_same_v<R, Decimal128> || std::is_same_v<R, Decimal256>)
+        //             // {
+        //             //      // result_type = std::make_shared<DataTypeDecimal<R>>(6, 2);
+        //             //      return true;
+        //             // }
+        //             else
+        //             {
+        //                 result_type = std::make_shared<DataTypeNumber<R>>();
+        //                 return true;
+        //             }
+        //         });
+        //     });
+            
+        //     if (!valid)
+        //         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The type of arguments is not numberic for binary compare.");
+
+        //     if (!result_type)
+        //         throw Exception(ErrorCodes::LOGICAL_ERROR, "The binary compare function's return type can not be nullable.");
+            
+        //     if (arguments[0]->isNullable() || arguments[1]->isNullable())
+        //         return makeNullable(result_type);
+            
+        //     return result_type;
+        // }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
@@ -2035,7 +2143,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
     template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap) const
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * left_nullmap, const NullMap * right_nullmap) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -2124,7 +2232,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
             {
-                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
+                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType, is_compare>;
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
@@ -2148,6 +2256,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         col_right->getData().data(),
                         vec_res.data(),
                         vec_res.size(),
+                        left_nullmap,
                         right_nullmap);
                 }
                 else if (col_left_const && col_right)
@@ -2159,6 +2268,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         col_right->getData().data(),
                         vec_res.data(),
                         vec_res.size(),
+                        left_nullmap,
                         right_nullmap);
                 }
                 else if (col_left && col_right_const)
@@ -2166,7 +2276,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     const T1 value = col_right_const->template getValue<T1>();
 
                     OpImpl::template process<OpCase::RightConstant>(
-                        col_left->getData().data(), &value, vec_res.data(), vec_res.size(), right_nullmap);
+                        col_left->getData().data(), &value, vec_res.data(), vec_res.size(), left_nullmap, right_nullmap);
                 }
                 else
                     return nullptr;
@@ -2223,11 +2333,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr) const
+    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * left_nullmap = nullptr, const NullMap * right_nullmap = nullptr) const
     {
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
-
         /// Process special case when operation is divide, intDiv or modulo and denominator
         /// is Nullable(Something) to prevent division by zero error.
         if (division_by_nullable && !right_nullmap)
@@ -2239,7 +2348,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
             const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, nullptr, &null_bytemap);
             return wrapInNullable(res, arguments, result_type, input_rows_count);
         }
 
@@ -2259,7 +2368,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, nullptr, right_nullmap);
         }
 
         /// Special case - one or both arguments are IPv6
@@ -2278,7 +2387,41 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, nullptr, right_nullmap);
+        }
+
+        if (is_compare && (left_argument.type->isNullable() || right_argument.type->isNullable()))
+        {
+            const NullMap * left_nullmap_col = nullptr;
+            const NullMap * right_nullmap_col = nullptr;
+            if (left_argument.type->isNullable())
+            {
+                bool is_const = checkColumnConst<ColumnNullable>(left_argument.column.get());
+                const ColumnNullable * left_col = is_const ? checkAndGetColumnConstData<ColumnNullable>(left_argument.column.get()) :
+                        checkAndGetColumn<ColumnNullable>(left_argument.column.get());
+                left_nullmap_col = &(left_col->getNullMapData());
+            }
+            if (right_argument.type->isNullable())
+            {
+                bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
+                const ColumnNullable * right_col = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get()) :
+                        checkAndGetColumn<ColumnNullable>(right_argument.column.get());
+                right_nullmap_col = &(right_col->getNullMapData());
+            }
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, left_nullmap_col, right_nullmap_col);
+            if (!left_argument.type->isNullable() && !right_argument.type->isNullable())
+                return res;
+            else
+            {
+                auto result_nullmap_col = ColumnUInt8::create(res->size(), 0);
+                PaddedPODArray<UInt8> & result_nullmap_data = result_nullmap_col->getData();
+                if (left_argument.type->isNullable() && right_argument.type->isNullable())
+                {
+                    for (size_t i = 0; i < res->size(); ++i)
+                        result_nullmap_data[i] = (*left_nullmap_col)[i] && (*right_nullmap_col)[i];
+                }
+                return ColumnNullable::create(std::move(res), std::move(result_nullmap_col));
+            }
         }
 
         const auto * const left_generic = left_argument.type.get();
@@ -2318,7 +2461,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
             }
             else
-                return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
+                return (res = executeNumeric(arguments, left, right, left_nullmap, right_nullmap)) != nullptr;
         });
 
         if (isArray(result_type))

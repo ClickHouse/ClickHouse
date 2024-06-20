@@ -27,7 +27,7 @@ struct ModuloByConstantImpl
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap *, const NullMap * right_nullmap)
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
