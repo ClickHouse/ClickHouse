@@ -193,7 +193,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
-    ASTPtr stat_type_expression;
+    ASTPtr statistics_desc_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     ASTPtr settings;
@@ -325,7 +325,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (s_stat.ignore(pos, expected))
     {
-        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+        if (!stat_type_parser.parse(pos, statistics_desc_expression, expected))
             return false;
     }
 
@@ -398,10 +398,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(settings));
     }
 
-    if (stat_type_expression)
+    if (statistics_desc_expression)
     {
-        column_declaration->stat_type = stat_type_expression;
-        column_declaration->children.push_back(std::move(stat_type_expression));
+        column_declaration->statistics_desc = statistics_desc_expression;
+        column_declaration->children.push_back(std::move(statistics_desc_expression));
     }
 
     if (ttl_expression)

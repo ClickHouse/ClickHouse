@@ -9,8 +9,9 @@ from build_download_helper import APIException, get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
+
 ROOT_DIR = git_root
-CI = bool(os.getenv("CI"))
+IS_CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
 REPORT_PATH = f"{TEMP_PATH}/reports"
 # FIXME: latest should not be used in CI, set temporary for transition to "docker with digest as a tag"

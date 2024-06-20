@@ -371,7 +371,7 @@
     <!-- Enables asynchronous loading of databases and tables to speedup server startup.
          Queries to not yet loaded entity will be blocked until load is finished.
       -->
-    <!-- <async_load_databases>true</async_load_databases> -->
+    <async_load_databases>true</async_load_databases>
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -1395,6 +1395,14 @@
         <!-- Host name of the current node. If specified, will only compare and not resolve hostnames inside the DDL tasks -->
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
+
+    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
+         Specified value is used as `workload` setting value for background merge or mutation.
+    -->
+    <!--
+    <merge_workload>merges_and_mutations</merge_workload>
+    <mutation_workload>merges_and_mutations</mutation_workload>
+    -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--

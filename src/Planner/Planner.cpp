@@ -166,7 +166,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get()) || typeid_cast<const StorageMerge *>(storage.get())
+        if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
         {
             collect_filters = true;

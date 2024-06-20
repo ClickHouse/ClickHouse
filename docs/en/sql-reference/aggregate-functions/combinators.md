@@ -106,8 +106,8 @@ To work with these states, use:
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
 - [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
-- [-Merge](#aggregate_functions_combinators-merge) combinator.
-- [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
+- [-Merge](#-merge) combinator.
+- [-MergeState](#-mergestate) combinator.
 
 ## -Merge
 

@@ -229,6 +229,10 @@ For production builds, clang is used, but we also test make gcc builds. For deve
 
 ## Sanitizers {#sanitizers}
 
+:::note
+If the process (ClickHouse server or client) crashes at startup when running it locally, you might need to disable address space layout randomization: `sudo sysctl kernel.randomize_va_space=0`
+:::
+
 ### Address sanitizer
 We run functional, integration, stress and unit tests under ASan on per-commit basis.
 

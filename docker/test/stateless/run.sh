@@ -254,7 +254,7 @@ function run_tests()
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-        --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+         --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e
@@ -378,6 +378,10 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
 fi
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
+
+rm -rf /var/lib/clickhouse/data/system/*/
+tar -chf /test_output/store.tar /var/lib/clickhouse/store ||:
+tar -chf /test_output/metadata.tar /var/lib/clickhouse/metadata/*.sql ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:

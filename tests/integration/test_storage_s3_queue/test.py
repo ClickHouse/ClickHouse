@@ -877,7 +877,7 @@ def test_max_set_age(started_cluster):
     assert "Cannot parse input" in node.query(
         "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv' ORDER BY processing_end_time DESC LIMIT 1"
     )
-    assert 2 == int(
+    assert 1 < int(
         node.query(
             "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
         )

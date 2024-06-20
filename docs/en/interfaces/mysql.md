@@ -31,6 +31,56 @@ Alternatively, in order to enable the MySQL interface for an existing service:
 3. After entering the password, you will get prompted the MySQL connection string for this service
 ![Connection screen -  MySQL Enabled](./images/mysql5.png)
 
+## Creating multiple MySQL users in ClickHouse Cloud
+
+By default, there is a built-in `mysql4<subdomain>` user, which uses the same password as the `default` one. The `<subdomain>` part is the first segment of your ClickHouse Cloud hostname. This format is necessary to work with the tools that implement secure connection, but don't provide [SNI information in their TLS handshake](https://www.cloudflare.com/learning/ssl/what-is-sni), which makes it impossible to do the internal routing without an extra hint in the username (MySQL console client is one of such tools).
+
+Because of this, we _highly recommend_ following the `mysql4<subdomain>_<username>` format when creating a new user intended to be used with the MySQL interface, where `<subdomain>` is a hint to identify your Cloud service, and `<username>` is an arbitrary suffix of your choice.
+
+:::tip
+For ClickHouse Cloud hostname like `foobar.us-east1.aws.clickhouse.cloud`, the `<subdomain>` part equals to `foobar`, and a custom MySQL username could look like `mysql4foobar_team1`.
+:::
+
+You can create extra users to use with the MySQL interface if, for example, you need to apply extra settings.
+
+1. Optional - create a [settings profile](https://clickhouse.com/docs/en/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
+
+    ```sql
+    CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
+    ```
+
+    `prefer_column_name_to_alias` is used just as an example, you can use other settings there.
+2. [Create a user](https://clickhouse.com/docs/en/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
+
+    ```sql
+    CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
+    ```
+
+    or if you want to use a custom profile for this user:
+
+    ```sql
+    CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$' SETTINGS PROFILE 'my_custom_profile';
+    ```
+
+    where `my_custom_profile` is the name of the profile you created earlier.
+3. [Grant](https://clickhouse.com/docs/en/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
+
+    ```sql
+    GRANT SELECT ON system.query_log TO mysql4foobar_team1;
+    ```
+
+4. Use the created user to connect to your ClickHouse Cloud service with the MySQL interface.
+
+### Troubleshooting multiple MySQL users in ClickHouse Cloud
+
+If you created a new MySQL user, and you see the following error while connecting via MySQL CLI client:
+
+```
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+In this case, ensure that the username follows the `mysql4<subdomain>_<username>` format, as described ([above](#creating-multiple-mysql-users-in-clickhouse-cloud)).
+
 ## Enabling the MySQL Interface On Self-managed ClickHouse
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):

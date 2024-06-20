@@ -532,9 +532,9 @@ class Backport:
         for br in branches:
             br.process(self.dry_run)
 
-        for br in branches:
-            if br.backported:
-                self.mark_pr_backported(pr)
+        if all(br.backported for br in branches):
+            # And check it after the running
+            self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:

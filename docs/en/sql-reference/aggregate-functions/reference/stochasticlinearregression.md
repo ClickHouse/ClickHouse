@@ -3,7 +3,7 @@ slug: /en/sql-reference/aggregate-functions/reference/stochasticlinearregression
 sidebar_position: 221
 ---
 
-# stochasticLinearRegression
+# stochasticLinearRegression {#agg_functions_stochasticlinearregression_parameters}
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size, and has a few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), and [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
@@ -72,5 +72,5 @@ The query will return a column of predicted values. Note that first argument of 
 
 **See Also**
 
-- [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#agg_functions-stochasticlogisticregression)
+- [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#stochasticlogisticregression)
 - [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
