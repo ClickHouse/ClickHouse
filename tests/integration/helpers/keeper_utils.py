@@ -196,7 +196,7 @@ class KeeperClient(object):
             )
 
         return self.execute_query(
-            f"reconfig {operation} {joining or leaving or new_members}", timeout
+            f"reconfig '{operation}' {joining or leaving or new_members}", timeout
         )
 
     @classmethod
