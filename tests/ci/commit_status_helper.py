@@ -18,7 +18,7 @@ from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI
-from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
+from env_helper import GITHUB_REPOSITORY, TEMP_PATH
 from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
@@ -156,6 +156,11 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
     repo = get_repo(gh)
     statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
+    statuses = [
+        status
+        for status in statuses
+        if status.context not in (CI.StatusNames.CI, CI.StatusNames.SYNC)
+    ]
     if not statuses:
         return
 
