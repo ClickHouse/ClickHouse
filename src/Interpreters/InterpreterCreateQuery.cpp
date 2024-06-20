@@ -944,7 +944,8 @@ void validateVirtualColumns(const IStorage & storage)
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
-    /// It's possible to circumvent these checks by ALTERing the view or target table after creation.
+    /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
+    /// we should probably do some of these checks on ALTER as well.
 
     NamesAndTypesList all_output_columns;
     bool check_columns = false;
