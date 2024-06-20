@@ -1,5 +1,7 @@
 #include <Analyzer/FunctionNode.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -58,12 +60,20 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
         ColumnWithTypeAndName argument_column;
 
+        auto * constant = argument->as<ConstantNode>();
         if (isNameOfInFunction(function_name) && i == 1)
+        {
             argument_column.type = std::make_shared<DataTypeSet>();
+            if (constant)
+            {
+                /// Created but not filled for the analysis during function resolution.
+                FutureSetPtr empty_set;
+                argument_column.column = ColumnConst::create(ColumnSet::create(1, empty_set), 1);
+            }
+        }
         else
             argument_column.type = argument->getResultType();
 
-        auto * constant = argument->as<ConstantNode>();
         if (constant && !isNotCreatable(argument_column.type))
             argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
 

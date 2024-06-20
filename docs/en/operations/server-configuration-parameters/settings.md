@@ -1206,6 +1206,16 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
+## mlock_executable {#mlock_executable}
+
+Perform mlockall after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
+Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
+**Example**
+
+``` xml
+<mlock_executable>false</mlock_executable>
+```
+
 ## include_from {#include_from}
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
@@ -1351,6 +1361,26 @@ Examples:
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_try {#listen_try}
+
+The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+
+Examples:
+
+``` xml
+<listen_try>0</listen_try>
+```
+
+## listen_reuse_port {#listen_reuse_port}
+
+Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
+
+Examples:
+
+``` xml
+<listen_reuse_port>0</listen_reuse_port>
 ```
 
 ## listen_backlog {#listen_backlog}
