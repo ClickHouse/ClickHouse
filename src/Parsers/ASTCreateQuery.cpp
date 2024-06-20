@@ -405,7 +405,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
 
     bool should_add_empty = is_create_empty;
-    auto add_empty_if_needed = [&] {
+    auto add_empty_if_needed = [&]
+    {
         if (!should_add_empty)
             return;
         should_add_empty = false;
