@@ -411,7 +411,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::ADD_NEW_AUTHENTICATION_METHOD}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ADD}.ignore(pos, expected))
             {
                 return false;
             }

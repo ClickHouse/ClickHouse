@@ -154,7 +154,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             auth_type_name = AuthenticationTypeInfo::get(*type).name;
     }
 
-    const char * identified_string = settings.additional_authentication_method ? " ADD NEW AUTHENTICATION METHOD IDENTIFIED" : " IDENTIFIED";
+    const char * identified_string = settings.additional_authentication_method ? " ADD IDENTIFIED" : " IDENTIFIED";
 
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << identified_string << (settings.hilite ? IAST::hilite_none : "");
 
