@@ -9,6 +9,8 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/ThreadPool.h>
 #include <Common/ErrorCodes.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <vector>
 
@@ -17,14 +19,50 @@ namespace DB
 
 ColumnsDescription ErrorLogElement::getColumnsDescription()
 {
+    ParserCodec codec_parser;
     return ColumnsDescription {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
-        {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
-        {"code", std::make_shared<DataTypeInt32>(), "Error code}"},
-        {"error", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Error name."},
-        {"value", std::make_shared<DataTypeUInt64>(), "Number of errors happened in time interval."},
-        {"remote", std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."}
+        {
+                "hostname",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Hostname of the server executing the query."
+            },
+        {
+                "event_date",
+                std::make_shared<DataTypeDate>(),
+                parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event date."
+            },
+        {
+                "event_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event time."
+            },
+        {
+                "code",
+                std::make_shared<DataTypeInt32>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Error code."
+            },
+        {
+                "error",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Error name."
+            },
+        {
+                "value",
+                std::make_shared<DataTypeUInt64>(),
+                parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Number of errors happened in time interval."
+            },
+        {
+                "remote",
+                std::make_shared<DataTypeUInt8>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Remote exception (i.e. received during one of the distributed queries)."
+            }
     };
 }
 
