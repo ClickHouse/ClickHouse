@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <iterator>
 #include <span>
-#include <limits.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/IDisk.h>
