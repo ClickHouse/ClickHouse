@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -mn --query="DROP TABLE IF EXISTS for_get_metadata_path;"
 $CLICKHOUSE_CLIENT -mn --query="CREATE TABLE for_get_metadata_path(id UInt32, v String) Engine=MergeTree() order by id;"
-sql_path=$($CLICKHOUSE_CLIENT -mn --query="select metadata_path from system.tables where name = 'for_get_metadata_path'")
+sql_path=$($CLICKHOUSE_CLIENT -mn --query="select metadata_path from system.tables where name = 'for_get_metadata_path' and database=currentDatabase()")
 path=$(echo $sql_path | awk -F'store' '{print $1}')
 metadata_path=$path"metadata/${CLICKHOUSE_DATABASE}"
 metadata_dropped_path=$path"metadata_dropped"
