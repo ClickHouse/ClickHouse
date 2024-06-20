@@ -140,20 +140,12 @@ public:
 
             if (second_argument_is_date && result_type == ResultType::Date)
             {
-                if (interval_type)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "The timezone argument of function {} with interval type {} is allowed only when the 2nd argument has type "
-                        "DateTime or DateTimt64",
-                        getName(),
-                        interval_type->getKind().toString());
-                else
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "The timezone argument of function {} with datepart '{}' "
-                        "is allowed only when the 2nd argument has the type DateTime",
-                        getName(),
-                        datepart_param);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} with {} is allowed only when the 2nd argument has type "
+                    "DateTime or DateTimt64",
+                    getName(),
+                    interval_type ? interval_type->getKind().toString() : datepart_param);
             }
         };
 
@@ -222,9 +214,8 @@ public:
         return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
     }
 
-    bool hasInformationAboutMonotonicity() const override 
-    { 
-        return true; 
+    bool hasInformationAboutMonotonicity() const override {
+        return true;
     }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
