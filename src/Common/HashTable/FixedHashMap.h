@@ -1,17 +1,8 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/FixedHashTable.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/ThreadPool.h>
-#include <Common/scope_guard_safe.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric AggregatorThreads;
-    extern const Metric AggregatorThreadsActive;
-    extern const Metric AggregatorThreadsScheduled;
-}
 
 template <typename Key, typename TMapped, typename TState = HashTableNoState>
 struct FixedHashMapCell
@@ -111,8 +102,6 @@ template <
     typename Allocator = HashTableAllocator>
 class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator>
 {
-    static constexpr size_t BUCKET_SIZE = (1ULL << (sizeof(Key) * 8)) > 256 ? 256 : 16;
-
 public:
     using Base = FixedHashTable<Key, Cell, Size, Allocator>;
     using Self = FixedHashMap;
@@ -120,89 +109,47 @@ public:
 
     using Base::Base;
 
+    static constexpr size_t BUCKET_SIZE = (1ULL << (sizeof(Key) * 8)) > 256 ? 256 : 16;
+    static constexpr size_t BUCKET_NUM = Base::NUM_CELLS / BUCKET_SIZE;
+
     FixedHashMap() = default;
     FixedHashMap(size_t ) {} /// NOLINT
 
     template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        auto thread_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled);
-
-        std::mutex mutex;
-
-        auto merge = [&that, &func, &mutex](auto & begin, auto & end, DB::ThreadGroupPtr thread_group)
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    DB::CurrentThread::detachFromGroupIfNotDetached();
-            );
-
-            if (thread_group)
-                DB::CurrentThread::attachToGroupIfDetached(thread_group);
-
-            std::lock_guard lock(mutex);
-            for (auto it = begin; it < end; ++it)
-            {
-                typename Self::LookupResult res_it;
-                bool inserted;
-                that.emplace(it->getKey(), res_it, inserted, it.getHash());
-                func(res_it->getMapped(), it->getMapped(), inserted);
-            }
-        };
-
-        size_t offset = 0;
-        while (offset < Base::NUM_CELLS)
-        {
-            auto begin = this->getIteratorWithOffsetAndLimit(offset, BUCKET_SIZE);
-            auto end = this->getIteratorWithOffset(offset + Base::BUCKET_SIZE);
-            auto task
-                = [group = DB::CurrentThread::getGroup(), &merge, &begin, &end] { merge(begin, end, group); };
-
-            thread_pool->scheduleOrThrowOnError(task);
-            offset += Base::BUCKET_SIZE;
+            typename Self::LookupResult res_it;
+            bool inserted;
+            that.emplace(it->getKey(), res_it, inserted, it.getHash());
+            func(res_it->getMapped(), it->getMapped(), inserted);
         }
-        thread_pool->wait();
+    }
+
+    template <typename Func, bool>
+    void ALWAYS_INLINE mergeToViaEmplaceInRange(auto begin, auto end, Self & that, Func && func)
+    {
+        for (auto it = begin; it < end; ++it)
+        {
+            typename Self::LookupResult res_it;
+            bool inserted;
+            that.emplace(it->getKey(), res_it, inserted, it.getHash());
+            func(res_it->getMapped(), it->getMapped(), inserted);
+        }
     }
 
     template <typename Func>
     void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
     {
-        auto thread_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled);
-
-        auto merge = [&that, &func](auto begin, auto & end, DB::ThreadGroupPtr thread_group)
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    DB::CurrentThread::detachFromGroupIfNotDetached();
-            );
-
-            if (thread_group)
-                DB::CurrentThread::attachToGroupIfDetached(thread_group);
-
-            for (auto it = begin; it != end; ++it)
-            {
-                auto res_it = that.find(it->getKey(), it.getHash());
-                if (!res_it)
-                    func(it->getMapped(), it->getMapped(), false);
-                else
-                    func(res_it->getMapped(), it->getMapped(), true);
-            }
-        };
-
-        size_t offset = 0;
-        while (offset < Base::NUM_CELLS)
-        {
-            auto begin = this->getIteratorWithOffset(offset);
-            auto end = this->getIteratorWithOffset(offset + BUCKET_SIZE);
-            auto task
-                = [group = DB::CurrentThread::getGroup(), &merge, &begin, &end] { merge(begin, end, group); };
-
-            thread_pool->scheduleOrThrowOnError(task);
-            offset += BUCKET_SIZE;
+            auto res_it = that.find(it->getKey(), it.getHash());
+            if (!res_it)
+                func(it->getMapped(), it->getMapped(), false);
+            else
+                func(res_it->getMapped(), it->getMapped(), true);
         }
-        thread_pool->wait();
     }
 
     template <typename Func>
