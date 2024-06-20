@@ -56,9 +56,7 @@ bool StorageS3QueueSource::FileIterator::isFinished() const
 {
      LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished, objects_to_retry.size());
      return iterator_finished
-         && listed_keys_cache.end() == std::find_if(
-             listed_keys_cache.begin(), listed_keys_cache.end(),
-             [](const auto & v) { return !v.second.keys.empty(); })
+         && std::all_of(listed_keys_cache.begin(), listed_keys_cache.end(), [](const auto & v) { return v.second.keys.empty(); })
          && objects_to_retry.empty();
 }
 
@@ -547,7 +545,7 @@ Chunk StorageS3QueueSource::generateImpl()
 
                 /// If we did not process any rows from the failed file,
                 /// commit all previously processed files,
-                /// not to loose the work already done.
+                /// not to lose the work already done.
                 return {};
             }
 

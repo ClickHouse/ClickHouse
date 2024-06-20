@@ -62,7 +62,7 @@ public:
         const zkutil::ZooKeeperPtr & zk_client) = 0;
 
     FileStatusPtr getFileStatus() { return file_status; }
-    const std::string & getPath() { return path; }
+    const std::string & getPath() const { return path; }
     size_t getMaxTries() const { return max_loading_retries; }
 
     struct NodeMetadata
