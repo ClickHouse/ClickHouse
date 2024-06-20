@@ -36,8 +36,7 @@
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/unit"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateful": {
@@ -126,7 +125,8 @@
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/sqltest",
-            "docker/test/stateless"
+            "docker/test/stateless",
+            "docker/test/unit"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
