@@ -86,6 +86,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
+    constexpr auto local_disk_name = "local";
     DisksMap old_disks_minus_new_disks(result->getDisksMap());
 
     for (const auto & disk_name : keys)
@@ -109,6 +110,8 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     }
 
     old_disks_minus_new_disks.erase(default_disk_name);
+    old_disks_minus_new_disks.erase(local_disk_name);
+
 
     if (!old_disks_minus_new_disks.empty())
     {
