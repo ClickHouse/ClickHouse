@@ -50,7 +50,6 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        std::cout << "to compare least and greastest" << std::endl;
         size_t num_arguments = arguments.size();
         if (1 == num_arguments)
             return arguments[0].column;
