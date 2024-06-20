@@ -177,8 +177,8 @@ void Timer::set(UInt64 period)
     /// It also helps to avoid interference (moire).
     UInt64 period_rand = std::uniform_int_distribution<UInt64>(0, period)(thread_local_rng);
 
-    struct timespec interval{.tv_sec = time_t(period / TIMER_PRECISION), .tv_nsec = long(period % TIMER_PRECISION)};
-    struct timespec offset{.tv_sec = time_t(period_rand / TIMER_PRECISION), .tv_nsec = long(period_rand % TIMER_PRECISION)};
+    struct timespec interval{.tv_sec = time_t(period / TIMER_PRECISION), .tv_nsec = int64_t(period % TIMER_PRECISION)};
+    struct timespec offset{.tv_sec = time_t(period_rand / TIMER_PRECISION), .tv_nsec = int64_t(period_rand % TIMER_PRECISION)};
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
