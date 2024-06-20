@@ -525,7 +525,6 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            // todo arthur
             // for now, just throw exception in case a user exists with invalid auth method
             // back in the day, it would also throw an exception. There might be a smarter alternative
             // like a user scan during startup.

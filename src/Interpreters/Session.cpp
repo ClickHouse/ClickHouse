@@ -307,16 +307,25 @@ Session::~Session()
     }
 }
 
-AuthenticationType Session::getAuthenticationType(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypes(const String & user_name) const
 {
-    return global_context->getAccessControl().read<User>(user_name)->authentication_methods.back().getType();
+    std::unordered_set<AuthenticationType> authentication_types;
+
+    const auto user_to_query = global_context->getAccessControl().read<User>(user_name);
+
+    for (const auto & authentication_method : user_to_query->authentication_methods)
+    {
+        authentication_types.insert(authentication_method.getType());
+    }
+
+    return authentication_types;
 }
 
-AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name) const
 {
     try
     {
-        return getAuthenticationType(user_name);
+        return getAuthenticationTypes(user_name);
     }
     catch (const Exception & e)
     {

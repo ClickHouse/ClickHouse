@@ -517,11 +517,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
         }
 
-        // todo arthur maybe check that neither identified with or add new auth method has been parsed
         if (!reset_authentication_methods_to_new.has_value())
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
-            continue;
         }
 
         if (!valid_until)
@@ -621,7 +619,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->default_database = std::move(default_database);
     query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
-    query->reset_authentication_methods_to_new = parsed_identified_with || reset_authentication_methods_to_new.value_or(false);
+    query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
+    query->replace_authentication_methods = parsed_identified_with;
 
     for (const auto & authentication_method : query->auth_data)
     {

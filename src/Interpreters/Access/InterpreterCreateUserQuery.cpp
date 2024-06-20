@@ -40,6 +40,7 @@ namespace
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & valid_until,
         bool reset_authentication_methods,
+        bool replace_authentication_methods,
         bool allow_implicit_no_password,
         bool allow_no_password,
         bool allow_plaintext_password)
@@ -51,45 +52,48 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        // todo arthur check if auth_data.empty makes sense
         if (!query.attach && !query.alter && !auth_data.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Authentication type NO_PASSWORD must "
                             "be explicitly specified, check the setting allow_implicit_no_password "
                             "in the server configuration");
 
-        if (!auth_data.empty())
-        {
-            for (const auto & authentication_method : auth_data)
-            {
-                user.authentication_methods.push_back(authentication_method);
-            }
-        }
-        else if (user.authentication_methods.empty())
+        if (user.authentication_methods.empty() && auth_data.empty())
         {
             // previously, a user always had a default constructed auth method.. maybe I should put this somewhere else
             user.authentication_methods.emplace_back();
         }
 
-        if (reset_authentication_methods)
+        if (replace_authentication_methods)
         {
-            // todo check if element exists
-            auto primary_authentication_method = user.authentication_methods.back();
             user.authentication_methods.clear();
-            user.authentication_methods.push_back(primary_authentication_method);
         }
 
-        if (!auth_data.empty() || !query.alter)
+        for (const auto & authentication_method : auth_data)
         {
-            // I suppose it is guaranteed a user will always have at least one authentication method
-            auto auth_type = user.authentication_methods.back().getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
+            user.authentication_methods.emplace_back(authentication_method);
+        }
+
+        if (reset_authentication_methods)
+        {
+            auto backup_authentication_method = user.authentication_methods.back();
+            user.authentication_methods.clear();
+            user.authentication_methods.emplace_back(backup_authentication_method);
+        }
+
+        if (!query.alter)
+        {
+            for (const auto & authentication_method : user.authentication_methods)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-                                toString(auth_type),
-                                AuthenticationTypeInfo::get(auth_type).name);
+                auto auth_type = authentication_method.getType();
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                                    toString(auth_type),
+                                    AuthenticationTypeInfo::get(auth_type).name);
+                }
             }
         }
 
@@ -222,7 +226,8 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
-                valid_until, query.reset_authentication_methods_to_new, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             return updated_user;
         };
 
@@ -242,7 +247,8 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto new_user = std::make_shared<User>();
             updateUserFromQueryImpl(
                 *new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
-                valid_until, query.reset_authentication_methods_to_new, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -290,7 +296,19 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
         }
     }
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, query.reset_authentication_methods_to_new, allow_no_password, allow_plaintext_password, true);
+    updateUserFromQueryImpl(user,
+                            query,
+                            auth_data,
+                            {},
+                            {},
+                            {},
+                            {},
+                            {},
+                            query.reset_authentication_methods_to_new,
+                            query.replace_authentication_methods,
+                            allow_no_password,
+                            allow_plaintext_password,
+                            true);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)

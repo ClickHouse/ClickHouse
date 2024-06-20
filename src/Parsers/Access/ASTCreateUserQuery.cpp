@@ -20,9 +20,14 @@ namespace
 
     void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data, const IAST::FormatSettings & settings)
     {
-        for (const auto & authentication_method : auth_data)
+        auth_data[0]->format(settings);
+
+        auto settings_with_additional_authentication_method = settings;
+        settings_with_additional_authentication_method.additional_authentication_method = true;
+
+        for (auto i = 1u; i < auth_data.size(); i++)
         {
-            authentication_method->format(settings);
+            auth_data[i]->format(settings_with_additional_authentication_method);
         }
     }
 
@@ -187,8 +192,9 @@ ASTPtr ASTCreateUserQuery::clone() const
     {
         for (const auto & authentication_method : auth_data)
         {
-            res->auth_data.push_back(std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone()));
-            res->children.push_back(res->auth_data.back());
+            auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+            res->auth_data.push_back(ast_clone);
+            res->children.push_back(ast_clone);
         }
     }
 

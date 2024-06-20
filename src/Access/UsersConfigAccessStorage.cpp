@@ -265,13 +265,16 @@ namespace
             user->authentication_methods.emplace_back();
         }
 
-        auto auth_type = user->authentication_methods.back().getType();
-        if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-            ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+        for (const auto & authentication_method : user->authentication_methods)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-                            toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
+            auto auth_type = authentication_method.getType();
+            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                                toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
+            }
         }
 
         const auto profile_name_config = user_config + ".profile";

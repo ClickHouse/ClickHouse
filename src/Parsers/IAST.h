@@ -201,6 +201,7 @@ public:
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
         char nl_or_ws; /// Newline or whitespace.
         LiteralEscapingStyle literal_escaping_style;
+        bool additional_authentication_method;
 
         explicit FormatSettings(
             WriteBuffer & ostr_,
@@ -209,7 +210,8 @@ public:
             bool always_quote_identifiers_ = false,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
-            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular)
+            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
+            bool additional_authentication_method_ = false)
             : ostr(ostr_)
             , one_line(one_line_)
             , hilite(hilite_)
@@ -218,6 +220,7 @@ public:
             , show_secrets(show_secrets_)
             , nl_or_ws(one_line ? ' ' : '\n')
             , literal_escaping_style(literal_escaping_style_)
+            , additional_authentication_method(additional_authentication_method_)
         {
         }
 
@@ -230,6 +233,7 @@ public:
             , show_secrets(other.show_secrets)
             , nl_or_ws(other.nl_or_ws)
             , literal_escaping_style(other.literal_escaping_style)
+            , additional_authentication_method(other.additional_authentication_method)
         {
         }
 
