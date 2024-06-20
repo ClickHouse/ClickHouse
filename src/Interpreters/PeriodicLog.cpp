@@ -5,8 +5,6 @@
 namespace DB
 {
 
-
-
 template <typename LogElement>
 void PeriodicLog<LogElement>::startCollect(size_t collect_interval_milliseconds_)
 {

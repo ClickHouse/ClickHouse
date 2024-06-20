@@ -56,7 +56,7 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(current_metrics[i].toUnderType());
 }
 
-void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time) 
+void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)
 {
     /// Static lazy initialization to avoid polluting the header with implementation details
     /// For differentiation of ProfileEvents counters.
