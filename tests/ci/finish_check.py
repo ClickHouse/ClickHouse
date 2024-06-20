@@ -62,13 +62,7 @@ def main():
         pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
         and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
     ):
-        upstream_pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-        update_upstream_sync_status(
-            upstream_pr_number,
-            pr_info.number,
-            gh,
-            state,
-        )
+        update_upstream_sync_status(pr_info, state)
 
     ci_running_statuses = [s for s in statuses if s.context == CI.StatusNames.CI]
     if not ci_running_statuses:

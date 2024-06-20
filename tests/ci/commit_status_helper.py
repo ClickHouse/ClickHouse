@@ -519,33 +519,10 @@ def trigger_mergeable_check(
 
 
 def update_upstream_sync_status(
-    upstream_pr_number: int,
-    sync_pr_number: int,
-    gh: Github,
+    pr_info: PRInfo,
     state: StatusType,
 ) -> None:
-    upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-    upstream_pr = upstream_repo.get_pull(upstream_pr_number)
-    sync_repo = gh.get_repo(GITHUB_REPOSITORY)
-    sync_pr = sync_repo.get_pull(sync_pr_number)
-    # Find the commit that is in both repos, upstream and cloud
-    sync_commits = sync_pr.get_commits().reversed
-    upstream_commits = upstream_pr.get_commits().reversed
-    # Github objects are compared by _url attribute. We can't compare them directly and
-    # should compare commits by SHA1
-    upstream_shas = [c.sha for c in upstream_commits]
-    logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
-    sync_shas = [c.sha for c in sync_commits]
-    logging.info("Commits in sync PR:\n %s", ", ".join(reversed(sync_shas)))
-
-    # find latest synced commit
-    last_synced_upstream_commit = None
-    for commit in upstream_commits:
-        if commit.sha in sync_shas:
-            last_synced_upstream_commit = commit
-            break
-
-    assert last_synced_upstream_commit
+    last_synced_upstream_commit = pr_info.get_latest_sync_commit()
 
     logging.info(
         "Using commit %s to post the %s status `%s`: [%s]",
