@@ -132,22 +132,16 @@ void WriteBufferFromHDFS::sync()
 }
 
 
-void WriteBufferFromHDFS::finalizeImpl()
+WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
     try
     {
-        next();
+        finalize();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-}
-
-
-WriteBufferFromHDFS::~WriteBufferFromHDFS()
-{
-    finalize();
 }
 
 }
