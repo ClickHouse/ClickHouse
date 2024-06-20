@@ -251,19 +251,6 @@ void executeQuery(
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
-    /// Return directly (with correct header) if no shard to query.
-    if (query_info.getCluster()->getShardsInfo().empty())
-    {
-        if (settings.allow_experimental_analyzer)
-            return;
-
-        Pipe pipe(std::make_shared<NullSource>(header));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-        query_plan.addStep(std::move(read_from_pipe));
-        return;
-    }
-
     ClusterProxy::AdditionalShardFilterGenerator shard_filter_generator;
     if (context->canUseParallelReplicasCustomKeyForCluster(*query_info.getCluster()))
     {
@@ -592,6 +579,19 @@ void executeQueryWithParallelReplicasCustomKey(
     const Block & header,
     ContextPtr context)
 {
+    /// Return directly (with correct header) if no shard to query.
+    if (query_info.getCluster()->getShardsInfo().empty())
+    {
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            return;
+
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+        return;
+    }
+
     ColumnsDescriptionByShardNum columns_object;
     if (hasDynamicSubcolumns(columns))
         columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);

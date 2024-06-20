@@ -864,11 +864,26 @@ void StorageDistributed::read(
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
-    if (!local_context->getSettingsRef().allow_experimental_analyzer)
+    const auto & settings = local_context->getSettingsRef();
+    if (!settings.allow_experimental_analyzer)
     {
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
             remote_database, remote_table, remote_table_function_ptr);
+    }
+
+    /// Return directly (with correct header) if no shard to query.
+    if (modified_query_info.getCluster()->getShardsInfo().empty())
+    {
+        if (settings.allow_experimental_analyzer)
+            return;
+
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+
+        return;
     }
 
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
