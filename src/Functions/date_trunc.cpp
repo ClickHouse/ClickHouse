@@ -13,9 +13,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -26,7 +26,7 @@ class FunctionDateTrunc : public IFunction
 public:
     static constexpr auto name = "dateTrunc";
 
-    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) { }
+    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
 
@@ -49,8 +49,7 @@ public:
         String datepart_param;
         const DataTypeInterval * interval_type = nullptr;
 
-        auto check_first_argument = [&]
-        {
+        auto check_first_argument = [&] {
             interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
 
             if (interval_type)
@@ -114,8 +113,7 @@ public:
         };
 
         bool second_argument_is_date = false;
-        auto check_second_argument = [&]
-        {
+        auto check_second_argument = [&] {
             if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -131,8 +129,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
         };
 
-        auto check_timezone_argument = [&]
-        {
+        auto check_timezone_argument = [&] {
             if (!WhichDataType(arguments[2].type).isString())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -225,11 +222,14 @@ public:
         return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    bool hasInformationAboutMonotonicity() const override 
+    { 
+        return true; 
+    }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return {.is_monotonic = true, .is_always_monotonic = true};
+        return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
