@@ -20,7 +20,6 @@
 * Introduce statistics of type "number of distinct values". [#59357](https://github.com/ClickHouse/ClickHouse/pull/59357) ([Han Fei](https://github.com/hanfei1991)).
 * Add Hilbert Curve encode and decode functions. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
 * Added support for reading LINESTRING geometry in WKT format using function `readWKTLineString`. [#62519](https://github.com/ClickHouse/ClickHouse/pull/62519) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* Implement Dynamic data type that allows to store values of any type inside it without knowing all of them in advance. Dynamic type is available under a setting `allow_experimental_dynamic_type`. [#63058](https://github.com/ClickHouse/ClickHouse/pull/63058) ([Kruglov Pavel](https://github.com/Avogar)).
 * Allow to attach parts from a different disk. [#63087](https://github.com/ClickHouse/ClickHouse/pull/63087) ([Unalian](https://github.com/Unalian)).
 * Allow proxy to be bypassed for hosts specified in `no_proxy` env variable and ClickHouse proxy configuration. [#63314](https://github.com/ClickHouse/ClickHouse/pull/63314) ([Arthur Passos](https://github.com/arthurpassos)).
 * Added a new table function `loop` to support returning query results in an infinite loop. [#63452](https://github.com/ClickHouse/ClickHouse/pull/63452) ([Sariel](https://github.com/sarielwxm)).
