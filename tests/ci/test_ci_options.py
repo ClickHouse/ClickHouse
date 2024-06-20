@@ -19,6 +19,7 @@ _TEST_BODY_1 = """
 
 #### CI options:
 - [ ] <!---do_not_test--> do not test (only style check)
+- [x] <!---woolen_wolfdog--> Woolen Wolfdog CI
 - [x] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
 - [ ] <!---no_ci_cache--> disable CI cache (job reuse)
 
@@ -148,6 +149,7 @@ class TestCIOptions(unittest.TestCase):
         self.assertFalse(ci_options.do_not_test)
         self.assertFalse(ci_options.no_ci_cache)
         self.assertTrue(ci_options.no_merge_commit)
+        self.assertTrue(ci_options.woolen_wolfdog)
         self.assertEqual(ci_options.ci_sets, ["ci_set_non_required"])
         self.assertCountEqual(ci_options.include_keywords, ["foo", "foo_bar"])
         self.assertCountEqual(ci_options.exclude_keywords, ["foo", "foo_bar"])
@@ -157,6 +159,7 @@ class TestCIOptions(unittest.TestCase):
         ci_options = CiSettings.create_from_pr_message(
             _TEST_BODY_2, update_from_api=False
         )
+        self.assertFalse(ci_options.woolen_wolfdog)
         self.assertCountEqual(
             ci_options.include_keywords,
             ["integration", "foo_bar", "stateless", "azure"],
