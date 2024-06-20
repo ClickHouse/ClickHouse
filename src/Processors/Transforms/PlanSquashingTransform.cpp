@@ -27,11 +27,26 @@ IProcessor::Status PlanSquashingTransform::prepare()
                 init();
                 break;
             case READ_IF_CAN:
-                return prepareConsume();
+            {
+                status = prepareConsume();
+                if (status != Status::Ready)
+                    return status;
+                break;
+            }
             case PUSH:
-                return sendOrFlush();
+            {
+                status = sendOrFlush();
+                if (status != Status::Ready)
+                    return status;
+                break;
+            }
             case FLUSH:
-                return sendOrFlush();
+            {
+                status = sendOrFlush();
+                if (status != Status::Ready)
+                    return status;
+                break;
+            }
             case FINISH:
                 break; /// never reached
         }
@@ -42,11 +57,6 @@ IProcessor::Status PlanSquashingTransform::prepare()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There should be a Ready status to finish the PlanSquashing");
 
     return status;
-}
-
-void PlanSquashingTransform::work()
-{
-    prepare();
 }
 
 void PlanSquashingTransform::init()
