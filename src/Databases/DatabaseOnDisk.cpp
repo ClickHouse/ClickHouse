@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iterator>
 #include <span>
+#include <limits.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/IDisk.h>
@@ -57,7 +58,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
-    extern const int TOO_LONG_TABLE_NAME;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -371,19 +372,28 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 {
     String table_metadata_path = getObjectMetadataPath(to_table_name);
     String suffix = ".sql.detached";
-    auto max_file_name_length = pathconf("/", _PC_NAME_MAX);
+    auto max_create_length = pathconf(metadata_path.data(), _PC_NAME_MAX);
+    String dropped_directory_name = (std::filesystem::path(getContext()->getPath()) / "metadata_dropped").string();
+    auto max_dropped_length = pathconf(dropped_directory_name.data(), _PC_NAME_MAX);
 
-    if (max_file_name_length == -1)
-        max_file_name_length = NAME_MAX;
+    if (max_dropped_length == -1)
+        max_dropped_length = NAME_MAX;
 
-    //Max file name may be like 'database.table.sql.detached'
-    //The uuid and 2 dots of the table will take 38 characters
+    if (max_create_length == -1)
+        max_create_length = NAME_MAX;
+
+    //File name to drop is escaped_db_name.escaped_table_name.uuid.sql
+    //File name to create is table_name.sql
+    auto max_to_create = static_cast<size_t>(max_create_length)  - suffix.length();
+
     //36 is prepared for renaming table operation while dropping
-    auto max_table_name_length = static_cast<size_t>(max_file_name_length) - database_name.length() - suffix.length() - 38;
+    //max_to_drop = max_dropped_length - length_of(database_name)- length_of(uuid) - lenght_of('sql' + 3 dots)
+    auto max_to_drop = static_cast<size_t>(max_dropped_length) - database_name.length() - 48;
+    auto allowed_max_length = max_to_create > max_to_drop ? max_to_drop : max_to_create;
 
-    if (to_table_name.length() > max_table_name_length)
-        throw Exception(ErrorCodes::TOO_LONG_TABLE_NAME, "The max length of table name for database {} is {}, current length is {}",
-                            database_name, max_table_name_length, to_table_name.length());
+    if (to_table_name.length() > allowed_max_length)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The max length of table name for database {} is {}, current length is {}",
+                            database_name, allowed_max_length, to_table_name.length());
 
     if (fs::exists(table_metadata_path))
     {
