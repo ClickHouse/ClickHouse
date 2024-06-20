@@ -38,7 +38,8 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
-        bool enable_vertical_final_ = false);
+        bool enable_vertical_final_ = false,
+        int read_direction = 1);
 
     const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
@@ -50,6 +51,8 @@ private:
 
     bool enable_vertical_final = false; /// Either we use skipping final algorithm
     std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
+
+    int read_direction = 1;
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.
