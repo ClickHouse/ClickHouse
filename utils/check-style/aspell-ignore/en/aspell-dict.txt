@@ -963,6 +963,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -1458,6 +1459,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1707,7 +1709,6 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
-groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1724,7 +1725,6 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
-groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -2480,6 +2480,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
