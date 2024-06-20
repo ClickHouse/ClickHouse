@@ -171,7 +171,9 @@ def test_alter_in_partition_merge_tree_invalid_valid_valid(started_cluster):
         ]
         # assert node1.query(f"SELECT * from system.mutations WHERE table = '{name}'") == [""]
 
-        node1.query(f"KILL MUTATION WHERE table = '{name}' AND mutation_id = 'mutation_3.txt'")
+        node1.query(
+            f"KILL MUTATION WHERE table = '{name}' AND mutation_id = 'mutation_3.txt'"
+        )
         time.sleep(5)
         assert node1.query(f"SELECT x FROM {name} ORDER BY p").splitlines() == [
             "3",
