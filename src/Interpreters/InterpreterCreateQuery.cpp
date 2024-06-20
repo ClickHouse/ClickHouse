@@ -1084,7 +1084,7 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 
@@ -1092,7 +1092,7 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 

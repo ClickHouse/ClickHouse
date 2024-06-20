@@ -21,11 +21,11 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & default_database)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
 {
     assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
-    data.default_database = default_database;
+    data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
@@ -110,12 +110,22 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
     auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
 
-    if (!info || !info->is_local || info->table_name.table.empty())
+    if (!info || !info->is_local)
         return;
 
-    if (info->table_name.database.empty())
-        info->table_name.database = data.default_database;
-    data.dependencies.emplace(std::move(info->table_name));
+    if (!info->table_name.table.empty())
+    {
+        /// If database is not specified in dictionary source, use database of the dictionary itself, not the current/default database.
+        if (info->table_name.database.empty())
+            info->table_name.database = data.table_name.database;
+        data.dependencies.emplace(std::move(info->table_name));
+    }
+    else
+    {
+        /// We don't have a table name, we have a select query instead that will be executed during dictionary loading.
+        auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database);
+        data.dependencies.merge(select_query_dependencies);
+    }
 }
 
 void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)

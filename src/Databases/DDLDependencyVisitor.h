@@ -14,5 +14,6 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// For example, a column default expression can use dictGet() and thus reference a dictionary.
 /// Does not validate AST, works a best-effort way.
 TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database);
+TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database);
 
 }
