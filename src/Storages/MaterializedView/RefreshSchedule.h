@@ -21,7 +21,7 @@ struct RefreshSchedule
 
     /// What to store as "last completed timeslot" value after a refresh completes.
     /// This value is used for scheduling subsequent refreshes.
-    std::chrono::sys_seconds timeslotForCompletedRefresh(std::chrono::sys_seconds last_completed_timeslot, std::chrono::sys_seconds start_time, std::chrono::sys_seconds end_time, bool out_of_schedule);
+    std::chrono::sys_seconds timeslotForCompletedRefresh(std::chrono::sys_seconds last_completed_timeslot, std::chrono::sys_seconds start_time, std::chrono::sys_seconds end_time, bool out_of_schedule) const;
 
     std::chrono::sys_seconds advance(std::chrono::sys_seconds last_completed_timeslot) const;
 

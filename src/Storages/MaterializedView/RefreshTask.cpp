@@ -273,6 +273,8 @@ void RefreshTask::wait()
             if (storage && storage->getStorageID().uuid == expected_table_uuid)
                 return;
 
+            std::this_thread::sleep_for(std:::chrono::milliseconds(10));
+
             lock.lock();
             /// Re-check last_attempt_succeeded in case another refresh EXCHANGEd the table but failed to write its uuid to keeper.
             throw_if_error();
@@ -413,7 +415,6 @@ void RefreshTask::refreshTask()
             bool append = refresh_append;
             int32_t root_znode_version = coordination.coordinated ? coordination.root_znode.version : -1;
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-
 
             lock.unlock();
 
