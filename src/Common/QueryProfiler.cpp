@@ -12,7 +12,6 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <random>
 
 namespace CurrentMetrics
 {
@@ -25,6 +24,7 @@ namespace ProfileEvents
     extern const Event QueryProfilerSignalOverruns;
     extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
+    extern const Event QueryProfilerErrors;
 }
 
 namespace DB
@@ -84,11 +84,29 @@ namespace
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        const StackTrace stack_trace(signal_context);
+        std::optional<StackTrace> stack_trace;
 
-        TraceSender::send(trace_type, stack_trace, {});
+#if defined(SANITIZER)
+        constexpr bool sanitizer = true;
+#else
+        constexpr bool sanitizer = false;
+#endif
+
+        asynchronous_stack_unwinding = true;
+        if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        {
+            stack_trace.emplace(signal_context);
+        }
+        else
+        {
+            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
+        }
+        asynchronous_stack_unwinding = false;
+
+        if (stack_trace)
+            TraceSender::send(trace_type, *stack_trace, {});
+
         ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
-
         errno = saved_errno;
     }
 
@@ -210,9 +228,9 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase([[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
-    : log(getLogger("QueryProfiler"))
-    , pause_signal(pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
+    [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
+    : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");

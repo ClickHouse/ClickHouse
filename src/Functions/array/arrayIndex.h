@@ -322,7 +322,7 @@ private:
     }
 
     template <bool IsConst>
-    static inline void invokeCheckNullMaps(
+    static void invokeCheckNullMaps(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
         OffsetT<IsConst> item_offsets,
@@ -339,7 +339,7 @@ private:
     }
 
 public:
-    static inline void process(
+    static void process(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
         Offset item_offsets, PaddedPODArray<ResultType> & result,
@@ -348,7 +348,7 @@ public:
         invokeCheckNullMaps<true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 
-    static inline void process(
+    static void process(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
         const ColumnString::Offsets & item_offsets, PaddedPODArray<ResultType> & result,
@@ -467,10 +467,10 @@ private:
         NullMaps maps;
         ResultColumnPtr result { ResultColumnType::create() };
 
-        inline void moveResult() { result_column = std::move(result); }
+        void moveResult() { result_column = std::move(result); }
     };
 
-    static inline bool allowArguments(const DataTypePtr & inner_type, const DataTypePtr & arg)
+    static bool allowArguments(const DataTypePtr & inner_type, const DataTypePtr & arg)
     {
         auto inner_type_decayed = removeNullable(removeLowCardinality(inner_type));
         auto arg_decayed = removeNullable(removeLowCardinality(arg));
@@ -633,7 +633,7 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <typename... Integral>
-    static inline ColumnPtr executeIntegral(const ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeIntegral(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * const left = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -658,14 +658,14 @@ private:
     }
 
     template <typename... Integral>
-    static inline bool executeIntegral(ExecutionData& data)
+    static bool executeIntegral(ExecutionData& data)
     {
         return (executeIntegralExpanded<Integral, Integral...>(data) || ...);
     }
 
     /// Invoke executeIntegralImpl with such parameters: (A, other1), (A, other2), ...
     template <typename A, typename... Other>
-    static inline bool executeIntegralExpanded(ExecutionData& data)
+    static bool executeIntegralExpanded(ExecutionData& data)
     {
         return (executeIntegralImpl<A, Other>(data) || ...);
     }

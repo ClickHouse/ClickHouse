@@ -4,7 +4,7 @@
 #include <Parsers/Lexer.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/BitHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBuffer.h>

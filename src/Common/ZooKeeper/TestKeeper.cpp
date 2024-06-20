@@ -1,7 +1,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/types.h>
 #include <functional>
 
@@ -636,6 +636,9 @@ void TestKeeper::finalize(const String &)
             return;
         expired = true;
     }
+
+    /// Signal request_queue to wake up processing thread without waiting for timeout
+    requests_queue.finish();
 
     processing_thread.join();
 

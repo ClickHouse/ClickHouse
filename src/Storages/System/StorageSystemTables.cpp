@@ -14,7 +14,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
@@ -146,7 +146,7 @@ ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr 
                 filter_by_engine = true;
 
         if (filter_by_engine)
-            engine_column= ColumnString::create();
+            engine_column = ColumnString::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
@@ -750,7 +750,8 @@ void StorageSystemTables::read(
 
 void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
