@@ -12,6 +12,11 @@ bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result)
         if (!parseIdentifierOrStringLiteral(pos, expected, result))
             return false;
     }
+    else if (pos->type == TokenType::Number)
+    {
+        result.append(pos->begin, pos->end);
+        ++pos;
+    }
 
     ParserToken{TokenType::Whitespace}.ignore(pos);
 
