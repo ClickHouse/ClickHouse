@@ -929,7 +929,9 @@ def test_max_set_age(started_cluster):
     time.sleep(max_age + 1)
 
     assert failed_count + 2 == int(
-        node.query("SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles'")
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles'"
+        )
     )
 
     node.query("SYSTEM FLUSH LOGS")
