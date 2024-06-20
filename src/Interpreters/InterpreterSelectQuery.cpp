@@ -1481,6 +1481,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     if (expressions.hasHaving() && query.group_by_with_totals && (query.group_by_with_rollup || query.group_by_with_cube))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
+    if (query.qualify())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QUALIFY clause is not supported in the old analyzer");
+
     if (options.only_analyze)
     {
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header);

@@ -50,6 +50,7 @@ class ASTSelectQuery;
 
 struct ContextSharedPart;
 class ContextAccess;
+class ContextAccessWrapper;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
@@ -405,9 +406,31 @@ public:
         mutable std::mutex mutex;
     };
 
+    struct QueryPrivilegesInfo
+    {
+        QueryPrivilegesInfo() = default;
+
+        QueryPrivilegesInfo(const QueryPrivilegesInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            used_privileges = rhs.used_privileges;
+            missing_privileges = rhs.missing_privileges;
+        }
+
+        QueryPrivilegesInfo(QueryPrivilegesInfo && rhs) = delete;
+
+        std::unordered_set<std::string> used_privileges TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> missing_privileges TSA_GUARDED_BY(mutex);
+
+        mutable std::mutex mutex;
+    };
+
+    using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
+
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
 
@@ -616,7 +639,7 @@ public:
     void checkAccess(const AccessRightsElement & element) const;
     void checkAccess(const AccessRightsElements & elements) const;
 
-    std::shared_ptr<const ContextAccess> getAccess() const;
+    std::shared_ptr<const ContextAccessWrapper> getAccess() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
@@ -626,6 +649,10 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    String getMergeWorkload() const;
+    void setMergeWorkload(const String & value);
+    String getMutationWorkload() const;
+    void setMutationWorkload(const String & value);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -740,6 +767,10 @@ public:
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
+
+    const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
+    QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
+    void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
@@ -911,6 +942,8 @@ public:
     void setSessionContext(ContextMutablePtr context_) { session_context = context_; }
 
     void makeQueryContext();
+    void makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings);
+    void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
 
