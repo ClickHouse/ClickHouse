@@ -339,7 +339,10 @@ def test_failed_retry(started_cluster, mode, engine_name):
     values_csv = (
         "\n".join((",".join(map(str, row)) for row in values)) + "\n"
     ).encode()
-    put_s3_file_content(started_cluster, file_path, values_csv)
+    if engine_name == "S3Queue":
+        put_s3_file_content(started_cluster, file_path, values_csv)
+    else:
+        put_azure_file_content(started_cluster, file_path, values_csv)
 
     create_table(
         started_cluster,
@@ -886,7 +889,7 @@ def test_max_set_age(started_cluster):
 
     failed_count = int(
         node.query(
-            "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
         )
     )
 
@@ -901,7 +904,7 @@ def test_max_set_age(started_cluster):
     for _ in range(30):
         if failed_count + 1 == int(
             node.query(
-                "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+                "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
             )
         ):
             break
@@ -909,7 +912,7 @@ def test_max_set_age(started_cluster):
 
     assert failed_count + 1 == int(
         node.query(
-            "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
         )
     )
 
@@ -926,7 +929,7 @@ def test_max_set_age(started_cluster):
     time.sleep(max_age + 1)
 
     assert failed_count + 2 == int(
-        node.query("SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles'")
+        node.query("SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles'")
     )
 
     node.query("SYSTEM FLUSH LOGS")
