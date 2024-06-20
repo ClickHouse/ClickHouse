@@ -20,7 +20,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
 
@@ -624,7 +623,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 }
                 else
                 {
-                    std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
+                    result_data.deserializeAndInsertFromArena(pair->getKey().data);
                 }
                 if (all_nullable)
                     null_map.push_back(0);

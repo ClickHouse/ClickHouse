@@ -6,6 +6,7 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <mutex>
+#include <list>
 
 namespace DB
 {
@@ -16,46 +17,24 @@ namespace DB
 class FileCacheFactory final : private boost::noncopyable
 {
 public:
-    class FileCacheData
+    struct FileCacheData
     {
-        friend class FileCacheFactory;
-    public:
-        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_, const std::string & config_path_);
-
-        FileCacheSettings getSettings() const;
-
-        void setSettings(const FileCacheSettings & new_settings);
-
-        const FileCachePtr cache;
-        const std::string config_path;
-
-    private:
+        FileCachePtr cache;
         FileCacheSettings settings;
-        mutable std::mutex settings_mutex;
-    };
 
+        FileCacheData() = default;
+        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
+    };
     using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
 
     static FileCacheFactory & instance();
 
-    FileCachePtr getOrCreate(
-        const std::string & cache_name,
-        const FileCacheSettings & file_cache_settings,
-        const std::string & config_path);
-
-    FileCachePtr create(
-        const std::string & cache_name,
-        const FileCacheSettings & file_cache_settings,
-        const std::string & config_path);
+    FileCachePtr getOrCreate(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
 
     CacheByName getAll();
 
-    FileCacheDataPtr getByName(const std::string & cache_name);
-
-    void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
-
-    void clear();
+    FileCacheData getByName(const std::string & cache_name);
 
 private:
     std::mutex mutex;

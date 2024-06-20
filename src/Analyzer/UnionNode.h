@@ -9,7 +9,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
-#include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
 
@@ -85,42 +84,6 @@ public:
         is_cte = is_cte_value;
     }
 
-    /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
-    bool isRecursiveCTE() const
-    {
-        return is_recursive_cte;
-    }
-
-    /// Set union node is recursive CTE value
-    void setIsRecursiveCTE(bool is_recursive_cte_value)
-    {
-        is_recursive_cte = is_recursive_cte_value;
-    }
-
-    /// Returns true if union node has recursive CTE table, false otherwise
-    bool hasRecursiveCTETable() const
-    {
-        return recursive_cte_table.has_value();
-    }
-
-    /// Returns optional recursive CTE table
-    const std::optional<RecursiveCTETable> & getRecursiveCTETable() const
-    {
-        return recursive_cte_table;
-    }
-
-    /// Returns optional recursive CTE table
-    std::optional<RecursiveCTETable> & getRecursiveCTETable()
-    {
-        return recursive_cte_table;
-    }
-
-    /// Set union node recursive CTE table value
-    void setRecursiveCTETable(RecursiveCTETable recursive_cte_table_value)
-    {
-        recursive_cte_table.emplace(std::move(recursive_cte_table_value));
-    }
-
     /// Get union node CTE name
     const std::string & getCTEName() const
     {
@@ -166,12 +129,6 @@ public:
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
-
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
-
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::UNION;
@@ -180,9 +137,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -191,8 +148,6 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
-    bool is_recursive_cte = false;
-    std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
     ContextMutablePtr context;
     SelectUnionMode union_mode;

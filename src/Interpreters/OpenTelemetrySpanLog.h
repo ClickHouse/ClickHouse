@@ -4,7 +4,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -12,14 +11,14 @@ namespace DB
 struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
 {
     OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
+    OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
         : OpenTelemetry::Span(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
-
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 // OpenTelemetry standardizes some Log data as well, so it's not just

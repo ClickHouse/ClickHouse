@@ -11,8 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -118,14 +117,14 @@ namespace
         {
             if (arguments.empty())
                 throw Exception(
-                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
                     arguments.size());
 
             if (arguments.size() > 1)
                 throw Exception(
-                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
                     arguments.size());

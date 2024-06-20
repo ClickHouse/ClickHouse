@@ -6,6 +6,7 @@
 namespace DB::XMLUtils
 {
 
+using namespace Poco;
 using namespace Poco::XML;
 
 using XMLDocumentPtr = Poco::AutoPtr<Document>;
@@ -25,16 +26,16 @@ Node * getRootNode(Document * document)
 
 
 /// This class is used to access protected parseXXX static methods from AbstractConfiguration
-class ParseHelper : private Poco::Util::AbstractConfiguration
+class ParseHelper : private Util::AbstractConfiguration
 {
 public:
     ParseHelper() = delete;
 
-    using Poco::Util::AbstractConfiguration::parseInt;
-    using Poco::Util::AbstractConfiguration::parseUInt;
-    using Poco::Util::AbstractConfiguration::parseInt64;
-    using Poco::Util::AbstractConfiguration::parseUInt64;
-    using Poco::Util::AbstractConfiguration::parseBool;
+    using Util::AbstractConfiguration::parseInt;
+    using Util::AbstractConfiguration::parseUInt;
+    using Util::AbstractConfiguration::parseInt64;
+    using Util::AbstractConfiguration::parseUInt64;
+    using Util::AbstractConfiguration::parseBool;
 
     static std::string parseString(const std::string & s)
     {

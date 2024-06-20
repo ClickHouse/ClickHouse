@@ -30,16 +30,18 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
     : header(checkHeaders(input_streams_))
     , max_threads(max_threads_)
 {
-    updateInputStreams(std::move(input_streams_));
-}
+    input_streams = std::move(input_streams_);
 
-void UnionStep::updateOutputStream()
-{
     if (input_streams.size() == 1)
         output_stream = input_streams.front();
     else
         output_stream = DataStream{.header = header};
 
+    updateOutputSortDescription();
+}
+
+void UnionStep::updateOutputSortDescription()
+{
     SortDescription common_sort_description = input_streams.front().sort_description;
     DataStream::SortScope sort_scope = input_streams.front().sort_scope;
     for (const auto & input_stream : input_streams)

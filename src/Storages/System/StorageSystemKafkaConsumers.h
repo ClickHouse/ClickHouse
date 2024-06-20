@@ -11,15 +11,15 @@
 namespace DB
 {
 
-class StorageSystemKafkaConsumers final : public IStorageSystemOneBlock
+class StorageSystemKafkaConsumers final : public IStorageSystemOneBlock<StorageSystemKafkaConsumers>
 {
 public:
     std::string getName() const override { return "SystemKafkaConsumers"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const override;
 };
 
 }

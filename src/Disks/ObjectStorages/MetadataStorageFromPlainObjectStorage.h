@@ -2,10 +2,9 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
-#include <map>
 
 namespace DB
 {
@@ -24,29 +23,22 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 /// It is used to allow BACKUP/RESTORE to ObjectStorage (S3/...) with the same
 /// structure as on disk MergeTree, and does not requires metadata from local
 /// disk to restore.
-class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
+class MetadataStorageFromPlainObjectStorage final : public IMetadataStorage
 {
-public:
-    /// Local path prefixes mapped to storage key prefixes.
-    using PathMap = std::map<std::filesystem::path, std::string>;
-
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
-protected:
     ObjectStoragePtr object_storage;
-    String storage_path_prefix;
-
-    mutable SharedMutex metadata_mutex;
+    std::string object_storage_root_path;
 
 public:
-    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
+    MetadataStorageFromPlainObjectStorage(
+        ObjectStoragePtr object_storage_,
+        const std::string & object_storage_root_path_);
 
     MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
-
-    MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
 
     bool exists(const std::string & path) const override;
 
@@ -64,6 +56,8 @@ public:
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
+    std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
+
     Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
         /// Required by MergeTree
@@ -78,42 +72,31 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
 
-protected:
-    virtual std::shared_ptr<PathMap> getPathMap() const { throwNotImplemented(); }
-
-    virtual std::vector<std::string> getDirectChildrenOnDisk(
-        const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & local_path) const;
+private:
+    std::filesystem::path getAbsolutePath(const std::string & path) const;
 };
 
-class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction
 {
 private:
-    MetadataStorageFromPlainObjectStorage & metadata_storage;
-    ObjectStoragePtr object_storage;
+    const MetadataStorageFromPlainObjectStorage & metadata_storage;
 
     std::vector<MetadataOperationPtr> operations;
-
 public:
-    explicit MetadataStorageFromPlainObjectStorageTransaction(
-        MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_)
-        : metadata_storage(metadata_storage_), object_storage(object_storage_)
+    MetadataStorageFromPlainObjectStorageTransaction(const MetadataStorageFromPlainObjectStorage & metadata_storage_)
+        : metadata_storage(metadata_storage_)
     {}
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
-
-    void setLastModified(const String &, const Poco::Timestamp &) override
-    {
-        /// Noop
-    }
+    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void createEmptyMetadataFile(const std::string & /* path */) override
     {
         /// No metadata, no need to create anything.
     }
 
-    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
+    void createMetadataFile(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */) override
     {
         /// Noop
     }
@@ -122,15 +105,16 @@ public:
 
     void createDirectoryRecursive(const std::string & path) override;
 
-    void moveDirectory(const std::string & path_from, const std::string & path_to) override;
-
     void unlinkFile(const std::string & path) override;
-    void removeDirectory(const std::string & path) override;
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    void commit() override;
+    void commit() override
+    {
+        /// Nothing to commit.
+    }
 
     bool supportsChmod() const override { return false; }
 };
+
 }

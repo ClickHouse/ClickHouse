@@ -8,10 +8,6 @@ sidebar_label: PostgreSQL
 
 The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
 
-:::note
-Currently, only PostgreSQL versions 12 and up are supported.
-:::
-
 ## Creating a Table {#creating-a-table}
 
 ``` sql
@@ -20,7 +16,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
@@ -39,25 +35,31 @@ The table structure can differ from the original PostgreSQL table structure:
 - `user` — PostgreSQL user.
 - `password` — User password.
 - `schema` — Non-default table schema. Optional.
-- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
+- `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
-[Named collections](/docs/en/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
+or via config (since version 21.11):
 
 ```
 <named_collections>
-    <postgres_creds>
-        <host>localhost</host>
-        <port>5432</port>
-        <user>postgres</user>
-        <password>****</password>
-        <schema>schema1</schema>
-    </postgres_creds>
+    <postgres1>
+        <host></host>
+        <port></port>
+        <user></user>
+        <password></password>
+        <table></table>
+    </postgres1>
+    <postgres2>
+        <host></host>
+        <port></port>
+        <user></user>
+        <password></password>
+    </postgres2>
 </named_collections>
 ```
 
 Some parameters can be overridden by key value arguments:
 ``` sql
-SELECT * FROM postgresql(postgres_creds, table='table1');
+SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
 ```
 
 ## Implementation Details {#implementation-details}

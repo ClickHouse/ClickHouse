@@ -43,7 +43,6 @@ namespace ErrorCodes
 template <typename T>
 class QuantileTDigest
 {
-    friend class TDigestStatistic;
     using Value = Float32;
     using Count = Float32;
     using BetterFloat = Float64; // For intermediate results and sum(Count). Must have better precision, than Count
@@ -138,7 +137,7 @@ class QuantileTDigest
             compress();
     }
 
-    bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
     {
         return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
     }
@@ -234,7 +233,8 @@ public:
                 BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
 
-                err = std::min(err, err2);
+                if (err > err2)
+                    err = err2;
 
                 BetterFloat k = count_epsilon_4 * err;
 
@@ -332,56 +332,6 @@ public:
         centroids.erase(it, centroids.end());
 
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
-    }
-
-    Float64 getCountEqual(Float64 value) const
-    {
-        Float64 result = 0;
-        for (const auto & c : centroids)
-        {
-            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
-            if (value == c.mean)
-                result += c.count;
-        }
-        return result;
-    }
-
-    Float64 getCountLessThan(Float64 value) const
-    {
-        bool first = true;
-        Count sum = 0;
-        Count prev_count = 0;
-        Float64 prev_x = 0;
-        Value prev_mean = 0;
-
-        for (const auto & c : centroids)
-        {
-            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
-            Float64 current_x = sum + c.count * 0.5;
-            if (c.mean >= value)
-            {
-                /// value is smaller than any value.
-                if (first)
-                    return 0;
-
-                Float64 left = prev_x + 0.5 * (prev_count == 1);
-                Float64 right = current_x - 0.5 * (c.count == 1);
-                Float64 result = checkOverflow<Float64>(interpolate(
-                    static_cast<Value>(value),
-                    prev_mean,
-                    static_cast<Value>(left),
-                    c.mean,
-                    static_cast<Value>(right)));
-                return result;
-            }
-            sum += c.count;
-            prev_mean = c.mean;
-            prev_count = c.count;
-            prev_x = current_x;
-            first = false;
-        }
-        /// count is larger than any value.
-        return count;
     }
 
     /** Calculates the quantile q [0, 1] based on the digest.

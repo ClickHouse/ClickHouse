@@ -10,7 +10,7 @@ namespace DB
 
 struct DistributedAsyncInsertSource::Data
 {
-    LoggerPtr log = nullptr;
+    Poco::Logger * log = nullptr;
 
     ReadBufferFromFile in;
     CompressedReadBuffer decompressing_in;
@@ -19,7 +19,7 @@ struct DistributedAsyncInsertSource::Data
     Block first_block;
 
     explicit Data(const String & file_name)
-        : log(getLogger("DistributedAsyncInsertSource"))
+        : log(&Poco::Logger::get("DistributedAsyncInsertSource"))
         , in(file_name)
         , decompressing_in(in)
         , block_in(decompressing_in, DistributedAsyncInsertHeader::read(in, log).revision)

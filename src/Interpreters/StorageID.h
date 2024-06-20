@@ -136,7 +136,7 @@ namespace fmt
         }
 
         template <typename FormatContext>
-        auto format(const DB::StorageID & storage_id, FormatContext & ctx) const
+        auto format(const DB::StorageID & storage_id, FormatContext & ctx)
         {
             return fmt::format_to(ctx.out(), "{}", storage_id.getNameForLogs());
         }

@@ -58,8 +58,9 @@ private:
 public:
     InterruptListener() : active(false)
     {
-        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGINT))
-            throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot manipulate with signal set");
+        if (sigemptyset(&sig_set)
+            || sigaddset(&sig_set, SIGINT))
+            throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
         block();
     }
@@ -81,7 +82,7 @@ public:
             if (errno == EAGAIN)
                 return false;
             else
-                throw ErrnoException(ErrorCodes::CANNOT_WAIT_FOR_SIGNAL, "Cannot poll signal (sigtimedwait)");
+                throwFromErrno("Cannot poll signal (sigtimedwait).", ErrorCodes::CANNOT_WAIT_FOR_SIGNAL);
         }
 
         return true;
@@ -92,7 +93,7 @@ public:
         if (!active)
         {
             if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-                throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
+                throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
             active = true;
         }
@@ -104,7 +105,7 @@ public:
         if (active)
         {
             if (pthread_sigmask(SIG_UNBLOCK, &sig_set, nullptr))
-                throw ErrnoException(ErrorCodes::CANNOT_UNBLOCK_SIGNAL, "Cannot unblock signal");
+                throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
 
             active = false;
         }

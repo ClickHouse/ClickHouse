@@ -35,7 +35,7 @@ namespace DB
 
 struct Settings;
 
-enum class StatisticsFunctionKind : uint8_t
+enum class StatisticsFunctionKind
 {
     varPop, varSamp,
     stddevPop, stddevSamp,
@@ -234,6 +234,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
 template <template <typename> typename FunctionTemplate, StatisticsFunctionKind kind>
 AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -267,6 +270,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
             argument_types[0]->getName(), argument_types[1]->getName(), name);
 
     return res;
+}
+
 }
 
 }

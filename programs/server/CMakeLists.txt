@@ -13,6 +13,9 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_parsers
         clickhouse_storages_system
         clickhouse_table_functions
+        string_utils
+
+    ${LINK_RESOURCE_LIB}
 
     PUBLIC
         daemon
@@ -27,7 +30,3 @@ endif()
 clickhouse_program_add(server)
 
 install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
-
-if (ENABLE_FUZZING)
-    add_subdirectory(fuzzers)
-endif()

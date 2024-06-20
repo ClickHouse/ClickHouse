@@ -7,6 +7,7 @@
 #include <base/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
+#include <boost/program_options/options_description.hpp>
 
 
 namespace boost::program_options
@@ -20,10 +21,10 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-enum class SettingsWriteFormat : uint8_t
+enum class SettingsWriteFormat
 {
-    BINARY = 0,             /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
-    STRINGS_WITH_FLAGS = 1, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
+    BINARY,             /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
+    STRINGS_WITH_FLAGS, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
     DEFAULT = STRINGS_WITH_FLAGS,
 };
 
@@ -108,7 +109,6 @@ public:
     public:
         const String & getName() const;
         Field getValue() const;
-        void setValue(const Field & value);
         Field getDefaultValue() const;
         String getValueString() const;
         String getDefaultValueString() const;
@@ -123,11 +123,23 @@ public:
 
     private:
         friend class BaseSettings;
-        BaseSettings * settings;
+        const BaseSettings * settings;
         const typename Traits::Accessor * accessor;
         size_t index;
-        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::mapped_type*, boost::blank> custom_setting;
+        std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
+
+    /// Adds program options to set the settings from a command line.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptions(boost::program_options::options_description & options);
+
+    /// Adds program options as to set the settings from a command line.
+    /// Allows to set one setting multiple times, the last value will be used.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
+
+    void addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
+    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
     enum SkipFlags
     {
@@ -145,50 +157,35 @@ public:
         Iterator & operator++();
         Iterator operator++(int); /// NOLINT
         const SettingFieldRef & operator *() const { return field_ref; }
-        SettingFieldRef & operator *() { return field_ref; }
 
         bool operator ==(const Iterator & other) const;
         bool operator !=(const Iterator & other) const { return !(*this == other); }
 
     private:
         friend class BaseSettings;
-        Iterator(BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_);
+        Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_);
         void doSkip();
         void setPointerToCustomSetting();
 
         SettingFieldRef field_ref;
-        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::iterator, boost::blank> custom_settings_iterator;
+        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::const_iterator, boost::blank> custom_settings_iterator;
         SkipFlags skip_flags;
     };
 
     class Range
     {
     public:
-        Range(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
+        Range(const BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
         Iterator begin() const { return Iterator(settings, accessor, skip_flags); }
         Iterator end() const { return Iterator(settings, accessor, SKIP_ALL); }
 
     private:
-        BaseSettings & settings;
+        const BaseSettings & settings;
         const typename Traits::Accessor & accessor;
         SkipFlags skip_flags;
     };
 
-    class MutableRange
-    {
-    public:
-        MutableRange(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
-        Iterator begin() { return Iterator(settings, accessor, skip_flags); }
-        Iterator end() { return Iterator(settings, accessor, SKIP_ALL); }
-
-    private:
-        BaseSettings & settings;
-        const typename Traits::Accessor & accessor;
-        SkipFlags skip_flags;
-    };
-
-    Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{const_cast<BaseSettings<Traits> &>(*this), skip_flags}; }
-    MutableRange allMutable(SkipFlags skip_flags = SKIP_NONE) { return MutableRange{*this, skip_flags}; }
+    Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{*this, skip_flags}; }
     Range allChanged() const { return all(SKIP_UNCHANGED); }
     Range allUnchanged() const { return all(SKIP_CHANGED); }
     Range allBuiltin() const { return all(SKIP_CUSTOM); }
@@ -472,7 +469,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 {
     const auto & accessor = Traits::Accessor::instance();
 
-    for (const auto & field : *this)
+    for (auto field : *this)
     {
         bool is_custom = field.isCustom();
         bool is_important = !is_custom && accessor.isImportant(field.index);
@@ -565,6 +562,57 @@ String BaseSettings<TTraits>::toString() const
 }
 
 template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOptions(boost::program_options::options_description & options)
+{
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
+    for (const auto & field : all())
+    {
+        std::string_view name = field.getName();
+        addProgramOption(options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOption(options, alias, field);
+        }
+    }
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
+{
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
+    for (const auto & field : all())
+    {
+        std::string_view name = field.getName();
+        addProgramOptionAsMultitoken(options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOptionAsMultitoken(options, alias, field);
+        }
+    }
+}
+
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
+{
+    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
+{
+    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
+}
+
+template <typename TTraits>
 bool operator==(const BaseSettings<TTraits> & left, const BaseSettings<TTraits> & right)
 {
     auto l = left.begin();
@@ -624,7 +672,7 @@ const SettingFieldCustom * BaseSettings<TTraits>::tryGetCustomSetting(std::strin
 }
 
 template <typename TTraits>
-BaseSettings<TTraits>::Iterator::Iterator(BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
+BaseSettings<TTraits>::Iterator::Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
     : skip_flags(skip_flags_)
 {
     field_ref.settings = &settings_;
@@ -755,18 +803,6 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
             return static_cast<Field>(custom_setting->second);
     }
     return accessor->getValue(*settings, index);
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
-{
-    if constexpr (Traits::allow_custom_settings)
-    {
-        if (custom_setting)
-            custom_setting->second = value;
-    }
-    else
-        accessor->setValue(*settings, index, value);
 }
 
 template <typename TTraits>

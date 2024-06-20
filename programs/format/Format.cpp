@@ -3,25 +3,20 @@
 #include <string_view>
 #include <boost/program_options.hpp>
 
-#include <IO/copyData.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/registerInterpreters.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ErrorCodes.h>
-#include <Common/StringUtils.h>
 #include <Common/TerminalSize.h>
-#include <Core/BaseSettingsProgramOptions.h>
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
-#include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -29,52 +24,21 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
-#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 
-namespace DB::ErrorCodes
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
+namespace DB
 {
-    extern const int NOT_IMPLEMENTED;
-}
-
-namespace
+namespace ErrorCodes
 {
-
-void skipSpacesAndComments(const char*& pos, const char* end, bool print_comments)
-{
-    do
-    {
-        /// skip spaces to avoid throw exception after last query
-        while (pos != end && std::isspace(*pos))
-            ++pos;
-
-        const char * comment_begin = pos;
-        /// for skip comment after the last query and to not throw exception
-        if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
-        {
-            pos += 2;
-            /// skip until the end of the line
-            while (pos != end && *pos != '\n')
-                ++pos;
-            if (print_comments)
-                std::cout << std::string_view(comment_begin, pos - comment_begin) << "\n";
-        }
-        /// need to parse next sql
-        else
-            break;
-    } while (pos != end);
+extern const int INVALID_FORMAT_INSERT_QUERY_WITH_DATA;
 }
-
 }
-
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
-
-extern const char * auto_time_zones[];
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
@@ -86,10 +50,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         desc.add_options()
             ("query", po::value<std::string>(), "query to format")
             ("help,h", "produce help message")
-            ("comments", "keep comments in the output")
             ("hilite", "add syntax highlight with ANSI terminal escape sequences")
             ("oneline", "format in single line")
-            ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
@@ -103,7 +65,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             std::string_view name = field.getName();
             if (name == "max_parser_depth" || name == "max_query_size")
-                addProgramOption(cmd_settings, desc, name, field);
+                cmd_settings.addProgramOption(desc, name, field);
         }
 
         boost::program_options::variables_map options;
@@ -121,8 +83,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool oneline = options.count("oneline");
         bool quiet = options.count("quiet");
         bool multiple = options.count("multiquery");
-        bool print_comments = options.count("comments");
-        size_t max_line_length = options["max_line_length"].as<size_t>();
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
@@ -138,19 +98,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             std::cerr << "Options 'hilite' or 'oneline' or 'quiet' have no sense in 'obfuscate' mode." << std::endl;
             return 2;
         }
-
-        if (oneline && max_line_length)
-        {
-            std::cerr << "Options 'oneline' and 'max_line_length' are mutually exclusive." << std::endl;
-            return 2;
-        }
-
-        if (max_line_length > 255)
-        {
-            std::cerr << "Option 'max_line_length' must be less than 256." << std::endl;
-            return 2;
-        }
-
 
         String query;
 
@@ -172,14 +119,13 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             if (options.count("seed"))
             {
+                std::string seed;
                 hash_func.update(options["seed"].as<std::string>());
             }
 
-            registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
-            registerDatabases();
             registerStorages();
             registerFormats();
 
@@ -187,25 +133,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             auto all_known_storage_names = StorageFactory::instance().getAllRegisteredNames();
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
-            auto all_known_settings = Settings().getAllRegisteredNames();
-            auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
-            additional_names.insert(all_known_settings.begin(), all_known_settings.end());
-            additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
-
-            for (auto * it = auto_time_zones; *it; ++it)
-            {
-                String time_zone_name = *it;
-
-                /// Example: Europe/Amsterdam
-                Strings split;
-                boost::split(split, time_zone_name, [](char c){ return c == '/'; });
-                for (const auto & word : split)
-                    if (!word.empty())
-                        additional_names.insert(word);
-            }
 
             KnownIdentifierFunc is_known_identifier = [&](std::string_view name)
             {
@@ -227,75 +157,30 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             const char * pos = query.data();
             const char * end = pos + query.size();
-            skipSpacesAndComments(pos, end, print_comments);
 
             ParserQuery parser(end, allow_settings_after_format_in_insert);
-            while (pos != end)
+            do
             {
-                size_t approx_query_length = multiple ? find_first_symbols<';'>(pos, end) - pos : end - pos;
-
                 ASTPtr res = parseQueryAndMovePosition(
-                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth, cmd_settings.max_parser_backtracks);
+                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
 
-                std::unique_ptr<ReadBuffer> insert_query_payload;
-                /// If the query is INSERT ... VALUES, then we will try to parse the data.
-                if (auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                /// For insert query with data(INSERT INTO ... VALUES ...), that will lead to the formatting failure,
+                /// we should throw an exception early, and make exception message more readable.
+                if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
-                    if ("Values" != insert_query->format)
-                        throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Can't format INSERT query with data format '{}'", insert_query->format);
-
-                    /// Reset format to default to have `INSERT INTO table VALUES` instead of `INSERT INTO table VALUES FORMAT Values`
-                    insert_query->format = {};
-
-                    /// We assume that data ends with a newline character (same as client does)
-                    const char * this_query_end = find_first_symbols<'\n'>(insert_query->data, end);
-                    insert_query->end = this_query_end;
-                    pos = this_query_end;
-                    insert_query_payload = getReadBufferFromASTInsertQuery(res);
+                    throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
+                        "Can't format ASTInsertQuery with data, since data will be lost");
                 }
 
                 if (!quiet)
                 {
                     if (!backslash)
                     {
-                        WriteBufferFromOwnString str_buf;
-                        formatAST(*res, str_buf, hilite, oneline || approx_query_length < max_line_length);
-
-                        if (insert_query_payload)
-                        {
-                            str_buf.write(' ');
-                            copyData(*insert_query_payload, str_buf);
-                        }
-
-                        String res_string = str_buf.str();
-                        const char * s_pos = res_string.data();
-                        const char * s_end = s_pos + res_string.size();
-                        /// remove trailing spaces
-                        while (s_end > s_pos && isWhitespaceASCIIOneLine(*(s_end - 1)))
-                            --s_end;
-                        WriteBufferFromOStream res_cout(std::cout, 4096);
-                        /// For multiline queries we print ';' at new line,
-                        /// but for single line queries we print ';' at the same line
-                        bool has_multiple_lines = false;
-                        while (s_pos != s_end)
-                        {
-                            if (*s_pos == '\n')
-                                has_multiple_lines = true;
-                            res_cout.write(*s_pos++);
-                        }
-                        res_cout.finalize();
-
-                        if (multiple && !insert_query_payload)
-                        {
-                            if (oneline || !has_multiple_lines)
-                                std::cout << ";\n";
-                            else
-                                std::cout << "\n;\n";
-                        }
-                        else if (multiple && insert_query_payload)
-                            /// Do not need to add ; because it's already in the insert_query_payload
-                            std::cout << "\n";
-
+                        WriteBufferFromOStream res_buf(std::cout, 4096);
+                        formatAST(*res, res_buf, hilite, oneline);
+                        res_buf.finalize();
+                        if (multiple)
+                            std::cout << "\n;\n";
                         std::cout << std::endl;
                     }
                     /// add additional '\' at the end of each line;
@@ -323,10 +208,27 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         std::cout << std::endl;
                     }
                 }
-                skipSpacesAndComments(pos, end, print_comments);
-                if (!multiple)
-                    break;
-            }
+
+                do
+                {
+                    /// skip spaces to avoid throw exception after last query
+                    while (pos != end && std::isspace(*pos))
+                        ++pos;
+
+                    /// for skip comment after the last query and to not throw exception
+                    if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+                    {
+                        pos += 2;
+                        /// skip until the end of the line
+                        while (pos != end && *pos != '\n')
+                            ++pos;
+                    }
+                    /// need to parse next sql
+                    else
+                        break;
+                } while (pos != end);
+
+            } while (multiple && pos != end);
         }
     }
     catch (...)

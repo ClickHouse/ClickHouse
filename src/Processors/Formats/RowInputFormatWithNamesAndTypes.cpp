@@ -7,7 +7,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/PeekableReadBuffer.h>
 #include <Formats/EscapingRuleUtils.h>
 
 
@@ -18,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -68,6 +66,11 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
 {
+    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
+    /// we check if this InputFormat is working with the "real" beginning of the data.
+    if (getCurrentUnitNumber() != 0)
+        return;
+
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
     /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
@@ -124,17 +127,6 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
                     data_types[*column_mapping->column_indexes_for_input_fields[i]]->getName(), type_names[i]);
             }
         }
-    }
-
-    if (format_settings.force_null_for_omitted_fields)
-    {
-        for (auto index : column_mapping->not_presented_columns)
-            if (!isNullableOrLowCardinalityNullable(data_types[index]))
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Cannot insert NULL value into a column type '{}' at index {}",
-                    data_types[index]->getName(),
-                    index);
     }
 }
 
@@ -214,7 +206,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     updateDiagnosticInfo();
 
-    if (likely(getRowNum() != 0 || with_names || with_types || is_header_detected))
+    if (likely(row_num != 1 || getCurrentUnitNumber() != 0 || (getCurrentUnitNumber() == 0 && (with_names || with_types || is_header_detected))))
         format_reader->skipRowBetweenDelimiter();
 
     format_reader->skipRowStartDelimiter();
@@ -229,15 +221,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
             {
                 const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
                 if (rem_column_index)
-                {
-                    if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(data_types[*rem_column_index]))
-                        throw Exception(
-                            ErrorCodes::TYPE_MISMATCH,
-                            "Cannot insert NULL value into a column type '{}' at index {}",
-                            data_types[*rem_column_index]->getName(),
-                            *rem_column_index);
                     columns[*rem_column_index]->insertDefault();
-                }
                 ++file_column;
             }
             break;
@@ -286,7 +270,7 @@ size_t RowInputFormatWithNamesAndTypes::countRows(size_t max_block_size)
         return 0;
 
     size_t num_rows = 0;
-    bool is_first_row = getRowNum() == 0 && !with_names && !with_types && !is_header_detected;
+    bool is_first_row = getTotalRows() == 0 && !with_names && !with_types && !is_header_detected;
     while (!format_reader->checkForSuffix() && num_rows < max_block_size)
     {
         if (likely(!is_first_row))
@@ -339,7 +323,7 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     if (!format_reader->tryParseSuffixWithDiagnosticInfo(out))
         return false;
 
-    if (likely(getRowNum() != 0) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
+    if (likely(row_num != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
         return false;
 
     if (!format_reader->parseRowStartWithDiagnosticInfo(out))
@@ -575,11 +559,6 @@ std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(con
         names.emplace_back(readStringByEscapingRule(field_buf, escaping_rule, format_settings));
     }
     return names;
-}
-
-void FormatWithNamesAndTypesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 }

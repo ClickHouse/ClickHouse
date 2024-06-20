@@ -1,10 +1,9 @@
 #include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 
 
 namespace DB
@@ -23,17 +22,8 @@ BlockIO InterpreterAlterNamedCollectionQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
-    NamedCollectionFactory::instance().updateFromSQL(query);
+    NamedCollectionUtils::updateFromSQL(query, current_context);
     return {};
-}
-
-void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterAlterNamedCollectionQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterAlterNamedCollectionQuery", create_fn);
 }
 
 }

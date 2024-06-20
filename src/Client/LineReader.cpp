@@ -7,7 +7,7 @@
 #include <cassert>
 #include <cstring>
 #include <unistd.h>
-#include <poll.h>
+#include <sys/select.h>
 #include <sys/time.h>
 #include <sys/types.h>
 
@@ -27,8 +27,11 @@ void trim(String & s)
 /// Allows delaying the start of query execution until the entirety of query is inserted.
 bool hasInputData()
 {
-    pollfd fd{STDIN_FILENO, POLLIN, 0};
-    return poll(&fd, 1, 0) == 1;
+    timeval timeout = {0, 0};
+    fd_set fds{};
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
 struct NoCaseCompare
@@ -112,7 +115,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
     return replxx::Replxx::completions_t(range.first, range.second);
 }
 
-void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+void LineReader::Suggest::addWords(Words && new_words)
 {
     Words new_words_no_case = new_words;
     if (!new_words.empty())

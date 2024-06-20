@@ -51,7 +51,7 @@ struct CRC32IEEEImpl : public CRCImpl<UInt32, CRC32_IEEE>
     static constexpr auto name = "CRC32IEEE";
 };
 
-struct CRC32ZLibImpl
+struct CRC32ZLIBImpl
 {
     using ReturnType = UInt32;
     static constexpr auto name = "CRC32";
@@ -133,14 +133,13 @@ private:
     }
 };
 
-template <typename T>
+template <class T>
 using FunctionCRC = FunctionStringOrArrayToT<CRCFunctionWrapper<T>, T, typename T::ReturnType>;
-
 // The same as IEEE variant, but uses 0xffffffff as initial value
 // This is the default
 //
-// (And ZLib is used here, since it has optimized version)
-using FunctionCRC32ZLib = FunctionCRC<CRC32ZLibImpl>;
+// (And zlib is used here, since it has optimized version)
+using FunctionCRC32ZLIB = FunctionCRC<CRC32ZLIBImpl>;
 // Uses CRC-32-IEEE 802.3 polynomial
 using FunctionCRC32IEEE = FunctionCRC<CRC32IEEEImpl>;
 // Uses CRC-64-ECMA polynomial
@@ -148,11 +147,17 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 
 }
 
+template <class T>
+void registerFunctionCRCImpl(FunctionFactory & factory)
+{
+    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
+}
+
 REGISTER_FUNCTION(CRC)
 {
-    factory.registerFunction<FunctionCRC32ZLib>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionCRC32IEEE>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionCRC64ECMA>({}, FunctionFactory::CaseInsensitive);
+    registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
+    registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);
+    registerFunctionCRCImpl<FunctionCRC64ECMA>(factory);
 }
 
 }

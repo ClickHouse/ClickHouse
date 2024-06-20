@@ -13,30 +13,29 @@ struct DiskObjectStorageMetadata
 {
 private:
     /// Metadata file version.
-    static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
-    static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
-    static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
-    static constexpr UInt32 VERSION_INLINE_DATA = 4;
-    static constexpr UInt32 VERSION_FULL_OBJECT_KEY = 5; /// only for reading data
+    static constexpr uint32_t VERSION_ABSOLUTE_PATHS = 1;
+    static constexpr uint32_t VERSION_RELATIVE_PATHS = 2;
+    static constexpr uint32_t VERSION_READ_ONLY_FLAG = 3;
+    static constexpr uint32_t VERSION_INLINE_DATA = 4;
 
-    UInt32 version = VERSION_READ_ONLY_FLAG;
+    const std::string & common_metadata_path;
 
-    /// Absolute paths of blobs
-    ObjectKeysWithMetadata keys_with_meta;
+    /// Relative paths of blobs.
+    RelativePathsWithMetadata storage_objects;
 
-    const std::string compatible_key_prefix;
+    const std::string object_storage_root_path;
 
     /// Relative path to metadata file on local FS.
     const std::string metadata_file_path;
 
     /// Total size of all remote FS (S3, HDFS) objects.
-    UInt64 total_size = 0;
+    size_t total_size = 0;
 
     /// Number of references (hardlinks) to this metadata file.
     ///
-    /// FIXME: Why we are tracking it explicitly, without
+    /// FIXME: Why we are tracking it explicetly, without
     /// info from filesystem????
-    UInt32 ref_count = 0;
+    uint32_t ref_count = 0;
 
     /// Flag indicates that file is read only.
     bool read_only = false;
@@ -47,12 +46,11 @@ private:
 public:
 
     DiskObjectStorageMetadata(
-        String compatible_key_prefix_,
-        String metadata_file_path_);
+        const std::string & common_metadata_path_,
+        const std::string & object_storage_root_path_,
+        const std::string & metadata_file_path_);
 
-    void addObject(ObjectStorageKey key, size_t size);
-
-    ObjectKeyWithMetadata popLastObject();
+    void addObject(const std::string & path, size_t size);
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
@@ -60,9 +58,14 @@ public:
     void serialize(WriteBuffer & buf, bool sync) const;
     std::string serializeToString() const;
 
-    const ObjectKeysWithMetadata & getKeysWithMeta() const
+    std::string getBlobsCommonPrefix() const
     {
-        return keys_with_meta;
+        return object_storage_root_path;
+    }
+
+    RelativePathsWithMetadata getBlobsRelativePaths() const
+    {
+        return storage_objects;
     }
 
     bool isReadOnly() const
@@ -70,12 +73,12 @@ public:
         return read_only;
     }
 
-    UInt32 getRefCount() const
+    uint32_t getRefCount() const
     {
         return ref_count;
     }
 
-    UInt64 getTotalSizeBytes() const
+    uint64_t getTotalSizeBytes() const
     {
         return total_size;
     }
@@ -109,8 +112,6 @@ public:
     {
         return inline_data;
     }
-
-    static bool getWriteFullObjectKeySetting();
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;

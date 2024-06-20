@@ -20,7 +20,7 @@ public:
         char const * data = reinterpret_cast<char *>(buf);
 
         // Invariant should be maintained: new_size > old_size
-        if (data + old_size == arena->head.pos)
+        if (data + old_size == arena->head->pos)
         {
             // Consecutive optimization
             arena->allocContinue(new_size - old_size, data);
@@ -59,7 +59,7 @@ public:
     {
         char const * data = reinterpret_cast<char *>(buf);
 
-        if (data + old_size == arena->head.pos)
+        if (data + old_size == arena->head->pos)
         {
             arena->allocContinue(new_size - old_size, data, alignment);
             return reinterpret_cast<void *>(const_cast<char *>(data));

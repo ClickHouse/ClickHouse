@@ -206,7 +206,7 @@ StorageRedis::StorageRedis(
     , WithContext(context_->getGlobalContext())
     , table_id(table_id_)
     , configuration(configuration_)
-    , log(getLogger("StorageRedis"))
+    , log(&Poco::Logger::get("StorageRedis"))
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
