@@ -217,8 +217,7 @@ public:
 
         if (cur_data.data_size == 0)
         {
-            auto column_nullable = IColumn::mutate(makeNullable(to.getPtr()));
-            column_nullable->insertDefault();
+            to.insertDefault();
             return;
         }
 
