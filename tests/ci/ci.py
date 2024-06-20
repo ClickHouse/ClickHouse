@@ -935,7 +935,9 @@ def _set_pending_statuses(pr_info: PRInfo) -> None:
             print(f"ERROR: failed to set GH commit status, ex: {ex}")
     else:
         last_synced_upstream_commit = pr_info.get_latest_sync_commit()
-        print(f"Set Pending status for [{CI.StatusNames.SYNC}] in upstream PR commit [{last_synced_upstream_commit.sha}]")
+        print(
+            f"Set Pending status for [{CI.StatusNames.SYNC}] in upstream PR commit [{last_synced_upstream_commit.sha}]"
+        )
         post_commit_status(
             last_synced_upstream_commit,
             PENDING,
