@@ -79,85 +79,43 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(remote);
 }
 
-void ErrorLog::startCollectError(size_t collect_interval_milliseconds_)
-{
-    collect_interval_milliseconds = collect_interval_milliseconds_;
-    is_shutdown_error_thread = false;
-    flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });
-}
-
-
-void ErrorLog::stopCollectError()
-{
-    bool old_val = false;
-    if (!is_shutdown_error_thread.compare_exchange_strong(old_val, true))
-        return;
-    if (flush_thread)
-        flush_thread->join();
-}
-
-
-void ErrorLog::shutdown()
-{
-    stopCollectError();
-    stopFlushThread();
-}
-
 struct ValuePair
 {
     UInt64 local = 0;
     UInt64 remote = 0;
 };
 
-void ErrorLog::threadFunction()
+void ErrorLog::stepFunction(TimePoint current_time)
 {
-    auto desired_timepoint = std::chrono::system_clock::now();
-    std::vector<ValuePair> previous_values(ErrorCodes::end());
+    /// Static lazy initialization to avoid polluting the header with implementation details
+    static std::vector<ValuePair> previous_values(ErrorCodes::end());
 
-    while (!is_shutdown_error_thread)
+    auto event_time = std::chrono::system_clock::to_time_t(current_time);
+
+    for (ErrorCodes::ErrorCode code = 0, end = ErrorCodes::end(); code < end; ++code)
     {
-        try
+        const auto & error = ErrorCodes::values[code].get();
+        if (error.local.count != previous_values.at(code).local)
         {
-            const auto current_time = std::chrono::system_clock::now();
-            auto event_time = std::chrono::system_clock::to_time_t(current_time);
-
-            for (ErrorCodes::ErrorCode code = 0, end = ErrorCodes::end(); code < end; ++code)
-            {
-                const auto & error = ErrorCodes::values[code].get();
-                if (error.local.count != previous_values.at(code).local)
-                {
-                    ErrorLogElement local_elem {
-                        .event_time=event_time,
-                        .code=code,
-                        .value=error.local.count - previous_values.at(code).local,
-                        .remote=false
-                    };
-                    this->add(std::move(local_elem));
-                    previous_values[code].local = error.local.count;
-                }
-                if (error.remote.count != previous_values.at(code).remote)
-                {
-                    ErrorLogElement remote_elem {
-                        .event_time=event_time,
-                        .code=code,
-                        .value=error.remote.count - previous_values.at(code).remote,
-                        .remote=true
-                    };
-                    this->add(std::move(remote_elem));
-                    previous_values[code].remote = error.remote.count;
-                }
-            }
-
-            /// We will record current time into table but align it to regular time intervals to avoid time drift.
-            /// We may drop some time points if the server is overloaded and recording took too much time.
-            while (desired_timepoint <= current_time)
-                desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
-
-            std::this_thread::sleep_until(desired_timepoint);
+            ErrorLogElement local_elem {
+                .event_time=event_time,
+                .code=code,
+                .value=error.local.count - previous_values.at(code).local,
+                .remote=false
+            };
+            this->add(std::move(local_elem));
+            previous_values[code].local = error.local.count;
         }
-        catch (...)
+        if (error.remote.count != previous_values.at(code).remote)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            ErrorLogElement remote_elem {
+                .event_time=event_time,
+                .code=code,
+                .value=error.remote.count - previous_values.at(code).remote,
+                .remote=true
+            };
+            this->add(std::move(remote_elem));
+            previous_values[code].remote = error.remote.count;
         }
     }
 }

@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/PeriodicLog.h>
 #include <Common/ErrorCodes.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
-
-#include <atomic>
-#include <ctime>
 
 
 namespace DB
@@ -31,25 +28,12 @@ struct ErrorLogElement
 };
 
 
-class ErrorLog : public SystemLog<ErrorLogElement>
+class ErrorLog : public PeriodicLog<ErrorLogElement>
 {
-    using SystemLog<ErrorLogElement>::SystemLog;
+    using PeriodicLog<ErrorLogElement>::PeriodicLog;
 
-public:
-    void shutdown() override;
-
-    /// Launches a background thread to collect errors with interval
-    void startCollectError(size_t collect_interval_milliseconds_);
-
-    /// Stop background thread
-    void stopCollectError();
-
-private:
-    void threadFunction();
-
-    std::unique_ptr<ThreadFromGlobalPool> flush_thread;
-    size_t collect_interval_milliseconds;
-    std::atomic<bool> is_shutdown_error_thread{false};
+protected:
+    void stepFunction(TimePoint current_time) override;
 };
 
 }

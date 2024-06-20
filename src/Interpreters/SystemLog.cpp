@@ -371,14 +371,14 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollectMetric(collect_interval_milliseconds);
+        metric_log->startCollect(collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollectError(collect_interval_milliseconds);
+        error_log->startCollect(collect_interval_milliseconds);
     }
 
     if (crash_log)
