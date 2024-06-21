@@ -387,10 +387,10 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 
     //36 is prepared for renaming table operation while dropping
     //max_to_drop = max_dropped_length - length_of(database_name)- length_of(uuid) - lenght_of('sql' + 3 dots)
-    auto max_to_drop = static_cast<size_t>(max_dropped_length) - database_name.length() - 48;
+    auto max_to_drop = static_cast<size_t>(max_dropped_length) - escapeForFileName(database_name).length() - 48;
     auto allowed_max_length = max_to_create > max_to_drop ? max_to_drop : max_to_create;
 
-    if (to_table_name.length() > allowed_max_length)
+    if (escapeForFileName(to_table_name).length() > allowed_max_length)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The max length of table name for database {} is {}, current length is {}",
                             database_name, allowed_max_length, to_table_name.length());
 
