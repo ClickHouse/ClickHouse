@@ -3,6 +3,34 @@
 #include <base/extended_types.h>
 #include <base/itoa.h>
 
+namespace
+{
+ALWAYS_INLINE inline char * outOneDigit(char * p, uint8_t value)
+{
+    *p = '0' + value;
+    return p + 1;
+}
+
+// Using a lookup table to convert binary numbers from 0 to 99
+// into ascii characters as described by Andrei Alexandrescu in
+// https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
+const char digits[201] = "00010203040506070809"
+                         "10111213141516171819"
+                         "20212223242526272829"
+                         "30313233343536373839"
+                         "40414243444546474849"
+                         "50515253545556575859"
+                         "60616263646566676869"
+                         "70717273747576777879"
+                         "80818283848586878889"
+                         "90919293949596979899";
+ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
+{
+    memcpy(p, &digits[value * 2], 2);
+    p += 2;
+    return p;
+}
+
 namespace jeaiii
 {
 /*
@@ -84,43 +112,48 @@ template <class T>
 inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
     constexpr auto q = sizeof(T);
-    using U = cond<q == 1, unsigned char, cond<q <= sizeof(short), unsigned short, cond<q <= sizeof(UInt32), UInt32, UInt64>>>;
+    using U = cond<q == 1, char8_t, cond<q <= sizeof(UInt16), UInt16, cond<q <= sizeof(UInt32), UInt32, UInt64>>>;
 
     // convert bool to int before test with unary + to silence warning if T happens to be bool
     U const n = +i < 0 ? *b++ = '-', U(0) - U(i) : U(i);
 
-    if (n < UInt32(1e2))
+    if (n < U(1e2))
     {
-        *reinterpret_cast<pair *>(b) = digits.fd[n];
-        return n < 10 ? b + 1 : b + 2;
+        return n < 10 ? outOneDigit(b, n) : outTwoDigits(b, n);
     }
     if (n < UInt32(1e6))
     {
-        if (n < UInt32(1e4))
+        if (sizeof(U) == 1 || n < U(1e4))
         {
             auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * n;
             *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
-            b -= n < UInt32(1e3);
+            if constexpr (sizeof(U) == 1)
+                b -= 1;
+            else
+                b -= n < U(1e3);
             auto f2 = (f0 & mask24) * 100;
             *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
             return b + 4;
         }
         auto f0 = UInt64(10 * (1ull << 32ull) / 1e5 + 1) * n;
         *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-        b -= n < UInt32(1e5);
+        if constexpr (sizeof(U) == 2)
+            b -= 1;
+        else
+            b -= n < U(1e5);
         auto f2 = (f0 & mask32) * 100;
         *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
         auto f4 = (f2 & mask32) * 100;
         *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
         return b + 6;
     }
-    if (n < UInt64(1ull << 32ull))
+    if (sizeof(U) == 4 || n < UInt64(1ull << 32ull))
     {
-        if (n < UInt32(1e8))
+        if (n < U(1e8))
         {
             auto f0 = UInt64(10 * (1ull << 48ull) / 1e7 + 1) * n >> 16;
             *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
-            b -= n < UInt32(1e7);
+            b -= n < U(1e7);
             auto f2 = (f0 & mask32) * 100;
             *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
             auto f4 = (f2 & mask32) * 100;
@@ -246,28 +279,6 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
     *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
     return b + 8;
 }
-}
-
-namespace
-{
-// Using a lookup table to convert binary numbers from 0 to 99
-// into ascii characters as described by Andrei Alexandrescu in
-// https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
-const char digits[201] = "00010203040506070809"
-                         "10111213141516171819"
-                         "20212223242526272829"
-                         "30313233343536373839"
-                         "40414243444546474849"
-                         "50515253545556575859"
-                         "60616263646566676869"
-                         "70717273747576777879"
-                         "80818283848586878889"
-                         "90919293949596979899";
-ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
-{
-    memcpy(p, &digits[value * 2], 2);
-    p += 2;
-    return p;
 }
 
 const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
