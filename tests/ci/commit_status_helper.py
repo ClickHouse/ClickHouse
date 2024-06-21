@@ -508,16 +508,13 @@ def trigger_mergeable_check(
 
     if not set_if_green and state == SUCCESS:
         # do not set green Mergeable Check status
-        return state
-
-    if set_from_sync:
+        pass
+    elif set_from_sync:
         # update Mergeable Check from sync WF only if its status already present or its new status is not SUCCESS
         #   to avoid false-positives
         if mergeable_status or state != SUCCESS:
             set_mergeable_check(commit, description, state)
-        return state
-
-    if mergeable_status is None or mergeable_status.description != description:
+    elif mergeable_status is None or mergeable_status.description != description:
         set_mergeable_check(commit, description, state)
 
     return state

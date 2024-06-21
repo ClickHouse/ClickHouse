@@ -65,6 +65,7 @@ class GhLabels:
     """
     Labels for GH PRs
     """
+
     PR_PUSHED_TO_CLOUD = "pr-pushed-to-cloud"
 
 
