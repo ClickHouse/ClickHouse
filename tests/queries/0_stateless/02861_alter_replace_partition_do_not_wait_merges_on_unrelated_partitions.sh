@@ -51,7 +51,17 @@ echo Starting merge on t1 partition '1' by \'OPTIMIZE DEDUPLICATE\'ing in a back
 $CLICKHOUSE_CLIENT -nq "OPTIMIZE TABLE t1 PARTITION id '1' DEDUPLICATE BY p;" &
 merge_pid=$!
 
-sleep 0.1 && echo "Give the server a moment to start merge"
+echo "Give the server a moment to start merge"
+
+for attempt in {1..50}
+do
+    part_info=$($CLICKHOUSE_CLIENT -nq "SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1' FORMAT CSV")
+    if [[ "$part_info" == "0,\"1\"" ]]; then
+        break;
+    fi
+    sleep 0.1
+done
+
 $CLICKHOUSE_CLIENT -nm <<'EOF'
 -- { echo }
 -- assume merge started
