@@ -1,12 +1,11 @@
-#include <Core/DecimalComparison.h>
-#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/readDecimalText.h>
-#include <Common/FieldBinaryEncoding.h>
+#include <Core/Field.h>
+#include <Core/DecimalComparison.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
@@ -22,7 +21,6 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
     extern const int DECIMAL_OVERFLOW;
     extern const int INCORRECT_DATA;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 template <is_decimal T>
