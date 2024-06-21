@@ -1,5 +1,7 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/IProcessor.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -10,146 +12,44 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PlanSquashingTransform::PlanSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports)
-    : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header)), squashing(header, min_block_size_rows, min_block_size_bytes)
+PlanSquashingTransform::PlanSquashingTransform(
+    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : IInflatingTransform(header, header), squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
-IProcessor::Status PlanSquashingTransform::prepare()
+void PlanSquashingTransform::consume(Chunk chunk)
 {
-    Status status = Status::Ready;
-
-    while (planning_status != PlanningStatus::FINISH)
-    {
-        switch (planning_status)
-        {
-            case INIT:
-                init();
-                break;
-            case READ_IF_CAN:
-            {
-                status = prepareConsume();
-                if (status != Status::Ready)
-                    return status;
-                break;
-            }
-            case PUSH:
-            {
-                status = sendOrFlush();
-                if (status != Status::Ready)
-                    return status;
-                break;
-            }
-            case FLUSH:
-            {
-                status = sendOrFlush();
-                if (status != Status::Ready)
-                    return status;
-                break;
-            }
-            case FINISH:
-                break; /// never reached
-        }
-    }
-    if (status == Status::Ready)
-        status = finish();
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There should be a Ready status to finish the PlanSquashing");
-
-    return status;
+    LOG_TRACE(getLogger("consume"), "1");
+    if (Chunk current_chunk = squashing.add(std::move(chunk)))
+        squashed_chunk.swap(current_chunk);
 }
 
-void PlanSquashingTransform::init()
+Chunk PlanSquashingTransform::generate()
 {
-    for (auto input: inputs)
-        if (!input.isFinished())
-            input.setNeeded();
+    LOG_TRACE(getLogger("generate"), "1");
+    if (!squashed_chunk.hasChunkInfo())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-    planning_status = PlanningStatus::READ_IF_CAN;
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
 }
 
-IProcessor::Status PlanSquashingTransform::prepareConsume()
+bool PlanSquashingTransform::canGenerate()
 {
-    bool all_finished = true;
-    for (auto & input : inputs)
-    {
-        if (!input.isFinished())
-        {
-            all_finished = false;
-            input.setNeeded();
-        }
-        else
-            continue;
-
-        if (input.hasData())
-        {
-            chunk = input.pull();
-            chunk = transform(std::move(chunk));
-
-            if (chunk.hasChunkInfo())
-            {
-                planning_status = PlanningStatus::PUSH;
-                return Status::Ready;
-            }
-        }
-    }
-
-    if (all_finished) /// If all inputs are closed, we check if we have data in balancing
-    {
-        if (squashing.isDataLeft()) /// If we have data in balancing, we process this data
-        {
-            planning_status = PlanningStatus::FLUSH;
-            chunk = flushChunk();
-            return Status::Ready;
-        }
-        planning_status = PlanningStatus::FINISH;
-        return Status::Ready;
-    }
-
-    return Status::NeedData;
+    LOG_TRACE(getLogger("canGenerate"), "1");
+    return squashed_chunk.hasChunkInfo();
 }
 
-Chunk PlanSquashingTransform::transform(Chunk && chunk_)
+Chunk PlanSquashingTransform::getRemaining()
 {
-    return squashing.add(std::move(chunk_));
-}
+    LOG_TRACE(getLogger("getRemaining"), "1");
+    Chunk current_chunk = squashing.flush();
+    // squashed_chunk.swap(current_chunk);
 
-Chunk PlanSquashingTransform::flushChunk()
-{
-    return squashing.flush();
-}
-
-IProcessor::Status PlanSquashingTransform::sendOrFlush()
-{
-    if (!chunk)
-    {
-        planning_status = PlanningStatus::FINISH;
-        return Status::Ready;
-    }
-
-    for (auto &output : outputs)
-    {
-        if (output.canPush())
-        {
-            if (planning_status == PlanningStatus::PUSH)
-                planning_status = PlanningStatus::READ_IF_CAN;
-            else
-                planning_status = PlanningStatus::FINISH;
-
-            output.push(std::move(chunk));
-            return Status::Ready;
-        }
-    }
-    return Status::PortFull;
-}
-
-IProcessor::Status PlanSquashingTransform::finish()
-{
-    for (auto & in : inputs)
-        in.close();
-    for (auto & output : outputs)
-        output.finish();
-
-    return Status::Finished;
+    // Chunk result_chunk;
+    // result_chunk.swap(squashed_chunk);
+    return current_chunk;
 }
 }
