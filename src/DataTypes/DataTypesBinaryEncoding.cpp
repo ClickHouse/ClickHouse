@@ -39,7 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_TYPE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -275,7 +275,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataType(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr , Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf)
 {
     String function_name;
     readStringBinary(function_name, buf);
@@ -665,7 +665,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         }
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type code: {0:#04x}", UInt64(type));
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type code: {0:#04x}", UInt64(type));
 }
 
 DataTypePtr decodeDataType(const String & data)

@@ -9,9 +9,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int INCORRECT_DATA;
 }
 
-namespace 
+namespace
 {
 
 enum class FieldBinaryTypeIndex: uint8_t
