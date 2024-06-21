@@ -271,9 +271,19 @@ struct BinaryOperation
                 for (size_t i = 0; i < size; ++i)
                 {
                     if (left_nullmap && (*left_nullmap)[i])
-                        c[i] = static_cast<ResultType>(b[i]);
+                    {
+                        if constexpr (op_case == OpCase::RightConstant)
+                            c[i] = *b;
+                        else
+                            c[i] = static_cast<ResultType>(b[i]);
+                    }
                     else if (right_nullmap && (*right_nullmap)[i])
-                        c[i] = static_cast<ResultType>(a[i]);
+                    {
+                        if constexpr (op_case == OpCase::LeftConstant)
+                            c[i] = *a;
+                        else
+                            c[i] = static_cast<ResultType>(a[i]);
+                    }
                     else
                         apply<op_case>(a, b, c, i);
                 }
@@ -605,7 +615,6 @@ public:
             {
                 if constexpr (is_compare)
                 {
-                    std::cout << "will be compareed here 2222" << std::endl;
                     for (size_t i = 0; i < size; ++i)
                     {
                         c[i] = applyScaled<false>(
@@ -614,7 +623,6 @@ public:
                             scale_b,
                             left_nullmap && ((*left_nullmap)[i]),
                             right_nullmap && ((*right_nullmap)[i]));
-                        std::cout << "c[i]:" << std::to_string(static_cast<int>(c[i].value)) << " scale_b:" << static_cast<int>(scale_b) << std::endl;
                     }
                 }
                 else
@@ -696,11 +704,8 @@ private:
         if constexpr (is_compare)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = apply_func(
-                    unwrap<op_case, OpCase::LeftConstant>(a, i), 
-                    unwrap<op_case, OpCase::RightConstant>(b, i),
-                    left_nullmap && (*left_nullmap)[i],
-                    right_nullmap && (*right_nullmap)[i]);
+                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i),
+                    left_nullmap && (*left_nullmap)[i], right_nullmap && (*right_nullmap)[i]);
             return;
         }
 
@@ -764,7 +769,7 @@ private:
     {
         if constexpr (is_compare)
         {
-            if (left_null) 
+            if (left_null)
                 return b;
             else if (right_null)
                 return a;
@@ -787,7 +792,6 @@ private:
     {
         static_assert(is_plus_minus_compare || is_multiply);
         NativeResultType res;
-        
         if constexpr (is_compare)
         {
             if (left_null)
@@ -795,7 +799,6 @@ private:
             else if (right_null)
                 return a * scale;
         }
-
         if constexpr (check_overflow && may_check_overflow)
         {
             bool overflow = false;
@@ -1635,49 +1638,6 @@ public:
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
         }
-
-        // if constexpr (is_compare)
-        // {
-        //     using Types = TypeList<DataTypeFloat32, DataTypeFloat64,
-        //         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-        //         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256>;
-        //         // DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
-            
-        //     DataTypePtr result_type = nullptr;
-        //     bool valid = castTypeToEither(Types{}, removeNullable(arguments[0]).get(), [&](const auto & left_) 
-        //     {
-        //         return castTypeToEither(Types{}, removeNullable(arguments[1]).get(), [&](const auto & right_)
-        //         {
-        //             using A = std::decay_t<decltype(left_)>::FieldType;
-        //             using B = std::decay_t<decltype(right_)>::FieldType;
-        //             using R = Op<A, B>::ResultType;
-        //             if constexpr (std::is_same_v<R, NumberTraits::Error>)
-        //                 return false;
-        //             // else if constexpr (std::is_same_v<R, Decimal32> || std::is_same_v<R, Decimal64> 
-        //             //     || std::is_same_v<R, Decimal128> || std::is_same_v<R, Decimal256>)
-        //             // {
-        //             //      // result_type = std::make_shared<DataTypeDecimal<R>>(6, 2);
-        //             //      return true;
-        //             // }
-        //             else
-        //             {
-        //                 result_type = std::make_shared<DataTypeNumber<R>>();
-        //                 return true;
-        //             }
-        //         });
-        //     });
-            
-        //     if (!valid)
-        //         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The type of arguments is not numberic for binary compare.");
-
-        //     if (!result_type)
-        //         throw Exception(ErrorCodes::LOGICAL_ERROR, "The binary compare function's return type can not be nullable.");
-            
-        //     if (arguments[0]->isNullable() || arguments[1]->isNullable())
-        //         return makeNullable(result_type);
-            
-        //     return result_type;
-        // }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
