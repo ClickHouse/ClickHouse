@@ -678,6 +678,54 @@ def test_s3_glob_scheherazade(started_cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
+# a bit simplified version of scheherazade test
+# checks e.g. `prefix{1,2}/file*.csv`, where there are more than 1000 files under prefix1.
+def test_s3_glob_many_objects_under_selection(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = "(1, 1, 1)"
+    jobs = []
+    for thread_num in range(16):
+
+        def create_files(thread_num):
+            for f_num in range(thread_num * 63, thread_num * 63 + 63):
+                path = f"folder1/file{f_num}.csv"
+                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+                    started_cluster.minio_ip,
+                    MINIO_INTERNAL_PORT,
+                    bucket,
+                    path,
+                    table_format,
+                    values,
+                )
+                run_query(instance, query)
+
+        jobs.append(threading.Thread(target=create_files, args=(thread_num,)))
+        jobs[-1].start()
+
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        started_cluster.minio_ip,
+        MINIO_INTERNAL_PORT,
+        bucket,
+        f"folder2/file0.csv",
+        table_format,
+        values,
+    )
+    run_query(instance, query)
+
+    for job in jobs:
+        job.join()
+
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/folder{{1,2}}/file*.csv', 'CSV', '{}')".format(
+        started_cluster.minio_redirect_host,
+        started_cluster.minio_redirect_port,
+        bucket,
+        table_format,
+    )
+    assert run_query(instance, query).splitlines() == ["1009\t1009\t1009\t1009"]
+
+
 def run_s3_mocks(started_cluster):
     script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
     start_mock_servers(
@@ -1085,6 +1133,7 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1094,6 +1143,7 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(
@@ -1121,6 +1171,7 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1130,6 +1181,7 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
@@ -2101,6 +2153,21 @@ def test_read_subcolumns(started_cluster):
     )
 
 
+def test_read_subcolumn_time(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32') select  (42)"
+    )
+
+    res = instance.query(
+        f"select a, dateDiff('minute', _time, now()) < 59 from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32')"
+    )
+
+    assert res == "42\t1\n"
+
+
 def test_filtering_by_file_or_path(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -2244,3 +2311,44 @@ def test_s3_format_detection(started_cluster):
         )
 
         assert result == expected_result
+
+
+def test_respect_object_existence_on_partitioned_write(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write42.csv', 'CSV', 'x UInt64') select 42 settings s3_truncate_on_insert=1"
+    )
+
+    result = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write42.csv')"
+    )
+
+    assert int(result) == 42
+
+    error = instance.query_and_get_error(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 42 settings s3_truncate_on_insert=0"
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 43 settings s3_truncate_on_insert=1"
+    )
+
+    result = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write42.csv')"
+    )
+
+    assert int(result) == 43
+
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 44 settings s3_truncate_on_insert=0, s3_create_new_file_on_insert=1"
+    )
+
+    result = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write42.1.csv')"
+    )
+
+    assert int(result) == 44

@@ -1,17 +1,18 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -45,13 +46,6 @@ class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
-
-using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>;
-using ConstAggregateDataPtr = const char *;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 struct AggregateFunctionProperties;
 

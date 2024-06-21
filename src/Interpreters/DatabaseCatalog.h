@@ -113,8 +113,10 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
     FutureSetFromSubqueryPtr future_set;
 };
 
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
 ///TODO maybe remove shared_ptr from here?
-using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
@@ -127,6 +129,7 @@ public:
     static constexpr const char * SYSTEM_DATABASE = "system";
     static constexpr const char * INFORMATION_SCHEMA = "information_schema";
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
+    static constexpr const char * DEFAULT_DATABASE = "default";
 
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
@@ -282,7 +285,7 @@ private:
     static constexpr UInt64 bits_for_first_level = 4;
     using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
 
-    static inline size_t getFirstLevelIdx(const UUID & uuid)
+    static size_t getFirstLevelIdx(const UUID & uuid)
     {
         return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
     }

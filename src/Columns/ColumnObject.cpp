@@ -940,7 +940,7 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
     if (nested_node)
     {
         /// Find any leaf of Nested subcolumn.
-        const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto &) { return true; });
+        const auto * leaf = Subcolumns::findLeaf(nested_node, [&](const auto &) { return true; });
         assert(leaf);
 
         /// Recreate subcolumn with default values and the same sizes of arrays.
@@ -983,7 +983,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
     while (current_node)
     {
         /// Try to find the first Nested up to the current node.
-        const auto * node_nested = subcolumns.findParent(current_node,
+        const auto * node_nested = Subcolumns::findParent(current_node,
             [](const auto & candidate) { return candidate.isNested(); });
 
         if (!node_nested)
@@ -993,7 +993,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
         /// for the last rows.
         /// If there are no leaves, skip current node and find
         /// the next node up to the current.
-        leaf = subcolumns.findLeaf(node_nested,
+        leaf = Subcolumns::findLeaf(node_nested,
             [&](const auto & candidate)
             {
                 return candidate.data.size() > old_size;

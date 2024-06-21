@@ -1,10 +1,12 @@
 #include <Parsers/ParserDataType.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -13,18 +15,60 @@ namespace DB
 namespace
 {
 
+/// Parser of Dynamic type arguments: Dynamic(max_types=N)
+class DynamicArgumentsParser : public IParserBase
+{
+private:
+    const char * getName() const override { return "Dynamic data type optional argument"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ASTPtr identifier;
+        ParserIdentifier identifier_parser;
+        if (!identifier_parser.parse(pos, identifier, expected))
+            return false;
+
+        if (pos->type != TokenType::Equals)
+        {
+            expected.add(pos, "equals operator");
+            return false;
+        }
+
+        ++pos;
+
+        ASTPtr number;
+        ParserNumber number_parser;
+        if (!number_parser.parse(pos, number, expected))
+            return false;
+
+        node = makeASTFunction("equals", identifier, number);
+        return true;
+    }
+};
+
 /// Wrapper to allow mixed lists of nested and normal types.
 /// Parameters are either:
 /// - Nested table elements;
 /// - Enum element in form of 'a' = 1;
 /// - literal;
-/// - another data type (or identifier)
+/// - Dynamic type arguments;
+/// - another data type (or identifier);
 class ParserDataTypeArgument : public IParserBase
 {
+public:
+    explicit ParserDataTypeArgument(std::string_view type_name_) : type_name(type_name_)
+    {
+    }
+
 private:
     const char * getName() const override { return "data type argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
+        if (type_name == "Dynamic")
+        {
+            DynamicArgumentsParser parser;
+            return parser.parse(pos, node, expected);
+        }
+
         ParserNestedTable nested_parser;
         ParserDataType data_type_parser;
         ParserAllCollectionsOfLiterals literal_parser(false);
@@ -39,6 +83,8 @@ private:
             || literal_parser.parse(pos, node, expected)
             || data_type_parser.parse(pos, node, expected);
     }
+
+    std::string_view type_name;
 };
 
 }
@@ -56,6 +102,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_parser.parse(pos, identifier, expected))
         return false;
     tryGetIdentifierNameInto(identifier, type_name);
+
+    /// Don't accept things like Array(`x.y`).
+    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    {
+        expected.add(pos, "type name");
+        return false;
+    }
 
     String type_name_upper = Poco::toUpper(type_name);
     String type_name_suffix;
@@ -93,9 +146,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (type_name_upper.find("INT") != std::string::npos)
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
-        if (ParserKeyword(Keyword::SIGNED).ignore(pos))
+        if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))
             type_name_suffix = toStringView(Keyword::SIGNED);
-        else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
+        else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos, expected))
             type_name_suffix = toStringView(Keyword::UNSIGNED);
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
@@ -105,9 +158,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (pos->type != TokenType::ClosingRoundBracket)
                return false;
             ++pos;
-            if (ParserKeyword(Keyword::SIGNED).ignore(pos))
+            if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))
                 type_name_suffix = toStringView(Keyword::SIGNED);
-            else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
+            else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos, expected))
                 type_name_suffix = toStringView(Keyword::UNSIGNED);
         }
 
@@ -140,7 +193,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(type_name), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))

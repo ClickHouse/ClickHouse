@@ -1,20 +1,21 @@
+#include <filesystem>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseFactory.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
+#include <Storages/StorageMaterializedView.h>
+#include "Common/logger_useful.h"
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <filesystem>
-#include <Interpreters/DDLTask.h>
 
 namespace fs = std::filesystem;
 
@@ -81,14 +82,14 @@ void DatabaseAtomic::drop(ContextPtr)
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
-        fs::remove(path_to_metadata_symlink);
-        fs::remove_all(path_to_table_symlinks);
+        (void)fs::remove(path_to_metadata_symlink);
+        (void)fs::remove_all(path_to_table_symlinks);
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -137,6 +138,9 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
+
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
@@ -332,7 +336,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        (void)fs::remove(table_metadata_tmp_path);
         throw;
     }
     if (table->storesDataOnDisk())
@@ -343,7 +347,11 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
                                       const String & /*statement*/, ContextPtr query_context)
 {
     bool check_file_exists = true;
-    SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
+    SCOPE_EXIT({
+        std::error_code code;
+        if (check_file_exists)
+            (void)std::filesystem::remove(table_metadata_tmp_path, code);
+    });
 
     std::lock_guard lock{mutex};
     auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
@@ -386,6 +394,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;
     auto it = detached_tables.begin();
+    LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
         if (it->second.unique())
@@ -396,6 +405,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
         else
             ++it;
     }
+    LOG_DEBUG(log, "Found {} non used tables in detached tables.", not_in_use.size());
     /// It should be destroyed in caller with released database mutex
     return not_in_use;
 }
@@ -417,9 +427,9 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 }
 
 DatabaseTablesIteratorPtr
-DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
+DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name);
+    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
@@ -444,7 +454,7 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
                 "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
         }
 
-        fs::remove(table_path);
+        (void)fs::remove(table_path);
     }
 }
 
@@ -523,7 +533,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     try
     {
         String path = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::remove(path);
+        (void)fs::remove(path);
     }
     catch (...)
     {
@@ -548,7 +558,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
         {
             /// fs::exists could return false for broken symlink
             if (FS::isSymlinkNoThrow(metadata_symlink))
-                fs::remove(metadata_symlink);
+                (void)fs::remove(metadata_symlink);
             fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
@@ -575,7 +585,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 
     try
     {
-        fs::remove(path_to_metadata_symlink);
+        (void)fs::remove(path_to_metadata_symlink);
     }
     catch (...)
     {

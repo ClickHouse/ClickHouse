@@ -49,8 +49,9 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
-    : settings(settings_)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : project_inputs(project_inputs_)
+    , settings(settings_)
 {
     actions_dag = actions_dag_->clone();
 
@@ -615,12 +616,16 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
                 if (res_column.column->getDataType() != res_column.type->getColumnType())
+                {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}",
+                        "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
                         action.node->function->getName(),
-                        res_column.type->getColumnType(),
-                        res_column.column->getDataType());
+                        res_column.type->getName(),
+                        res_column.column->getName(),
+                        action.toString(),
+                        Block(arguments).dumpStructure());
+                }
             }
             break;
         }
@@ -753,7 +758,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
         }
     }
 
-    if (actions_dag->isInputProjected())
+    if (project_inputs)
     {
         block.clear();
     }
@@ -858,7 +863,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
+    ss << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
@@ -922,7 +927,6 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     map->add("Actions", std::move(actions_array));
     map->add("Outputs", std::move(outputs_array));
     map->add("Positions", std::move(positions_array));
-    map->add("Project Input", actions_dag->isInputProjected());
 
     return map;
 }
@@ -976,7 +980,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1125,14 +1129,14 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsDAGPtr & ExpressionActionsChain::Step::actions()
+ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
 }

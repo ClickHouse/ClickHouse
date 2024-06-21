@@ -65,6 +65,10 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     , num_columns_in_mark(num_columns_in_mark_)
     , load_marks_threadpool(load_marks_threadpool_)
 {
+}
+
+void MergeTreeMarksLoader::startAsyncLoad()
+{
     if (load_marks_threadpool)
         future = loadMarksAsync();
 }
@@ -102,6 +106,8 @@ MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 {
+    LOG_TEST(getLogger("MergeTreeMarksLoader"), "Loading marks from path {}", mrk_path);
+
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
@@ -204,7 +210,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+        auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
         if (save_marks_in_cache)
         {
             auto callback = [this] { return loadMarksImpl(); };
@@ -218,7 +224,9 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
         }
     }
     else
+    {
         loaded_marks = loadMarksImpl();
+    }
 
     if (!loaded_marks)
     {
@@ -231,7 +239,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
-    return scheduleFromThreadPool<MarkCache::MappedPtr>(
+    return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);

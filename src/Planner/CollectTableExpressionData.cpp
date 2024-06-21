@@ -90,7 +90,7 @@ public:
 
                 ActionsDAGPtr alias_column_actions_dag = std::make_shared<ActionsDAG>();
                 PlannerActionsVisitor actions_visitor(planner_context, false);
-                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
+                auto outputs = actions_visitor.visit(*alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
@@ -235,7 +235,9 @@ public:
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
         auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+        return child_node_type != QueryTreeNodeType::QUERY &&
+               child_node_type != QueryTreeNodeType::UNION &&
+               child_node_type != QueryTreeNodeType::LAMBDA;
     }
 
 private:
@@ -338,7 +340,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
 
         PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
+        auto expression_nodes = visitor.visit(*prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",

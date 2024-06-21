@@ -34,18 +34,18 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool isEvicting(const CachePriorityGuard::Lock & lock) const
+    bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
         auto iterator = getQueueIterator();
-        if (!iterator)
+        if (!iterator || removed)
             return false;
         return iterator->getEntry()->isEvicting(lock);
     }
 
-    bool isEvicting(const LockedKey & lock) const
+    bool isEvictingOrRemoved(const LockedKey & lock) const
     {
         auto iterator = getQueueIterator();
-        if (!iterator)
+        if (!iterator || removed)
             return false;
         return iterator->getEntry()->isEvicting(lock);
     }
@@ -56,6 +56,11 @@ struct FileSegmentMetadata : private boost::noncopyable
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
         iterator->getEntry()->setEvictingFlag(locked_key, lock);
+    }
+
+    void setRemovedFlag(const LockedKey &, const CachePriorityGuard::Lock &)
+    {
+        removed = true;
     }
 
     void resetEvictingFlag() const
@@ -69,6 +74,8 @@ struct FileSegmentMetadata : private boost::noncopyable
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
+private:
+    bool removed = false;
 };
 
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
@@ -92,7 +99,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
-    enum class KeyState
+    enum class KeyState : uint8_t
     {
         ACTIVE,
         REMOVING,
@@ -106,7 +113,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     LockedKeyPtr tryLock();
 
-    bool createBaseDirectory();
+    bool createBaseDirectory(bool throw_if_failed = false);
 
     std::string getPath() const;
 
@@ -171,7 +178,7 @@ public:
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
-    enum class KeyNotFoundPolicy
+    enum class KeyNotFoundPolicy : uint8_t
     {
         THROW,
         THROW_LOGICAL,

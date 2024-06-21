@@ -12,10 +12,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <memory>
-#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
@@ -55,7 +53,6 @@ using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
-using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -118,13 +115,18 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, config.getUInt(config_prefix + ".thread_pool_size", 16))
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads,
+              CurrentMetrics::IDiskCopierThreadsActive,
+              CurrentMetrics::IDiskCopierThreadsScheduled,
+              config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
     {
     }
 
@@ -320,15 +322,6 @@ public:
         {}
     };
 
-    virtual void getRemotePathsRecursive(
-        const String &, std::vector<LocalPathWithObjectStoragePaths> &, const std::function<bool(const String &)> & /* skip_predicate */)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-            getDataSourceDescription().toString());
-    }
-
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
@@ -371,6 +364,8 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool isWriteOnce() const { return false; }
+
+    virtual bool supportsHardLinks() const { return true; }
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
@@ -474,6 +469,17 @@ public:
     void markDiskAsCustom() { is_custom_disk = true; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
+
+#if USE_AWS_S3
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getS3StorageClient() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+#endif
+
 
 protected:
     friend class DiskDecorator;

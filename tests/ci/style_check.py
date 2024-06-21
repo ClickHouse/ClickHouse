@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import magic
+
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import CI, REPO_COPY, TEMP_PATH
+from env_helper import IS_CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
 from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
@@ -77,23 +78,35 @@ def commit_push_staged(pr_info: PRInfo) -> None:
         return
     git_staged = git_runner("git diff --cached --name-only")
     if not git_staged:
+        logging.info("No fixes are staged")
         return
-    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    head = git_runner("git rev-parse HEAD^{}")
-    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
-    # The fetch to avoid issue 'pushed branch tip is behind its remote'
-    fetch_cmd = (
-        f"{GIT_PREFIX} fetch {remote_url} --no-recurse-submodules --depth=2 {head}"
-    )
-    push_cmd = f"{GIT_PREFIX} push {remote_url} HEAD:{pr_info.head_ref}"
+
+    def push_fix() -> None:
+        """
+        Stash staged changes to commit them on the top of the PR's head.
+        `pull_request` event runs on top of a temporary merge_commit, we need to avoid
+        including it in the autofix
+        """
+        remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+        head = pr_info.sha
+        git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
+        fix_commit = git_runner("git rev-parse HEAD")
+        logging.info(
+            "Fetching PR's head, check it out and cherry-pick autofix: %s", head
+        )
+        git_runner(
+            f"{GIT_PREFIX} fetch {remote_url} --no-recurse-submodules --depth=1 {head}"
+        )
+        git_runner(f"git reset --hard {head}")
+        git_runner(f"{GIT_PREFIX} cherry-pick {fix_commit}")
+        git_runner(f"{GIT_PREFIX} push {remote_url} HEAD:{pr_info.head_ref}")
+
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
         with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-            git_runner(fetch_cmd)
-            git_runner(push_cmd)
+            push_fix()
             return
 
-    git_runner(fetch_cmd)
-    git_runner(push_cmd)
+    push_fix()
 
 
 def _check_mime(file: Union[Path, str], mime: str) -> bool:
@@ -109,12 +122,12 @@ def _check_mime(file: Union[Path, str], mime: str) -> bool:
 
 def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
-    return _check_mime(file, "text/x-script.python")
+    return _check_mime(file, "text/x-script.python") or str(file).endswith(".py")
 
 
 def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
-    return _check_mime(file, "text/x-shellscript")
+    return _check_mime(file, "text/x-shellscript") or str(file).endswith(".sh")
 
 
 def main():
@@ -131,10 +144,15 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
+
+    if pr_info.is_merge_queue and args.push:
+        print("Auto style fix will be disabled for Merge Queue workflow")
+        args.push = False
+
     run_cpp_check = True
     run_shell_check = True
     run_python_check = True
-    if CI and pr_info.number > 0:
+    if IS_CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
         run_cpp_check = any(
             not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
@@ -174,8 +192,14 @@ def main():
             future = executor.submit(subprocess.run, cmd_shell, shell=True)
             _ = future.result()
 
+    autofix_description = ""
     if args.push:
-        commit_push_staged(pr_info)
+        try:
+            commit_push_staged(pr_info)
+        except subprocess.SubprocessError:
+            # do not fail the whole script if the autofix didn't work out
+            logging.error("Unable to push the autofix. Continue.")
+            autofix_description = "Failed to push autofix to the PR. "
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
@@ -187,7 +211,7 @@ def main():
     state, description, test_results, additional_files = process_result(temp_path)
 
     JobReport(
-        description=description,
+        description=f"{autofix_description}{description}",
         test_results=test_results,
         status=state,
         start_time=stopwatch.start_time_str,

@@ -10,9 +10,9 @@ from typing import Any, List
 
 import boto3  # type: ignore
 import requests
+
 from build_download_helper import (
     download_build_with_progress,
-    get_build_name_for_check,
     read_build_urls,
 )
 from compress_files import compress_fast
@@ -24,6 +24,7 @@ from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -200,8 +201,8 @@ def main():
     # always use latest
     docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
 
-    if pr_info.is_scheduled() or pr_info.is_dispatched():
-        # get latest clcikhouse by the static link for latest master buit - get its version and provide permanent url for this version to the jepsen
+    if pr_info.is_scheduled or pr_info.is_dispatched:
+        # get latest clickhouse by the static link for latest master buit - get its version and provide permanent url for this version to the jepsen
         build_url = f"{S3_URL}/{S3_BUILDS_BUCKET}/master/amd64/clickhouse"
         download_build_with_progress(build_url, Path(TEMP_PATH) / "clickhouse")
         git_runner.run(f"chmod +x {TEMP_PATH}/clickhouse")
@@ -223,7 +224,7 @@ def main():
         head = requests.head(build_url, timeout=60)
         assert head.status_code == 200, f"Clickhouse binary not found: {build_url}"
     else:
-        build_name = get_build_name_for_check(check_name)
+        build_name = CI.get_required_build_name(check_name)
         urls = read_build_urls(build_name, REPORT_PATH)
         build_url = None
         for url in urls:

@@ -7,13 +7,9 @@ from functools import reduce
 from hashlib import md5
 from itertools import chain
 
-# isort: off
 # pylint:disable=import-error; for style check
 import sqlglot
 from sqlglot.expressions import ColumnDef, PrimaryKeyColumnConstraint
-
-# pylint:enable=import-error; for style check
-# isort: on
 
 from exceptions import (
     DataResultDiffer,
@@ -22,6 +18,9 @@ from exceptions import (
     ProgramError,
     QueryExecutionError,
 )
+
+# pylint:enable=import-error; for style check
+
 
 logger = logging.getLogger("parser")
 logger.setLevel(logging.DEBUG)
@@ -474,9 +473,11 @@ class QueryResult:
                     f"values_count: {self.values_count}" if self.values_count else "",
                     f"data_hash: {self.data_hash}" if self.data_hash else "",
                     f"exception: {self.exception}" if self.exception else "",
-                    f"hash_threshold: {self.hash_threshold}"
-                    if self.hash_threshold
-                    else "",
+                    (
+                        f"hash_threshold: {self.hash_threshold}"
+                        if self.hash_threshold
+                        else ""
+                    ),
                 ]
                 if x
             )
@@ -525,7 +526,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
-                logger.debug("Builging row. c:%s t:%s", c, t)
+                logger.debug("Building row. c:%s t:%s", c, t)
                 if c is None:
                     res_row.append("NULL")
                     continue

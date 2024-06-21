@@ -27,7 +27,7 @@ struct QueryResultDetails
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
-using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format)>;
+using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
 
 struct QueryFlags
 {

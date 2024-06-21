@@ -64,7 +64,7 @@ public:
     static ProfileEvents::Counters & getProfileEvents();
     inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
     {
-        if (unlikely(!current_thread))
+        if (!current_thread) [[unlikely]]
             return nullptr;
         return &current_thread->memory_tracker;
     }

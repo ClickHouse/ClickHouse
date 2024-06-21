@@ -250,14 +250,16 @@ ALWAYS_INLINE inline char * uitoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize
 //===----------------------------------------------------------===//
 
 // itoa: handle unsigned integral operands (selected by SFINAE)
-template <typename U, std::enable_if_t<!std::is_signed_v<U> && std::is_integral_v<U>> * = nullptr>
+template <typename U>
+requires(!std::is_signed_v<U> && std::is_integral_v<U>)
 ALWAYS_INLINE inline char * itoa(U u, char * p)
 {
     return convert::uitoa(p, u);
 }
 
 // itoa: handle signed integral operands (selected by SFINAE)
-template <typename I, size_t N = sizeof(I), std::enable_if_t<std::is_signed_v<I> && std::is_integral_v<I>> * = nullptr>
+template <typename I, size_t N = sizeof(I)>
+requires(std::is_signed_v<I> && std::is_integral_v<I>)
 ALWAYS_INLINE inline char * itoa(I i, char * p)
 {
     // Need "mask" to be filled with a copy of the sign bit.

@@ -62,14 +62,14 @@ SHOW DICTIONARIES FROM test_truncate_database;
 
 TRUNCATE DATABASE test_truncate_database;
 
-SELECT * FROM dest_view_set ORDER BY x LIMIT 1; -- {serverError 60}
-SELECT * FROM dest_view_memory ORDER BY x LIMIT 1; -- {serverError 60}
-SELECT * FROM dest_view_log ORDER BY x LIMIT 1; -- {serverError 60}
-SELECT * FROM dest_view_tiny_log ORDER BY x LIMIT 1; -- {serverError 60}
-SELECT * FROM dest_view_stripe_log ORDER BY x LIMIT 1; -- {serverError 60}
-SELECT * FROM dest_view_merge_tree ORDER BY x LIMIT 1; -- {serverError 60}
+SELECT * FROM dest_view_set ORDER BY x LIMIT 1; -- {serverError UNKNOWN_TABLE}
+SELECT * FROM dest_view_memory ORDER BY x LIMIT 1; -- {serverError UNKNOWN_TABLE}
+SELECT * FROM dest_view_log ORDER BY x LIMIT 1; -- {serverError UNKNOWN_TABLE}
+SELECT * FROM dest_view_tiny_log ORDER BY x LIMIT 1; -- {serverError UNKNOWN_TABLE}
+SELECT * FROM dest_view_stripe_log ORDER BY x LIMIT 1; -- {serverError UNKNOWN_TABLE}
+SELECT * FROM dest_view_merge_tree ORDER BY x LIMIT 1; -- {serverError UNKNOWN_TABLE}
 SELECT name, database, element_count FROM system.dictionaries WHERE database = 'test_truncate_database' AND name = 'dest_dictionary';
-SELECT * FROM dest_dictionary; -- {serverError 60}
+SELECT * FROM dest_dictionary; -- {serverError UNKNOWN_TABLE}
 SHOW TABLES FROM test_truncate_database;
 SHOW DICTIONARIES FROM test_truncate_database;
 

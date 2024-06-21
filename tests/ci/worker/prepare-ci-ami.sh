@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.313.0
+export RUNNER_VERSION=2.316.1
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -91,6 +91,8 @@ apt-get install --yes --no-install-recommends azure-cli
 
 # Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
 echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
+# Workarond for sanitizers uncompatibility with some kernels, see https://github.com/google/sanitizers/issues/856
+echo "vm.mmap_rnd_bits=28" > /etc/sysctl.d/02-vm-mmap_rnd_bits.conf
 
 systemctl restart docker
 
@@ -155,30 +157,55 @@ apt-get install tailscale --yes --no-install-recommends
 
 # Create a common script for the instances
 mkdir /usr/local/share/scripts -p
-cat > /usr/local/share/scripts/init-network.sh << 'EOF'
-#!/usr/bin/env bash
+setup_cloudflare_dns() {
+    # Add cloudflare DNS as a fallback
+    # Get default gateway interface
+    local IFACE ETH_DNS CLOUDFLARE_NS new_dns
+    IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
+    # `Link 2 (eth0): 172.31.0.2`
+    ETH_DNS=$(resolvectl dns "$IFACE") || :
+    CLOUDFLARE_NS=1.1.1.1
+    if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
+      # Cut the leading legend
+      ETH_DNS=${ETH_DNS#*: }
+      # shellcheck disable=SC2206
+      new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
+      resolvectl dns "$IFACE" "${new_dns[@]}"
+    fi
+}
 
-# Add cloudflare DNS as a fallback
-# Get default gateway interface
-IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
-# `Link 2 (eth0): 172.31.0.2`
-ETH_DNS=$(resolvectl dns "$IFACE") || :
-CLOUDFLARE_NS=1.1.1.1
-if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
-  # Cut the leading legend
-  ETH_DNS=${ETH_DNS#*: }
-  # shellcheck disable=SC2206
-  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
-  resolvectl dns "$IFACE" "${new_dns[@]}"
-fi
+setup_tailscale() {
+    # Setup tailscale, the very first action
+    local TS_API_CLIENT_ID TS_API_CLIENT_SECRET TS_AUTHKEY RUNNER_TYPE
+    TS_API_CLIENT_ID=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-id --query 'Parameter.Value' --output text --with-decryption)
+    TS_API_CLIENT_SECRET=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-secret --query 'Parameter.Value' --output text --with-decryption)
 
-# Setup tailscale, the very first action
-TS_API_CLIENT_ID=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-id --query 'Parameter.Value' --output text --with-decryption)
-TS_API_CLIENT_SECRET=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-secret --query 'Parameter.Value' --output text --with-decryption)
-export TS_API_CLIENT_ID TS_API_CLIENT_SECRET
-TS_AUTHKEY=$(get-authkey -tags tag:svc-core-ci-github -reusable -ephemeral)
-tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$INSTANCE_ID"
+    RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
+    RUNNER_TYPE=${RUNNER_TYPE:-unknown}
+    # Clean possible garbage from the runner type
+    RUNNER_TYPE=${RUNNER_TYPE//[^0-9a-z]/-}
+    TS_AUTHKEY=$(TS_API_CLIENT_ID="$TS_API_CLIENT_ID" TS_API_CLIENT_SECRET="$TS_API_CLIENT_SECRET" \
+                 get-authkey -tags tag:svc-core-ci-github -ephemeral)
+    tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$RUNNER_TYPE-$INSTANCE_ID"
+}
+
+cat > /usr/local/share/scripts/init-network.sh << EOF
+!/usr/bin/env bash
+$(declare -f setup_cloudflare_dns)
+
+$(declare -f setup_tailscale)
+
+# If the script is sourced, it will return now and won't execute functions
+return 0 &>/dev/null || :
+
+echo Setup Cloudflare DNS
+setup_cloudflare_dns
+
+echo Setup Tailscale VPN
+setup_tailscale
 EOF
+
+chmod +x /usr/local/share/scripts/init-network.sh
 
 
 # The following line is used in aws TOE check.

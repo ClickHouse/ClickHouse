@@ -1,9 +1,12 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <base/errnoToString.h>
-#include <base/defines.h>
+#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -78,6 +81,7 @@ namespace DB
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
         extern const int SYSTEM_ERROR;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -141,6 +145,9 @@ static std::atomic_flag fatal_error_printed;
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+        siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
+
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -149,6 +156,12 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
+
+#if USE_GWP_ASAN
+    if (const auto fault_address = reinterpret_cast<uintptr_t>(info->si_addr);
+        GWPAsan::isGWPAsanError(fault_address))
+        GWPAsan::printReport(fault_address);
+#endif
 
     writeBinary(sig, out);
     writePODBinary(*info, out);
@@ -181,6 +194,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     errno = saved_errno;
 }
+
 
 static bool getenvBool(const char * name)
 {
@@ -330,6 +344,7 @@ private:
         const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         ThreadStatus * thread_ptr) const
+    try
     {
         ThreadStatus thread_status;
 
@@ -494,7 +509,8 @@ private:
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
-            SentryWriter::onFault(sig, error_message, stack_trace);
+            if (auto * sentry = SentryWriter::getInstance())
+                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
 
             /// Advice the user to send it manually.
             if (std::string_view(VERSION_OFFICIAL).contains("official build"))
@@ -517,7 +533,7 @@ private:
             }
         }
 
-        /// ClickHouse Keeper does not link to some part of Settings.
+        /// ClickHouse Keeper does not link to some parts of Settings.
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
@@ -535,11 +551,17 @@ private:
         }
 #endif
 
-        /// When everything is done, we will try to send these error messages to client.
+        /// When everything is done, we will try to send these error messages to the client.
         if (thread_ptr)
             thread_ptr->onFatalError();
 
         fatal_error_printed.test_and_set();
+    }
+    catch (...)
+    {
+        /// onFault is called from the std::thread, and it should catch all exceptions; otherwise, you can get unrelated fatal errors.
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+        LOG_FATAL(getLogger(__PRETTY_FUNCTION__), message);
     }
 };
 
@@ -663,7 +685,7 @@ void BaseDaemon::reloadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(fs::path(config_path).parent_path());
+    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -695,6 +717,8 @@ BaseDaemon::~BaseDaemon()
         }
 
     signal_pipe.close();
+
+    SentryWriter::resetInstance();
 }
 
 
@@ -725,6 +749,7 @@ std::string BaseDaemon::getDefaultConfigFileName() const
 
 void BaseDaemon::closeFDs()
 {
+#if !defined(USE_XRAY)
     /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
     fs::path proc_path{"/dev/fd"};
@@ -772,13 +797,13 @@ void BaseDaemon::closeFDs()
             }
         }
     }
+#endif
 }
 
 
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
-
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -1005,7 +1030,25 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    SentryWriter::initialize(config());
+    SentryWriter::initializeInstance(config());
+    if (config().getBool("send_crash_reports.send_logical_errors", false))
+    {
+        /// In release builds send it to sentry (if it is configured)
+        if (auto * sentry = SentryWriter::getInstance())
+        {
+            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+            {
+                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+                {
+                    SentryWriter::FramePointers frame_pointers;
+                    for (size_t i = 0; i < trace.size(); ++i)
+                        frame_pointers[i] = trace[i];
+                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                }
+            };
+        }
+    }
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
