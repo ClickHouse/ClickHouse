@@ -54,9 +54,20 @@ private:
         if (1 == num_arguments)
             return arguments[0].column;
 
-        Columns converted_columns(num_arguments);
+        Columns converted_columns;
         for (size_t arg = 0; arg < num_arguments; ++arg)
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        {
+            if (!isNothing(removeNullable(arguments[arg].type)))
+            {
+                auto converted_col = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+                converted_columns.emplace_back(converted_col);
+            }
+        }
+
+        if (converted_columns.empty())
+            return arguments[0].column;
+        else if (converted_columns.size() == 1)
+            return converted_columns[0];
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -64,7 +75,7 @@ private:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
-            for (size_t arg = 1; arg < num_arguments; ++arg)
+            for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
                 if constexpr (kind == LeastGreatest::Least)
                 {
@@ -114,6 +125,21 @@ public:
         if (arguments.size() == 2 && isNumber(removeNullable(arguments[0].type)) && isNumber(removeNullable(arguments[1].type)))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
 
+        if (isNothing(removeNullable(return_type)))
+        {
+            DataTypes non_null_types;
+            for (size_t i = 0; i < argument_types.size(); ++i)
+            {
+                if (!removeNullable(argument_types[i])->onlyNull())
+                    non_null_types.push_back(argument_types[i]);
+            }
+            if (!non_null_types.empty())
+            {
+                const DataTypePtr & result_type = getReturnTypeImpl(non_null_types);
+                return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                        FunctionLeastGreatestGeneric<kind>::create(context), argument_types, result_type);
+            }
+        }
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionLeastGreatestGeneric<kind>::create(context), argument_types, return_type);
     }
