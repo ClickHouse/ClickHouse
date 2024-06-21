@@ -29,7 +29,7 @@ TEST(PartitionActionBlocker, TestCancelForever)
 
 TEST(PartitionActionBlocker, TestCancel)
 {
-    const std::string partition_id = "some partition id";
+//    const std::string partition_id = "some partition id";
     PartitionActionBlocker blocker;
 
     {
@@ -255,15 +255,6 @@ TEST(PartitionActionBlocker, TestFormatDebug)
     auto lock_bar = blocker.cancelForPartition("BAR");
 
     EXPECT_NE("", blocker.formatDebug());
-}
-
-namespace std {
-template <typename R, typename P>
-inline ostream & operator<<(ostream & ostr, const chrono::duration<R, P> & d) {
-
-    const auto seconds = d.count() * 1.0 * P::num / P::den;
-    return ostr << std::fixed << std::setprecision(1) << seconds << "s";
-}
 }
 
 template <>
