@@ -35,8 +35,7 @@ public:
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        Updater && updater,
-        bool already_loaded);
+        Updater && updater);
 
     ~ConfigReloader();
 
@@ -53,7 +52,7 @@ public:
 private:
     void run();
 
-    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading);
+    std::optional<ConfigProcessor::LoadedConfig> reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading);
 
     struct FileWithTimestamp;
 
@@ -67,7 +66,7 @@ private:
 
     FilesChangesTracker getNewFileList() const;
 
-    static constexpr auto reload_interval = std::chrono::seconds(2);
+    static constexpr auto DEFAULT_RELOAD_INTERVAL = std::chrono::milliseconds(2000);
 
     LoggerPtr log = getLogger("ConfigReloader");
 
@@ -84,6 +83,8 @@ private:
 
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread;
+
+    std::chrono::milliseconds reload_interval = DEFAULT_RELOAD_INTERVAL;
 
     /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;
