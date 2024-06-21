@@ -6,7 +6,10 @@ def test_startup_scripts():
 
     node = cluster.add_instance(
         "node",
-        main_configs=["configs/config.xml"],
+        main_configs=[
+            "configs/config.d/query_log.xml",
+            "configs/config.d/startup_scripts.xml",
+        ],
         with_zookeeper=False,
     )
 
