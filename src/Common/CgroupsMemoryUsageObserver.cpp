@@ -230,7 +230,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
 #    endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
             uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-            LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(memory_usage));
+            LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
             MemoryTracker::setRSS(memory_usage, 0);
 
             LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
@@ -302,7 +302,7 @@ void CgroupsMemoryUsageObserver::runThread()
             if (soft_limit > 0 && hard_limit > 0)
             {
                 uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-                LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(memory_usage));
+                LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
                 if (memory_usage > hard_limit)
                 {
                     if (last_memory_usage <= hard_limit)
