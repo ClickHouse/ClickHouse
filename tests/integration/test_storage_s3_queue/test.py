@@ -1475,7 +1475,7 @@ def test_settings_check(started_cluster):
     )
 
     assert (
-        "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. Stored in ZooKeeper: 2, local: 3"
+        "Existing table metadata in ZooKeeper differs in buckets setting. Stored in ZooKeeper: 2, local: 3"
         in create_table(
             started_cluster,
             node_2,
