@@ -285,6 +285,10 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'"
+        },
+        {
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
         },
@@ -293,12 +297,20 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'",
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'"
+        },
+        {
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
             "throws Syntax error"
+        },
+        {
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
+            "throws Only one identified with is permitted"
         }
 })));
 
