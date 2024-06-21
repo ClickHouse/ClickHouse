@@ -126,9 +126,13 @@ void StorageS3QueueSource::FileIterator::returnForRetry(Source::ObjectInfoPtr ob
 
 void StorageS3QueueSource::FileIterator::releaseHoldBuckets()
 {
-    for (const auto & [_, holders] : bucket_holders)
+    for (const auto & [processor, holders] : bucket_holders)
+    {
+        LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
+
         for (const auto & bucket_holder : holders)
             bucket_holder->release();
+    }
 }
 
 std::pair<StorageS3QueueSource::Source::ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr>
@@ -635,7 +639,7 @@ Chunk StorageS3QueueSource::generateImpl()
     return {};
 }
 
-void StorageS3QueueSource::commit(bool success, const std::string & exception)
+void StorageS3QueueSource::commit(bool success, const std::string & exception_message)
 {
     LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
              processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
@@ -649,7 +653,7 @@ void StorageS3QueueSource::commit(bool success, const std::string & exception)
         }
         else
             file_metadata->setFailed(
-                exception,
+                exception_message,
                 /* reduce_retry_count */false,
                 /* overwrite_status */true);
     }

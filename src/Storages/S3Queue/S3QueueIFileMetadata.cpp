@@ -258,16 +258,16 @@ void S3QueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
-void S3QueueIFileMetadata::setFailed(const std::string & exception, bool reduce_retry_count, bool overwrite_status)
+void S3QueueIFileMetadata::setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status)
 {
     LOG_TRACE(log, "Setting file {} as failed (path: {}, reduce retry count: {}, exception: {})",
-              path, failed_node_path, reduce_retry_count, exception);
+              path, failed_node_path, reduce_retry_count, exception_message);
 
     ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
     if (overwrite_status || file_status->state != FileStatus::State::Failed)
-        file_status->onFailed(exception);
+        file_status->onFailed(exception_message);
 
-    node_metadata.last_exception = exception;
+    node_metadata.last_exception = exception_message;
 
     if (reduce_retry_count)
     {
@@ -282,7 +282,7 @@ void S3QueueIFileMetadata::setFailed(const std::string & exception, bool reduce_
         {
             auto full_exception = fmt::format(
                 "First exception: {}, exception while setting file as failed: {}",
-                exception, getCurrentExceptionMessage(true));
+                exception_message, getCurrentExceptionMessage(true));
 
             file_status->onFailed(full_exception);
             throw;

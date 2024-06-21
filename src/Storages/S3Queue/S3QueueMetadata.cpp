@@ -222,7 +222,7 @@ S3QueueMetadata::Bucket S3QueueMetadata::getBucketForPath(const std::string & pa
 S3QueueOrderedFileMetadata::BucketHolderPtr
 S3QueueMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
 {
-    return S3QueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor);
+    return S3QueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
 void S3QueueMetadata::initialize(

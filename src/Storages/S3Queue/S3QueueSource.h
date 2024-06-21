@@ -57,8 +57,8 @@ public:
         void returnForRetry(Source::ObjectInfoPtr object_info);
 
         /// Release hold buckets.
-        /// In fact, they will anyway be release in destructors of BucketHolder,
-        /// but we anyway release it explicitly,
+        /// In fact, they could be released in destructors of BucketHolder,
+        /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseHoldBuckets();
 
@@ -85,7 +85,7 @@ public:
         std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
 
         /// Is glob_iterator finished?
-        bool iterator_finished = false;
+        std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
         std::deque<Source::ObjectInfoPtr> objects_to_retry;
@@ -123,7 +123,7 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool success, const std::string & exception = {});
+    void commit(bool success, const std::string & exception_message = {});
 
 private:
     const String name;
