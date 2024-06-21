@@ -134,7 +134,6 @@ protected:
                 cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
                 cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
                 cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
-                LOG_DEBUG(getLogger("StorageSystemColumns"), "Get column sizes for table {}.{}", database_name, table_name);
                 column_sizes = storage->getColumnSizes();
             }
 

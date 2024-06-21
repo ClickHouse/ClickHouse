@@ -1,3 +1,5 @@
+-- Tags: atomic-database
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
 INSERT INTO test SELECT number, 'str_' || toString(number) FROM numbers(10);
