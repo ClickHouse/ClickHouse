@@ -1,8 +1,9 @@
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <Interpreters/Squashing.h>
-#include <Parsers/ASTInsertQuery.h>
+#include "Interpreters/AsynchronousInsertQueue.h"
+#include "Interpreters/SquashingTransform.h"
+#include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -245,6 +246,7 @@ TCPHandler::~TCPHandler()
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     extractConnectionSettingsFromContext(server.context());
 
@@ -884,16 +886,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
+    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
-        squashing.header = state.block_for_insert;
-        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
-        if (planned_chunk.hasChunkInfo())
+        auto result = squashing.add(std::move(state.block_for_insert));
+        if (result)
         {
-            Chunk result_chunk = DB::Squashing::squash(std::move(planned_chunk));
-            auto result = state.block_for_insert.cloneWithColumns(result_chunk.getColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -902,12 +901,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    auto planned_chunk = squashing.flush();
-    Chunk result_chunk;
-    if (planned_chunk.hasChunkInfo())
-        result_chunk = DB::Squashing::squash(std::move(planned_chunk));
-
-    auto result = squashing.header.cloneWithColumns(result_chunk.getColumns());
+    auto result = squashing.add({});
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
