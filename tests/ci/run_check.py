@@ -5,7 +5,6 @@ from typing import Tuple
 
 from github import Github
 
-from ci_config import StatusNames
 from commit_status_helper import (
     create_ci_report,
     format_description,
@@ -24,6 +23,7 @@ from lambda_shared_package.lambda_shared.pr import (
 )
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
+from ci_config import CI
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -208,7 +208,7 @@ def main():
             PENDING,
             ci_report_url,
             description,
-            StatusNames.CI,
+            CI.StatusNames.CI,
             pr_info,
         )
 
