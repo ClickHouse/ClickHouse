@@ -7,7 +7,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/Transforms/TTLTransform.h>
@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 
 namespace ProfileEvents
@@ -1267,7 +1268,7 @@ private:
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
-    std::vector<SquashingTransform> projection_squashes;
+    std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
     ExecutableTaskPtr merge_projection_parts_task_ptr;
@@ -1286,7 +1287,7 @@ void PartMergerWriter::prepare()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squashes.emplace_back(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 
     existing_rows_count = 0;
@@ -1311,16 +1312,18 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             const auto & projection = *ctx->projections_to_build[i];
 
-            Block projection_block;
-            {
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
-            }
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+            Block block_to_squash = projection.calculate(cur_block, ctx->context);
+            projection_squashes[i].header = block_to_squash;
+            Chunk planned_chunk = projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
 
-            if (projection_block)
+            if (planned_chunk.hasChunkInfo())
             {
+                Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
+
+                auto result = block_to_squash.cloneWithColumns(projection_chunk.getColumns());
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                    *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
                 tmp_part.part->getDataPartStorage().commitTransaction();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
@@ -1338,12 +1341,15 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         const auto & projection = *ctx->projections_to_build[i];
-        auto & projection_squash = projection_squashes[i];
-        auto projection_block = projection_squash.add({});
-        if (projection_block)
+        auto & projection_squash_plan = projection_squashes[i];
+        auto planned_chunk = projection_squash_plan.flush();
+        if (planned_chunk.hasChunkInfo())
         {
+            Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
+
+            auto result = projection_squash_plan.header.cloneWithColumns(projection_chunk.getColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
             temp_part.part->getDataPartStorage().commitTransaction();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));

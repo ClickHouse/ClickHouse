@@ -183,7 +183,7 @@ const ActionsDAG::Node * appendExpression(
     const JoinNode & join_node)
 {
     PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*dag, expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -603,7 +603,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         {
             auto mixed_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
             PlannerActionsVisitor join_expression_visitor(planner_context);
-            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(mixed_join_expressions_actions, join_expression);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*mixed_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());

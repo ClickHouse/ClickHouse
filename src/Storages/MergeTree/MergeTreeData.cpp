@@ -1981,6 +1981,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
+try
 {
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
@@ -1996,6 +1997,9 @@ void MergeTreeData::loadUnexpectedDataParts()
     }
 
     ThreadFuzzer::maybeInjectSleep();
+
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
 
     for (auto & load_state : unexpected_data_parts)
@@ -2026,6 +2030,13 @@ void MergeTreeData::loadUnexpectedDataParts()
         unexpected_data_parts_loading_finished = true;
         unexpected_data_parts_cv.notify_all();
     }
+}
+catch (...)
+{
+    LOG_ERROR(log, "Loading of unexpected parts failed. "
+        "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
+        "Exception: {}", getCurrentExceptionMessage(true));
+    std::terminate();
 }
 
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
@@ -7050,7 +7061,7 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
         filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
 
     if (before_where)
-        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+        filter_nodes.nodes.push_back(&before_where->dag.findInOutputs(where_column_name));
 
     return filter_nodes;
 }

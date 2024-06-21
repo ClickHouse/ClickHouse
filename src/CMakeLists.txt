@@ -285,7 +285,7 @@ if (TARGET ch_contrib::llvm)
 endif ()
 
 if (TARGET ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::gwp_asan)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::gwp_asan)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
 endif()
 

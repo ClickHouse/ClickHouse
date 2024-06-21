@@ -186,6 +186,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
+
     CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
@@ -202,6 +203,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
+
         CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;

@@ -1823,7 +1823,6 @@ private:
         {
             writer->finalize();
             writer->flush();
-            write_buf->finalize();
         }
         catch (...)
         {
@@ -1831,12 +1830,14 @@ private:
             release();
             throw;
         }
+
+        write_buf->finalize();
     }
 
     void release()
     {
         writer.reset();
-        write_buf->finalize();
+        write_buf.reset();
     }
 
     StorageMetadataPtr metadata_snapshot;

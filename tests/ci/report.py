@@ -21,7 +21,7 @@ from typing import (
 )
 
 from build_download_helper import get_gh_api
-from ci_config import CI_CONFIG, BuildConfig
+from ci_config import CI
 from ci_utils import normalize_string
 from env_helper import REPORT_PATH, TEMP_PATH
 
@@ -412,6 +412,7 @@ class BuildResult:
         ref_report = None
         master_report = None
         any_report = None
+        Path(REPORT_PATH).mkdir(parents=True, exist_ok=True)
         for file in Path(REPORT_PATH).iterdir():
             if f"{build_name}.json" in file.name:
                 any_report = file
@@ -448,8 +449,10 @@ class BuildResult:
         return json.dumps(asdict(self), indent=2)
 
     @property
-    def build_config(self) -> Optional[BuildConfig]:
-        return CI_CONFIG.build_config.get(self.build_name, None)
+    def build_config(self) -> Optional[CI.BuildConfig]:
+        if self.build_name not in CI.JOB_CONFIGS:
+            return None
+        return CI.JOB_CONFIGS[self.build_name].build_config
 
     @property
     def comment(self) -> str:
