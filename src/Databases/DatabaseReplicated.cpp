@@ -73,9 +73,10 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
+static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
-    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
+    UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
+    return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -122,6 +123,13 @@ DatabaseReplicated::DatabaseReplicated(
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
+
+    if (!replica_group_name.empty() && database_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+    {
+        context_->addWarningMessage(fmt::format("There's a Replicated database with a name starting from '{}', "
+                                                "and replica_group_name is configured. It may cause collisions in cluster names.",
+                                                ALL_GROUPS_CLUSTER_PREFIX));
+    }
 }
 
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
@@ -173,13 +181,40 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     return cluster;
 }
 
-void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
+ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
 {
     std::lock_guard lock{mutex};
-    cluster = std::move(new_cluster);
+    if (replica_group_name.empty())
+        return nullptr;
+
+    if (cluster_all_groups)
+        return cluster_all_groups;
+
+    /// Database is probably not created or not initialized yet, it's ok to return nullptr
+    if (is_readonly)
+        return cluster_all_groups;
+
+    try
+    {
+        cluster_all_groups = getClusterImpl(/*all_groups*/ true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+    return cluster_all_groups;
 }
 
-ClusterPtr DatabaseReplicated::getClusterImpl() const
+void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
+{
+    std::lock_guard lock{mutex};
+    if (all_groups)
+        cluster_all_groups = std::move(new_cluster);
+    else
+        cluster = std::move(new_cluster);
+}
+
+ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 {
     Strings unfiltered_hosts;
     Strings hosts;
@@ -199,17 +234,24 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
-        hosts.clear();
-        std::vector<String> paths;
-        for (const auto & host : unfiltered_hosts)
-            paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-        auto replica_groups = zookeeper->tryGet(paths);
-
-        for (size_t i = 0; i < paths.size(); ++i)
+        if (all_groups)
         {
-            if (replica_groups[i].data == replica_group_name)
-                hosts.push_back(unfiltered_hosts[i]);
+            hosts = unfiltered_hosts;
+        }
+        else
+        {
+            hosts.clear();
+            std::vector<String> paths;
+            for (const auto & host : unfiltered_hosts)
+                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+            auto replica_groups = zookeeper->tryGet(paths);
+
+            for (size_t i = 0; i < paths.size(); ++i)
+            {
+                if (replica_groups[i].data == replica_group_name)
+                    hosts.push_back(unfiltered_hosts[i]);
+            }
         }
 
         Int32 cversion = stat.cversion;
@@ -274,6 +316,11 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
+
+    String cluster_name = TSA_SUPPRESS_WARNING_FOR_READ(database_name);     /// FIXME
+    if (all_groups)
+        cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
+
     ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
@@ -282,7 +329,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         Priority{1},
-        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
+        cluster_name,
         cluster_auth_info.cluster_secret};
 
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
@@ -369,13 +416,23 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 return;
             }
 
-            String host_id = getHostID(getContext(), db_uuid);
-            if (is_create_query || replica_host_id != host_id)
+            String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+            String host_id_default = getHostID(getContext(), db_uuid, false);
+
+            if (is_create_query || (replica_host_id != host_id && replica_host_id != host_id_default))
             {
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+            }
+
+            /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
+            /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
+            if (host_id != host_id_default && replica_host_id == host_id_default)
+            {
+                current_zookeeper->set(replica_path, host_id, -1);
+                createEmptyLogEntry(current_zookeeper);
             }
 
             /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
@@ -504,7 +561,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
                         "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(getContext(), db_uuid);
+    auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
 
     for (int attempts = 10; attempts > 0; --attempts)
     {

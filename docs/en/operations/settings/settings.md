@@ -1590,6 +1590,22 @@ Possible values:
 
 Default value: `default`.
 
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
+
+When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
+
+When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
 ## allow_experimental_parallel_reading_from_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
@@ -3862,6 +3878,10 @@ Possible values:
 
 Default value: 30.
 
+:::note
+It's applicable only to the default profile. A server reboot is required for the changes to take effect.
+:::
+
 ## http_receive_timeout {#http_receive_timeout}
 
 HTTP receive timeout (in seconds).
@@ -4616,16 +4636,6 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
-## max_untracked_memory {#max_untracked_memory}
-Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when amount (in absolute value) becomes larger than specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
-
-Default value: `4MiB`.
-
-## min_untracked_memory {#min_untracked_memory}
-Lower bound for untracked memory limit which is applied to threads with low memory consumption. Untracked memory limit equals thread memory usage divided by 16 and clamped between `min_untracked_memory` and `max_untracked_memory` for every thread. It guarantees that total untracked memory does not exceed 10% of current memory footprint even with a lot of small threads. To disable dynamic limit for untracked memory set value `4MiB`.
-
-Default value: `4KiB`.
-
 ## Schema Inference settings
 
 See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
@@ -5140,7 +5150,7 @@ Allows using statistic to optimize the order of [prewhere conditions](../../sql-
 
 ## analyze_index_with_space_filling_curves
 
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 
 ## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
@@ -5407,6 +5417,12 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## uniform_snowflake_conversion_functions {#uniform_snowflake_conversion_functions}
+
+If set to `true`, then functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` are enabled, and functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are disabled (and vice versa if set to `false`).
+
+Default value: `true`
 
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 
