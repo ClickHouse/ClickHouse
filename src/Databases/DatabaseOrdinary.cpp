@@ -187,7 +187,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name) mutable
+    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -227,7 +227,6 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     permanently_detached_tables.push_back(table_name);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
 
-                    // @TODO refactoring
                     auto parsed_table_metadata = ParsedTableMetadata{full_path.string(), ast};
                     const auto & query = parsed_table_metadata.ast->as<const ASTCreateQuery &>();
 
@@ -249,10 +248,9 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     snapshot_detached_table.is_permanently = true;
                     snapshot_detached_table.metadata_path = getObjectMetadataPath(snapshot_detached_table.table);
 
-
                     snapshot_detached_tables.emplace(detached_table_name, std::move(snapshot_detached_table));
 
-                    LOG_TRACE(log, "Add detached table {} to system.detached_tables", detached_table_name);
+                    LOG_TRACE(log, "Add permanently detached table {} to system.detached_tables", detached_table_name);
                     return;
                 }
 

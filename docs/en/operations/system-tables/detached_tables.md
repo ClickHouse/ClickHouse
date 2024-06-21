@@ -9,13 +9,13 @@ Columns:
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
-- `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid (Atomic database).
 
-- `is_permanently` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag indicates that the table was detached PERMANENTLY.
-
 - `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
+
+- `is_permanently` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag indicates that the table was detached PERMANENTLY.
 
 
 **Example**
@@ -28,9 +28,8 @@ SELECT * FROM system.detached_tables FORMAT Vertical;
 Row 1:
 ──────
 database:                   base
-name:                       t1
+table:                      t1
 uuid:                       81b1c20a-b7c6-4116-a2ce-7583fb6b6736
-data_paths:                 ['/var/lib/clickhouse/store/81b/81b1c20a-b7c6-4116-a2ce-7583fb6b6736/']
 metadata_path:              /var/lib/clickhouse/store/461/461cf698-fd0b-406d-8c01-5d8fd5748a91/t1.sql
 is_permanently:             1
 ```

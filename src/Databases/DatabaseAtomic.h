@@ -85,7 +85,6 @@ protected:
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
-
     NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
 
     DetachedTables detached_tables TSA_GUARDED_BY(mutex);
