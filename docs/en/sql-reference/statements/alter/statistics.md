@@ -25,7 +25,7 @@ Also, they are replicated, syncing statistics metadata via ZooKeeper.
 There is an example adding two statistics types to two columns:
 
 ```
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq, CMSketch;
 ```
 
 :::note    

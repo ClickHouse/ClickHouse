@@ -5,6 +5,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/TDigestStatistics.h>
 #include <Storages/Statistics/UniqStatistics.h>
+#include <Storages/Statistics/CMSketchStatistics.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <IO/ReadHelpers.h>
@@ -25,6 +26,28 @@ enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
 };
+
+std::optional<Float64> getFloat64(const Field & f)
+{
+    const auto type = f.getType();
+    Float64 value;
+    if (type == Field::Types::Int64)
+        value = f.get<Int64>();
+    else if (type == Field::Types::UInt64)
+        value = f.get<UInt64>();
+    else if (type == Field::Types::Float64)
+        value = f.get<Float64>();
+    else
+        return {};
+    return value;
+}
+
+std::optional<String> getString(const Field & f)
+{
+    if (f.getType() == Field::Types::String)
+        return f.get<String>();
+    return {};
+}
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
 
@@ -54,9 +77,10 @@ Float64 ColumnStatistics::estimateGreater(Float64 val) const
     return rows - estimateLess(val);
 }
 
-Float64 ColumnStatistics::estimateEqual(Float64 val) const
+Float64 ColumnStatistics::estimateEqual(Field val) const
 {
-    if (stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    auto float_val = getFloat64(val);
+    if (float_val && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         auto uniq_static = std::static_pointer_cast<UniqStatistics>(stats.at(StatisticsType::Uniq));
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
@@ -64,9 +88,16 @@ Float64 ColumnStatistics::estimateEqual(Float64 val) const
         if (uniq_static->getCardinality() < 2048)
         {
             auto tdigest_static = std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest));
-            return tdigest_static->estimateEqual(val);
+            return tdigest_static->estimateEqual(float_val.value());
         }
     }
+#if USE_DATASKETCHES
+    if (stats.contains(StatisticsType::CMSketch))
+    {
+        auto cmsketch_static = std::static_pointer_cast<CMSketchStatistics>(stats.at(StatisticsType::CMSketch));
+        return cmsketch_static->estimateEqual(val);
+    }
+#endif
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)
         return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
     else
@@ -145,6 +176,10 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerCreator(StatisticsType::Uniq, UniqCreator);
     registerValidator(StatisticsType::TDigest, TDigestValidator);
     registerValidator(StatisticsType::Uniq, UniqValidator);
+#if USE_DATASKETCHES
+    registerCreator(StatisticsType::CMSketch, CMSketchCreator);
+    registerValidator(StatisticsType::CMSketch, CMSketchValidator);
+#endif
 }
 
 MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()

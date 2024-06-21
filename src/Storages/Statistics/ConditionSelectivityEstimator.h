@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/Statistics/Statistics.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ private:
 
         Float64 estimateGreater(Float64 val, Float64 rows) const;
 
-        Float64 estimateEqual(Float64 val, Float64 rows) const;
+        Float64 estimateEqual(Field val, Float64 rows) const;
     };
 
     static constexpr auto default_good_cond_factor = 0.1;
@@ -37,7 +38,7 @@ private:
     UInt64 total_rows = 0;
     std::set<String> part_names;
     std::map<String, ColumnSelectivityEstimator> column_estimators;
-    std::pair<String, Float64> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const;
+    std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const;
 
 public:
     /// TODO: Support the condition consists of CNF/DNF like (cond1 and cond2) or (cond3) ...

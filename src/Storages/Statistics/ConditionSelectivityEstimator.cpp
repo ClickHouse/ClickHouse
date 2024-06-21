@@ -35,11 +35,14 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
     return rows - estimateLess(val, rows);
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(Float64 val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(Field val, Float64 rows) const
 {
+    auto float_val = getFloat64(val);
     if (part_statistics.empty())
     {
-        if (val < - threshold || val > threshold)
+        if (!float_val)
+            return default_unknown_cond_factor * rows;
+        else if (float_val.value() < - threshold || float_val.value() > threshold)
             return default_normal_cond_factor * rows;
         else
             return default_good_cond_factor * rows;
@@ -87,7 +90,7 @@ static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNod
     return result;
 }
 
-std::pair<String, Float64> ConditionSelectivityEstimator::extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const
+std::pair<String, Field> ConditionSelectivityEstimator::extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const
 {
     if (!node.isFunction())
         return {};
@@ -123,18 +126,7 @@ std::pair<String, Float64> ConditionSelectivityEstimator::extractBinaryOp(const 
     DataTypePtr output_type;
     if (!constant_node->tryGetConstant(output_value, output_type))
         return {};
-
-    const auto type = output_value.getType();
-    Float64 value;
-    if (type == Field::Types::Int64)
-        value = output_value.get<Int64>();
-    else if (type == Field::Types::UInt64)
-        value = output_value.get<UInt64>();
-    else if (type == Field::Types::Float64)
-        value = output_value.get<Float64>();
-    else
-        return {};
-    return std::make_pair(function_name, value);
+    return std::make_pair(function_name, output_value);
 }
 
 Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
@@ -142,7 +134,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     auto result = tryToExtractSingleColumn(node);
     if (result.second != 1)
     {
-        return default_unknown_cond_factor;
+        return default_unknown_cond_factor * total_rows;
     }
     String col = result.first;
     auto it = column_estimators.find(col);
@@ -152,19 +144,16 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     bool dummy = total_rows == 0;
     ColumnSelectivityEstimator estimator;
     if (it != column_estimators.end())
-    {
         estimator = it->second;
-    }
     else
-    {
         dummy = true;
-    }
     auto [op, val] = extractBinaryOp(node, col);
+    auto float_val = getFloat64(val);
     if (op == "equals")
     {
         if (dummy)
         {
-            if (val < - threshold || val > threshold)
+            if (!float_val || (float_val < - threshold || float_val > threshold))
                 return default_normal_cond_factor * total_rows;
             else
                 return default_good_cond_factor * total_rows;
@@ -175,13 +164,13 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     {
         if (dummy)
             return default_normal_cond_factor * total_rows;
-        return estimator.estimateLess(val, total_rows);
+        return estimator.estimateLess(float_val.value(), total_rows);
     }
     else if (op == "greater" || op == "greaterOrEquals")
     {
         if (dummy)
             return default_normal_cond_factor * total_rows;
-        return estimator.estimateGreater(val, total_rows);
+        return estimator.estimateGreater(float_val.value(), total_rows);
     }
     else
         return default_unknown_cond_factor * total_rows;

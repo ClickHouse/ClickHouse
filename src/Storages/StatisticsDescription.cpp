@@ -54,6 +54,8 @@ static StatisticsType stringToStatisticsType(String type)
         return StatisticsType::TDigest;
     if (type == "uniq")
         return StatisticsType::Uniq;
+    if (type == "cmsketch")
+        return StatisticsType::CMSketch;
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are `tdigest` and `uniq`.", type);
 }
 
@@ -65,6 +67,8 @@ String SingleStatisticsDescription::getTypeName() const
             return "TDigest";
         case StatisticsType::Uniq:
             return "Uniq";
+        case StatisticsType::CMSketch:
+            return "CMSketch";
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are `tdigest` and `uniq`.", type);
     }

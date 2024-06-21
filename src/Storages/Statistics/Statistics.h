@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Core/Field.h>
 #include <Storages/StatisticsDescription.h>
 
 
@@ -58,7 +59,7 @@ public:
 
     Float64 estimateGreater(Float64 val) const;
 
-    Float64 estimateEqual(Float64 val) const;
+    Float64 estimateEqual(Field val) const;
 
 private:
 
@@ -100,4 +101,6 @@ private:
     Validators validators;
 };
 
+std::optional<Float64> getFloat64(const Field & f);
+std::optional<String> getString(const Field & f);
 }
