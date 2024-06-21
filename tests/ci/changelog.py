@@ -33,6 +33,7 @@ from version_helper import (
 categories_preferred_order = (
     "Backward Incompatible Change",
     "New Feature",
+    "Experimental Feature",
     "Performance Improvement",
     "Improvement",
     "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
