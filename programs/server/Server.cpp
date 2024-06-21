@@ -10,6 +10,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
+#include <Poco/Config.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -721,11 +722,6 @@ try
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
-    Poco::ThreadPool server_pool(3, server_settings.max_connections);
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -822,6 +818,18 @@ try
         if (server_settings.total_memory_profiler_sample_max_allocation_size)
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
+
+    Poco::ThreadPool server_pool(
+        /* minCapacity */3,
+        /* maxCapacity */server_settings.max_connections,
+        /* idleTime */60,
+        /* stackSize */POCO_THREAD_STACK_SIZE,
+        server_settings.global_profiler_real_time_period_ns,
+        server_settings.global_profiler_cpu_time_period_ns);
+
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
@@ -1608,6 +1616,10 @@ try
                 new_server_settings.max_parts_cleaning_thread_pool_size,
                 0, // We don't need any threads one all the parts will be deleted
                 new_server_settings.max_parts_cleaning_thread_pool_size);
+
+
+            global_context->setMergeWorkload(new_server_settings.merge_workload);
+            global_context->setMutationWorkload(new_server_settings.mutation_workload);
 
             if (config->has("resources"))
             {

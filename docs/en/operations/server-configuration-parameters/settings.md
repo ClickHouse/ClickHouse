@@ -591,6 +591,22 @@ Default value: 100000
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
+## max\_table\_num\_to\_throw {#max-table-num-to-throw}
+If number of tables is greater than this value, server will throw an exception. 0 means no limitation. View, remote tables, dictionary, system tables are not counted. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.Default value: 0
+
+**Example**
+```xml
+<max_table_num_to_throw>400</max_table_num_to_throw>
+```
+
+## max\_database\_num\_to\_throw {#max-table-num-to-throw}
+If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
+Default value: 0
+
+**Example**
+```xml
+<max_database_num_to_throw>400</max_database_num_to_throw>
+```
 
 ## max_temporary_data_on_disk_size
 
@@ -3084,3 +3100,21 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
+
+## merge_workload {#merge_workload}
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload {#mutation_workload}
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)

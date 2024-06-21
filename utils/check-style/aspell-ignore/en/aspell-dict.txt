@@ -963,6 +963,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -1458,6 +1459,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1541,6 +1543,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1898,6 +1901,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
@@ -2476,6 +2480,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
