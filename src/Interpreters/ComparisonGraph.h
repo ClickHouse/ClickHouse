@@ -154,7 +154,7 @@ private:
         const Graph & reversed_graph, size_t v,
         OptionalIndices & components, size_t component);
 
-    enum class Path
+    enum class Path : uint8_t
     {
         GREATER,
         GREATER_OR_EQUAL,

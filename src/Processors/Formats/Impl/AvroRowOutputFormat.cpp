@@ -52,7 +52,7 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }

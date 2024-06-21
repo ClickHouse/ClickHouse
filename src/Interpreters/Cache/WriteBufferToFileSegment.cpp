@@ -7,8 +7,9 @@
 
 #include <base/scope_guard.h>
 
-#include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -25,9 +26,9 @@ namespace
     {
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
-            return query_context->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return query_context->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
         else
-            return Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return Context::getGlobalContextInstance()->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
     }
 }
 
@@ -53,10 +54,18 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
 void WriteBufferToFileSegment::nextImpl()
 {
     auto downloader [[maybe_unused]] = file_segment->getOrSetDownloader();
-    chassert(downloader == FileSegment::getCallerId());
+    if (downloader != FileSegment::getCallerId())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Failed to set a downloader (current downloader: {}, file segment info: {})",
+                        downloader, file_segment->getInfoForLog());
+    }
 
     SCOPE_EXIT({
-        file_segment->completePartAndResetDownloader();
+        if (file_segment->isDownloader())
+            file_segment->completePartAndResetDownloader();
+        else
+            chassert(false);
     });
 
     size_t bytes_to_write = offset();
@@ -101,14 +110,11 @@ void WriteBufferToFileSegment::nextImpl()
 
 std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
+    /** Finalize here and we don't need to finalize in the destructor,
+      * because in case destructor called without `getReadBufferImpl` called, data won't be read.
+      */
     finalize();
     return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
-}
-
-WriteBufferToFileSegment::~WriteBufferToFileSegment()
-{
-    /// To be sure that file exists before destructor of segment_holder is called
-    WriteBufferFromFileDecorator::finalize();
 }
 
 }

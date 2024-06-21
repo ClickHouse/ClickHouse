@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SELECT '-- test FORMAT clause --';
 SET output_format_write_statistics = 0;
 SELECT number, 'Hello & world' FROM numbers(3) FORMAT Tsv;

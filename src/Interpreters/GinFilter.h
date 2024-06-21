@@ -2,11 +2,11 @@
 
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <vector>
-#include <memory>
 
 namespace DB
 {
 
+static inline constexpr auto FULL_TEXT_INDEX_NAME = "full_text";
 static inline constexpr auto INVERTED_INDEX_NAME = "inverted";
 static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
@@ -34,7 +34,7 @@ struct GinSegmentWithRowIdRange
 
 using GinSegmentWithRowIdRangeVector = std::vector<GinSegmentWithRowIdRange>;
 
-/// GinFilter provides underlying functionalities for building inverted index and also
+/// GinFilter provides underlying functionalities for building full-text index and also
 /// it does filtering the unmatched rows according to its query string.
 /// It also builds and uses skipping index which stores (segmentID, RowIDStart, RowIDEnd) triples.
 class GinFilter
@@ -44,7 +44,7 @@ public:
     explicit GinFilter(const GinFilterParameters & params_);
 
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
-    /// for building inverted index for the given store.
+    /// for building full-text index for the given store.
     void add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const;
 
     /// Accumulate (segmentID, RowIDStart, RowIDEnd) for building skipping index

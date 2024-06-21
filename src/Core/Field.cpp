@@ -20,9 +20,16 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
     extern const int DECIMAL_OVERFLOW;
+    extern const int INCORRECT_DATA;
 }
 
-inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
+template <is_decimal T>
+T DecimalField<T>::getScaleMultiplier() const
+{
+    return DecimalUtils::scaleMultiplier<T>(scale);
+}
+
+Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
     {
@@ -140,7 +147,7 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::CustomType:
             return Field();
     }
-    UNREACHABLE();
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
@@ -569,7 +576,7 @@ template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-inline void writeText(const Null & x, WriteBuffer & buf)
+void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
         writeText("-Inf", buf);
@@ -627,5 +634,9 @@ std::string_view Field::getTypeName() const
     return fieldTypeToString(which);
 }
 
-
+template class DecimalField<Decimal32>;
+template class DecimalField<Decimal64>;
+template class DecimalField<Decimal128>;
+template class DecimalField<Decimal256>;
+template class DecimalField<DateTime64>;
 }

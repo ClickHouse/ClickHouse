@@ -9,6 +9,12 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'backport/**'
+
+# Cancel the previous wf run in PRs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -64,7 +70,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Compatibility check (amd64)
+      test_name: Compatibility check (release)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckAarch64:
@@ -188,7 +194,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Install packages (amd64)
+      test_name: Install packages (release)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
@@ -198,7 +204,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Install packages (arm64)
+      test_name: Install packages (aarch64)
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
@@ -267,5 +273,5 @@ jobs:
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py
+          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
           python3 merge_pr.py

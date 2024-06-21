@@ -171,11 +171,13 @@ public:
      * ========== Methods used by `cache` ========================
      */
 
-    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
+    FileSegmentGuard::Lock lock() const;
 
     Priority::IteratorPtr getQueueIterator() const;
 
     void setQueueIterator(Priority::IteratorPtr iterator);
+
+    void resetQueueIterator();
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -202,7 +204,7 @@ public:
     bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
-    void write(const char * from, size_t size, size_t offset);
+    void write(char * from, size_t size, size_t offset);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
@@ -241,7 +243,6 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-    FileSegmentGuard::Lock lockFileSegment() const;
 
     String tryGetPath() const;
 

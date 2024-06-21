@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cerrno>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -90,8 +91,9 @@ void KeeperStateMachine::init()
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
+            chassert(latest_snapshot_info);
 
-            if (isLocalDisk(*latest_snapshot_info.disk))
+            if (isLocalDisk(*latest_snapshot_info->disk))
                 latest_snapshot_buf = nullptr;
 
             storage = std::move(snapshot_deserialization_result.storage);
@@ -564,79 +566,84 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     }
 
     /// create snapshot task for background execution (in snapshot thread)
-    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot)
+    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = true;
-        try
+        if (!execute_only_cleanup)
         {
-            { /// Read storage data without locks and create snapshot
-                std::lock_guard lock(snapshots_lock);
+            try
+            {
+                { /// Read storage data without locks and create snapshot
+                    std::lock_guard lock(snapshots_lock);
 
-                if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
-                {
-                    LOG_INFO(
-                        log,
-                        "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
-                        "created",
-                        snapshot->snapshot_meta->get_last_log_idx(),
-                        latest_snapshot_meta->get_last_log_idx());
-                }
-                else
-                {
-                    latest_snapshot_meta = snapshot->snapshot_meta;
-                    /// we rely on the fact that the snapshot disk cannot be changed during runtime
-                    if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
+                    if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                     {
-                        auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                        latest_snapshot_info = std::move(snapshot_info);
-                        latest_snapshot_buf = nullptr;
+                        LOG_INFO(
+                            log,
+                            "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
+                            "created",
+                            snapshot->snapshot_meta->get_last_log_idx(),
+                            latest_snapshot_meta->get_last_log_idx());
                     }
                     else
                     {
-                        auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                        auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                        latest_snapshot_info = std::move(snapshot_info);
-                        latest_snapshot_buf = std::move(snapshot_buf);
-                    }
+                        latest_snapshot_meta = snapshot->snapshot_meta;
+                        /// we rely on the fact that the snapshot disk cannot be changed during runtime
+                        if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
+                        {
+                            auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                            latest_snapshot_info = std::move(snapshot_info);
+                            latest_snapshot_buf = nullptr;
+                        }
+                        else
+                        {
+                            auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
+                            auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                            latest_snapshot_info = std::move(snapshot_info);
+                            latest_snapshot_buf = std::move(snapshot_buf);
+                        }
 
-                    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), latest_snapshot_info.path);
+                        ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
+                        LOG_DEBUG(
+                            log,
+                            "Created persistent snapshot {} with path {}",
+                            latest_snapshot_meta->get_last_log_idx(),
+                            latest_snapshot_info->path);
+                    }
                 }
             }
-
+            catch (...)
             {
-                /// Destroy snapshot with lock
-                std::lock_guard lock(storage_and_responses_lock);
-                LOG_TRACE(log, "Clearing garbage after snapshot");
-                /// Turn off "snapshot mode" and clear outdate part of storage state
-                storage->clearGarbageAfterSnapshot();
-                LOG_TRACE(log, "Cleared garbage after snapshot");
-                snapshot.reset();
+                ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
+                LOG_TRACE(log, "Exception happened during snapshot");
+                tryLogCurrentException(log);
+                ret = false;
             }
         }
-        catch (...)
         {
-            ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
-            LOG_TRACE(log, "Exception happened during snapshot");
-            tryLogCurrentException(log);
-            ret = false;
+            /// Destroy snapshot with lock
+            std::lock_guard lock(storage_and_responses_lock);
+            LOG_TRACE(log, "Clearing garbage after snapshot");
+            /// Turn off "snapshot mode" and clear outdate part of storage state
+            storage->clearGarbageAfterSnapshot();
+            LOG_TRACE(log, "Cleared garbage after snapshot");
+            snapshot.reset();
         }
 
         when_done(ret, exception);
 
-        return ret ? latest_snapshot_info : SnapshotFileInfo{};
+        return ret ? latest_snapshot_info : nullptr;
     };
-
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
-        auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+        auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
-        if (!snapshot_file_info.path.empty() && snapshot_manager_s3)
+        if (snapshot_file_info && snapshot_manager_s3)
         {
-            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info.path);
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info->path);
             snapshot_manager_s3->uploadSnapshot(snapshot_file_info, /* asnyc_upload */ false);
         }
 
@@ -671,7 +678,7 @@ void KeeperStateMachine::save_logical_snp_obj(
         latest_snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
         latest_snapshot_meta = cloned_meta;
         latest_snapshot_buf = std::move(cloned_buffer);
-        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info.path);
+        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info->path);
         obj_id++;
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
     }
@@ -732,7 +739,7 @@ int KeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const auto & [path, disk] = latest_snapshot_info;
+    const auto & [path, disk, size] = *latest_snapshot_info;
     if (isLocalDisk(*disk))
     {
         auto full_path = fs::path(disk->getPath()) / path;
@@ -861,12 +868,27 @@ uint64_t KeeperStateMachine::getKeyArenaSize() const
     return storage->getArenaDataSize();
 }
 
-uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
+uint64_t KeeperStateMachine::getLatestSnapshotSize() const
 {
-    std::lock_guard lock(snapshots_lock);
-    if (latest_snapshot_buf)
-        return latest_snapshot_buf->size();
-    return 0;
+    auto snapshot_info = [&]
+    {
+        std::lock_guard lock(snapshots_lock);
+        return latest_snapshot_info;
+    }();
+
+    if (snapshot_info == nullptr || snapshot_info->disk == nullptr)
+        return 0;
+
+    /// there is a possibility multiple threads can try to get size
+    /// this can happen in rare cases while it's not a heavy operation
+    size_t size = snapshot_info->size.load(std::memory_order_relaxed);
+    if (size == 0)
+    {
+        size = snapshot_info->disk->getFileSize(snapshot_info->path);
+        snapshot_info->size.store(size, std::memory_order_relaxed);
+    }
+
+    return size;
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const

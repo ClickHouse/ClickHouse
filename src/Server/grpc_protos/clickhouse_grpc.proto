@@ -192,7 +192,7 @@ message Exception {
 message Result {
    string query_id = 9;
    string time_zone = 10;
-   
+
    // The format in which `output`, `totals` and `extremes` are written.
    // It's either the same as `output_format` specified in `QueryInfo` or the format specified in the query itself.
    string output_format = 11;

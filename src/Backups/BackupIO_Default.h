@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupIO.h>
+#include <Common/Logger.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
@@ -12,7 +13,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ReadBuffer;
 class SeekableReadBuffer;
 class WriteBuffer;
-enum class WriteMode;
+enum class WriteMode : uint8_t;
 
 /// Represents operations of loading from disk or downloading for reading a backup.
 class BackupReaderDefault : public IBackupReader

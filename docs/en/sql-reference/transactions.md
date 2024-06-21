@@ -127,7 +127,7 @@ See the [deployment](docs/en/deployment-guides/terminology.md) documentation for
 
 #### Verify that experimental transactions are enabled
 
-Issue a `BEGIN TRANSACTION` followed by a `ROLLBACK` to verify that experimental transactions are enabled, and that ClickHouse Keeper is enabled as it is used to track transactions. 
+Issue a `BEGIN TRANSACTION` or `START TRANSACTION` followed by a `ROLLBACK` to verify that experimental transactions are enabled, and that ClickHouse Keeper is enabled as it is used to track transactions. 
 
 ```sql
 BEGIN TRANSACTION

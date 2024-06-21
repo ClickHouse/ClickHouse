@@ -90,6 +90,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
@@ -100,7 +102,7 @@ public:
     {
         std::vector<std::string> paths_to_archives;
         std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
 
         bool isSingleFileRead() const
         {
@@ -134,7 +136,7 @@ public:
         const ContextPtr & context,
         size_t & total_bytes_to_read);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -277,6 +279,7 @@ private:
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
+    std::optional<Poco::Timestamp> current_file_last_modified;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
@@ -286,7 +289,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

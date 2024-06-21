@@ -12,8 +12,10 @@ OK
 2
 2
 OK
+1
 ===== MaterializedView =====
 OK
+1
 0
 0
 OK
@@ -22,6 +24,9 @@ OK
 2
 OK
 OK
+OK
+100
+100
 ===== TestGrants =====
 OK
 OK
@@ -30,3 +35,5 @@ OK
 2	2
 6	6
 9	9
+1000
+1000

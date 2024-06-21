@@ -18,7 +18,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include <Disks/DiskFactory.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Common/randomSeed.h>
@@ -153,7 +152,6 @@ public:
             return dir_path / entry->path().filename();
     }
 
-
     String name() const override { return entry->path().filename(); }
 
 private:
@@ -225,7 +223,7 @@ static UInt64 getTotalSpaceByName(const String & name, const String & disk_path,
 {
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data/").string());
+        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_frsize;
@@ -249,7 +247,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
     /// available for superuser only and for system purposes
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data/").string());
+        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_frsize;
@@ -299,7 +297,7 @@ void DiskLocal::createDirectories(const String & path)
 void DiskLocal::clearDirectory(const String & path)
 {
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
-        fs::remove(entry.path());
+        (void)fs::remove(entry.path());
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
@@ -379,7 +377,7 @@ void DiskLocal::removeDirectory(const String & path)
 
 void DiskLocal::removeRecursive(const String & path)
 {
-    fs::remove_all(fs::path(disk_path) / path);
+    (void)fs::remove_all(fs::path(disk_path) / path);
 }
 
 void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
@@ -582,7 +580,7 @@ try
         auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
-        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
+        buf->write(data.data, DiskWriteCheckData::PAGE_SIZE_IN_BYTES);
         buf->finalize();
         buf->sync();
     }

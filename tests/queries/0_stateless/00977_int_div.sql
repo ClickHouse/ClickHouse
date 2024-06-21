@@ -28,4 +28,4 @@ SELECT -1 DIV number FROM numbers(1, 10);
 SELECT toInt32(number) DIV -1 FROM numbers(1, 10);
 SELECT toInt64(number) DIV -1 FROM numbers(1, 10);
 SELECT number DIV -number FROM numbers(1, 10);
-SELECT -1 DIV 0;  -- { serverError 153 }
+SELECT -1 DIV 0;  -- { serverError ILLEGAL_DIVISION }

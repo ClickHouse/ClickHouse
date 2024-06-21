@@ -1,22 +1,23 @@
-#include <Processors/Transforms/WindowTransform.h>
-
-#include <limits>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Processors/Transforms/WindowTransform.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <base/arithmeticOverflow.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/convertFieldToType.h>
-#include <DataTypes/DataTypeDateTime64.h>
+
+#include <limits>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -36,7 +37,7 @@ struct fmt::formatter<DB::RowNumber>
     }
 
     template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx)
+    auto format(const DB::RowNumber & x, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
     }
@@ -173,6 +174,79 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
 }
 
 // Helper macros to dispatch on type of the ORDER BY column
+#define APPLY_FOR_ONE_NEST_TYPE(FUNCTION, TYPE) \
+else if (typeid_cast<const TYPE *>(nest_compared_column.get())) \
+{ \
+    /* clang-tidy you're dumb, I can't put FUNCTION in braces here. */ \
+    nest_compare_function = FUNCTION<TYPE>; /* NOLINT */ \
+}
+
+#define APPLY_FOR_NEST_TYPES(FUNCTION) \
+if (false) /* NOLINT */ \
+{ \
+    /* Do nothing, a starter condition. */ \
+} \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt8>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt16>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt32>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<UInt64>) \
+\
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int8>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int16>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int32>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int64>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int128>) \
+\
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
+\
+else \
+{ \
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
+        "The RANGE OFFSET frame for '{}' ORDER BY nest column is not implemented", \
+        demangle(typeid(nest_compared_column).name())); \
+}
+
+// A specialization of compareValuesWithOffset for nullable.
+template <typename ColumnType>
+static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
+    size_t compared_row, const IColumn * _reference_column,
+    size_t reference_row,
+    const Field & _offset,
+    bool offset_is_preceding)
+{
+    const auto * compared_column = assert_cast<const ColumnType *>(
+        _compared_column);
+    const auto * reference_column = assert_cast<const ColumnType *>(
+        _reference_column);
+
+    if (compared_column->isNullAt(compared_row) && !reference_column->isNullAt(reference_row))
+    {
+        return -1;
+    }
+    else if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    {
+        return 0;
+    }
+    else if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    {
+        return 1;
+    }
+
+    ColumnPtr nest_compared_column = compared_column->getNestedColumnPtr();
+    ColumnPtr nest_reference_column = reference_column->getNestedColumnPtr();
+
+    std::function<int(
+        const IColumn * compared_column, size_t compared_row,
+        const IColumn * reference_column, size_t reference_row,
+        const Field & offset,
+        bool offset_is_preceding)> nest_compare_function;
+    APPLY_FOR_NEST_TYPES(compareValuesWithOffset)
+    return nest_compare_function(nest_compared_column.get(), compared_row,
+        nest_reference_column.get(), reference_row, _offset, offset_is_preceding);
+}
+
+// Helper macros to dispatch on type of the ORDER BY column
 #define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
 else if (typeid_cast<const TYPE *>(column)) \
 { \
@@ -199,6 +273,7 @@ APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
 \
+APPLY_FOR_ONE_TYPE(FUNCTION##Nullable, ColumnNullable) \
 else \
 { \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
@@ -1555,15 +1630,14 @@ struct StatefulWindowFunction : public WindowFunction
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
-        auto * const state = static_cast<State *>(static_cast<void *>(place));
-        state->~State();
+        reinterpret_cast<State *>(place)->~State();
     }
 
     bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
 
     State & getState(const WindowFunctionWorkspace & workspace) const
     {
-        return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
+        return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
     }
 };
 
@@ -2441,7 +2515,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
         if (ts_scale_multiplier)
         {
             const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
-            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(column.get())->getInt(transform->current_row.row);
+            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
 
             Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
             result = (time_elapsed > 0) ? (metric_diff * ts_scale_multiplier / time_elapsed  * interval_duration) : 0;

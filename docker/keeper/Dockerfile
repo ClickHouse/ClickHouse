@@ -34,7 +34,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="24.2.2.71"
+ARG VERSION="24.5.3.5"
 ARG PACKAGES="clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
 
@@ -44,7 +44,10 @@ ARG DIRECT_DOWNLOAD_URLS=""
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-
+ARG DEFAULT_UID="101"
+ARG DEFAULT_GID="101"
+RUN addgroup -S -g "${DEFAULT_GID}" clickhouse && \
+    adduser -S -h "/var/lib/clickhouse" -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u "${DEFAULT_UID}" clickhouse
 
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
@@ -71,20 +74,21 @@ RUN arch=${TARGETARCH:-amd64} \
         fi \
     ; done \
     && rm /tmp/*.tgz /install -r \
-    && addgroup -S -g 101 clickhouse \
-    && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u 101 clickhouse \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper \
-    && chown clickhouse:clickhouse /var/lib/clickhouse \
-    && chown root:clickhouse /var/log/clickhouse-keeper \
     && chmod +x /entrypoint.sh \
     && apk add --no-cache su-exec bash tzdata \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
-    && echo "UTC" > /etc/timezone \
-    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
+    && echo "UTC" > /etc/timezone
 
+ARG DEFAULT_CONFIG_DIR="/etc/clickhouse-keeper"
+ARG DEFAULT_DATA_DIR="/var/lib/clickhouse-keeper"
+ARG DEFAULT_LOG_DIR="/var/log/clickhouse-keeper"
+RUN mkdir -p "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}" \
+    && chown clickhouse:clickhouse "${DEFAULT_DATA_DIR}" \
+    && chown root:clickhouse "${DEFAULT_LOG_DIR}" \
+    && chmod ugo+Xrw -R "${DEFAULT_DATA_DIR}" "${DEFAULT_LOG_DIR}" "${DEFAULT_CONFIG_DIR}"
 
+# /var/lib/clickhouse is necessary due to the current default configuration for Keeper
+VOLUME "${DEFAULT_DATA_DIR}" /var/lib/clickhouse
 EXPOSE 2181 10181 44444 9181
-
-VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 ENTRYPOINT ["/entrypoint.sh"]

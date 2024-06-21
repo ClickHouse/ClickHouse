@@ -44,8 +44,14 @@ struct BackupSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_azure_native_copy = true;
+
     /// Whether base backup to S3 should inherit credentials from the BACKUP query.
     bool use_same_s3_credentials_for_base_backup = false;
+
+    /// Whether a new Azure container should be created if it does not exist (requires permissions at storage account level)
+    bool azure_attempt_to_create_container = true;
 
     /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
     /// but don't put more entries into the cache.
@@ -61,6 +67,12 @@ struct BackupSettings
 
     /// Check checksums of the data parts before writing them to a backup.
     bool check_parts = true;
+
+    /// Check checksums of the projection data parts before writing them to a backup.
+    bool check_projection_parts = true;
+
+    /// Allow to create backup with broken projections.
+    bool allow_backup_broken_projections = false;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

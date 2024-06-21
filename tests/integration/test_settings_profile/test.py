@@ -621,6 +621,7 @@ def test_allow_ddl():
     )
 
     instance.query("GRANT CREATE ON tbl TO robin")
+    instance.query("GRANT TABLE ENGINE ON Log TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     instance.query("DROP TABLE tbl")
 

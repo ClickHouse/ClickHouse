@@ -1,10 +1,10 @@
 #include "ExecutableSettings.h"
 
-#include <Common/Exception.h>
-
+#include <Core/BaseSettings.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

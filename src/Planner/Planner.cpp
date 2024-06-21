@@ -1,9 +1,10 @@
 #include <Planner/Planner.h>
 
-#include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -34,6 +35,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -164,7 +166,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get()) || typeid_cast<const StorageMerge *>(storage.get())
+        if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
         {
             collect_filters = true;
@@ -327,12 +329,16 @@ public:
 };
 
 void addExpressionStep(QueryPlan & query_plan,
-    const ActionsDAGPtr & expression_actions,
+    const ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
     std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    result_actions_to_execute.push_back(expression_actions);
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression_actions);
+    auto actions = expression_actions->dag.clone();
+    if (expression_actions->project_input)
+        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+
+    result_actions_to_execute.push_back(actions);
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions);
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
 }
@@ -342,9 +348,13 @@ void addFilterStep(QueryPlan & query_plan,
     const std::string & step_description,
     std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    result_actions_to_execute.push_back(filter_analysis_result.filter_actions);
+    auto actions = filter_analysis_result.filter_actions->dag.clone();
+    if (filter_analysis_result.filter_actions->project_input)
+        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+
+    result_actions_to_execute.push_back(actions);
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-        filter_analysis_result.filter_actions,
+        actions,
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
     where_step->setStepDescription(step_description);
@@ -543,14 +553,21 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     const auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
 
+    ActionsDAGPtr actions;
     if (having_analysis_result.filter_actions)
-        result_actions_to_execute.push_back(having_analysis_result.filter_actions);
+    {
+        actions = having_analysis_result.filter_actions->dag.clone();
+        if (having_analysis_result.filter_actions->project_input)
+            actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+
+        result_actions_to_execute.push_back(actions);
+    }
 
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
         query_plan.getCurrentDataStream(),
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        having_analysis_result.filter_actions,
+        actions,
         having_analysis_result.filter_column_name,
         having_analysis_result.remove_filter_column,
         settings.totals_mode,
@@ -726,12 +743,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
                 PlannerActionsVisitor planner_actions_visitor(planner_context);
-                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
@@ -1029,9 +1046,12 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
-    UInt64 limit_offset = query_analysis_result.limit_offset;
-    auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
-    query_plan.addStep(std::move(offsets_step));
+    /// If there is not a LIMIT but an offset
+    if (!query_analysis_result.limit_length && query_analysis_result.limit_offset)
+    {
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), query_analysis_result.limit_offset);
+        query_plan.addStep(std::move(offsets_step));
+    }
 }
 
 void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
@@ -1224,8 +1244,9 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query to stage {}{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
@@ -1244,6 +1265,21 @@ void Planner::buildPlanForUnionNode()
     if (union_mode == SelectUnionMode::UNION_DEFAULT || union_mode == SelectUnionMode::EXCEPT_DEFAULT
         || union_mode == SelectUnionMode::INTERSECT_DEFAULT)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode must be initialized");
+
+    if (union_node.hasRecursiveCTETable())
+    {
+        const auto & recursive_cte_table = *union_node.getRecursiveCTETable();
+
+        ColumnsWithTypeAndName recursive_cte_columns;
+        recursive_cte_columns.reserve(recursive_cte_table.columns.size());
+        for (const auto & recursive_cte_table_column : recursive_cte_table.columns)
+            recursive_cte_columns.emplace_back(recursive_cte_table_column.type, recursive_cte_table_column.name);
+
+        auto read_from_recursive_cte_step = std::make_unique<ReadFromRecursiveCTEStep>(Block(std::move(recursive_cte_columns)), query_tree);
+        read_from_recursive_cte_step->setStepDescription(query_tree->toAST()->formatForErrorMessage());
+        query_plan.addStep(std::move(read_from_recursive_cte_step));
+        return;
+    }
 
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
@@ -1362,6 +1398,17 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
+    select_query_info.merge_tree_enable_remove_parts_from_snapshot_optimization = select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization;
+
+    if (!select_query_info.has_window && query_node.hasQualify())
+    {
+        if (query_node.hasHaving())
+            query_node.getHaving() = mergeConditionNodes({query_node.getHaving(), query_node.getQualify()}, query_context);
+        else
+            query_node.getHaving() = query_node.getQualify();
+
+        query_node.getQualify() = {};
+    }
 
     if (!select_query_info.need_aggregate && query_node.hasHaving())
     {
@@ -1475,8 +1522,9 @@ void Planner::buildPlanForQueryNode()
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
-    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query from stage {} to stage {}{}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1631,6 +1679,9 @@ void Planner::buildPlanForQueryNode()
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
+
+            if (expression_analysis_result.hasQualify())
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute);
 
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", result_actions_to_execute);

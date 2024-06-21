@@ -7,7 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -216,7 +215,7 @@ private:
 
     String default_database;
 
-    bool is_ssh_based_auth = false;
+    bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     bool is_interserver_authenticated = false;
@@ -248,7 +247,6 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
-    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
@@ -277,8 +275,6 @@ private:
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
 
     void processTablesStatusRequest();
 

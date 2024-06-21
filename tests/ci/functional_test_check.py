@@ -15,6 +15,7 @@ from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
@@ -27,6 +28,8 @@ def get_additional_envs(
     check_name: str, run_by_hash_num: int, run_by_hash_total: int
 ) -> List[str]:
     result = []
+    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     if "DatabaseReplicated" in check_name:
         result.append("USE_DATABASE_REPLICATED=1")
     if "DatabaseOrdinary" in check_name:
@@ -39,7 +42,10 @@ def get_additional_envs(
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
+        result.append("USE_OLD_ANALYZER=1")
+    if "azure" in check_name:
+        assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" not in result
+        result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -62,7 +68,6 @@ def get_run_command(
     repo_path: Path,
     result_path: Path,
     server_log_path: Path,
-    kill_timeout: int,
     additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
@@ -80,7 +85,6 @@ def get_run_command(
     )
 
     envs = [
-        f"-e MAX_RUN_TIME={int(0.9 * kill_timeout)}",
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
     ]
@@ -94,7 +98,7 @@ def get_run_command(
     env_str = " ".join(envs)
     volume_with_broken_test = (
         f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
-        if "analyzer" in check_name
+        if "analyzer" not in check_name
         else ""
     )
 
@@ -186,7 +190,6 @@ def process_results(
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
-    parser.add_argument("kill_timeout", type=int)
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -218,12 +221,7 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
-    assert (
-        kill_timeout > 0
-    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
     validate_bugfix_check = args.validate_bugfix
-    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 
@@ -282,7 +280,6 @@ def main():
             repo_path,
             result_path,
             server_log_path,
-            kill_timeout,
             additional_envs,
             ci_logs_args,
             docker_image,

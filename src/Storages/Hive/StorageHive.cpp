@@ -38,8 +38,8 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -921,9 +921,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     }
 
     sources_info->hive_files = std::move(*hive_files);
-
-    if (num_streams > sources_info->hive_files.size())
-        num_streams = sources_info->hive_files.size();
+    num_streams = std::min(num_streams, sources_info->hive_files.size());
 
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)

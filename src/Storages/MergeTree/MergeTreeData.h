@@ -418,7 +418,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -426,7 +426,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const override;
+    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -434,13 +434,16 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
+    bool hasProjection() const override;
+
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
-    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
     /// Snapshot for MergeTree contains the current set of data parts
     /// at the moment of the start of query.
@@ -464,8 +467,13 @@ public:
 
     struct ProjectionPartsVector
     {
-        DataPartsVector projection_parts;
         DataPartsVector data_parts;
+
+        DataPartsVector projection_parts;
+        DataPartStateVector projection_parts_states;
+
+        DataPartsVector broken_projection_parts;
+        DataPartStateVector broken_projection_parts_states;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -480,7 +488,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -647,10 +655,9 @@ public:
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
-    /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     /// NOTE: This method is safe to use only for parts which nobody else holds (like on server start or for parts which was not committed).
     /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
-    void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+    void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "");
 
     /// This method should not be here, but async loading of Outdated parts is implemented in MergeTreeData
     virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
@@ -732,6 +739,8 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
+    static void verifySortingKey(const KeyDescription & sorting_key);
+
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
@@ -785,6 +794,9 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
+    /// Moves partition to specified Table
+    void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
+
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
@@ -834,14 +846,15 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info,
         const StorageMetadataPtr & metadata_snapshot,
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
-        const WriteSettings & write_settings);
+        const WriteSettings & write_settings,
+        bool must_on_same_disk);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -985,10 +998,11 @@ public:
     static const Names virtuals_useful_for_filter;
 
     /// Construct a sample block of virtual columns.
-    Block getHeaderWithVirtualsForFilter() const;
+    Block getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
-    Block getBlockWithVirtualsForFilter(const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
+    Block getBlockWithVirtualsForFilter(
+        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1063,6 +1077,7 @@ public:
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
+    void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
     /// TODO: make enabled by default in the next release if no problems found.
@@ -1080,6 +1095,8 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+
+    void unloadPrimaryKeys();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1540,13 +1557,33 @@ protected:
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
+    mutable std::mutex unexpected_data_parts_mutex;
+    mutable std::condition_variable unexpected_data_parts_cv;
+
+    struct UnexpectedPartLoadState
+    {
+        PartLoadingTree::NodePtr loading_info;
+        /// if it is covered by any unexpected part
+        bool uncovered = true;
+        bool is_broken = false;
+        MutableDataPartPtr part;
+    };
+
+    BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
+    std::vector<UnexpectedPartLoadState> unexpected_data_parts;
+    bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
+
+    void loadUnexpectedDataParts();
+    void loadUnexpectedDataPart(UnexpectedPartLoadState & state);
+
     /// This has to be "true" by default, because in case of empty table or absence of Outdated parts
     /// it is automatically finished.
     std::atomic_bool outdated_data_parts_loading_finished = true;
+    std::atomic_bool unexpected_data_parts_loading_finished = true;
 
     void loadOutdatedDataParts(bool is_async);
-    void startOutdatedDataPartsLoadingTask();
-    void stopOutdatedDataPartsLoadingTask();
+    void startOutdatedAndUnexpectedDataPartsLoadingTask();
+    void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
@@ -1698,5 +1735,9 @@ struct CurrentlySubmergingEmergingTagger
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
 }
+
+/// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
+/// Return true if the counter had been updated
+bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
 
 }

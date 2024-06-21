@@ -258,6 +258,7 @@ private:
     JoinPtr table_join;
 
     size_t max_block_size;
+    int null_direction_hint = 1;
 
     struct Statistic
     {

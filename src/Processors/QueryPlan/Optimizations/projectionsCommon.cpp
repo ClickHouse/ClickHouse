@@ -25,8 +25,7 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Probably some projection already was applied.
-    if (reading->hasAnalyzedResult())
+    if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return false;
 
     if (reading->isQueryWithFinal())
@@ -223,7 +222,7 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end())
+        if (it != created_projections.end() && !it->second->is_broken)
         {
             projection_parts.push_back(it->second);
         }

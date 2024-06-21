@@ -314,13 +314,13 @@ static int read_unicode(json_stream *json)
 
         if (l < 0xdc00 || l > 0xdfff) {
             json_error(json, "invalid surrogate pair continuation \\u%04lx out "
-                             "of range (dc00-dfff)", l);
+                             "of range (dc00-dfff)", (unsigned long)l);
             return -1;
         }
 
         cp = ((h - 0xd800) * 0x400) + ((l - 0xdc00) + 0x10000);
     } else if (cp >= 0xdc00 && cp <= 0xdfff) {
-            json_error(json, "dangling surrogate \\u%04lx", cp);
+            json_error(json, "dangling surrogate \\u%04lx", (unsigned long)cp);
             return -1;
     }
 

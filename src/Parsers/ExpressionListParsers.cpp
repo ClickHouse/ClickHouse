@@ -20,7 +20,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
@@ -146,7 +146,7 @@ static bool parseOperator(IParser::Pos & pos, std::string_view op, Expected & ex
     return false;
 }
 
-enum class SubqueryFunctionType
+enum class SubqueryFunctionType : uint8_t
 {
     NONE,
     ANY,
@@ -416,13 +416,13 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         ParserToken open(TokenType::OpeningRoundBracket);
         ParserToken close(TokenType::ClosingRoundBracket);
 
-        if (!open.ignore(pos))
+        if (!open.ignore(pos, expected))
             return false;
 
         if (!kv_pairs_list.parse(pos, value, expected))
             return false;
 
-        if (!close.ignore(pos))
+        if (!close.ignore(pos, expected))
             return false;
 
         with_brackets = true;
@@ -441,8 +441,23 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return parser.parse(pos, node, expected);
 }
 
+namespace
+{
+    /// This wrapper is needed to highlight function names differently.
+    class ParserFunctionName : public IParserBase
+    {
+    protected:
+        const char * getName() const override { return "function name"; }
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserCompoundIdentifier parser(false, true, Highlight::function);
+            return parser.parse(pos, node, expected);
+        }
+    };
+}
 
-enum class Action
+
+enum class Action : uint8_t
 {
     NONE,
     OPERAND,
@@ -453,7 +468,7 @@ enum class Action
   * Operators can be grouped into some type if they have similar behaviour.
   * Certain operators are unique in terms of their behaviour, so they are assigned a separate type.
   */
-enum class OperatorType
+enum class OperatorType : uint8_t
 {
     None,
     Comparison,
@@ -506,7 +521,7 @@ static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... ar
     return ast_function;
 }
 
-enum class Checkpoint
+enum class Checkpoint : uint8_t
 {
     None,
     Interval,
@@ -809,6 +824,7 @@ struct ParserExpressionImpl
 
     static const Operator finish_between_operator;
 
+    ParserFunctionName function_name_parser;
     ParserCompoundIdentifier identifier_parser{false, true};
     ParserNumber number_parser;
     ParserAsterisk asterisk_parser;
@@ -2163,7 +2179,7 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql(table|project ...)
+        /// kql('table|project ...')
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)
@@ -2359,7 +2375,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr identifier;
 
-    if (ParserCompoundIdentifier(false,true).parse(pos, identifier, expected)
+    if (ParserFunctionName().parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         auto start = getFunctionLayer(identifier, is_table_function, allow_function_parameters);
@@ -2497,7 +2513,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     {
         if (typeid_cast<ViewLayer *>(layers.back().get()) || typeid_cast<KustoLayer *>(layers.back().get()))
         {
-            if (identifier_parser.parse(pos, tmp, expected)
+            if (function_name_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
                 layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
@@ -2629,49 +2645,52 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     {
         layers.back()->pushOperand(std::move(tmp));
     }
-    else if (identifier_parser.parse(pos, tmp, expected))
+    else
     {
-        if (pos->type == TokenType::OpeningRoundBracket)
+        old_pos = pos;
+        if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
             layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
             return Action::OPERAND;
         }
+        pos = old_pos;
+
+        if (identifier_parser.parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperand(std::move(tmp));
+        }
+        else if (substitution_parser.parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperand(std::move(tmp));
+        }
+        else if (pos->type == TokenType::OpeningRoundBracket)
+        {
+
+            if (subquery_parser.parse(pos, tmp, expected))
+            {
+                layers.back()->pushOperand(std::move(tmp));
+                return Action::OPERATOR;
+            }
+
+            ++pos;
+            layers.push_back(std::make_unique<RoundBracketsLayer>());
+            return Action::OPERAND;
+        }
+        else if (pos->type == TokenType::OpeningSquareBracket)
+        {
+            ++pos;
+            layers.push_back(std::make_unique<ArrayLayer>());
+            return Action::OPERAND;
+        }
+        else if (mysql_global_variable_parser.parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperand(std::move(tmp));
+        }
         else
         {
-            layers.back()->pushOperand(std::move(tmp));
+            return Action::NONE;
         }
-    }
-    else if (substitution_parser.parse(pos, tmp, expected))
-    {
-        layers.back()->pushOperand(std::move(tmp));
-    }
-    else if (pos->type == TokenType::OpeningRoundBracket)
-    {
-
-        if (subquery_parser.parse(pos, tmp, expected))
-        {
-            layers.back()->pushOperand(std::move(tmp));
-            return Action::OPERATOR;
-        }
-
-        ++pos;
-        layers.push_back(std::make_unique<RoundBracketsLayer>());
-        return Action::OPERAND;
-    }
-    else if (pos->type == TokenType::OpeningSquareBracket)
-    {
-        ++pos;
-        layers.push_back(std::make_unique<ArrayLayer>());
-        return Action::OPERAND;
-    }
-    else if (mysql_global_variable_parser.parse(pos, tmp, expected))
-    {
-        layers.back()->pushOperand(std::move(tmp));
-    }
-    else
-    {
-        return Action::NONE;
     }
 
     return Action::OPERATOR;

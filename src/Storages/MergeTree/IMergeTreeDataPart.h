@@ -43,7 +43,6 @@ class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
 class IMergeTreeReader;
-class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
@@ -51,7 +50,7 @@ class MergeTreeTransaction;
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
-enum class DataPartRemovalState
+enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
     VISIBLE_TO_TRANSACTIONS,
@@ -74,12 +73,11 @@ public:
     using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = Columns;
+    using Index = std::shared_ptr<const Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -105,15 +103,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
-
-    virtual MergeTreeWriterPtr getWriter(
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
@@ -166,7 +155,13 @@ public:
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
+    /// Get sample column from part. For ordinary columns it just creates column using it's type.
+    /// For columns with dynamic structure it reads sample column with 0 rows from the part.
+    ColumnPtr getColumnSample(const NameAndTypePair & column) const;
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+
+    const SerializationByName & getSerializations() const { return serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
@@ -176,12 +171,14 @@ public:
 
     void remove();
 
-    Statistics loadStatistics() const;
+    ColumnsStatistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
+
+    void loadRowsCountFileForUnexpectedPart();
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -195,6 +192,7 @@ public:
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
+    const NameToNumber & getColumnPositions() const { return column_name_to_position; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -246,7 +244,7 @@ public:
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
     /// However in some special cases Clickhouse can make a decision without asking keeper.
-    enum class BlobsRemovalPolicyForTemporaryParts
+    enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
@@ -264,6 +262,12 @@ public:
 
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
+
+    /// If it is a projection part, it can be broken sometimes.
+    mutable std::atomic<bool> is_broken {false};
+    mutable std::string exception;
+    mutable int exception_code = 0;
+    mutable std::mutex broken_reason_mutex;
 
     /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
     mutable bool is_unexpected_local_part = false;
@@ -361,8 +365,10 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    const Index & getIndex() const;
-    void setIndex(Columns index_);
+    Index getIndex() const;
+    void setIndex(const Columns & cols_);
+    void setIndex(Columns && cols_);
+    void unloadIndex();
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -428,9 +434,26 @@ public:
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
+    void markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const;
+
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
+    bool hasProjection() const { return !projection_parts.empty(); }
+
+    bool hasBrokenProjection(const String & projection_name) const;
+
+    /// Return true, if all projections were loaded successfully and none was marked as broken.
+    void loadProjections(
+        bool require_columns_checksums,
+        bool check_consistency,
+        bool & has_broken_projection,
+        bool if_not_loaded = false,
+        bool only_metadata = false);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    void loadChecksums(bool require);
+
+    void setBrokenReason(const String & message, int code) const;
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -439,23 +462,23 @@ public:
     /// File with compression codec name which was used to compress part columns
     /// by default. Some columns may have their own compression codecs, but
     /// default will be stored in this file.
-    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+    static constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
-    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
+    static constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
 
-    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
+    static constexpr auto UUID_FILE_NAME = "uuid.txt";
 
     /// File that contains information about kinds of serialization of columns
     /// and information that helps to choose kind of serialization later during merging
     /// (number of rows, number of rows with default values, etc).
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+    static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     /// Version used for transactions.
-    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+    static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
 
-    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
+    static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -467,7 +490,7 @@ public:
     /// it was mutation without any change for source part. In this case we
     /// really don't need to remove data from remote FS and need only decrement
     /// reference counter locally.
-    static inline constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
+    static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
@@ -593,7 +616,7 @@ protected:
     const IMergeTreeDataPart * parent_part;
     String parent_part_name;
 
-    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+    mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     mutable PartMetadataManagerPtr metadata_manager;
 
@@ -654,9 +677,6 @@ private:
 
     static void appendFilesOfColumns(Strings & files);
 
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
-    void loadChecksums(bool require);
-
     static void appendFilesOfChecksums(Strings & files);
 
     /// Loads marks index granularity into memory
@@ -673,7 +693,8 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Load existing rows count from _row_exists column if load_existing_rows_count_for_old_parts is true.
+    /// Load existing rows count from _row_exists column
+    /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
     void loadExistingRowsCount();
 
     static void appendFilesOfRowsCount(Strings & files);

@@ -2,6 +2,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -209,7 +210,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
                 auto type_name = type_col[i].get<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && storage_column->type->hasDynamicSubcolumns())
+                if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }

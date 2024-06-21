@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
-user1="user02884_1_$RANDOM$RANDOM"
-user2="user02884_2_$RANDOM$RANDOM"
-user3="user02884_3_$RANDOM$RANDOM"
-db="db02884_$RANDOM$RANDOM"
+user1="user02884_1_${CLICKHOUSE_DATABASE}_$RANDOM"
+user2="user02884_2_${CLICKHOUSE_DATABASE}_$RANDOM"
+user3="user02884_3_${CLICKHOUSE_DATABASE}_$RANDOM"
+db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
-DROP DATABASE IF EXISTS $db;
-CREATE DATABASE $db;
 CREATE TABLE $db.test_table (s String) ENGINE = MergeTree ORDER BY s;
 
 DROP USER IF EXISTS $user1, $user2, $user3;
@@ -92,6 +91,7 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_10
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_view_10 MODIFY SQL SECURITY INVOKER"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_10" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.test_view_10" | grep -c "SQL SECURITY INVOKER"
 
 
 echo "===== MaterializedView ====="
@@ -136,6 +136,7 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_5 TO $user2"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_mv_5 MODIFY SQL SECURITY NONE"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_5"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.test_mv_5" | grep -c "SQL SECURITY NONE"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_1 TO $user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_3 TO $user2"
@@ -158,6 +159,45 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.test_table FROM $user1"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.source
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE TABLE $db.destination1
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE TABLE $db.destination2
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE MATERIALIZED VIEW $db.mv1 TO $db.destination1
+AS SELECT *
+FROM $db.source;
+
+ALTER TABLE $db.mv1 MODIFY DEFINER=default SQL SECURITY DEFINER;
+
+CREATE MATERIALIZED VIEW $db.mv2 TO $db.destination2
+AS SELECT *
+FROM $db.destination1;
+EOF
+
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.source TO $user2"
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100"
+
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
 
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
@@ -191,7 +231,6 @@ ${CLICKHOUSE_CLIENT} --user $user1 --query "
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
 
-
 echo "===== TestRowPolicy ====="
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 CREATE TABLE $db.test_row_t (x Int32, y Int32) ENGINE = MergeTree ORDER BY x;
@@ -221,6 +260,43 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_row_2"
 
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.session_events(
+    clientId UUID,
+    sessionId UUID,
+    pageId UUID,
+    timestamp DateTime,
+    type String
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS $db;"
+CREATE TABLE $db.materialized_events(
+    clientId UUID,
+    sessionId UUID,
+    pageId UUID,
+    timestamp DateTime,
+    type String
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+
+CREATE MATERIALIZED VIEW $db.events_mv TO $db.materialized_events AS
+SELECT
+    clientId,
+    sessionId,
+    pageId,
+    timestamp,
+    type
+FROM
+    $db.session_events;
+
+GRANT INSERT ON $db.session_events TO $user3;
+GRANT SELECT ON $db.session_events TO $user3;
+EOF
+
+${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000"
+${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
+${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";

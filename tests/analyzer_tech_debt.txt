@@ -1,11 +1,13 @@
-00223_shard_distributed_aggregation_memory_efficient
 00725_memory_tracking
-01155_rename_move_materialized_view
 01624_soft_constraints
 02354_vector_search_queries
-# Check after constants refactoring
 02901_parallel_replicas_rollup
-# Flaky. Please don't delete them without fixing them:
+02999_scalar_subqueries_bug_2
+# Flaky list
+01825_type_json_in_array
+01414_mutations_and_errors_zookeeper
 01287_max_execution_speed
-02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
-02404_memory_bound_merging
+# Check after ConstantNode refactoring
+02154_parser_backtracking
+02944_variant_as_common_type
+02942_variant_cast

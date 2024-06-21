@@ -5,8 +5,12 @@ from string import Template
 import pymysql.cursors
 import pytest
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
+
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
@@ -1021,7 +1025,9 @@ def test_restart_server(started_cluster):
                 clickhouse_node, mysql_node, action="REJECT --reject-with tcp-reset"
             )
             clickhouse_node.restart_clickhouse()
-            clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
+            clickhouse_node.query_and_get_error_with_retry(
+                "SHOW TABLES FROM test_restart"
+            )
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
 
 

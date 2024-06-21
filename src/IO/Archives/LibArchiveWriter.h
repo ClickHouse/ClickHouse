@@ -68,7 +68,7 @@ private:
     void startWritingFile();
     void endWritingFile();
 
-    std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex) = nullptr;
+    std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex);
     bool is_writing_file TSA_GUARDED_BY(mutex) = false;
     bool finalized TSA_GUARDED_BY(mutex) = false;
     mutable std::mutex mutex;

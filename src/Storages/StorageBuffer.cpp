@@ -281,7 +281,7 @@ void StorageBuffer::read(
                 if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
-                    boost::range::remove_erase(columns_intersection, column_name);
+                    std::erase(columns_intersection, column_name);
                     continue;
                 }
                 const auto & dst_col = dest_columns.getPhysical(column_name);
@@ -299,8 +299,37 @@ void StorageBuffer::read(
             }
             else
             {
+                auto src_table_query_info = query_info;
+                if (src_table_query_info.prewhere_info)
+                {
+                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
+
+                    auto actions_dag = ActionsDAG::makeConvertingActions(
+                            header_after_adding_defaults.getColumnsWithTypeAndName(),
+                            header.getColumnsWithTypeAndName(),
+                            ActionsDAG::MatchColumnsMode::Name);
+
+                    if (src_table_query_info.prewhere_info->row_level_filter)
+                    {
+                        src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
+                            std::move(*actions_dag->clone()),
+                            std::move(*src_table_query_info.prewhere_info->row_level_filter));
+
+                        src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
+                    }
+
+                    if (src_table_query_info.prewhere_info->prewhere_actions)
+                    {
+                        src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
+                            std::move(*actions_dag->clone()),
+                            std::move(*src_table_query_info.prewhere_info->prewhere_actions));
+
+                        src_table_query_info.prewhere_info->prewhere_actions->removeUnusedActions();
+                    }
+                }
+
                 destination->read(
-                        query_plan, columns_intersection, destination_snapshot, query_info,
+                        query_plan, columns_intersection, destination_snapshot, src_table_query_info,
                         local_context, processed_stage, max_block_size, num_streams);
 
                 if (query_plan.isInitialized())
@@ -830,23 +859,25 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
+    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
+    if (flush_pool)
+        runner.emplace(*flush_pool, "BufferFlush");
     for (auto & buf : buffers)
     {
-        if (flush_pool)
+        if (runner)
         {
-            scheduleFromThreadPool<void>([&] ()
+            (*runner)([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
-            }, *flush_pool, "BufferFlush");
+            });
         }
         else
         {
             flushBuffer(buf, check_thresholds, false);
         }
     }
-
-    if (flush_pool)
-        flush_pool->wait();
+    if (runner)
+        runner->waitForAllToFinishAndRethrowFirstError();
 }
 
 

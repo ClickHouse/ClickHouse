@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import csv
 import logging
 import os
@@ -11,15 +10,7 @@ from typing import Tuple
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
-from report import (
-    ERROR,
-    FAILURE,
-    SUCCESS,
-    JobReport,
-    TestResult,
-    TestResults,
-    read_test_results,
-)
+from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -47,6 +38,7 @@ def get_fasttest_cmd(
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
         "-e stage=clone_submodules "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/ClickHouse "
+        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
         f"--volume={output_path}:/test_output {image}"
     )
 
@@ -79,30 +71,9 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     return state, description, test_results
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="FastTest script",
-    )
-
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        # Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
-        # though due to cold cache build time can be much longer
-        # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
-        default=40,
-        help="Timeout in minutes",
-    )
-    args = parser.parse_args()
-    args.timeout = args.timeout * 60
-    return args
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
-    args = parse_args()
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
@@ -133,14 +104,10 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    timeout_expired = False
 
-    with TeePopen(run_cmd, run_log_path, timeout=args.timeout) as process:
+    with TeePopen(run_cmd, run_log_path) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_cmd)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -173,11 +140,6 @@ def main():
         state = FAILURE
     else:
         state, description, test_results = process_results(output_path)
-
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(args.timeout))
-        state = FAILURE
-        description = test_results[-1].name
 
     JobReport(
         description=description,
