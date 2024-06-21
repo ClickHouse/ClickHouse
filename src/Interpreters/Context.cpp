@@ -280,6 +280,8 @@ struct ContextSharedPart : boost::noncopyable
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
+    String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
+    String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -830,6 +832,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
+    res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
 }
 
@@ -1422,7 +1425,7 @@ void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id,
 void Context::checkAccess(const AccessRightsElement & element) const { checkAccessImpl(element); }
 void Context::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl(elements); }
 
-std::shared_ptr<const ContextAccess> Context::getAccess() const
+std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
 {
     /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
     auto get_params = [this]()
@@ -1439,14 +1442,14 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     {
         SharedLockGuard lock(mutex);
         if (access && !need_recalculate_access)
-            return access; /// No need to recalculate access rights.
+            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
 
         params.emplace(get_params());
 
         if (access && (access->getParams() == *params))
         {
             need_recalculate_access = false;
-            return access; /// No need to recalculate access rights.
+            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
         }
     }
 
@@ -1466,7 +1469,7 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
         }
     }
 
-    return res;
+    return std::make_shared<const ContextAccessWrapper>(res, shared_from_this());
 }
 
 RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
@@ -1558,9 +1561,34 @@ ResourceManagerPtr Context::getResourceManager() const
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     std::lock_guard lock(mutex);
+    // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
         classifier = getResourceManager()->acquire(getSettingsRef().workload);
     return classifier;
+}
+
+String Context::getMergeWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->merge_workload;
+}
+
+void Context::setMergeWorkload(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->merge_workload = value;
+}
+
+String Context::getMutationWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->mutation_workload;
+}
+
+void Context::setMutationWorkload(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->mutation_workload = value;
 }
 
 
@@ -1825,6 +1853,15 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
         case QueryLogFactories::TableFunction:
             query_factories_info.table_functions.emplace(created_object);
     }
+}
+
+void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
+{
+    std::lock_guard lock(query_privileges_info->mutex);
+    if (granted)
+        query_privileges_info->used_privileges.emplace(privilege);
+    else
+        query_privileges_info->missing_privileges.emplace(privilege);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -2508,6 +2545,21 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
+    query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
+}
+
+void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
+{
+    makeQueryContext();
+    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    settings.workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
+}
+
+void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
+{
+    makeQueryContext();
+    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    settings.workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
 }
 
 void Context::makeSessionContext()
