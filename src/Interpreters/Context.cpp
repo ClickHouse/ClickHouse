@@ -18,7 +18,6 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -610,8 +609,6 @@ struct ContextSharedPart : boost::noncopyable
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
-
-        NamedCollectionFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
 

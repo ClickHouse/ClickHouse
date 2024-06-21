@@ -106,8 +106,6 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    UInt64 max_binary_string_size = 1_GiB;
-    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -120,6 +118,14 @@ struct FormatSettings
         LZ4_FRAME,
         ZSTD
     };
+
+    struct
+    {
+        UInt64 max_binary_string_size = 1_GiB;
+        UInt64 max_binary_array_size = 1_GiB;
+        bool encode_types_in_binary_format = false;
+        bool decode_types_in_binary_format = false;
+    } binary{};
 
     struct
     {
@@ -454,6 +460,8 @@ struct FormatSettings
     struct
     {
         bool allow_types_conversion = true;
+        bool encode_types_in_binary_format = false;
+        bool decode_types_in_binary_format = false;
     } native{};
 
     struct
