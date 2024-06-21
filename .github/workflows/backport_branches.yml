@@ -171,7 +171,7 @@ jobs:
       - BuilderDebTsan
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: ClickHouse build check
+      test_name: Builds
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderSpecialReport:
@@ -183,7 +183,7 @@ jobs:
       - BuilderBinDarwinAarch64
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: ClickHouse special build check
+      test_name: Extra builds
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
