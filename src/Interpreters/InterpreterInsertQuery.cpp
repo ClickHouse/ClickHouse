@@ -38,6 +38,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include "Processors/ResizeProcessor.h"
 
 
 namespace ProfileEvents
@@ -693,6 +694,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         if (shouldAddSquashingFroStorage(table))
         {
+            size_t threads = presink_chains.size();
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
             auto squashing = std::make_shared<ApplySquashingTransform>(
@@ -702,7 +704,10 @@ BlockIO InterpreterInsertQuery::execute()
 
             chain.addSource(std::move(squashing));
 
-            pipeline.resize(presink_chains.size());
+            auto resize = std::make_shared<ResizeProcessor>(
+                    chain.getInputHeader(), 1, threads);
+
+            chain.addSource(resize); // Resize One => num. threads
 
             auto balancing = std::make_shared<PlanSquashingTransform>(
                     chain.getInputHeader(),
@@ -711,7 +716,9 @@ BlockIO InterpreterInsertQuery::execute()
 
             chain.addSource(std::move(balancing));
 
-            pipeline.resize(1);
+            resize = std::make_shared<ResizeProcessor>(chain.getInputHeader(), threads, 1);
+
+            chain.addSource(resize); // Resize num. threads => One
         }
 
         auto context_ptr = getContext();
