@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 namespace
@@ -32,7 +31,6 @@ constexpr int time_shift = 22;
 class FunctionSnowflakeIDToDateTime : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
     const bool allow_nonconst_timezone_arguments;
 
 public:
@@ -40,8 +38,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime>(context); }
     explicit FunctionSnowflakeIDToDateTime(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override { return name; }
@@ -70,9 +67,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
         size_t epoch = 0;
@@ -108,7 +102,6 @@ public:
 class FunctionSnowflakeIDToDateTime64 : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
     const bool allow_nonconst_timezone_arguments;
 
 public:
@@ -116,8 +109,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime64>(context); }
     explicit FunctionSnowflakeIDToDateTime64(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override { return name; }
@@ -146,9 +138,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
         size_t epoch = 0;

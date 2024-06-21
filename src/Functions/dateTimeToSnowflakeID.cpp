@@ -14,11 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FUNCTION;
-}
-
 namespace
 {
 
@@ -29,16 +24,10 @@ constexpr int time_shift = 22;
 
 class FunctionDateTimeToSnowflakeID : public IFunction
 {
-private:
-    const bool uniform_snowflake_conversion_functions;
-
 public:
     static constexpr auto name = "dateTimeToSnowflakeID";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTimeToSnowflakeID>(context); }
-    explicit FunctionDateTimeToSnowflakeID(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-    {}
+    static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionDateTimeToSnowflakeID>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -61,9 +50,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
         size_t epoch = 0;
@@ -86,16 +72,10 @@ public:
 
 class FunctionDateTime64ToSnowflakeID : public IFunction
 {
-private:
-    const bool uniform_snowflake_conversion_functions;
-
 public:
     static constexpr auto name = "dateTime64ToSnowflakeID";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTime64ToSnowflakeID>(context); }
-    explicit FunctionDateTime64ToSnowflakeID(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-    {}
+    static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionDateTime64ToSnowflakeID>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -118,9 +98,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
         const auto & src_data = typeid_cast<const ColumnDateTime64 &>(col_src).getData();
 
