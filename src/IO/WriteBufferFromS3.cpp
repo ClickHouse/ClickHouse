@@ -224,7 +224,7 @@ void WriteBufferFromS3::finalizeImpl()
     }
 }
 
-void WriteBufferFromS3::cancelImpl()
+void WriteBufferFromS3::cancelImpl() noexcept
 {
     tryToAbortMultipartUpload();
 }
@@ -251,7 +251,7 @@ String WriteBufferFromS3::getShortLogDetails() const
                        bucket, key, multipart_upload_details);
 }
 
-void WriteBufferFromS3::tryToAbortMultipartUpload()
+void WriteBufferFromS3::tryToAbortMultipartUpload() noexcept
 {
     try
     {

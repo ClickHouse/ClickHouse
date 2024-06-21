@@ -59,6 +59,9 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
+
+            cancel();
+
             throw;
         }
 
@@ -133,28 +136,21 @@ public:
         catch (...)
         {
             pos = working_buffer.begin();
-            finalized = true;
+
+            cancel();
+
             throw;
         }
     }
 
-    void cancel()
+    void cancel() noexcept
     {
         if (canceled || finalized)
             return;
 
         LockMemoryExceptionInThread lock(VariableContext::Global);
-        try
-        {
-            cancelImpl();
-            canceled = true;
-        }
-        catch (...)
-        {
-            pos = working_buffer.begin();
-            canceled = true;
-            throw;
-        }
+        cancelImpl();
+        canceled = true;
     }
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
@@ -172,7 +168,7 @@ protected:
         next();
     }
 
-    virtual void cancelImpl()
+    virtual void cancelImpl() noexcept
     {
     }
 

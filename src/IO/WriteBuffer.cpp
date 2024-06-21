@@ -20,7 +20,7 @@ WriteBuffer::~WriteBuffer()
             LoggerPtr log = getLogger("WriteBuffer");
             LOG_ERROR(
                 log,
-                "WriteBuffer is not finalized when destructor is called. "
+                "WriteBuffer is neither finalized nor canceled when destructor is called. "
                 "No exceptions in flight are detected. "
                 "The file might not be written at all or might be truncated. "
                 "Stack trace: {}",

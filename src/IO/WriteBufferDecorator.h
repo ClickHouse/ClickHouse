@@ -47,7 +47,7 @@ public:
         }
     }
 
-    void cancelImpl() override
+    void cancelImpl() noexcept override
     {
         out->cancel();
     }
