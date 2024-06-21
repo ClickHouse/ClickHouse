@@ -508,8 +508,9 @@ def trigger_mergeable_check(
 
     if not set_if_green and state == SUCCESS:
         # do not set green Mergeable Check status
-        pass
-    elif set_from_sync:
+        return state
+
+    if set_from_sync:
         # update Mergeable Check from sync WF only if its status already present or its new status is not SUCCESS
         #   to avoid false-positives
         if mergeable_status or state != SUCCESS:
@@ -527,11 +528,10 @@ def update_upstream_sync_status(
     last_synced_upstream_commit = pr_info.get_latest_sync_commit()
 
     logging.info(
-        "Using commit %s to post the %s status `%s`: [%s]",
+        "Using commit [%s] to post the [%s] status [%s]",
         last_synced_upstream_commit.sha,
         state,
         CI.StatusNames.SYNC,
-        "",
     )
     if state == SUCCESS:
         description = CI.SyncState.COMPLETED
