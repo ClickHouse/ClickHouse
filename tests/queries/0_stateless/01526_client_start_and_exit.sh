@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,3 +26,5 @@ for _ in {1..10}; do
 done
 
 wait
+
+${CLICKHOUSE_CLIENT} -q "select 'DROP TABLE ' || database || '.' || name || ';' from system.tables WHERE database = '${CLICKHOUSE_DATABASE}'" --format=TSVRaw | ${CLICKHOUSE_BENCHMARK} -c32 -i 10000 -d 0 2>&1 | grep -F 'Loaded 10000 queries'
