@@ -213,9 +213,7 @@ public:
         return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
     }
 
-    bool hasInformationAboutMonotonicity() const override {
-        return true;
-    }
+    bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
