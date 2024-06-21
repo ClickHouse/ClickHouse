@@ -276,7 +276,6 @@ bool DiskLocal::isFile(const String & path) const
 
 bool DiskLocal::isDirectory(const String & path) const
 {
-    // std::cerr << fs::path(disk_path) / path << std::endl;
     return fs::is_directory(fs::path(disk_path) / path);
 }
 

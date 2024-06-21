@@ -26,7 +26,7 @@ void DiskSelector::assertInitialized() const
 }
 
 
-void DiskSelector::initialize(
+void DiskSelector::(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -66,7 +66,7 @@ void DiskSelector::initialize(
             default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
 
-    if (!has_local_disk)
+    if (!has_local_disk && create_local)
         disks.emplace(local_disk_name, std::make_shared<DiskLocal>(local_disk_name, "/", 0, context, config, config_prefix));
 
     is_initialized = true;
@@ -97,7 +97,12 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         auto disk_config_prefix = config_prefix + "." + disk_name;
         if (!result->getDisksMap().contains(disk_name))
         {
-            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
+            auto created_disk = factory.create(
+                disk_name, config, disk_config_prefix, context, result->getDisksMap(), /*attach*/ false, /*custom_disk*/ false, skip_types);
+            if (created_disk)
+            {
+                result->addToDiskMap(disk_name, created_disk);
+            }
         }
         else
         {
@@ -110,8 +115,10 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     }
 
     old_disks_minus_new_disks.erase(default_disk_name);
-    old_disks_minus_new_disks.erase(local_disk_name);
-
+    if (create_local)
+    {
+        old_disks_minus_new_disks.erase(local_disk_name);
+    }
 
     if (!old_disks_minus_new_disks.empty())
     {

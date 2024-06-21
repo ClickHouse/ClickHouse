@@ -20,7 +20,10 @@ class DiskSelector
 public:
     static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
 
-    explicit DiskSelector(std::unordered_set<String> skip_types_ = {}) : skip_types(skip_types_) { }
+    explicit DiskSelector(std::unordered_set<String> skip_types_ = {}, bool create_local_ = false)
+        : skip_types(skip_types_), create_local(create_local_)
+    {
+    }
     DiskSelector(const DiskSelector & from) = default;
 
     using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix, const String & disk_name)>;
@@ -50,6 +53,7 @@ private:
     void assertInitialized() const;
 
     const std::unordered_set<String> skip_types;
+    const bool create_local;
 };
 
 }
