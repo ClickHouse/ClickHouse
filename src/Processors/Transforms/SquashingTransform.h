@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 #include <Processors/ISimpleTransform.h>
-#include <Processors/IInflatingTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Transforms/ApplySquashingTransform.h>
 
 namespace DB
 {
 
-class SquashingChunksTransform : public ExceptionKeepingTransform
+class SquashingTransform : public ExceptionKeepingTransform
 {
 public:
-    explicit SquashingChunksTransform(
+    explicit SquashingTransform(
         const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SquashingTransform"; }
@@ -24,28 +24,27 @@ protected:
     void onFinish() override;
 
 private:
-    SquashingTransform squashing;
+    Squashing squashing;
     Chunk cur_chunk;
     Chunk finish_chunk;
 };
 
 /// Doesn't care about propagating exceptions and thus doesn't throw LOGICAL_ERROR if the following transform closes its input port.
-class SimpleSquashingChunksTransform : public IInflatingTransform
+class SimpleSquashingTransform : public ISimpleTransform
 {
 public:
-    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+    explicit SimpleSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
 protected:
-    void consume(Chunk chunk) override;
-    bool canGenerate() override;
-    Chunk generate() override;
-    Chunk getRemaining() override;
+    void transform(Chunk &) override;
+
+    IProcessor::Status prepare() override;
 
 private:
-    SquashingTransform squashing;
-    Chunk squashed_chunk;
-};
+    Squashing squashing;
 
+    bool finished = false;
+};
 }

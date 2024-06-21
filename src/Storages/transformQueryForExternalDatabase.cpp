@@ -288,7 +288,8 @@ String transformQueryForExternalDatabaseImpl(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<size_t> limit)
 {
     bool strict = context->getSettingsRef().external_table_strict_query;
 
@@ -374,6 +375,9 @@ String transformQueryForExternalDatabaseImpl(
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
+    if (limit)
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::make_shared<ASTLiteral>(*limit));
+
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
 
@@ -399,7 +403,8 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<size_t> limit)
 {
     if (!query_info.syntax_analyzer_result)
     {
@@ -424,7 +429,8 @@ String transformQueryForExternalDatabase(
             literal_escaping_style,
             database,
             table,
-            context);
+            context,
+            limit);
     }
 
     auto clone_query = query_info.query->clone();
@@ -436,7 +442,8 @@ String transformQueryForExternalDatabase(
         literal_escaping_style,
         database,
         table,
-        context);
+        context,
+        limit);
 }
 
 }

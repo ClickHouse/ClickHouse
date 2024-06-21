@@ -208,7 +208,7 @@ class StatusNames(metaclass=WithIter):
     # mergeable status
     MERGEABLE = "Mergeable Check"
     # status of a sync pr
-    SYNC = "A Sync"
+    SYNC = "Cloud fork sync (only for ClickHouse Inc. employees)"
     # PR formatting check status
     PR_CHECK = "PR Check"
 
