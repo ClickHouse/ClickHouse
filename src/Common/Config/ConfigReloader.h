@@ -27,6 +27,8 @@ class Context;
 class ConfigReloader
 {
 public:
+    static constexpr auto DEFAULT_RELOAD_INTERVAL = std::chrono::milliseconds(2000);
+
     using Updater = std::function<void(ConfigurationPtr, bool)>;
 
     ConfigReloader(
@@ -65,8 +67,6 @@ private:
     };
 
     FilesChangesTracker getNewFileList() const;
-
-    static constexpr auto DEFAULT_RELOAD_INTERVAL = std::chrono::milliseconds(2000);
 
     LoggerPtr log = getLogger("ConfigReloader");
 
