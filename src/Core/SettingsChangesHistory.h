@@ -87,9 +87,9 @@ namespace SettingsChangesHistory
 static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.7", {{"output_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in RowBinaryWithNamesAndTypes output format"},
-              {"input_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in RowBinaryWithNamesAndTypes input format"},
+              {"input_format_binary_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in RowBinaryWithNamesAndTypes input format"},
               {"output_format_native_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in Native output format"},
-              {"input_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"}
+              {"input_format_binary_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"}
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
