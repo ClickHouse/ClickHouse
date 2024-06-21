@@ -710,7 +710,7 @@ BlockIO InterpreterInsertQuery::execute()
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
 
             chain.addSource(std::move(balancing));
-            
+
             pipeline.resize(1);
         }
 

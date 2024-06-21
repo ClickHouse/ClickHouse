@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/IProcessor.h>
 #include <Interpreters/Squashing.h>
 #include <Processors/IInflatingTransform.h>
 
@@ -24,7 +22,6 @@ protected:
 
 private:
     Squashing squashing;
-    Chunk cur_chunk;
     Chunk squashed_chunk;
     Chunk finish_chunk;
 };

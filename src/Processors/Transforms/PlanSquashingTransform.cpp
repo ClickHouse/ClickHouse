@@ -1,5 +1,4 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
-#include <Processors/IProcessor.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -18,7 +17,7 @@ PlanSquashingTransform::PlanSquashingTransform(
 
 void PlanSquashingTransform::consume(Chunk chunk)
 {
-    if (Chunk current_chunk = squashing.add(std::move(chunk)))
+    if (Chunk current_chunk = squashing.add(std::move(chunk)); current_chunk.hasChunkInfo())
         squashed_chunk.swap(current_chunk);
 }
 
