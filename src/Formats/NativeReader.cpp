@@ -41,7 +41,7 @@ NativeReader::NativeReader(
     ReadBuffer & istr_,
     const Block & header_,
     UInt64 server_revision_,
-    std::optional<FormatSettings>format_settings_,
+    std::optional<FormatSettings> format_settings_,
     BlockMissingValues * block_missing_values_)
     : istr(istr_)
     , header(header_)
