@@ -53,7 +53,7 @@ merge_pid=$!
 
 echo "Give the server a moment to start merge"
 
-for attempt in {1..50}
+for _  in {1..50}
 do
     part_info=$($CLICKHOUSE_CLIENT -nq "SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1' FORMAT CSV")
     if [[ "$part_info" == "0,\"1\"" ]]; then
