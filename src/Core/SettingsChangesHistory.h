@@ -75,6 +75,7 @@ namespace SettingsChangesHistory
     using SettingsChanges = std::vector<SettingChange>;
 }
 
+// clang-format off
 /// History of settings changes that controls some backward incompatible changes
 /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
 /// in this version. This history contains both changes to existing settings and newly added settings.
