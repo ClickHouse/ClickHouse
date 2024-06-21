@@ -31,7 +31,7 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
     set_status_comment,
-    get_commit_filtered_statuses,
+    get_commit_filtered_statuses, remove_labels,
 )
 from digest_helper import DockerDigester
 from env_helper import (
@@ -912,6 +912,9 @@ def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> No
 def _set_pending_statuses(pr_info: PRInfo) -> None:
     gh = GitHub(get_best_robot_token(), per_page=100)
     if pr_info.repo_full_name == "ClickHouse/ClickHouse":
+        if CI.GhLabels.PR_PUSHED_TO_CLOUD in pr_info.labels:
+            print(f"Clearing [{CI.GhLabels.PR_PUSHED_TO_CLOUD}] label - update is to be pushed to cloud")
+            remove_labels(gh, pr_info, [CI.GhLabels.PR_PUSHED_TO_CLOUD])
         try:
             commit = get_commit(gh, pr_info.sha)
             found = False
