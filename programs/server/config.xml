@@ -371,7 +371,7 @@
     <!-- Enables asynchronous loading of databases and tables to speedup server startup.
          Queries to not yet loaded entity will be blocked until load is finished.
       -->
-    <!-- <async_load_databases>true</async_load_databases> -->
+    <async_load_databases>true</async_load_databases>
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -1155,6 +1155,18 @@
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
+    <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </error_log>
+
     <!--
         Asynchronous metric log contains values of metrics from
         system.asynchronous_metrics.
@@ -1396,6 +1408,14 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
+    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
+         Specified value is used as `workload` setting value for background merge or mutation.
+    -->
+    <!--
+    <merge_workload>merges_and_mutations</merge_workload>
+    <mutation_workload>merges_and_mutations</mutation_workload>
+    -->
+
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
@@ -1561,6 +1581,7 @@
     <rocksdb>
         <options>
             <max_background_jobs>8</max_background_jobs>
+            <info_log_level>DEBUG_LEVEL</info_log_level>
         </options>
         <column_family_options>
             <num_levels>2</num_levels>

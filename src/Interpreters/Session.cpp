@@ -541,7 +541,7 @@ ContextMutablePtr Session::makeSessionContext()
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
     session_context->applySettingsChanges(settings_from_auth_server);
 
-    recordLoginSucess(session_context);
+    recordLoginSuccess(session_context);
 
     return session_context;
 }
@@ -605,7 +605,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         { session_name_ },
         max_sessions_for_user);
 
-    recordLoginSucess(session_context);
+    recordLoginSuccess(session_context);
 
     return session_context;
 }
@@ -681,13 +681,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         user = query_context->getUser();
 
     /// Interserver does not create session context
-    recordLoginSucess(query_context);
+    recordLoginSuccess(query_context);
 
     return query_context;
 }
 
 
-void Session::recordLoginSucess(ContextPtr login_context) const
+void Session::recordLoginSuccess(ContextPtr login_context) const
 {
     if (notified_session_log_about_login)
         return;
@@ -703,7 +703,7 @@ void Session::recordLoginSucess(ContextPtr login_context) const
         session_log->addLoginSuccess(auth_id,
                                      named_session ? named_session->key.second : "",
                                      settings,
-                                     access,
+                                     access->getAccess(),
                                      getClientInfo(),
                                      user);
     }

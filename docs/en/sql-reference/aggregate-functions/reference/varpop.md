@@ -27,7 +27,7 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable` function](#varPopStable).
+This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable`](#varpopstable) function.
 
 **Example**
 
@@ -76,7 +76,7 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-Unlike [`varPop()`](#varPop), this function uses a stable, numerically accurate algorithm to calculate the population variance to avoid issues like catastrophic cancellation or loss of precision. This function also handles `NaN` and `Inf` values correctly, excluding them from calculations.
+Unlike [`varPop`](#varpop), this function uses a stable, numerically accurate algorithm to calculate the population variance to avoid issues like catastrophic cancellation or loss of precision. This function also handles `NaN` and `Inf` values correctly, excluding them from calculations.
 
 **Example**
 

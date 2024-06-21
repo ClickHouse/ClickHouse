@@ -153,6 +153,8 @@ struct FormatSettings
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
+        bool serialize_tuple_into_separate_columns = true;
+        bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
@@ -170,6 +172,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
         bool use_default_on_bad_values = false;
         bool try_infer_numbers_from_strings = true;
+        bool try_infer_strings_from_quoted_tuples = true;
     } csv{};
 
     struct HiveText
@@ -265,7 +268,8 @@ struct FormatSettings
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
-        UInt64 max_block_size = 8192;
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         bool output_compliant_nested_types = true;
@@ -285,6 +289,8 @@ struct FormatSettings
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
+        UInt64 output_format_pretty_display_footer_column_names = 1;
+        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
 
         enum class Charset : uint8_t
         {
