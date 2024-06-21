@@ -114,7 +114,7 @@ using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 
 struct SnapshotDetachedTable final
 {
-    String detabase;
+    String database;
     String table;
     UUID uuid = UUIDHelpers::Nil;
     String metadata_path;
@@ -148,7 +148,7 @@ public:
 
     bool isValid() const { return it != snapshot.end(); }
 
-    String database() const { return it->second.detabase; }
+    String database() const { return it->second.database; }
 
     String table() const { return it->second.table; }
 

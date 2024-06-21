@@ -250,7 +250,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
         if (filter_by_table_name(table_name))
         {
             SnapshotDetachedTable snapshot_detached_table;
-            snapshot_detached_table.detabase = storage->getStorageID().getDatabaseName();
+            snapshot_detached_table.database = storage->getStorageID().getDatabaseName();
             snapshot_detached_table.table = table_name;
             if (storage->getStorageID().hasUUID())
             {
@@ -290,7 +290,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
 
     SnapshotDetachedTable snapshot_detached_table;
-    snapshot_detached_table.detabase = it->second->getStorageID().getDatabaseName();
+    snapshot_detached_table.database = it->second->getStorageID().getDatabaseName();
     snapshot_detached_table.table = it->first;
     if (it->second->getStorageID().hasUUID())
     {

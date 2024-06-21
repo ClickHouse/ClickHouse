@@ -243,7 +243,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     const auto storage_id = table->getStorageID();
 
                     SnapshotDetachedTable snapshot_detached_table;
-                    snapshot_detached_table.detabase = storage_id.getDatabaseName();
+                    snapshot_detached_table.database = storage_id.getDatabaseName();
                     snapshot_detached_table.table = detached_table_name;
                     snapshot_detached_table.uuid = storage_id.uuid;
                     snapshot_detached_table.is_permanently = true;
