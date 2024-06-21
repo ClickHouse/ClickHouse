@@ -199,7 +199,7 @@ public:
 
         cur_data.checkAndUpdateSize(temp_size, arena);
 
-        buf.readStrict(cur_data.data, temp_size);
+        buf.readStrict(cur_data.data + cur_data.data_size, temp_size);
         cur_data.data_size = temp_size;
 
         if constexpr (has_limit)
