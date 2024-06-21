@@ -172,6 +172,7 @@ ASTPtr ASTCreateUserQuery::clone() const
 {
     auto res = std::make_shared<ASTCreateUserQuery>(*this);
     res->children.clear();
+    res->auth_data.clear();
 
     if (names)
         res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
@@ -188,6 +189,7 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
+    // this is weird.
     if (!auth_data.empty())
     {
         for (const auto & authentication_method : auth_data)
