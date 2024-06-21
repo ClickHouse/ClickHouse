@@ -52,7 +52,7 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (!query.attach && !query.alter && !auth_data.empty() && !allow_implicit_no_password)
+        if (!query.attach && !query.alter && auth_data.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Authentication type NO_PASSWORD must "
                             "be explicitly specified, check the setting allow_implicit_no_password "
