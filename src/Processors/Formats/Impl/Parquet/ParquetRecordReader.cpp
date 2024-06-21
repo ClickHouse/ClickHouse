@@ -14,6 +14,9 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/SelectQueryInfo.h>
 
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
@@ -305,13 +308,14 @@ ParquetRecordReader::ParquetRecordReader(
     std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
     const FormatSettings & format_settings,
     std::vector<int> row_groups_indices_,
-    std::shared_ptr<parquet::FileMetaData> metadata)
+    std::shared_ptr<parquet::FileMetaData> metadata,
+    std::shared_ptr<PrewhereInfo> prewhere_info_)
     : file_reader(createFileReader(std::move(arrow_file), reader_properties_, std::move(metadata)))
     , arrow_properties(arrow_properties_)
     , header(std::move(header_))
     , max_block_size(format_settings.parquet.max_block_size)
     , row_groups_indices(std::move(row_groups_indices_))
-    , left_rows(getTotalRows(*file_reader->metadata()))
+    , prewhere_info(std::move(prewhere_info_))
 {
     log = &Poco::Logger::get("ParquetRecordReader");
 
@@ -323,8 +327,23 @@ ParquetRecordReader::ParquetRecordReader(
         parquet_columns.emplace(node->name(), node);
     }
 
-    parquet_col_indice.reserve(header.columns());
-    column_readers.reserve(header.columns());
+    NameSet active_column_names;
+    if (prewhere_info)
+    {
+        // copy from MergeTreeBlockReadUtils
+        prewhere_actions = std::make_shared<PrewhereExprInfo>(
+            MergeTreeSelectProcessor::getPrewhereActions(prewhere_info, ExpressionActionsSettings{}, false));
+
+        for (const auto & step : prewhere_actions->steps)
+        {
+            if (step->actions)
+            {
+                for (const auto & name : step->actions->getActionsDAG().getRequiredColumnsNames())
+                    active_column_names.emplace(name);
+            }
+        }
+    }
+
     for (const auto & col_with_name : header)
     {
         auto it = parquet_columns.find(col_with_name.name);
@@ -337,72 +356,172 @@ ParquetRecordReader::ParquetRecordReader(
 
         auto idx = file_reader->metadata()->schema()->ColumnIndex(*node);
         chassert(idx >= 0);
-        parquet_col_indice.push_back(idx);
+
+        if (active_column_names.contains(col_with_name.name))
+        {
+            active_chunk_reader.sample_block.insert(col_with_name);
+            active_chunk_reader.col_indice.push_back(idx);
+        }
+        else
+        {
+            lazy_chunk_reader.sample_block.insert(col_with_name);
+            lazy_chunk_reader.col_indice.push_back(idx);
+        }
     }
+
+    if (!active_chunk_reader.sample_block)
+    {
+        active_chunk_reader.sample_block.swap(lazy_chunk_reader.sample_block);
+        active_chunk_reader.col_indice.swap(lazy_chunk_reader.col_indice);
+    }
+
+    LOG_TRACE(log, "active_header: [{}], lazy_header: [{}]", active_chunk_reader.sample_block.dumpNames(), lazy_chunk_reader.sample_block.dumpNames());
+
     if (arrow_properties.pre_buffer())
     {
+        std::vector<int> parquet_col_indice = active_chunk_reader.col_indice;
+        parquet_col_indice.insert(parquet_col_indice.end(), lazy_chunk_reader.col_indice.begin(), lazy_chunk_reader.col_indice.end());
         THROW_PARQUET_EXCEPTION(file_reader->PreBuffer(
             row_groups_indices, parquet_col_indice, arrow_properties.io_context(), arrow_properties.cache_options()));
     }
 }
 
+ParquetRecordReader::~ParquetRecordReader() = default;
+
 Chunk ParquetRecordReader::readChunk()
 {
-    if (!left_rows)
+    auto merge_columns = [this] (Columns & result, ChunkReader & chunk_reader, Columns && read_columns)
     {
-        return Chunk{};
-    }
-    if (!cur_row_group_left_rows)
-    {
-        loadNextRowGroup();
-    }
+        /// Reorder columns
+        for (size_t i = 0; i < chunk_reader.sample_block.columns(); ++i)
+        {
+            const auto & col_with_name = chunk_reader.sample_block.getByPosition(i);
+            size_t idx = header.getPositionByName(col_with_name.name);
+            result[idx] = std::move(read_columns[i]);
+        }
+    };
 
-    Columns columns(header.columns());
-    auto num_rows_read = std::min(max_block_size, cur_row_group_left_rows);
-    for (size_t i = 0; i < header.columns(); i++)
+    while (true)
     {
-        columns[i] = castColumn(
-            column_readers[i]->readBatch(num_rows_read, header.getByPosition(i).name),
-            header.getByPosition(i).type);
-    }
-    left_rows -= num_rows_read;
-    cur_row_group_left_rows -= num_rows_read;
+        if (!cur_row_group_left_rows)
+        {
+            if (!loadNextRowGroup())
+                return {};
+        }
 
-    return Chunk{std::move(columns), num_rows_read};
+        size_t num_rows_read = std::min(max_block_size, cur_row_group_left_rows);
+        cur_row_group_left_rows -= num_rows_read;
+
+        Columns result_columns(header.columns());
+        Columns active_columns = active_chunk_reader.readBatch(num_rows_read, nullptr);
+        Block active_block = active_chunk_reader.sample_block.cloneWithColumns(active_columns);
+
+        ColumnPtr filter;
+        if (prewhere_actions)
+        {
+            for (const auto & step : prewhere_actions->steps)
+            {
+                if (step->actions)
+                    step->actions->execute(active_block);
+            }
+
+            filter = active_block.getByName(prewhere_info->prewhere_column_name).column;
+        }
+
+        if (!filter)
+        {
+            merge_columns(result_columns, active_chunk_reader, std::move(active_columns));
+            return Chunk(std::move(result_columns), num_rows_read);
+        }
+
+        Columns lazy_columns;
+        ConstantFilterDescription const_filter_desc(*filter);
+        if (const_filter_desc.always_true)
+        {
+            lazy_columns = lazy_chunk_reader.readBatch(num_rows_read, nullptr);
+            merge_columns(result_columns, active_chunk_reader, std::move(active_columns));
+            merge_columns(result_columns, lazy_chunk_reader, std::move(lazy_columns));
+            return Chunk(std::move(result_columns), num_rows_read);
+        }
+
+        if (const_filter_desc.always_false)
+        {
+            lazy_chunk_reader.skip(num_rows_read);
+            continue;
+        }
+
+        FilterDescription filter_desc(*filter);
+        if (!filter_desc.countBytesInFilter())
+        {
+            lazy_chunk_reader.skip(num_rows_read);
+            continue;
+        }
+
+        lazy_columns = lazy_chunk_reader.readBatch(num_rows_read, filter_desc.data);
+        for (auto &col : active_columns)
+            col = filter_desc.filter(*col, -1);
+        for (auto &col : lazy_columns)
+            col = filter_desc.filter(*col, -1);
+
+        size_t num_rows = active_columns.empty() ? 0 : active_columns.front()->size();
+
+        merge_columns(result_columns, active_chunk_reader, std::move(active_columns));
+        merge_columns(result_columns, lazy_chunk_reader, std::move(lazy_columns));
+        return Chunk(std::move(result_columns), num_rows);
+    }
 }
 
-void ParquetRecordReader::loadNextRowGroup()
+bool ParquetRecordReader::loadNextRowGroup()
 {
     Stopwatch watch(CLOCK_MONOTONIC);
-    cur_row_group_reader = file_reader->RowGroup(row_groups_indices[next_row_group_idx]);
 
-    column_readers.clear();
-    for (size_t i = 0; i < parquet_col_indice.size(); i++)
-    {
-        ColReaderFactory factory(
-            arrow_properties,
-            *file_reader->metadata()->schema()->Column(parquet_col_indice[i]),
-            header.getByPosition(i).type,
-            cur_row_group_reader->metadata()->ColumnChunk(parquet_col_indice[i]),
-            cur_row_group_reader->GetColumnPageReader(parquet_col_indice[i]));
-        column_readers.emplace_back(factory.makeReader());
-    }
+    if (static_cast<size_t>(next_row_group_idx) >= row_groups_indices.size())
+        return false;
+
+    cur_row_group_reader = file_reader->RowGroup(row_groups_indices[next_row_group_idx]);
+    cur_row_group_left_rows = cur_row_group_reader->metadata()->num_rows();
+
+    active_chunk_reader.init(*this);
+    lazy_chunk_reader.init(*this);
 
     auto duration = watch.elapsedNanoseconds() / 1e6;
     LOG_DEBUG(log, "begin to read row group {} consumed {} ms", row_groups_indices[next_row_group_idx], duration);
 
     ++next_row_group_idx;
-    cur_row_group_left_rows = cur_row_group_reader->metadata()->num_rows();
+    return true;
 }
 
-Int64 ParquetRecordReader::getTotalRows(const parquet::FileMetaData & meta_data)
+void ParquetRecordReader::ChunkReader::init(ParquetRecordReader & record_reader)
 {
-    Int64 res = 0;
-    for (auto idx : row_groups_indices)
+    column_readers.resize(col_indice.size());
+    for (size_t i = 0; i < col_indice.size(); i++)
     {
-        res += meta_data.RowGroup(idx)->num_rows();
+        ColReaderFactory factory(
+            record_reader.arrow_properties,
+            *record_reader.file_reader->metadata()->schema()->Column(col_indice[i]),
+            sample_block.getByPosition(i).type,
+            record_reader.cur_row_group_reader->metadata()->ColumnChunk(col_indice[i]),
+            record_reader.cur_row_group_reader->GetColumnPageReader(col_indice[i]));
+        column_readers[i] = factory.makeReader();
     }
-    return res;
+}
+
+Columns ParquetRecordReader::ChunkReader::readBatch(size_t num_rows, const IColumn::Filter * filter)
+{
+    Columns columns(sample_block.columns());
+    for (size_t i = 0; i < sample_block.columns(); i++)
+    {
+        auto res = column_readers[i]->readBatch(num_rows, sample_block.getByPosition(i).name, filter);
+        columns[i] = castColumn(res, sample_block.getByPosition(i).type);
+    }
+
+    return columns;
+}
+
+void ParquetRecordReader::ChunkReader::skip(size_t num_rows)
+{
+    for (size_t i = 0; i < sample_block.columns(); i++)
+        column_readers[i]->skip(num_rows);
 }
 
 }

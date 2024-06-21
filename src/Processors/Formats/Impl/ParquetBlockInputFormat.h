@@ -65,6 +65,8 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
+    bool supportsPrewhere() const override { return format_settings.parquet.use_native_reader; }
+
 private:
     Chunk read() override;
 

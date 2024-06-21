@@ -48,6 +48,12 @@ public:
         consume(bytes);
     }
 
+    void ALWAYS_INLINE skipBytes(size_t bytes)
+    {
+        checkAvaible(bytes);
+        consume(bytes);
+    }
+
     void ALWAYS_INLINE readDateTime64FromInt96(DateTime64 & dst)
     {
         static const int max_scale_num = 9;
@@ -98,6 +104,15 @@ public:
         column.getChars().back() = 0;
 
         column.getOffsets().data()[cursor] = column.getChars().size();
+        consume(value_len);
+    }
+
+    void ALWAYS_INLINE skipString()
+    {
+        checkAvaible(4);
+        auto value_len = ::arrow::util::SafeLoadAs<Int32>(getArrowData());
+        consume(4);
+        checkAvaible(value_len);
         consume(value_len);
     }
 
