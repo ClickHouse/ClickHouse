@@ -638,7 +638,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto result = condition_write_buffer.str();
 
                 if (result != "1\n" && result != "true\n")
+                {
+                    if (result != "0\n" && result != "false\n")
+                        context->addWarningMessage(fmt::format("The condition query returned `{}`, which can't be interpreted as a boolean (`0`, `false`, `1`, `true`). Will skip this query.", result));
+
                     continue;
+                }
 
                 LOG_DEBUG(log, "Condition is true, will execute the query next");
             }
@@ -651,9 +656,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             executeQuery(read_buffer, write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
     }
-    catch (const std::exception & e)
+    catch (...)
     {
-        LOG_ERROR(log, "Failed to parse startup scripts file {}", e.what());
+        tryLogCurrentException(log, "Failed to parse startup scripts file");
     }
 }
 
@@ -2014,6 +2019,11 @@ try
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
         waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
+
+        /// Startup scripts can depend on the system log tables.
+        if (config().has("startup_scripts") && !server_settings.prepare_system_log_tables_on_startup.changed)
+            global_context->setServerSetting("prepare_system_log_tables_on_startup", true);
+
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();

@@ -10,5 +10,15 @@
             <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
             <condition>SELECT 1;</condition>
         </scripts>
+        <scripts>
+            <query>SELECT * FROM system.query_log LIMIT 1</query>
+        </scripts>
     </startup_scripts>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <engine>ENGINE = MergeTree ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
 </clickhouse>
