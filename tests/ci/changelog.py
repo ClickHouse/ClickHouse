@@ -285,10 +285,13 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             entry = item.title
 
     # Normalize bug fixes
-    if re.match(
-        r"(?i)bug\Wfix",
-        category,
-    ) and "Critical Bug Fix" not in category:
+    if (
+        re.match(
+            r"(?i)bug\Wfix",
+            category,
+        )
+        and "Critical Bug Fix" not in category
+    ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
 
     if backport_number != item.number:
