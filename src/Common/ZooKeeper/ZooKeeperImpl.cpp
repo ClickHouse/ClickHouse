@@ -498,22 +498,6 @@ void ZooKeeper::connect(
                 }
 
                 original_index = static_cast<Int8>(node.original_index);
-
-                if (i != 0)
-                {
-                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
-                    {
-                        args.fallback_session_lifetime.min_sec,
-                        args.fallback_session_lifetime.max_sec,
-                    };
-                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
-                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
-
-                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
-                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                    node.address.toString(), i, session_lifetime_seconds);
-                }
-
                 break;
             }
             catch (...)
@@ -1153,7 +1137,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        checkSessionDeadline();
         info.time = clock::now();
         auto maybe_zk_log = std::atomic_load(&zk_log);
         if (maybe_zk_log)
@@ -1201,44 +1184,44 @@ bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     return keeper_feature_flags.isEnabled(feature_flag);
 }
 
-void ZooKeeper::initFeatureFlags()
+std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, const std::string & description)
 {
-    const auto try_get = [&](const std::string & path, const std::string & description) -> std::optional<std::string>
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
     {
-        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-        auto future = promise->get_future();
-
-        auto callback = [promise](const Coordination::GetResponse & response) mutable
-        {
-            promise->set_value(response);
-        };
-
-        get(path, std::move(callback), {});
-        if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
-
-        auto response = future.get();
-
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            LOG_TRACE(log, "Failed to get {}", description);
-            return std::nullopt;
-        }
-        else if (response.error != Coordination::Error::ZOK)
-        {
-            throw Exception(response.error, "Failed to get {}", description);
-        }
-
-        return std::move(response.data);
+        promise->set_value(response);
     };
 
-    if (auto feature_flags = try_get(keeper_api_feature_flags_path, "feature flags"); feature_flags.has_value())
+    get(path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+        throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
+
+    auto response = future.get();
+
+    if (response.error == Coordination::Error::ZNONODE)
+    {
+        LOG_TRACE(log, "Failed to get {}", description);
+        return std::nullopt;
+    }
+    else if (response.error != Coordination::Error::ZOK)
+    {
+        throw Exception(response.error, "Failed to get {}", description);
+    }
+
+    return std::move(response.data);
+}
+
+void ZooKeeper::initFeatureFlags()
+{
+    if (auto feature_flags = tryGetSystemZnode(keeper_api_feature_flags_path, "feature flags"); feature_flags.has_value())
     {
         keeper_feature_flags.setFeatureFlags(std::move(*feature_flags));
         return;
     }
 
-    auto keeper_api_version_string = try_get(keeper_api_version_path, "API version");
+    auto keeper_api_version_string = tryGetSystemZnode(keeper_api_version_path, "API version");
 
     DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 
@@ -1254,6 +1237,17 @@ void ZooKeeper::initFeatureFlags()
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
     keeper_feature_flags.fromApiVersion(keeper_api_version);
+}
+
+String ZooKeeper::tryGetAvailabilityZone()
+{
+    auto res = tryGetSystemZnode(keeper_availability_zone_path, "availability zone");
+    if (res)
+    {
+        LOG_TRACE(log, "Availability zone for ZooKeeper at {}: {}", getConnectedHostPort(), *res);
+        return *res;
+    }
+    return "";
 }
 
 
@@ -1585,17 +1579,6 @@ void ZooKeeper::setupFaultDistributions()
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();
-}
-
-void ZooKeeper::checkSessionDeadline() const
-{
-    if (unlikely(hasReachedDeadline()))
-        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
-}
-
-bool ZooKeeper::hasReachedDeadline() const
-{
-    return client_session_deadline.has_value() && clock::now() >= client_session_deadline.value();
 }
 
 void ZooKeeper::maybeInjectSendFault()

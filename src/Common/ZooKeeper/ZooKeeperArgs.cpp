@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils.h>
+#include <IO/S3/Credentials.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -144,6 +145,7 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             hosts.push_back(
                 (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "")
                 + config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
+            availability_zones.push_back(config.getString(config_name + "." + key + ".availability_zone", ""));
         }
         else if (key == "session_timeout_ms")
         {
@@ -199,6 +201,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             sessions_path = config.getString(config_name + "." + key);
         }
+        else if (key == "client_availability_zone")
+        {
+            client_availability_zone = config.getString(config_name + "." + key);
+        }
         else if (key == "implementation")
         {
             implementation = config.getString(config_name + "." + key);
@@ -224,9 +230,16 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             use_compression = config.getBool(config_name + "." + key);
         }
+        else if (key == "availability_zone_autodetect")
+        {
+            availability_zone_autodetect = config.getBool(config_name + "." + key);
+        }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }
+
+    if (availability_zone_autodetect)
+        client_availability_zone = DB::S3::tryGetRunningAvailabilityZone();
 }
 
 }

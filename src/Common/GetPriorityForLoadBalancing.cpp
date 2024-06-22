@@ -60,4 +60,23 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
     return get_priority;
 }
 
+bool GetPriorityForLoadBalancing::hasOptimalNode() const
+{
+    switch (load_balancing)
+    {
+        case LoadBalancing::NEAREST_HOSTNAME:
+            return true;
+        case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
+            return true;
+        case LoadBalancing::IN_ORDER:
+            return false;
+        case LoadBalancing::RANDOM:
+            return false;
+        case LoadBalancing::FIRST_OR_RANDOM:
+            return true;
+        case LoadBalancing::ROUND_ROBIN:
+            return false;
+    }
+}
+
 }

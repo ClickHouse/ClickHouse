@@ -130,9 +130,7 @@ public:
     String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
     int32_t getConnectionXid() const override { return next_xid.load(); }
 
-    /// A ZooKeeper session can have an optional deadline set on it.
-    /// After it has been reached, the session needs to be finalized.
-    bool hasReachedDeadline() const override;
+    String tryGetAvailabilityZone() override;
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -271,7 +269,6 @@ private:
         clock::time_point time;
     };
 
-    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -346,9 +343,10 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
+    std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
+
     void initFeatureFlags();
 
-    void checkSessionDeadline() const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;

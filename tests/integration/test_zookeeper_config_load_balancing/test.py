@@ -1,6 +1,8 @@
+import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(
     __file__, zookeeper_config_path="configs/zookeeper_load_balancing.xml"
@@ -15,6 +17,10 @@ node2 = cluster.add_instance(
 )
 node3 = cluster.add_instance(
     "nod3", with_zookeeper=True, main_configs=["configs/zookeeper_load_balancing.xml"]
+)
+
+node4 = cluster.add_instance(
+    "nod4", with_zookeeper=True, main_configs=["configs/zookeeper_load_balancing2.xml"]
 )
 
 
@@ -515,3 +521,33 @@ def test_round_robin(started_cluster):
     finally:
         pm.heal_all()
         change_balancing("round_robin", "random", reload=False)
+
+
+def test_az(started_cluster):
+    pm = PartitionManager()
+    try:
+        # make sure it disconnects from the optimal node
+        pm._add_rule(
+            {
+                "source": node1.ip_address,
+                "destination": cluster.get_instance_ip("zoo2"),
+                "action": "REJECT --reject-with tcp-reset",
+            }
+        )
+
+        node4.query_with_retry("select * from system.zookeeper where path='/'")
+        assert "az2\n" != node4.query(
+            "select availability_zone from system.zookeeper_connection"
+        )
+
+        # fallback_session_lifetime.max is 1 second, but it shouldn't drop current session until the node becomes available
+
+        time.sleep(5)  # this is fine
+        assert 5 >= int(node4.query("select zookeeperSessionUptime()").strip())
+
+        pm.heal_all()
+        assert_eq_with_retry(
+            node4, "select availability_zone from system.zookeeper_connection", "az2\n"
+        )
+    finally:
+        pm.heal_all()

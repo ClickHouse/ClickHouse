@@ -32,6 +32,7 @@ namespace DB
 {
 class ZooKeeperLog;
 class ZooKeeperWithFaultInjection;
+class BackgroundSchedulePoolTaskHolder;
 
 namespace ErrorCodes
 {
@@ -48,8 +49,17 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct ShuffleHost
 {
+    enum AvailabilityZoneInfo
+    {
+        SAME = 0,
+        UNKNOWN = 1,
+        OTHER = 2,
+    };
+
     String host;
+    bool secure = false;
     UInt8 original_index = 0;
+    AvailabilityZoneInfo az_info = UNKNOWN;
     Priority priority;
     UInt64 random = 0;
 
@@ -60,8 +70,8 @@ struct ShuffleHost
 
     static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
     {
-        return std::forward_as_tuple(lhs.priority, lhs.random)
-               < std::forward_as_tuple(rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.az_info, lhs.priority, lhs.random)
+               < std::forward_as_tuple(lhs.az_info, rhs.priority, rhs.random);
     }
 };
 
@@ -197,6 +207,9 @@ class ZooKeeper
 
     explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
+    /// Allows to keep info about availability zones when starting a new session
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+
     /** Config of the form:
         <zookeeper>
             <node>
@@ -227,6 +240,8 @@ class ZooKeeper
 public:
         using Ptr = std::shared_ptr<ZooKeeper>;
         using ErrorsList = std::initializer_list<Coordination::Error>;
+
+    ~ZooKeeper();
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
@@ -596,8 +611,6 @@ public:
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
-    bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
-
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
     void setServerCompletelyStarted();
@@ -605,6 +618,8 @@ public:
     Int8 getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
+
+    String getConnectedHostAvailabilityZone() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
@@ -625,7 +640,8 @@ public:
     void addCheckSessionOp(Coordination::Requests & requests) const;
 
 private:
-    void init(ZooKeeperArgs args_);
+    void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    void updateAvailabilityZones();
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -690,8 +706,11 @@ private:
     }
 
     std::unique_ptr<Coordination::IKeeper> impl;
+    mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
     ZooKeeperArgs args;
+
+    Strings availability_zones;
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
@@ -699,6 +718,8 @@ private:
     AtomicStopwatch session_uptime;
 
     int32_t session_node_version;
+
+    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };
 
 
